@@ -31,4 +31,12 @@ Projeto desenvolvido com foco em resolver um problema real de pequenos e médios
 1. Clone o repositório:
 ```bash
 git clone https://github.com/kleniltonsilva/gerenciador-motoboys.git
+
 cd gerenciador-motoboys
+## 👨‍💻 Sobre o Desenvolvedor
+Desenvolvedor Python em busca de oportunidades júnior. Este projeto resolveu um problema real de um restaurante conhecido.
+
+🔗 LinkedIn: https://www.linkedin.com/in/klenilton-silva-25588834b/
+📧 kdkeforever@gmail.com
+Whatsaap: +351 933358929
+
