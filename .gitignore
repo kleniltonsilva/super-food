@@ -17,5 +17,23 @@ pip-wheel-metadata/
 motoboy.db
 
 # Outros
-.DS_Store
+venv/
+__pycache__/
+*.pyc
+.env
+motoboys.db
+docker_data/
+*.log.DS_Store
 Thumbs.db
+venv/
+__pycache__/
+*.pyc
+.env
+motoboys.db
+docker_data/
+*.log
+firebase_admin_key.json
+firebase_admin_key.json
+venv/
+*.pyc
+__pycache__/

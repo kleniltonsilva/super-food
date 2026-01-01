@@ -1,0 +1,8 @@
+# arquivo: requirements.txt (substitua o seu atual por este completo)
+fastapi
+uvicorn[standard]
+passlib[bcrypt]      # <--- ESSENCIAL para hash de senhas (bcrypt)
+python-dotenv        # <--- para carregar .env (MAPBOX_TOKEN)
+requests             # <--- para chamadas Mapbox
+streamlit
+pandas
