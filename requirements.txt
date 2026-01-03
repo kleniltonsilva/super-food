@@ -5,4 +5,8 @@ passlib[bcrypt]      # <--- ESSENCIAL para hash de senhas (bcrypt)
 python-dotenv        # <--- para carregar .env (MAPBOX_TOKEN)
 requests             # <--- para chamadas Mapbox
 streamlit
-pandas
+pandaspython-jose[cryptography]
+passlib[bcrypt]
+python-dotenv
+pydantic[email]
+python-multipart
