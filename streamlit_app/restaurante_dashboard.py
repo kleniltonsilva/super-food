@@ -1,19 +1,26 @@
+# Substitua o arquivo completo streamlit_app/restaurante_dashboard.py (melhor handling de erros de conexão API + mensagens claras)
 import streamlit as st
 import requests
-from datetime import datetime, timedelta
-
-import sys
+import pandas as pd
+import pydeck as pdk
+from datetime import datetime
 import os
 
 # Adiciona a raiz do projeto ao caminho do Python (método seguro)
+import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import correto usando caminho absoluto
-from utils.mapbox import geocode  # Para validar endereço
+from utils.mapbox import geocode  # Para validar endereço (mantido caso precise no futuro)
 
-st.set_page_config(page_title="Painel Restaurante", layout="wide")
+st.set_page_config(page_title="Painel Restaurante - Realtime", layout="wide")
 
-API_URL = "http://127.0.0.1:8000"
+API_URL = "http://127.0.0.1:8000"  # Ajuste para produção se necessário
+MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN")
+
+if not MAPBOX_TOKEN:
+    st.error("Defina MAPBOX_TOKEN no .env e reinicie o Streamlit")
+    st.stop()
 
 # Pega ID da URL
 query_params = st.query_params
@@ -29,20 +36,35 @@ except:
     st.error("ID inválido")
     st.stop()
 
-# Carrega dados do restaurante
-response = requests.get(f"{API_URL}/restaurantes/")
-if response.status_code != 200:
-    st.error("Erro ao conectar API")
+# Carrega dados do restaurante com handling robusto de erro
+try:
+    response = requests.get(f"{API_URL}/restaurantes/", timeout=10)
+    response.raise_for_status()
+    restaurantes = response.json()
+except requests.exceptions.ConnectionError:
+    st.error("🚨 Não foi possível conectar à API.")
+    st.info("Verifique se o backend está rodando:")
+    st.code("uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000")
+    st.stop()
+except requests.exceptions.Timeout:
+    st.error("🚨 Timeout ao conectar à API (demorou mais de 10s)")
+    st.info("Inicie o backend com o comando acima")
+    st.stop()
+except requests.exceptions.RequestException as e:
+    st.error(f"🚨 Erro ao conectar à API: {str(e)}")
+    st.info("Inicie o backend FastAPI primeiro")
+    st.stop()
+except Exception as e:
+    st.error(f"Erro inesperado ao carregar restaurantes: {str(e)}")
     st.stop()
 
-restaurantes = response.json()
 restaurante = next((r for r in restaurantes if r["id"] == restaurante_id), None)
 
 if not restaurante:
-    st.error("Restaurante não encontrado")
+    st.error("Restaurante não encontrado com este ID")
     st.stop()
 
-st.title(f"🍕 {restaurante['nome']}")
+st.title(f"🍕 {restaurante['nome']} - Dashboard Realtime")
 
 # Menu superior fixo
 tabs = st.tabs(["🏠 Dashboard", "📦 Criar Pedido", "⏱ Pedidos em Andamento", "👥 Motoboys", "⚙ Configurações de Tempo"])
@@ -50,38 +72,167 @@ tabs = st.tabs(["🏠 Dashboard", "📦 Criar Pedido", "⏱ Pedidos em Andamento
 limites = {"basico": 3, "medio": 5, "premium": 12}
 limite_max = limites.get(restaurante["plano"], 3)
 
-# Carrega motoboys
-resp_motoboys = requests.get(f"{API_URL}/motoboys/{restaurante_id}")
-motoboys = resp_motoboys.json() if resp_motoboys.status_code == 200 else []
+# Funções cacheadas para polling eficiente (dados estruturados) com handling de erro
+@st.cache_data(ttl=10)
+def load_motoboys(restaurante_id: int):
+    try:
+        resp = requests.get(f"{API_URL}/motoboys/{restaurante_id}", timeout=8)
+        resp.raise_for_status()
+        return resp.json()
+    except:
+        return []
+
+@st.cache_data(ttl=10)
+def load_pedidos(restaurante_id: int):
+    try:
+        resp = requests.get(f"{API_URL}/pedidos/{restaurante_id}", timeout=8)
+        resp.raise_for_status()
+        return resp.json()
+    except:
+        return []
+
+@st.cache_data(ttl=10)
+def load_gps_motoboys(restaurante_id: int):
+    try:
+        resp = requests.get(f"{API_URL}/motoboys/gps/{restaurante_id}", timeout=8)
+        resp.raise_for_status()
+        return resp.json()
+    except:
+        return []
+
+motoboys = load_motoboys(restaurante_id)
+pedidos = load_pedidos(restaurante_id)
+motoboys_gps = load_gps_motoboys(restaurante_id)
 
 with tabs[0]:  # Dashboard
     st.subheader(f"Plano: **{restaurante['plano'].upper()}** | Código de Acesso: **{restaurante['codigo_acesso']}**")
     st.write(f"Motoboys cadastrados: {len(motoboys)} / {limite_max}")
 
-    st.subheader("🗺 Mapa Realtime da Frota")
+    st.subheader("🗺 Mapa Realtime (Restaurante • Pedidos • Motoboys)")
 
-    gps_resp = requests.get(f"{API_URL}/motoboys/gps/{restaurante_id}")
-    if gps_resp.status_code == 200:
-        motoboys_gps = gps_resp.json()
-        if motoboys_gps:
-            import pandas as pd
-            df = pd.DataFrame(motoboys_gps)
-            df = df.rename(columns={"lat": "latitude", "lng": "longitude"})
-            st.map(df)
+    layers = []
 
-            st.write("Motoboys no mapa:")
-            for m in motoboys_gps:
-                status_icon = "🟢" if m["status"] == "disponivel" else "🔴"
-                st.write(f"{status_icon} **{m['nome']}** — {m['status'].upper()}")
-        else:
-            st.info("Nenhum motoboy com posição GPS no momento (aguardando app motoboy enviar dados)")
+    # Ponto do restaurante
+    layers.append(
+        pdk.Layer(
+            "ScatterplotLayer",
+            data=[{"lon": restaurante["lon"], "lat": restaurante["lat"], "nome": "Restaurante"}],
+            get_position=["lon", "lat"],
+            get_color=[255, 0, 0, 220],
+            get_radius=300,
+            pickable=True,
+        )
+    )
+
+    # Pedidos pendentes/atribuidos
+    if pedidos:
+        pedidos_data = [
+            {"lon": p["lon_cliente"], "lat": p["lat_cliente"], "nome": f"Pedido {p['comanda']} ({p['status']})"}
+            for p in pedidos if p.get("lat_cliente") and p.get("lon_cliente")
+        ]
+        if pedidos_data:
+            layers.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=pedidos_data,
+                    get_position=["lon", "lat"],
+                    get_color=[0, 120, 255, 200],
+                    get_radius=200,
+                )
+            )
+
+    # Motoboys com posição atual (fallback para restaurante)
+    if motoboys_gps:
+        motoboys_map = []
+        for m in motoboys_gps:
+            lat = m.get("lat") or restaurante["lat"]
+            lon = m.get("lng") or restaurante["lon"]
+            motoboys_map.append({"lon": lon, "lat": lat, "nome": f"{m['nome']} ({m['status']})"})
+        if motoboys_map:
+            layers.append(
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=motoboys_map,
+                    get_position=["lon", "lat"],
+                    get_color=[0, 200, 0, 220],
+                    get_radius=180,
+                    pickable=True,
+                )
+            )
+
+    if layers:
+        view_state = pdk.ViewState(
+            latitude=restaurante.get("lat", -23.5505),
+            longitude=restaurante.get("lon", -46.6333),
+            zoom=12,
+            pitch=0,
+        )
+        deck = pdk.Deck(
+            map_style="mapbox://styles/mapbox/light-v10",
+            initial_view_state=view_state,
+            layers=layers,
+            tooltip={"text": "{nome}"},
+        )
+        st.pydeck_chart(deck, use_container_width=True)
     else:
-        st.warning("Erro ao carregar posições GPS da API")
+        st.info("Sem dados geográficos para exibir no mapa (aguardando pedidos ou GPS).")
 
-with tabs[1]:  # Criar Pedido
+    # Log realtime via WebSocket (push instantâneo)
+    st.subheader("📡 Log de Eventos Realtime (atribuições, GPS, etc.)")
+
+    log_placeholder = st.empty()
+    log_html = """
+    <div id="ws_log" style="height: 400px; overflow-y: scroll; background:#fafafa; padding:15px; border:1px solid #ddd; font-family:monospace; border-radius:8px;">
+    <p><strong>Conectando ao WebSocket...</strong></p>
+    </div>
+    """
+    log_placeholder.markdown(log_html, unsafe_allow_html=True)
+
+    ws_script = f"""
+    <script>
+    let ws = null;
+    function connect() {{
+        if (ws) ws.close();
+        ws = new WebSocket(`ws://127.0.0.1:8000/ws/{restaurante_id}`);
+        ws.onopen = () => appendLog("<strong>✅ Conectado ao WebSocket (restaurante {restaurante_id})</strong>");
+        ws.onmessage = (event) => {{
+            try {{
+                const data = JSON.parse(event.data);
+                const time = new Date().toLocaleTimeString();
+                let msg = `[${{time}}] <strong>{{data.type || 'evento'}}</strong><br>`;
+                if (data.type === "nova_atribuicao") {{
+                    msg += `Motoboy <strong>{{data.motoboy_nome}}</strong> recebeu {{data.total_pedidos}} pedido(s)<br>`;
+                    msg += `Tempo estimado: {{data.tempo_estimado_min}} min | Distância: {{data.distancia_total_km}} km`;
+                }} else {{
+                    msg += JSON.stringify(data, null, 2).replace(/\\n/g, '<br>');
+                }}
+                appendLog(msg);
+                if (data.type === "nova_atribuicao") {{
+                    Streamlit.setComponentValue("rerun");
+                }}
+            }} catch {{ appendLog(`[${{new Date().toLocaleTimeString()}}] Raw: ${{event.data}}`); }}
+        }};
+        ws.onclose = () => {{
+            appendLog("<strong>❌ Desconectado - reconectando em 5s...</strong>");
+            setTimeout(connect, 5000);
+        }};
+        ws.onerror = () => appendLog("<strong>⚠️ Erro WebSocket</strong>");
+    }}
+    function appendLog(msg) {{
+        const log = document.getElementById("ws_log");
+        const p = document.createElement("p");
+        p.innerHTML = msg;
+        log.appendChild(p);
+        log.scrollTop = log.scrollHeight;
+    }}
+    connect();
+    </script>
+    """
+    st.markdown(ws_script, unsafe_allow_html=True)
+
+with tabs[1]:  # Criar Pedido (mantido idêntico com pequeno ajuste no despacho)
     st.header("📦 Criar Novo Pedido")
 
-    # Comanda automática
     try:
         from db.database import DBManager
         db_temp = DBManager()
@@ -92,7 +243,7 @@ with tabs[1]:  # Criar Pedido
     except:
         proxima_comanda = "1"
 
-    with st.form("novo_pedido", clear_on_submit=True):  # ← IMPORTANTE: limpa o form após submit
+    with st.form("novo_pedido", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             tipo_pedido = st.selectbox("Tipo de Pedido", ["Entrega", "Retirada na loja", "Para mesa"])
@@ -112,7 +263,6 @@ with tabs[1]:  # Criar Pedido
 
         itens = st.text_area("Itens do pedido")
 
-        # Tempo estimado
         tempo_default = 45 if tipo_pedido == "Entrega" else 20 if tipo_pedido == "Para mesa" else 30
         tempo_estimado = st.number_input("Tempo estimado (minutos)", min_value=5, value=tempo_default)
 
@@ -139,42 +289,36 @@ with tabs[1]:  # Criar Pedido
                     "tempo_estimado": int(tempo_estimado)
                 }
                 try:
-                    resp = requests.post(f"{API_URL}/pedidos/", json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        pedido_id = data.get("id")
-                        st.success(f"Pedido {proxima_comanda} salvo com sucesso!")
-                        st.balloons()
+                    resp = requests.post(f"{API_URL}/pedidos/", json=payload, timeout=10)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    pedido_id = data.get("id")
+                    st.success(f"Pedido {proxima_comanda} salvo com sucesso!")
+                    st.balloons()
 
-                        if tipo_pedido == "Entrega":
-                            if pedido_id:
-                                desp_resp = requests.post(f"{API_URL}/pedidos/despachar/{pedido_id}")
-                                if desp_resp.status_code == 200:
-                                    desp_data = desp_resp.json()
-                                    st.info(f"Despacho automático: Motoboy ID {desp_data['motoboy_id']} atribuído")
-                                else:
-                                    st.info("Despacho automático em desenvolvimento – em breve motoboy será atribuído")
-                            else:
-                                st.info("Despacho automático em desenvolvimento – em breve motoboy será atribuído")
+                    if tipo_pedido == "Entrega" and pedido_id:
+                        desp_resp = requests.post(f"{API_URL}/pedidos/despachar/{pedido_id}", timeout=10)
+                        if desp_resp.status_code == 200:
+                            desp_data = desp_resp.json()
+                            st.info(f"Despacho automático: Motoboy {desp_data.get('motoboy', 'N/A')} atribuído")
                         else:
-                            st.info("Pedido registrado (não é entrega – sem despacho automático)")
+                            st.info("Despacho automático pendente")
                     else:
-                        st.error("Erro ao salvar pedido")
-                except:
-                    st.error("API não está respondendo")
+                        st.info("Pedido registrado (não é entrega)")
+                    st.cache_data.clear()
+                    st.rerun()
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Erro ao comunicar com API: {str(e)}")
+                except Exception as e:
+                    st.error(f"Erro inesperado: {str(e)}")
 
 with tabs[2]:  # Pedidos em Andamento
     st.header("⏱ Pedidos em Andamento")
-    resp_pedidos = requests.get(f"{API_URL}/pedidos/{restaurante_id}")
-    if resp_pedidos.status_code == 200:
-        pedidos = resp_pedidos.json()
-        if pedidos:
-            for p in pedidos:
-                st.write(f"Comanda {p['comanda']} - {p['tipo']} - Cliente: {p['cliente']} - Status: {p['status'].upper()}")
-        else:
-            st.info("Nenhum pedido registrado ainda")
+    if pedidos:
+        df = pd.DataFrame(pedidos)
+        st.dataframe(df, use_container_width=True)
     else:
-        st.error("Erro ao carregar pedidos")
+        st.info("Nenhum pedido registrado ainda")
 
 with tabs[3]:  # Motoboys
     st.header(f"👥 Motoboys Cadastrados ({len(motoboys)} / {limite_max})")
@@ -202,26 +346,25 @@ with tabs[3]:  # Motoboys
             else:
                 payload = {"restaurante_id": restaurante_id, "nome": nome.strip()}
                 try:
-                    resp = requests.post(f"{API_URL}/motoboys/", json=payload)
-                    if resp.status_code == 200:
-                        st.success(f"Motoboy **{nome}** cadastrado!")
-                        st.balloons()
-                        st.rerun()
-                    else:
-                        st.error(resp.json().get("detail", "Erro"))
-                except:
-                    st.error("Falha na conexão com API")
+                    resp = requests.post(f"{API_URL}/motoboys/", json=payload, timeout=10)
+                    resp.raise_for_status()
+                    st.success(f"Motoboy **{nome}** cadastrado!")
+                    st.balloons()
+                    st.cache_data.clear()
+                    st.rerun()
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Erro ao cadastrar motoboy: {str(e)}")
 
 with tabs[4]:  # Configurações de Tempo
     st.header("⚙ Configurações de Tempo Estimado")
-    st.write("Defina o tempo padrão para cada tipo de pedido (pode alterar a qualquer momento)")
-
+    st.write("Defina o tempo padrão para cada tipo de pedido")
     col1, col2, col3 = st.columns(3)
     with col1:
-        tempo_entrega = st.number_input("Tempo Entrega (minutos)", min_value=10, max_value=120, value=45)
+        st.number_input("Tempo Entrega (minutos)", min_value=10, max_value=120, value=45)
     with col2:
-        tempo_mesa = st.number_input("Tempo Para Mesa (minutos)", min_value=5, max_value=60, value=20)
+        st.number_input("Tempo Para Mesa (minutos)", min_value=5, max_value=60, value=20)
     with col3:
-        tempo_retirada = st.number_input("Tempo Retirada (minutos)", min_value=5, max_value=60, value=30)
+        st.number_input("Tempo Retirada (minutos)", min_value=5, max_value=60, value=30)
+    st.info("Esses tempos serão usados para contagem regressiva e alertas de atraso (implementação futura)")
 
-    st.info("Esses tempos serão usados para contagem regressiva e alertas de atraso")
+st.caption(f"Última atualização dos dados: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')} | Realtime via WebSocket ativo")

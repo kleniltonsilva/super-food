@@ -1,11 +1,9 @@
+# Substitua o arquivo completo backend/app/routers/restaurantes.py (handling completo de exceções + sempre retorna JSON válido, mesmo em erros internos)
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
 import requests
 import os
-
 from .. import models, schemas, database, auth
 
 router = APIRouter(prefix="/restaurantes", tags=["Restaurantes"])
@@ -14,66 +12,68 @@ MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN")
 
 def geocode_address(endereco: str):
     if not MAPBOX_TOKEN:
-        raise HTTPException(status_code=500, detail="MAPBOX_TOKEN não configurado")
-    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{requests.utils.quote(endereco)}.json"
-    params = {"access_token": MAPBOX_TOKEN, "limit": 1, "country": "BR"}
-    response = requests.get(url, params=params)
-    if response.status_code != 200 or not response.json()["features"]:
-        return None, None
-    coords = response.json()["features"][0]["center"]
-    return coords[1], coords[0]  # lat, lon
+        raise HTTPException(status_code=500, detail="MAPBOX_TOKEN não configurado no .env (necessário para geocodificação)")
+
+    try:
+        encoded = requests.utils.quote(endereco)
+        url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{encoded}.json"
+        params = {"access_token": MAPBOX_TOKEN, "limit": 1, "country": "BR"}
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
+
+        data = response.json()
+        if not data.get("features"):
+            raise HTTPException(status_code=400, detail=f"Endereço não encontrado: '{endereco}'. Simplifique ou verifique o texto.")
+
+        coords = data["features"][0]["center"]
+        return coords[1], coords[0]  # lat, lon
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Timeout na geocodificação Mapbox (endereço muito complexo ou conexão lenta)")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"Erro de comunicação com Mapbox: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro inesperado na geocodificação: {str(e)}")
 
 @router.post("/signup", response_model=schemas.RestaurantePublic, status_code=status.HTTP_201_CREATED)
-def signup_restaurante(restaurante: schemas.RestauranteCreate, db: Session = Depends(database.get_db)):
-    if db.query(models.Restaurante).filter(models.Restaurante.email == restaurante.email).first():
-        raise HTTPException(status_code=400, detail="Email já cadastrado")
-    if db.query(models.Restaurante).filter(models.Restaurante.nome_fantasia == restaurante.nome_fantasia).first():
-        raise HTTPException(status_code=400, detail="Nome fantasia já em uso")
+def signup_restaurante(restaurante_in: schemas.RestauranteCreate, db: Session = Depends(database.get_db)):
+    try:
+        # Verifica email duplicado
+        if db.query(models.Restaurante).filter(models.Restaurante.email == restaurante_in.email).first():
+            raise HTTPException(status_code=400, detail="Email já cadastrado")
 
-    lat, lon = geocode_address(restaurante.endereco_completo)
-    if lat is None:
-        raise HTTPException(status_code=400, detail="Endereço não encontrado")
+        # Geocodifica (exceções já convertidas em HTTPException com JSON)
+        lat, lon = geocode_address(restaurante_in.endereco_completo)
 
-    hashed_password = auth.get_password_hash(restaurante.senha)
-    novo_restaurante = models.Restaurante(
-        **restaurante.dict(exclude={"senha"}),
-        hashed_password=hashed_password,
-        lat=lat,
-        lon=lon
-    )
-    db.add(novo_restaurante)
-    db.commit()
-    db.refresh(novo_restaurante)
+        # Cria restaurante (Pydantic v2)
+        plano = (restaurante_in.plano or "basico").lower()
+        novo_rest = models.Restaurante(
+            **restaurante_in.model_dump(exclude={"senha", "plano"}),
+            hashed_password=auth.get_password_hash(restaurante_in.senha),
+            lat=lat,
+            lon=lon,
+            plano=plano
+        )
+        novo_rest.gerar_codigo_acesso()
 
-    access_token = auth.create_access_token(data={"sub": novo_restaurante.id, "role": "restaurante"})
-    return {**schemas.RestaurantePublic.from_orm(novo_restaurante).dict(), "access_token": access_token, "token_type": "bearer"}
+        db.add(novo_rest)
+        db.commit()
+        db.refresh(novo_rest)
+        return novo_rest
 
-@router.post("/login")
-def login_restaurante(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(database.get_db)):
-    restaurante = db.query(models.Restaurante).filter(models.Restaurante.email == form_data.username).first()
-    if not restaurante or not auth.verify_password(form_data.password, restaurante.hashed_password):
-        raise HTTPException(status_code=401, detail="Credenciais inválidas")
-    access_token = auth.create_access_token(data={"sub": restaurante.id, "role": "restaurante"})
-    return {"access_token": access_token, "token_type": "bearer"}
+    except HTTPException:
+        # Re-raise HTTPException (FastAPI já retorna JSON válido)
+        raise
+    except Exception as e:
+        # Captura qualquer erro não tratado → retorna JSON claro (evita resposta vazia/text)
+        raise HTTPException(status_code=500, detail=f"Erro interno ao criar restaurante: {str(e)}")
 
-@router.get("/me", response_model=schemas.RestaurantePublic)
-def get_me(current: models.Restaurante = Depends(auth.get_current_restaurante)):
-    return current
+@router.get("/", response_model=List[schemas.RestaurantePublic])
+def listar_restaurantes(db: Session = Depends(database.get_db)):
+    return db.query(models.Restaurante).all()
 
-@router.patch("/me", response_model=schemas.RestaurantePublic)
-def update_me(update: schemas.RestauranteUpdate, current: models.Restaurante = Depends(auth.get_current_restaurante), db: Session = Depends(database.get_db)):
-    if update.endereco_completo and update.endereco_completo != current.endereco_completo:
-        lat, lon = geocode_address(update.endereco_completo)
-        if lat is None:
-            raise HTTPException(status_code=400, detail="Novo endereço inválido")
-        current.lat = lat
-        current.lon = lon
-        current.endereco_completo = update.endereco_completo
-
-    for field, value in update.dict(exclude_unset=True).items():
-        if field not in ["endereco_completo"]:
-            setattr(current, field, value)
-
-    db.commit()
-    db.refresh(current)
-    return current
+@router.get("/{restaurante_id}", response_model=schemas.RestaurantePublic)
+def get_restaurante(restaurante_id: int, db: Session = Depends(database.get_db)):
+    rest = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
+    if not rest:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+    return rest

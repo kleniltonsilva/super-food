@@ -1,3 +1,5 @@
+# Substitua o arquivo completo backend/app/schemas.py (versão completa com plano e codigo_acesso integrados)
+
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from datetime import datetime
@@ -14,6 +16,7 @@ class RestauranteBase(BaseModel):
 
 class RestauranteCreate(RestauranteBase):
     senha: str = Field(..., min_length=6)
+    plano: Optional[str] = "basico"  # basico, medio, premium - permite escolher no signup
 
 class RestauranteUpdate(BaseModel):
     nome_fantasia: Optional[str] = None
@@ -32,6 +35,8 @@ class RestaurantePublic(BaseModel):
     lon: float
     taxa_entrega: float
     tempo_medio_preparo: int
+    plano: str
+    codigo_acesso: str
     ativo: bool
     data_criacao: datetime
 

@@ -1,3 +1,5 @@
+# Substitua o arquivo completo backend/app/routers/pedidos.py (remove uso de .from_orm para compatibilidade Pydantic v2 + return direto do ORM)
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -47,9 +49,11 @@ def criar_pedido(
     db.commit()
     db.refresh(novo_pedido)
 
+    # Despacho automático (chama a função que faz broadcast realtime)
     atribuir_pedidos(db, [novo_pedido])
 
-    return schemas.PedidoPublic.from_orm(novo_pedido)
+    # Return direto do objeto ORM (compatível com Pydantic v2 graças ao from_attributes = True)
+    return novo_pedido
 
 @router.get("/", response_model=List[schemas.PedidoPublic])
 def listar_pedidos(
