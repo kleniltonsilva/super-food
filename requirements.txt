@@ -1,12 +1,55 @@
-# arquivo: requirements.txt (substitua o seu atual por este completo)
-fastapi
-uvicorn[standard]
-passlib[bcrypt]      # <--- ESSENCIAL para hash de senhas (bcrypt)
-python-dotenv        # <--- para carregar .env (MAPBOX_TOKEN)
-requests             # <--- para chamadas Mapbox
+
+# ============================================
+# DEPENDÊNCIAS DO SISTEMA SUPER FOOD
+# ============================================
+
+# Backend API - FastAPI + Uvicorn
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# Banco de Dados - SQLAlchemy
+sqlalchemy>=2.0.36
+
+# Autenticação JWT
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# Variáveis de Ambiente
+python-dotenv>=1.0.1
+
+# Validação de Dados
+pydantic[email]>=2.10.3
+
+# Upload de Arquivos (OAuth2PasswordRequestForm)
+python-multipart>=0.0.20
+
+# HTTP Client para Mapbox e APIs externas
+requests>=2.32.3
+
+# Cálculo de Distâncias
+haversine>=2.8.1
+
+# Frontend - Streamlit
+streamlit>=1.40.2
+pandas>=2.2.3
+
+# Mapas no Streamlit
+pydeck>=0.9.1
+
+# Gráficos (opcional)
+plotly>=5.24.1
+
+# WebSockets (para realtime)
+websockets>=14.1
+
+# ============================================
+# DESENVOLVIMENTO (opcional)
+# ============================================
+# pytest>=8.3.4
+# black>=24.10.0
+# flake8>=7.1.1
+
 streamlit
-pandaspython-jose[cryptography]
-passlib[bcrypt]
-python-dotenv
-pydantic[email]
-python-multipart
+pandas
+sqlite3  # Já vem no Python
+hashlib  # Já vem com Python
