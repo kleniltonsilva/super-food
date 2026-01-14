@@ -121,68 +121,76 @@ Envio de localização GPS em tempo real
 Histórico de ganhos
 
 🏗️ Arquitetura do Projeto
-super-food/
-├── app_motoboy/
-│   └── motoboy_app.py
-│
-├── backend/
-│   ├── app/
-│   │   ├── auth.py
-│   │   ├── database.py
-│   │   ├── __init__.py
-│   │   ├── main.py
-│   │   ├── middleware.py
-│   │   ├── models.py
-│   │   ├── routers/
-│   │   │   ├── motoboys.py
-│   │   │   ├── pedidos.py
-│   │   │   └── restaurantes.py
-│   │   ├── schemas.py
-│   │   └── utils/
-│   │       └── despacho.py
-│   ├── app.py
-│   └── __init__.py
-│
-├── database/
-│   ├── base.py
-│   ├── __init__.py
-│   ├── migration_script.py
-│   ├── models.py
-│   ├── session.py
-│   └── super_food.db
-│
-├── db/
-│   ├── add_gps_motoboy.py
-│   ├── add_motoboy_restaurante.py
-│   ├── add_motoboy_to_pedidos.py
-│   ├── add_restaurantes_table.py
-│   ├── create_pedidos_table.py
-│   ├── database.py
-│   └── __init__.py
-│
-├── migrations/
-│   ├── add_auth_columns_motoboys.py
-│   ├── add_coords_restaurantes.py
-│   ├── add_max_pedidos_motoboys.py
-│   ├── add_missing_columns_to_restaurantes.py
-│   └── add_tenant_id_multi_tenant.py
-│
-├── streamlit_app/
-│   ├── __init__.py
-│   ├── restaurante_app.py
-│   └── super_admin.py
-│
-├── utils/
-│   ├── haversine.py
-│   ├── mapbox_api.py
-│   └── __init__.py
-│
-├── Screenshots/
-├── requirements.txt
-├── README.md
-├── LICENSE
+├── app_motoboy
+│   └── motoboy_app.py
+├── backend
+│   ├── app
+│   │   ├── auth.py
+│   │   ├── database.py
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   ├── middleware.py
+│   │   ├── models.py
+│   │   ├── routers
+│   │   │   ├── motoboys.py
+│   │   │   ├── pedidos.py
+│   │   │   └── restaurantes.py
+│   │   ├── schemas.py
+│   │   └── utils
+│   │       └── despacho.py
+│   ├── app.py
+│   └── __init__.py
+├── database
+│   ├── base.py
+│   ├── __init__.py
+│   ├── migration_script.py
+│   ├── models.py
+│   ├── session.py
+│   └── super_food.db
+├── database.py
+├── db
+│   ├── add_gps_motoboy.py
+│   ├── add_motoboy_restaurante.py
+│   ├── add_motoboy_to_pedidos.py
+│   ├── add_restaurantes_table.py
+│   ├── create_pedidos_table.py
+│   ├── database.py
+│   └── __init__.py
 ├── DOC.md
-└── super_food.db
+├── foto.png
+├── LICENSE
+├── logo.png
+├── main.py
+├── migrations
+│   ├── add_auth_columns_motoboys.py
+│   ├── add_coords_restaurantes.py
+│   ├── add_max_pedidos_motoboys.py
+│   ├── add_missing_columns_to_restaurantes.py
+│   └── add_tenant_id_multi_tenant.py
+├── README.md
+├── requirements.txt
+├── Screenshots
+│   ├── cadstro de motoboy.png
+│   ├── configuração do sistema.png
+│   ├── pagar motobo 4.png
+│   ├── pagar motoboy 1.png
+│   ├── pagar motoboy 2.png
+│   ├── pagar motoboy 3.png
+│   ├── pagar motoboy 5.png
+│   ├── pagar motoboy.png
+│   ├── Ranking motoboys.png
+│   └── tele inical.png
+├── streamlit_app
+│   ├── __init__.py
+│   ├── restaurante_app.py
+│   └── super_admin.py
+├── super_food.db
+├── test_modules.py
+└── utils
+    ├── haversine.py
+    ├── __init__.py
+    └── mapbox_api.py
+
 
 🚀 Instalação
 
