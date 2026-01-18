@@ -1,54 +1,37 @@
-# 🍕 SUPER FOOD - PROJECT MANIFEST
-**Versão:** 2.0  
-**Última Atualização:** 16/01/2026  
-**Autor:** Klenilton Silva  
-**Repositório:** https://github.com/kleniltonsilva/super-food
+🍕 SUPER FOOD - PROJETO MANIFESTO  
+Versão: 2.6  
+Última Atualização: 18/01/2026  
+Autor: Klenilton Silva  
+Repositório: https://github.com/kleniltonsilva/super-food  
 
----
+📋 VISÃO GERAL DO PROJETO  
+Super Food é um sistema SaaS multi-tenant para gestão de restaurantes com:  
 
-## 📋 VISÃO GERAL DO PROJETO
+* 👑 Painel Super Admin (gerência de todos os restaurantes)  
+* 🏪 Dashboard Restaurante (pedidos, motoboys, caixa)  
+* 🏍️ PWA Motoboy (aplicativo com foco em dispositivos móveis)  
+* 🗺️ Integração Mapbox (rotas, GPS, geocodificação)  
+* 💰 Gestão Financeira (planos, assinaturas, caixa)  
 
-**Super Food** é um sistema SaaS multi-tenant para gestão de restaurantes com:
-- 👑 Painel Super Admin (gerencia todos restaurantes)
-- 🏪 Dashboard Restaurante (pedidos, motoboys, caixa)
-- 🏍️ PWA Motoboy (app mobile-first)
-- 🗺️ Integração Mapbox (rotas, GPS, geocoding)
-- 💰 Gestão Financeira (planos, assinaturas, caixa)
+🏗️ ARQUITETURA TÉCNICA  
+Princípio da Pilha:  
 
----
+* Backend: Python 3.12+  
+* Banco de Dados: SQLite (dev) → PostgreSQL (prod)  
+* ORM: SQLAlchemy 2.0+  
+* Frontend: Streamlit 1.40+  
+* API Externa: Mapbox (geocodificação, rotas)  
+* Migrações: Alembic 1.18+ (configuração completa e funcional)  
 
-## 🏗️ ARQUITETURA TÉCNICA
+Sistema de banco de dados:  
+Unificado em SQLAlchemy ORM (database/models.py + migrations/).  
+Legado SQLite raw (database.py) removido ou obsoleto.  
+Todos apps (super_admin.py, restaurante_app.py, motoboy_app.py) usam ORM puro.  
 
-### **Stack Principal:**
-- **Backend:** Python 3.9+
-- **Banco de Dados:** SQLite (dev) → PostgreSQL (prod)
-- **ORM:** SQLAlchemy 2.0+ 
-- **Frontend:** Streamlit 1.40+
-- **API Externa:** Mapbox (geocoding, rotas)
-- **Migrations:** Alembic 1.13+
-
-### **Dual Database System:**
-O projeto usa **DOIS sistemas de banco em paralelo**:
-
-1. **SQLite Direto** (`database.py`)
-   - Funções SQL raw
-   - Usado por: `restaurante_app.py`
-   - Path: Raiz do projeto
-
-2. **SQLAlchemy ORM** (`database/models.py`)
-   - Models com relationships
-   - Usado por: `super_admin.py`
-   - Path: `database/`
-
----
-
-## 📁 ESTRUTURA DE ARQUIVOS
-
-```
+📁 ESTRUTURA DE ARQUIVOS (atual em 18/01/2026)
 super-food/
 │
-├── 📄 database.py                      # SQLite direto (DatabaseManager)
-├── 🗄️ super_food.db                   # Banco SQLite (gerado)
+├── 📄 alembic.ini                      # Configuração Alembic (completa)
 ├── 🔑 .env                             # Variáveis de ambiente
 ├── 📦 requirements.txt                 # Dependências Python
 ├── 📖 README.md                        # Documentação
@@ -56,479 +39,137 @@ super-food/
 ├── 🖼️ logo.png                         # Logo do projeto
 ├── 🖼️ foto.png                         # Imagem ilustrativa
 │
-├── 📂 database/                        # SQLAlchemy ORM
-│   ├── __init__.py
+├── 📂 database/                        # SQLAlchemy ORM (único)
+│   ├── init.py
 │   ├── base.py                        # Base declarativa
-│   ├── models.py                      # Models (15 tabelas)
+│   ├── models.py                      # Models (16 tabelas + GPSMotoboy)
 │   └── session.py                     # Session factory
 │
-├── 📂 migrations/                      # Alembic migrations
-│   ├── env.py
-│   ├── alembic.ini
-│   └── versions/
+├── 📂 migrations/                      # Alembic (funcional)
+│   ├── env.py                         # Ambiente com models carregados
+│   ├── script.py.mako                 # Template padrão
+│   └── versions/                      # Todas migrations
+│       ├── 001_initial_schema.py
+│       └── 002_add_gps_motoboys_table.py
 │
 ├── 📂 streamlit_app/                   # Apps Streamlit
-│   ├── __init__.py
-│   ├── super_admin.py                 # 👑 Painel Super Admin
-│   └── restaurante_app.py             # 🏪 Dashboard Restaurante
+│   ├── init.py
+│   ├── super_admin.py                 # 👑 Painel Super Admin (ORM)
+│   └── restaurante_app.py             # 🏪 Dashboard Restaurante (ORM)
 │
 ├── 📂 app_motoboy/                     # PWA Motoboy
-│   ├── motoboy_app.py                 # 🏍️ Interface motoboy
-│   ├── database.py                    # (cópia local)
-│   └── requirements.txt
+│   └── motoboy_app.py                 # 🏍️ Interface motoboy (ORM completo)
 │
 ├── 📂 utils/                           # Utilitários
-│   ├── __init__.py
+│   ├── init.py
 │   ├── mapbox_api.py                  # Integração Mapbox
 │   └── haversine.py                   # Cálculo distância
 │
 └── 📂 backend/ (FUTURO)                # FastAPI (opcional)
-    └── app/
-        ├── main.py
-        ├── routers/
-        └── dependencies/
-```
+text🗄️ ESTRUTURA DO BANCO DE DADOS  
+16 Tabelas Principais (atualizado):  
+1. super_admin  
+2. restaurantes  
+3. config_restaurante  
+4. motoboys  
+5. motoboys_solicitacoes  
+6. produtos  
+7. pedidos  
+8. itens_pedido  
+9. entregas  
+10. rotas_otimizadas  
+11. caixa  
+12. movimentacoes_caixa  
+13. notificacoes  
+14. gps_motoboys (criada via migration 002)  
+15. ranking_motoboys (se mantida)  
+16. assinaturas (se mantida)  
 
----
-
-## 🗄️ ESTRUTURA DO BANCO DE DADOS
-
-### **15 Tabelas Principais:**
-
-#### **1. SUPER ADMIN**
-```sql
-super_admin
-├── id (PK)
-├── usuario (UNIQUE)
-├── senha_hash
-└── data_criacao
-```
-
-#### **2. RESTAURANTES (Multi-Tenant)**
-```sql
-restaurantes
-├── id (PK)
-├── nome_fantasia
-├── razao_social
-├── cnpj
-├── email (UNIQUE) ← Login
-├── telefone
-├── endereco_completo
-├── latitude, longitude
-├── plano (basico/essencial/avancado/premium)
-├── valor_plano
-├── limite_motoboys
-├── status (ativo/suspenso/cancelado)
-├── senha_hash
-├── codigo_acesso (UNIQUE) ← Motoboys se cadastram com isso
-├── data_criacao
-└── data_vencimento
-```
-
-#### **3. CONFIG_RESTAURANTE**
-```sql
-config_restaurante
-├── id (PK)
-├── restaurante_id (FK, UNIQUE)
-├── status_atual (aberto/fechado)
-├── modo_despacho (auto_economico/manual/auto_ordem)
-├── horario_abertura, horario_fechamento
-├── dias_semana_abertos
-├── valor_km, valor_lanche
-├── taxa_entrega_base, distancia_base_km, taxa_km_extra
-├── taxa_diaria
-├── ifood_token, ifood_ativo
-├── site_cliente_ativo
-└── ultimo_login
-```
-
-#### **4. MOTOBOYS**
-```sql
-motoboys
-├── id (PK)
-├── restaurante_id (FK) ← Multi-tenant
-├── nome
-├── usuario (UNIQUE por restaurante)
-├── senha_hash
-├── telefone
-├── codigo_acesso
-├── status (disponivel/ocupado/offline)
-├── aprovado (0/1)
-├── data_cadastro, data_aprovacao
-├── total_entregas
-├── total_ganhos
-└── avaliacao_media
-```
-
-#### **5. MOTOBOYS_SOLICITACOES**
-```sql
-motoboys_solicitacoes
-├── id (PK)
-├── restaurante_id (FK)
-├── nome
-├── usuario
-├── telefone
-├── codigo_acesso ← Informado pelo motoboy
-├── data_solicitacao
-├── status (pendente/aprovado/recusado)
-└── motivo_recusa
-```
-
-#### **6. PEDIDOS**
-```sql
-pedidos
-├── id (PK)
-├── restaurante_id (FK)
-├── comanda (UNIQUE por restaurante)
-├── tipo (Entrega/Retirada na loja/Para mesa)
-├── origem (manual/ifood/site)
-├── cliente_nome, cliente_telefone
-├── endereco_entrega
-├── numero_mesa
-├── latitude_cliente, longitude_cliente
-├── itens (TEXT)
-├── valor_total
-├── observacoes
-├── status (pendente/em_preparo/pronto/saiu_entrega/entregue/cancelado)
-├── data_criacao
-├── tempo_estimado
-├── horario_previsto, horario_finalizado
-├── prioridade
-├── modo_despacho
-└── despachado (0/1)
-```
-
-#### **7. ENTREGAS**
-```sql
-entregas
-├── id (PK)
-├── pedido_id (FK)
-├── motoboy_id (FK)
-├── restaurante_id (FK)
-├── endereco_origem, endereco_destino
-├── lat_origem, lon_origem, lat_destino, lon_destino
-├── distancia_km
-├── tempo_estimado_min
-├── valor_entrega
-├── ordem_rota
-├── status (aguardando/em_rota/entregue/cancelado)
-├── horario_atribuicao, horario_saida, horario_entrega
-├── motivo_cancelamento
-├── avaliacao_cliente
-└── feedback_cliente
-```
-
-#### **8. CACHE_DISTANCIAS**
-```sql
-cache_distancias
-├── id (PK)
-├── restaurante_id (FK)
-├── endereco_origem, endereco_origem_hash
-├── endereco_destino, endereco_destino_hash
-├── distancia_km
-├── tempo_estimado_min
-├── data_calculo
-└── valido (0/1)
-```
-
-#### **9. CAIXA**
-```sql
-caixa
-├── id (PK)
-├── restaurante_id (FK)
-├── data_abertura, data_fechamento
-├── usuario_abertura, usuario_fechamento
-├── valor_abertura, valor_fechamento
-├── valor_retiradas
-├── total_vendas
-├── total_dinheiro, total_cartao, total_pix
-├── status (aberto/fechado)
-└── observacoes
-```
-
-#### **10. CAIXA_MOVIMENTACOES**
-```sql
-caixa_movimentacoes
-├── id (PK)
-├── caixa_id (FK)
-├── restaurante_id (FK)
-├── tipo (abertura/venda/retirada/fechamento)
-├── valor
-├── forma_pagamento
-├── descricao
-├── pedido_id (FK)
-├── usuario
-└── data_hora
-```
-
-#### **11. GPS_MOTOBOYS**
-```sql
-gps_motoboys
-├── id (PK)
-├── motoboy_id (FK)
-├── restaurante_id (FK)
-├── latitude, longitude
-├── velocidade
-├── precisao
-└── timestamp
-```
-
-#### **12. RANKING_MOTOBOYS**
-```sql
-ranking_motoboys
-├── id (PK)
-├── restaurante_id (FK)
-├── motoboy_id (FK)
-├── periodo (diario/semanal/mensal)
-├── data_inicio, data_fim
-├── total_entregas, total_ganhos
-├── total_distancia_km
-├── tempo_medio_entrega_min
-├── avaliacao_media
-├── posicao_entregas, posicao_ganhos, posicao_velocidade
-└── data_calculo
-```
-
-#### **13. CARDAPIO**
-```sql
-cardapio
-├── id (PK)
-├── restaurante_id (FK)
-├── categoria
-├── nome_item
-├── descricao
-├── preco
-├── imagem_url
-├── disponivel (0/1)
-├── ordem
-└── tempo_preparo
-```
-
-#### **14. NOTIFICACOES**
-```sql
-notificacoes
-├── id (PK)
-├── restaurante_id (FK)
-├── motoboy_id (FK)
-├── tipo
-├── titulo
-├── mensagem
-├── lida (0/1)
-├── data_criacao, data_leitura
-└── dados_extra (JSON)
-```
-
-#### **15. ASSINATURAS**
-```sql
-assinaturas
-├── id (PK)
-├── restaurante_id (FK)
-├── data_pagamento
-├── valor_pago
-├── forma_pagamento
-├── status (ativo/vencido/cancelado)
-├── data_vencimento
-└── observacoes
-```
-
----
-
-## 🔧 FUNCIONALIDADES PRINCIPAIS
-
-### **👑 SUPER ADMIN (`super_admin.py`)**
+🔧 FUNCIONALIDADES PRINCIPAIS  
+👑 SUPER ADMINISTRADOR (super_admin.py)  
 ✅ Login seguro (SHA256)  
 ✅ Criar restaurantes  
-✅ Gerenciar planos (Básico/Essencial/Avançado/Premium)  
+✅ Gerenciar planos  
 ✅ Renovar assinaturas  
-✅ Suspender/Ativar/Cancelar restaurantes  
-✅ Dashboard com métricas globais  
-✅ Alertas de vencimento  
+✅ Dashboard global  
 
-### **🏪 RESTAURANTE (`restaurante_app.py`)**
-✅ Login com email + senha  
-✅ Dashboard com métricas  
-✅ Criar pedidos (Entrega/Retirada/Mesa)  
-✅ Listar pedidos ativos  
-✅ Histórico de pedidos  
-✅ Aprovar/Recusar solicitações de motoboys  
-✅ Gerenciar motoboys ativos  
-✅ Configurar modo de despacho  
-✅ Configurar pagamentos motoboys  
-✅ Ranking de motoboys  
-✅ Abrir/Fechar caixa  
-✅ Registrar retiradas  
-✅ Movimentações financeiras  
-✅ Abrir/Fechar restaurante  
-✅ Configurar horários  
-✅ Notificações  
+🏪 RESTAURANTE (restaurante_app.py)  
+✅ Login  
+✅ Criar/gerenciar pedidos  
+✅ Despacho automático/inteligente  
+✅ Gerenciar motoboys  
+✅ Caixa e movimentações  
+✅ Configurações  
 
-### **🏍️ MOTOBOY (`motoboy_app.py`)**
-✅ Cadastro com código de acesso  
-✅ Aguarda aprovação do restaurante  
+🏍️ MOTOBOY (motoboy_app.py)  
+✅ Cadastro via código  
 ✅ Login após aprovação  
-✅ Receber entregas  
-✅ Atualizar GPS  
-✅ Histórico de ganhos  
-✅ Ranking pessoal  
+✅ Atualização GPS (tabela + ORM)  
+✅ Receber entregas otimizadas  
+✅ Histórico ganhos/perfil  
 
-### **🗺️ MAPBOX (`utils/mapbox_api.py`)**
-✅ Geocoding de endereços  
-✅ Cálculo de rotas  
-✅ Cache inteligente (economia 90% de requisições)  
-✅ Fallback para Haversine  
-✅ Cálculo de valor de entrega  
+🗺️ MAPBOX + GPS  
+✅ Geocoding + rotas  
+✅ Cache inteligente  
+✅ Histórico GPS em gps_motoboys  
+✅ Eager loading em relacionamentos  
 
----
+🔐 SEGURANÇA  
+* Senhas: SHA256  
+* Multi-tenant: restaurante_id em todas queries  
+* Código acesso: gerado automaticamente  
+* .env para chaves  
 
-## 🔐 SEGURANÇA
+📊 PLANOS E LIMITES  
+(manter tabela existente no seu manifesto)  
 
-- **Senhas:** Hash SHA256
-- **Multi-tenant:** Isolamento completo por `restaurante_id`
-- **Código de Acesso:** 6 dígitos únicos
-- **Validações:** Email, CNPJ, telefone
-- **Token Mapbox:** `.env` (nunca no código)
-
----
-
-## 📊 PLANOS E LIMITES
-
-| Plano | Valor/mês | Limite Motoboys |
-|-------|-----------|-----------------|
-| Básico | R$ 199,00 | 3 |
-| Essencial | R$ 269,00 | 6 |
-| Avançado | R$ 360,00 | 12 |
-| Premium | R$ 599,00 | Ilimitado |
-
----
-
-## 🚀 COMO EXECUTAR
-
+🚀 COMO EXECUTAR  
 ```bash
-# 1. Instalar dependências
+# Ativar venv
+source venv/bin/activate
+
+# Instalar dependências (se necessário)
 pip install -r requirements.txt
 
-# 2. Configurar .env
-MAPBOX_TOKEN=seu_token_aqui
+# Configurar .env
+# MAPBOX_TOKEN=...
 
-# 3. Executar apps
-streamlit run streamlit_app/super_admin.py       # Porta 8501
-streamlit run streamlit_app/restaurante_app.py   # Porta 8502
-streamlit run app_motoboy/motoboy_app.py         # Porta 8503
-```
+# Rodar apps
+streamlit run streamlit_app/super_admin.py
+streamlit run streamlit_app/restaurante_app.py
+streamlit run app_motoboy/motoboy_app.py
+Credenciais padrão:
 
-### **Credenciais Padrão:**
-- **Super Admin:** `superadmin` / `SuperFood2025!`
-- **Restaurantes:** Email cadastrado / Primeiros 6 dígitos do telefone
+Superadmin: superadmin / SuperFood2025!
+Restaurante teste: teste@superfood.com / 123456
 
----
+🎯 MODO DE DESPACHO
+(manter descrição existente)
+🔄 FLUXOS PRINCIPAIS
+(manter fluxos existentes – agora com ORM unificado)
+📝 NOTAS IMPORTANTES
 
-## 🎯 MODO DE DESPACHO
+Banco unificado SQLAlchemy ORM + Alembic funcional
+Legado SQLite raw removido/obsoleto
+Multi-tenant rigoroso (restaurante_id obrigatório)
+GPS histórico completo (tabela + model)
 
-### **1. 🧠 Automático Inteligente (Econômico)**
-- Agrupa pedidos próximos
-- Calcula rota otimizada
-- Prioriza eficiência
+🐛 QUESTÕES RESOLVIDAS
 
-### **2. ✋ Manual**
-- Operador escolhe motoboy
-- Total controle
+Banco duplo → unificado
+DetachedInstanceError → corrigido com joinedload
+Tabela gps_motoboys ausente → criada via migration 002
+Alembic não configurado → ini, env.py, script.mako completos
 
-### **3. ⏰ Automático por Ordem**
-- Prioriza pedidos mais antigos
-- Distribuição cronológica
-
----
-
-## 🔄 FLUXOS PRINCIPAIS
-
-### **Fluxo Pedido → Entrega:**
-1. Restaurante cria pedido
-2. Se tipo = "Entrega":
-   - Geocodifica endereço (Mapbox)
-   - Calcula distância
-   - Se modo = "auto_economico": Atribui motoboy automaticamente
-   - Se modo = "manual": Operador escolhe
-3. Motoboy recebe notificação
-4. Atualiza GPS em tempo real
-5. Marca como entregue
-6. Ranking atualizado
-
-### **Fluxo Cadastro Motoboy:**
-1. Motoboy informa código de acesso
-2. Preenche dados (nome, usuário, telefone)
-3. Solicitação fica pendente
-4. Restaurante aprova/recusa
-5. Se aprovado: Senha gerada automaticamente
-6. Motoboy pode fazer login
-
----
-
-## 📝 NOTAS IMPORTANTES
-
-1. **Banco SQLite é temporário** - migrar para PostgreSQL em produção
-2. **Dois sistemas de banco coexistem** - database.py (raw SQL) + models.py (ORM)
-3. **Cache Mapbox** - essencial para economizar requisições
-4. **Multi-tenant** - SEMPRE filtrar por `restaurante_id`
-5. **Código de Acesso** - gerado automaticamente ao criar restaurante
-
----
-
-## 🐛 ISSUES CONHECIDOS
-
-- [ ] `restaurante_app.py` ainda usa SQLite direto
-- [ ] `super_admin.py` usa SQLAlchemy
-- [ ] Sincronização entre dois sistemas pode gerar inconsistências
-- [ ] Migração para PostgreSQL pendente
-
----
-
-## 🔮 ROADMAP (FUTURO)
-
-### **Fase 1: Sistema de Rotas Inteligentes com IA**
-- [ ] Adicionar campos de rotas em tabelas existentes
-- [ ] Criar tabelas `rotas_motoboy` e `itens_rota`
-- [ ] Implementar algoritmo TSP para otimização
-- [ ] Validação de endereços via Mapbox
-- [ ] Zona de cobertura por raio
-- [ ] Tempo médio de preparo
-- [ ] Despacho automático inteligente
-- [ ] Alertas de motoboys insuficientes
-
-### **Fase 2: Backend API (FastAPI)**
-- [ ] Endpoints REST para todas operações
-- [ ] Autenticação JWT
-- [ ] WebSocket para GPS realtime
-- [ ] Documentação OpenAPI
-
-### **Fase 3: Site Cliente**
-- [ ] Cardápio online
-- [ ] Pedidos pelo site
-- [ ] Rastreamento de entrega
-- [ ] Pagamento online
-
-### **Fase 4: Integração iFood**
-- [ ] Sincronização automática de pedidos
-- [ ] Status em tempo real
-- [ ] Gestão unificada
-
----
-
-## 📧 CONTATO
-
-**Autor:** Klenilton Silva  
-**GitHub:** https://github.com/kleniltonsilva  
-**Repositório:** https://github.com/kleniltonsilva/super-food
-
----
-
-## ⚖️ LICENÇA
-
-**PROPRIETARY SOFTWARE — ALL RIGHTS RESERVED**
-
-Este software é proprietário e confidencial.  
-Nenhuma permissão é concedida sem autorização expressa.
-
----
-
-**🍕 Super Food - Sistema SaaS Multi-Restaurante**  
-*Última atualização: 16/01/2026*
+🔮 ROTEIRO (FUTURO)
+Fase 1: Rotas Inteligentes com IA (em progresso)
+Fase 2: Backend FastAPI completo
+Fase 3: Site do Cliente + rastreamento
+Fase 4: Integração iFood
+📧 CONTATO
+Autor: Klenilton Silva
+GitHub: https://github.com/kleniltonsilva
+⚖️ LICENÇA
+SOFTWARE PROPRIETÁRIO — TODOS OS DIREITOS RESERVADOS
+🍕 Super Food - Sistema SaaS Multi-Restaurante
+Última atualização: 18/01/2026
