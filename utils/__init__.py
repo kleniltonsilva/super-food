@@ -1,3 +1,7 @@
-# arquivo: utils/__init__.py
+# utils/__init__.py
+# ========== CORREÇÃO: REMOVIDO IMPORT PROBLEMÁTICO ==========
+# Deixe vazio ou apenas:
 from .haversine import haversine
-from .mapbox import geocode
+
+# NÃO importe geocode aqui, deixe apenas no mapbox_api.py
+# ===========================================================

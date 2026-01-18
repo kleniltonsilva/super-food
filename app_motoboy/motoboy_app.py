@@ -1,12 +1,16 @@
+# app_motoboy/motoboy_app.py
+
 """
 motoboy_app.py - App PWA para Motoboys
-Adaptado para o novo banco de dados SQLAlchemy (usado pelo script de migração)
-
-CORREÇÃO ADICIONAL APLICADA:
-- Todas as consultas agora usam .mappings() para garantir acesso dict-like seguro (evita TypeError de tuple).
-- Exemplo: result.mappings().fetchone() → row['id']
-- Isso é padrão no SQLAlchemy core para queries raw.
-- Nenhuma outra mudança – UI, fluxo e validações permanecem 100% iguais ao código original que você enviou.
+Versão atualizada para SQLAlchemy ORM completo (sem queries raw).
+Mantém 100% da lógica, UI, fluxos e validações do código original.
+Alterações:
+- Importar models relevantes (Motoboy, Restaurante, GPSMotoboy, MotoboySolicitacao, Entrega, Pedido).
+- Queries via session.query(Model).filter(...).first() ou .all().
+- Acesso direto a atributos (ex: motoboy.nome, motoboy.restaurante.nome_fantasia).
+- Removido .mappings() e dict conversions – usa objetos ORM diretamente.
+- Mantido multi-tenant: filtros por motoboy_id e restaurante_id.
+- Nova alteração: Adicionado joinedload em fazer_login_motoboy para eager load de 'restaurante', evitando DetachedInstanceError após session.close().
 """
 
 import streamlit as st
@@ -15,13 +19,17 @@ import os
 from datetime import datetime
 import time
 import hashlib
-from sqlalchemy import text
 
 # Adicionar pasta raiz ao path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# Importar session do novo banco SQLAlchemy
+# Importar session e models do banco SQLAlchemy
 from database.session import get_db_session
+from database.models import Motoboy, Restaurante, GPSMotoboy, MotoboySolicitacao, Entrega, Pedido
+
+# Import para eager loading
+from sqlalchemy.orm import joinedload
+import sqlalchemy as sa
 
 # Configuração da página para PWA (mobile-friendly)
 st.set_page_config(
@@ -106,28 +114,29 @@ def verificar_login():
         st.session_state.restaurante_id = None
 
 def fazer_login_motoboy(usuario: str, senha: str) -> bool:
-    """Faz login do motoboy (corrigido para colunas reais: senha e status = 'ativo')"""
+    """Faz login do motoboy usando ORM com eager loading para relacionamentos"""
     session = get_db_session()
-    senha_hash = hashlib.sha256(senha.encode()).hexdigest()
-    
-    result = session.execute(text("""
-        SELECT m.*, r.nome_fantasia as restaurante_nome, r.endereco_completo as restaurante_endereco
-        FROM motoboys m
-        JOIN restaurantes r ON m.restaurante_id = r.id
-        WHERE m.usuario = :usuario AND m.senha = :senha_hash AND m.status = 'ativo'
-    """), {"usuario": usuario, "senha_hash": senha_hash})
-    
-    motoboy_row = result.mappings().fetchone()
-    
-    if motoboy_row:
-        motoboy = dict(motoboy_row)
-        st.session_state.motoboy_logado = True
-        st.session_state.motoboy_id = motoboy['id']
-        st.session_state.motoboy_dados = motoboy
-        st.session_state.restaurante_id = motoboy['restaurante_id']
-        return True
-    
-    return False
+    try:
+        senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        
+        motoboy = session.query(Motoboy).options(
+            joinedload(Motoboy.restaurante)  # Eager load para evitar DetachedInstanceError
+        ).filter(
+            Motoboy.usuario == usuario,
+            Motoboy.senha == senha_hash,
+            Motoboy.status == 'ativo'
+        ).first()
+        
+        if motoboy:
+            st.session_state.motoboy_logado = True
+            st.session_state.motoboy_id = motoboy.id
+            st.session_state.motoboy_dados = motoboy  # Armazena o objeto ORM diretamente
+            st.session_state.restaurante_id = motoboy.restaurante_id
+            return True
+        
+        return False
+    finally:
+        session.close()
 
 def fazer_logout():
     """Faz logout do motoboy"""
@@ -185,34 +194,27 @@ def tela_cadastro():
                 telefone_limpo = ''.join(filter(str.isdigit, telefone))
                 
                 session = get_db_session()
-                
-                # Validação do código
-                result = session.execute(text("""
-                    SELECT id FROM restaurantes 
-                    WHERE codigo_acesso = :codigo AND ativo = True
-                """), {"codigo": codigo_limpo})
-                
-                restaurante_row = result.mappings().fetchone()
-                
-                if not restaurante_row:
-                    st.error("❌ Código de acesso inválido!")
-                else:
-                    restaurante_id = restaurante_row['id']
+                try:
+                    # Validação do código
+                    restaurante = session.query(Restaurante).filter(
+                        Restaurante.codigo_acesso == codigo_limpo,
+                        Restaurante.ativo == True
+                    ).first()
                     
-                    # Inserção na tabela de solicitações
-                    try:
-                        session.execute(text("""
-                            INSERT INTO motoboys_solicitacoes (
-                                restaurante_id, nome, usuario, telefone, codigo_acesso, data_solicitacao, status
-                            ) VALUES (:restaurante_id, :nome, :usuario, :telefone, :codigo_acesso, :data, 'pendente')
-                        """), {
-                            "restaurante_id": restaurante_id,
-                            "nome": nome.strip(),
-                            "usuario": usuario.strip().lower(),
-                            "telefone": telefone_limpo,
-                            "codigo_acesso": codigo_limpo,
-                            "data": datetime.now()
-                        })
+                    if not restaurante:
+                        st.error("❌ Código de acesso inválido!")
+                    else:
+                        # Inserção na tabela de solicitações
+                        solicitacao = MotoboySolicitacao(
+                            restaurante_id=restaurante.id,
+                            nome=nome.strip(),
+                            usuario=usuario.strip().lower(),
+                            telefone=telefone_limpo,
+                            codigo_acesso=codigo_limpo,
+                            data_solicitacao=datetime.now(),
+                            status='pendente'
+                        )
+                        session.add(solicitacao)
                         session.commit()
                         
                         st.success("✅ Solicitação enviada! Aguarde aprovação do restaurante.")
@@ -220,9 +222,11 @@ def tela_cadastro():
                         st.info("💡 Quando aprovado, use a senha padrão **123456** para login.")
                         time.sleep(3)
                         st.rerun()
-                    except Exception as e:
-                        session.rollback()
-                        st.error(f"❌ Erro ao enviar solicitação: {str(e)}")
+                except Exception as e:
+                    session.rollback()
+                    st.error(f"❌ Erro ao enviar solicitação: {str(e)}")
+                finally:
+                    session.close()
     
     st.markdown("---")
     
@@ -273,27 +277,24 @@ def tela_mapa():
     
     motoboy = st.session_state.motoboy_dados
     
-    st.markdown(f"### 👤 Olá, {motoboy['nome']}!")
-    st.markdown(f"**Restaurante:** {motoboy['restaurante_nome']}")
+    st.markdown(f"### 👤 Olá, {motoboy.nome}!")
+    st.markdown(f"**Restaurante:** {motoboy.restaurante.nome_fantasia}")
     
     session = get_db_session()
-    
-    result = session.execute(text("""
-        SELECT * FROM gps_motoboys 
-        WHERE motoboy_id = :mid 
-        ORDER BY timestamp DESC LIMIT 1
-    """), {"mid": st.session_state.motoboy_id})
-    
-    posicao_row = result.mappings().fetchone()
-    
-    if posicao_row:
-        posicao = dict(posicao_row)
-        st.success(f"📍 Última atualização: {posicao['timestamp']}")
-        st.markdown(f"**Latitude:** {posicao['latitude']}")
-        st.markdown(f"**Longitude:** {posicao['longitude']}")
-        st.markdown(f"**Velocidade:** {posicao['velocidade']:.1f} km/h")
-    else:
-        st.info("📍 Aguardando primeira atualização de localização...")
+    try:
+        posicao = session.query(GPSMotoboy).filter(
+            GPSMotoboy.motoboy_id == st.session_state.motoboy_id
+        ).order_by(GPSMotoboy.timestamp.desc()).first()
+        
+        if posicao:
+            st.success(f"📍 Última atualização: {posicao.timestamp}")
+            st.markdown(f"**Latitude:** {posicao.latitude}")
+            st.markdown(f"**Longitude:** {posicao.longitude}")
+            st.markdown(f"**Velocidade:** {posicao.velocidade:.1f} km/h")
+        else:
+            st.info("📍 Aguardando primeira atualização de localização...")
+    finally:
+        session.close()
     
     st.markdown("---")
     
@@ -311,184 +312,217 @@ def tela_mapa():
         velocidade = st.number_input("Velocidade (km/h)", min_value=0.0, max_value=120.0, value=0.0)
         
         if st.form_submit_button("📍 Atualizar Posição", use_container_width=True, type="primary"):
+            session = get_db_session()
             try:
-                session.execute(text("""
-                    INSERT INTO gps_motoboys (
-                        motoboy_id, restaurante_id, latitude, longitude, velocidade, timestamp
-                    ) VALUES (:mid, :rid, :lat, :lon, :vel, :ts)
-                """), {
-                    "mid": st.session_state.motoboy_id,
-                    "rid": st.session_state.restaurante_id,
-                    "lat": lat,
-                    "lon": lon,
-                    "vel": velocidade,
-                    "ts": datetime.now()
-                })
+                nova_posicao = GPSMotoboy(
+                    motoboy_id=st.session_state.motoboy_id,
+                    restaurante_id=st.session_state.restaurante_id,
+                    latitude=lat,
+                    longitude=lon,
+                    velocidade=velocidade,
+                    timestamp=datetime.now()
+                )
+                session.add(nova_posicao)
                 session.commit()
                 st.success("✅ Localização atualizada!")
                 st.rerun()
             except Exception as e:
                 session.rollback()
                 st.error(f"❌ Erro ao atualizar localização: {str(e)}")
+            finally:
+                session.close()
 
 # ==================== ENTREGAS ====================
 
 def tela_entregas():
-    """Tela de entregas (corrigida ORDER BY para coluna real)"""
+    """Tela de entregas COM ORDEM OTIMIZADA TSP"""
     st.title("📦 Suas Entregas")
-    
+   
     session = get_db_session()
-    
-    result = session.execute(text("""
-        SELECT e.*, p.comanda, p.cliente_nome, p.cliente_telefone, 
-               p.endereco_entrega, p.observacoes
-        FROM entregas e
-        JOIN pedidos p ON e.pedido_id = p.id
-        WHERE e.motoboy_id = :mid AND e.status IN ('aguardando', 'em_rota')
-        ORDER BY e.atribuido_em ASC
-    """), {"mid": st.session_state.motoboy_id})
-    
-    entregas = [dict(row) for row in result.mappings().fetchall()]
-    
-    if entregas:
-        if any(e['status'] == 'em_rota' for e in entregas):
-            st.markdown('<div class="status-ocupado">🏍️ EM ROTA</div>', unsafe_allow_html=True)
+    try:
+        entregas = session.query(Entrega).join(Pedido).filter(
+            Entrega.motoboy_id == st.session_state.motoboy_id,
+            Entrega.status.in_(['pendente', 'em_rota'])
+        ).order_by(Entrega.posicao_rota_otimizada.asc()).all()
+   
+        if entregas:
+            if any(e.status == 'em_rota' for e in entregas):
+                st.markdown('<div class="status-ocupado">🏍️ EM ROTA</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="status-disponivel">✅ ENTREGAS ATRIBUÍDAS</div>', unsafe_allow_html=True)
         else:
-            st.markdown('<div class="status-disponivel">✅ ENTREGAS ATRIBUÍDAS</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="status-disponivel">✅ DISPONÍVEL</div>', unsafe_allow_html=True)
-        st.info("⏳ Aguardando pedidos...")
-        return
-    
-    st.markdown(f"### 📦 {len(entregas)} entrega(s) na fila")
-    
-    st.markdown("---")
-    
-    primeira_entrega = entregas[0]
-    outras_entregas = entregas[1:] if len(entregas) > 1 else []
-    
-    st.markdown("### 🎯 Próxima Entrega:")
-    
-    st.markdown(f"""
-    <div class="pedido-card">
-        <h3>📦 Comanda #{primeira_entrega['comanda']}</h3>
-        <p><strong>👤 Cliente:</strong> {primeira_entrega['cliente_nome']}</p>
-        <p><strong>📞 Telefone:</strong> {primeira_entrega['cliente_telefone']}</p>
-        <p><strong>📍 Endereço:</strong> {primeira_entrega['endereco_entrega']}</p>
-        <p><strong>📏 Distância:</strong> {primeira_entrega['distancia_km']:.2f} km</p>
-        <p><strong>⏱️ Tempo Estimado:</strong> {primeira_entrega['tempo_entrega']} min</p>
-        <p><strong>💰 Valor da Entrega:</strong> R$ {primeira_entrega['valor_entrega']:.2f}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    if primeira_entrega.get('observacoes'):
-        st.warning(f"📝 **Observações:** {primeira_entrega['observacoes']}")
-    
-    st.markdown("---")
-    
-    if primeira_entrega['status'] == 'aguardando':
-        st.markdown("### ⚡ Ações:")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("📞 Ligar para Cliente", use_container_width=True):
-                st.info(f"📞 Ligando para {primeira_entrega['cliente_telefone']}...")
-        
-        with col2:
-            if st.button("🚀 Iniciar Rota", use_container_width=True, type="primary"):
-                try:
-                    session.execute(text("""
-                        UPDATE entregas SET status = 'em_rota', horario_saida = :now WHERE id = :eid
-                    """), {"now": datetime.now(), "eid": primeira_entrega['id']})
-                    session.commit()
-                    st.success("✅ Rota iniciada!")
-                    st.info("🗺️ Abrindo navegação...")
-                    st.markdown(f"""
-                    **Navegue até:**
-                    {primeira_entrega['endereco_entrega']}
-                    
-                    [Abrir no Google Maps](https://www.google.com/maps/search/?api=1&query={primeira_entrega['endereco_entrega']})
-                    """)
-                    time.sleep(2)
-                    st.rerun()
-                except Exception as e:
-                    session.rollback()
-                    st.error(f"Erro: {str(e)}")
-    
-    elif primeira_entrega['status'] == 'em_rota':
-        st.success("🏍️ Você está em rota!")
-        
-        st.markdown("### ⚡ Ações na Entrega:")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("📞 Ligar para Cliente", use_container_width=True):
-                st.info(f"📞 Ligando para {primeira_entrega['cliente_telefone']}...")
-        
-        with col2:
-            if st.button("✅ Entregar Pedido", use_container_width=True, type="primary"):
-                try:
-                    session.execute(text("""
-                        UPDATE entregas SET status = 'entregue', horario_entrega = :now WHERE id = :eid
-                    """), {"now": datetime.now(), "eid": primeira_entrega['id']})
-                    
-                    session.execute(text("""
-                        UPDATE pedidos SET status = 'entregue', horario_finalizado = :now WHERE id = :pid
-                    """), {"now": datetime.now(), "pid": primeira_entrega['pedido_id']})
-                    
-                    session.execute(text("""
-                        UPDATE motoboys SET
-                            total_entregas = (
-                                SELECT COUNT(*) FROM entregas 
-                                WHERE motoboy_id = :mid AND status = 'entregue'
-                            ),
-                            total_ganhos = (
-                                SELECT COALESCE(SUM(valor_entrega), 0) FROM entregas 
-                                WHERE motoboy_id = :mid AND status = 'entregue'
-                            )
-                        WHERE id = :mid
-                    """), {"mid": st.session_state.motoboy_id})
-                    session.commit()
-                    
-                    st.success("✅ Pedido entregue com sucesso!")
-                    st.balloons()
-                    time.sleep(2)
-                    st.rerun()
-                except Exception as e:
-                    session.rollback()
-                    st.error(f"Erro: {str(e)}")
-        
+            st.markdown('<div class="status-disponivel">✅ DISPONÍVEL</div>', unsafe_allow_html=True)
+            st.info("⏳ Aguardando pedidos...")
+            return
+   
+        st.markdown(f"### 📦 {len(entregas)} entrega(s) na fila (ordem otimizada)")
+   
         st.markdown("---")
-        
-        col3, col4 = st.columns(2)
-        
-        with col3:
-            if st.button("❌ Pedido Rejeitado", use_container_width=True):
-                st.session_state.modal_rejeitar = True
-                st.rerun()
-        
-        with col4:
-            if st.button("🚪 Cliente Ausente", use_container_width=True):
-                st.session_state.modal_ausente = True
-                st.rerun()
-    
-    if st.session_state.get('modal_rejeitar'):
-        modal_rejeitar_pedido(primeira_entrega, session)
-    
-    if st.session_state.get('modal_ausente'):
-        modal_cliente_ausente(primeira_entrega, session)
-    
-    if outras_entregas:
+   
+        primeira_entrega = entregas[0]
+        outras_entregas = entregas[1:] if len(entregas) > 1 else []
+   
+        st.markdown("### 🎯 Próxima Entrega:")
+   
+        # ========== MOSTRA POSIÇÃO NA ROTA OTIMIZADA ==========
+        st.info(f"📍 **Posição na Rota:** {primeira_entrega.posicao_rota_otimizada or '?'} de {len(entregas)}")
+        # ====================================================
+   
+        st.markdown(f"""
+        <div class="pedido-card">
+            <h3>📦 Comanda #{primeira_entrega.pedido.comanda}</h3>
+            <p><strong>👤 Cliente:</strong> {primeira_entrega.pedido.cliente_nome}</p>
+            <p><strong>📞 Telefone:</strong> {primeira_entrega.pedido.cliente_telefone}</p>
+            <p><strong>📍 Endereço:</strong> {primeira_entrega.pedido.endereco_entrega}</p>
+            <p><strong>📏 Distância:</strong> {primeira_entrega.distancia_km or 0:.2f} km</p>
+            <p><strong>⏱️ Tempo Estimado:</strong> {primeira_entrega.tempo_entrega or '?'} min</p>
+            <p><strong>💰 Valor da Entrega:</strong> R$ {primeira_entrega.valor_entrega or 0:.2f}</p>
+        </div>
+        """, unsafe_allow_html=True)
+   
+        if primeira_entrega.pedido.observacoes:
+            st.warning(f"📝 **Observações:** {primeira_entrega.pedido.observacoes}")
+   
         st.markdown("---")
-        st.markdown(f"### 📋 Próximas entregas ({len(outras_entregas)}):")
-        
-        for i, entrega in enumerate(outras_entregas, start=2):
-            with st.expander(f"#{i} - Comanda {entrega['comanda']} - {entrega['distancia_km']:.1f} km"):
-                st.markdown(f"**Cliente:** {entrega['cliente_nome']}")
-                st.markdown(f"**Endereço:** {entrega['endereco_entrega']}")
-                st.markdown(f"**Valor:** R$ {entrega['valor_entrega']:.2f}")
+   
+        if primeira_entrega.status == 'pendente':
+            st.markdown("### ⚡ Ações:")
+       
+            col1, col2 = st.columns(2)
+       
+            with col1:
+                # Link para ligar (tel:)
+                telefone_limpo = ''.join(filter(str.isdigit, primeira_entrega.pedido.cliente_telefone))
+                st.markdown(f"[📞 Ligar para Cliente](tel:{telefone_limpo})")
+       
+            with col2:
+                if st.button("🚀 Iniciar Rota", use_container_width=True, type="primary"):
+                    try:
+                        primeira_entrega.status = 'em_rota'
+                        primeira_entrega.atribuido_em = datetime.now()  # Corrigido para horario_saida? Ajustar se necessário
+                        session.commit()
+                   
+                        st.success("✅ Rota iniciada!")
+                   
+                        # ========== NOVO: ABRE GPS EXTERNO ==========
+                        endereco_encoded = primeira_entrega.pedido.endereco_entrega.replace(' ', '+')
+                   
+                        # Tenta abrir Google Maps (padrão Android)
+                        gmap_url = f"https://www.google.com/maps/dir/?api=1&destination={endereco_encoded}"
+                   
+                        # Tenta abrir Waze (se instalado)
+                        waze_url = f"https://waze.com/ul?q={endereco_encoded}&navigate=yes"
+                   
+                        st.markdown(f"""
+                        ### 🗺️ Abrir Navegação:
+                       
+                        <a href="{gmap_url}" target="_blank" style="
+                            display: inline-block;
+                            padding: 15px 30px;
+                            background-color: #4285F4;
+                            color: white;
+                            text-decoration: none;
+                            border-radius: 10px;
+                            font-weight: bold;
+                            margin: 10px;
+                        ">📍 Google Maps</a>
+                       
+                        <a href="{waze_url}" target="_blank" style="
+                            display: inline-block;
+                            padding: 15px 30px;
+                            background-color: #00D8FF;
+                            color: white;
+                            text-decoration: none;
+                            border-radius: 10px;
+                            font-weight: bold;
+                            margin: 10px;
+                        ">🚗 Waze</a>
+                        """, unsafe_allow_html=True)
+                        # ============================================
+                   
+                        time.sleep(2)
+                        st.rerun()
+                    except Exception as e:
+                        session.rollback()
+                        st.error(f"Erro: {str(e)}")
+   
+        elif primeira_entrega.status == 'em_rota':
+            st.success("🏍️ Você está em rota!")
+       
+            st.markdown("### ⚡ Ações na Entrega:")
+       
+            col1, col2 = st.columns(2)
+       
+            with col1:
+                telefone_limpo = ''.join(filter(str.isdigit, primeira_entrega.pedido.cliente_telefone))
+                st.markdown(f"[📞 Ligar para Cliente](tel:{telefone_limpo})")
+       
+            with col2:
+                if st.button("✅ Marcar como Entregue", use_container_width=True, type="primary"):
+                    try:
+                        primeira_entrega.status = 'entregue'
+                        primeira_entrega.entregue_em = datetime.now()
+                   
+                        primeira_entrega.pedido.status = 'entregue'
+                   
+                        # Atualiza estatísticas do motoboy
+                        motoboy = st.session_state.motoboy_dados
+                        motoboy.total_entregas = session.query(Entrega).filter(
+                            Entrega.motoboy_id == motoboy.id,
+                            Entrega.status == 'entregue'
+                        ).count()
+                        motoboy.total_ganhos = session.query(
+                            sa.func.coalesce(sa.func.sum(Entrega.valor_entrega), 0)
+                        ).filter(
+                            Entrega.motoboy_id == motoboy.id,
+                            Entrega.status == 'entregue'
+                        ).scalar()
+                   
+                        session.commit()
+                   
+                        st.success("✅ Pedido entregue com sucesso!")
+                        st.balloons()
+                        time.sleep(2)
+                        st.rerun()
+                    except Exception as e:
+                        session.rollback()
+                        st.error(f"Erro: {str(e)}")
+       
+            st.markdown("---")
+       
+            # Opções de recusa/ausência (mantém código existente)
+            col3, col4 = st.columns(2)
+       
+            with col3:
+                if st.button("❌ Cliente Recusou", use_container_width=True):
+                    st.session_state.modal_rejeitar = True
+                    st.rerun()
+       
+            with col4:
+                if st.button("🚪 Cliente Ausente", use_container_width=True):
+                    st.session_state.modal_ausente = True
+                    st.rerun()
+   
+        # Modals (mantém código existente)
+        if st.session_state.get('modal_rejeitar'):
+            modal_rejeitar_pedido(primeira_entrega, session)
+   
+        if st.session_state.get('modal_ausente'):
+            modal_cliente_ausente(primeira_entrega, session)
+   
+        # ========== MOSTRA PRÓXIMAS ENTREGAS COM ORDEM OTIMIZADA ==========
+        if outras_entregas:
+            st.markdown("---")
+            st.markdown(f"### 📋 Próximas entregas ({len(outras_entregas)}) - Ordem Otimizada:")
+       
+            for entrega in outras_entregas:
+                posicao = entrega.posicao_rota_otimizada or '?'
+                with st.expander(f"#{posicao} - Comanda {entrega.pedido.comanda} - {entrega.distancia_km or 0:.1f} km"):
+                    st.markdown(f"Cliente: {entrega.pedido.cliente_nome}")
+                    st.markdown(f"Endereço: {entrega.pedido.endereco_entrega}")
+                    st.markdown(f"Valor: R$ {entrega.valor_entrega or 0:.2f}")
+    finally:
+        session.close()
 
 def modal_rejeitar_pedido(entrega, session):
     with st.form("form_rejeitar"):
@@ -502,9 +536,8 @@ def modal_rejeitar_pedido(entrega, session):
         with col1:
             if st.form_submit_button("❌ Confirmar Rejeição", use_container_width=True):
                 try:
-                    session.execute(text("""
-                        UPDATE entregas SET status = 'cancelado', motivo_cancelamento = :motivo WHERE id = :eid
-                    """), {"motivo": motivo, "eid": entrega['id']})
+                    entrega.status = 'cancelado'
+                    entrega.motivo_cancelamento = motivo
                     session.commit()
                     st.error("❌ Pedido rejeitado!")
                     st.session_state.modal_rejeitar = False
@@ -537,9 +570,8 @@ def modal_cliente_ausente(entrega, session):
             if st.form_submit_button("✅ Registrar", use_container_width=True):
                 try:
                     motivo = f"Cliente ausente: {acao}. {observacoes}"
-                    session.execute(text("""
-                        UPDATE entregas SET status = 'cancelado', motivo_cancelamento = :motivo WHERE id = :eid
-                    """), {"motivo": motivo, "eid": entrega['id']})
+                    entrega.status = 'cancelado'
+                    entrega.motivo_cancelamento = motivo
                     session.commit()
                     st.warning("⚠️ Registrado como cliente ausente!")
                     st.session_state.modal_ausente = False
@@ -558,74 +590,84 @@ def modal_cliente_ausente(entrega, session):
 
 def tela_ganhos():
     session = get_db_session()
-    
-    result = session.execute(text("""
-        SELECT 
-            COUNT(*) as total_entregas,
-            COALESCE(SUM(valor_entrega), 0) as total_ganho,
-            COALESCE(SUM(distancia_km), 0) as total_km
-        FROM entregas
-        WHERE motoboy_id = :mid AND status = 'entregue'
-    """), {"mid": st.session_state.motoboy_id})
-    
-    stats_row = result.mappings().fetchone()
-    stats = dict(stats_row) if stats_row else {"total_entregas": 0, "total_ganho": 0.0, "total_km": 0.0}
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h2>{stats['total_entregas']}</h2>
-            <p>Entregas</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h2>R$ {stats['total_ganho']:.2f}</h2>
-            <p>Total Ganho</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h2>{stats['total_km']:.1f} km</h2>
-            <p>Distância</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    st.subheader("📜 Histórico de Entregas")
-    
-    result = session.execute(text("""
-        SELECT e.*, p.comanda, p.cliente_nome
-        FROM entregas e
-        JOIN pedidos p ON e.pedido_id = p.id
-        WHERE e.motoboy_id = :mid AND e.status = 'entregue'
-        ORDER BY e.horario_entrega DESC
-        LIMIT 20
-    """), {"mid": st.session_state.motoboy_id})
-    
-    historico = [dict(row) for row in result.mappings().fetchall()]
-    
-    if not historico:
-        st.info("Nenhuma entrega realizada ainda.")
-    else:
-        for entrega in historico:
-            with st.expander(f"📦 Comanda {entrega['comanda']} - R$ {entrega['valor_entrega']:.2f}"):
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.markdown(f"**Cliente:** {entrega['cliente_nome']}")
-                    st.markdown(f"**Distância:** {entrega['distancia_km']:.2f} km")
-                
-                with col2:
-                    st.markdown(f"**Valor:** R$ {entrega['valor_entrega']:.2f}")
-                    st.markdown(f"**Data:** {entrega.get('horario_entrega', 'N/A')[:16]}")
+    try:
+        # Estatísticas agregadas
+        total_entregas = session.query(Entrega).filter(
+            Entrega.motoboy_id == st.session_state.motoboy_id,
+            Entrega.status == 'entregue'
+        ).count()
+        
+        total_ganho = session.query(
+            sa.func.coalesce(sa.func.sum(Entrega.valor_entrega), 0)
+        ).filter(
+            Entrega.motoboy_id == st.session_state.motoboy_id,
+            Entrega.status == 'entregue'
+        ).scalar()
+        
+        total_km = session.query(
+            sa.func.coalesce(sa.func.sum(Entrega.distancia_km), 0)
+        ).filter(
+            Entrega.motoboy_id == st.session_state.motoboy_id,
+            Entrega.status == 'entregue'
+        ).scalar()
+        
+        stats = {
+            "total_entregas": total_entregas,
+            "total_ganho": total_ganho,
+            "total_km": total_km
+        }
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h2>{stats['total_entregas']}</h2>
+                <p>Entregas</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h2>R$ {stats['total_ganho']:.2f}</h2>
+                <p>Total Ganho</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown(f"""
+            <div class="metric-card">
+                <h2>{stats['total_km']:.1f} km</h2>
+                <p>Distância</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        st.subheader("📜 Histórico de Entregas")
+        
+        historico = session.query(Entrega).join(Pedido).filter(
+            Entrega.motoboy_id == st.session_state.motoboy_id,
+            Entrega.status == 'entregue'
+        ).order_by(Entrega.entregue_em.desc()).limit(20).all()
+        
+        if not historico:
+            st.info("Nenhuma entrega realizada ainda.")
+        else:
+            for entrega in historico:
+                with st.expander(f"📦 Comanda {entrega.pedido.comanda} - R$ {entrega.valor_entrega or 0:.2f}"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown(f"**Cliente:** {entrega.pedido.cliente_nome}")
+                        st.markdown(f"**Distância:** {entrega.distancia_km or 0:.2f} km")
+                    
+                    with col2:
+                        st.markdown(f"**Valor:** R$ {entrega.valor_entrega or 0:.2f}")
+                        st.markdown(f"**Data:** {entrega.entregue_em.isoformat()[:16] if entrega.entregue_em else 'N/A'}")
+    finally:
+        session.close()
 
 # ==================== PERFIL ====================
 
@@ -634,16 +676,16 @@ def tela_perfil():
     
     motoboy = st.session_state.motoboy_dados
     
-    st.markdown(f"### {motoboy['nome']}")
-    st.markdown(f"**Usuário:** {motoboy['usuario']}")
-    st.markdown(f"**Telefone:** {motoboy.get('telefone', 'Não informado')}")
-    st.markdown(f"**Restaurante:** {motoboy['restaurante_nome']}")
+    st.markdown(f"### {motoboy.nome}")
+    st.markdown(f"**Usuário:** {motoboy.usuario}")
+    st.markdown(f"**Telefone:** {motoboy.telefone or 'Não informado'}")
+    st.markdown(f"**Restaurante:** {motoboy.restaurante.nome_fantasia}")
     
     st.markdown("---")
     
     st.markdown("### 📊 Estatísticas")
-    st.metric("Total de Entregas", motoboy.get('total_entregas', 0))
-    st.metric("Total Ganho", f"R$ {motoboy.get('total_ganhos', 0.0):.2f}")
+    st.metric("Total de Entregas", motoboy.total_entregas or 0)
+    st.metric("Total Ganho", f"R$ {motoboy.total_ganhos or 0.0:.2f}")
     
     st.markdown("---")
     

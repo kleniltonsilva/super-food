@@ -1,11 +1,14 @@
+# database/models.py
+
 """
 Database Models - Super Food SaaS
 Todos os models com suporte multi-tenant (tenant_id = restaurante_id)
+ATUALIZAÇÃO: Sistema de Rotas Inteligentes com IA
 """
 
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, 
-    DateTime, ForeignKey, Text, Index
+    DateTime, ForeignKey, Text, Index, JSON
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -81,6 +84,7 @@ class Restaurante(Base):
     caixas = relationship("Caixa", back_populates="restaurante", cascade="all, delete-orphan")
     notificacoes = relationship("Notificacao", back_populates="restaurante", cascade="all, delete-orphan")
     solicitacoes_motoboy = relationship("MotoboySolicitacao", back_populates="restaurante", cascade="all, delete-orphan")
+    rotas_otimizadas = relationship("RotaOtimizada", back_populates="restaurante", cascade="all, delete-orphan")
     
     # Índices compostos para performance
     __table_args__ = (
@@ -116,6 +120,12 @@ class ConfigRestaurante(Base):
     
     # Modo de despacho
     modo_despacho = Column(String(50), default='auto_economico')  # auto_economico, manual, auto_ordem
+    
+    # ========== NOVOS CAMPOS - ROTAS INTELIGENTES ==========
+    raio_entrega_km = Column(Float, default=10.0)  # Raio máximo de entrega (zona de cobertura)
+    tempo_medio_preparo = Column(Integer, default=30)  # Tempo médio de preparo em minutos
+    despacho_automatico = Column(Boolean, default=True)  # Ativa/desativa despacho automático
+    # ======================================================
     
     # Taxas e valores para motoboys
     taxa_diaria = Column(Float, default=50.0)
@@ -159,6 +169,11 @@ class Motoboy(Base):
     # Status
     status = Column(String(20), default='pendente')  # pendente, ativo, recusado, inativo
     
+    # ========== NOVOS CAMPOS - ROTAS INTELIGENTES ==========
+    capacidade_entregas = Column(Integer, default=3)  # Máximo de pedidos por rota
+    ultimo_status_online = Column(DateTime)  # Última vez que ficou online/offline
+    # ======================================================
+    
     # Localização GPS atual
     latitude_atual = Column(Float)
     longitude_atual = Column(Float)
@@ -176,6 +191,7 @@ class Motoboy(Base):
     restaurante = relationship("Restaurante", back_populates="motoboys")
     entregas = relationship("Entrega", back_populates="motoboy", cascade="all, delete-orphan")
     notificacoes = relationship("Notificacao", back_populates="motoboy", cascade="all, delete-orphan")
+    rotas_otimizadas = relationship("RotaOtimizada", back_populates="motoboy", cascade="all, delete-orphan")
     
     # Índices compostos - CRÍTICO para multi-tenant
     __table_args__ = (
@@ -287,6 +303,13 @@ class Pedido(Base):
     forma_pagamento = Column(String(50))
     troco_para = Column(Float)
     
+    # ========== NOVOS CAMPOS - ROTAS INTELIGENTES ==========
+    distancia_restaurante_km = Column(Float)  # Distância do restaurante ao cliente
+    ordem_rota = Column(Integer)  # Posição na rota do motoboy (1, 2, 3...)
+    validado_mapbox = Column(Boolean, default=False)  # Endereço validado pela API Mapbox?
+    atrasado = Column(Boolean, default=False)  # Pedido está atrasado?
+    # ======================================================
+    
     # Status e timing
     status = Column(String(50), default='pendente')  # pendente, em_preparo, pronto, saiu_entrega, entregue, cancelado
     tempo_estimado = Column(Integer)  # em minutos
@@ -306,6 +329,7 @@ class Pedido(Base):
         Index('idx_pedido_restaurante_status', 'restaurante_id', 'status'),
         Index('idx_pedido_restaurante_data', 'restaurante_id', 'data_criacao'),
         Index('idx_pedido_comanda', 'restaurante_id', 'comanda'),
+        Index('idx_pedido_atrasado', 'restaurante_id', 'atrasado'),  # Novo índice
     )
 
 
@@ -346,13 +370,19 @@ class Entrega(Base):
     distancia_km = Column(Float)
     tempo_entrega = Column(Integer)  # em minutos
     
+    # ========== NOVOS CAMPOS - ROTAS INTELIGENTES ==========
+    posicao_rota_original = Column(Integer)  # Ordem cronológica de saída (1, 2, 3...)
+    posicao_rota_otimizada = Column(Integer)  # Ordem após otimização TSP (pode ser diferente)
+    tempo_preparacao = Column(Integer)  # Minutos de preparo do pedido
+    # ======================================================
+    
     # Valores calculados
     valor_entrega = Column(Float, default=0.0)
     taxa_base = Column(Float, default=0.0)
     taxa_km_extra = Column(Float, default=0.0)
     
     # Status
-    status = Column(String(50), default='pendente')  # pendente, em_rota, entregue, cancelado
+    status = Column(String(50), default='pendente')  # pendente, em_rota, entregue, cancelado, recusado, cliente_ausente
     
     # Timestamps
     atribuido_em = Column(DateTime, default=datetime.utcnow)
@@ -365,6 +395,42 @@ class Entrega(Base):
     __table_args__ = (
         Index('idx_entrega_motoboy', 'motoboy_id', 'status'),
         Index('idx_entrega_pedido', 'pedido_id'),
+    )
+
+
+# ==================== NOVA TABELA - ROTAS OTIMIZADAS ====================
+
+class RotaOtimizada(Base):
+    """Rotas otimizadas geradas pelo algoritmo TSP"""
+    __tablename__ = "rotas_otimizadas"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    motoboy_id = Column(Integer, ForeignKey("motoboys.id", ondelete="CASCADE"), nullable=False)
+    
+    # Informações da rota
+    total_pedidos = Column(Integer, nullable=False)
+    distancia_total_km = Column(Float, nullable=False)
+    tempo_total_min = Column(Integer, nullable=False)
+    
+    # Ordem dos pedidos (JSON: [pedido_id1, pedido_id2, pedido_id3...])
+    ordem_entregas = Column(JSON, nullable=False)  # Ex: [45, 23, 67, 12]
+    
+    # Status
+    status = Column(String(20), default='pendente')  # pendente, iniciada, concluida, cancelada
+    
+    # Timestamps
+    data_criacao = Column(DateTime, default=datetime.utcnow)
+    data_inicio = Column(DateTime)
+    data_conclusao = Column(DateTime)
+    
+    # Relacionamentos
+    restaurante = relationship("Restaurante", back_populates="rotas_otimizadas")
+    motoboy = relationship("Motoboy", back_populates="rotas_otimizadas")
+    
+    __table_args__ = (
+        Index('idx_rota_restaurante', 'restaurante_id', 'status'),
+        Index('idx_rota_motoboy', 'motoboy_id', 'status'),
     )
 
 
@@ -435,7 +501,7 @@ class Notificacao(Base):
     restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"))
     motoboy_id = Column(Integer, ForeignKey("motoboys.id", ondelete="CASCADE"))
     
-    tipo = Column(String(50), nullable=False)  # aprovacao, pedido, pagamento, etc
+    tipo = Column(String(50), nullable=False)  # aprovacao, pedido, pagamento, alerta_capacidade, etc
     titulo = Column(String(200), nullable=False)
     mensagem = Column(Text, nullable=False)
     
@@ -449,4 +515,31 @@ class Notificacao(Base):
     __table_args__ = (
         Index('idx_notificacao_restaurante', 'restaurante_id', 'lida'),
         Index('idx_notificacao_motoboy', 'motoboy_id', 'lida'),
+    )
+
+
+# ==================== GPS MOTOBOYS ====================
+
+class GPSMotoboy(Base):
+    """Histórico de localização GPS dos motoboys"""
+    __tablename__ = "gps_motoboys"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    motoboy_id = Column(Integer, ForeignKey("motoboys.id", ondelete="CASCADE"), nullable=False)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    velocidade = Column(Float, default=0.0)
+    
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relacionamentos
+    motoboy = relationship("Motoboy")
+    restaurante = relationship("Restaurante")
+    
+    # Índices para queries rápidas
+    __table_args__ = (
+        Index('idx_gps_motoboy_timestamp', 'motoboy_id', 'timestamp'),
+        Index('idx_gps_restaurante', 'restaurante_id', 'timestamp'),
     )
