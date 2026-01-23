@@ -370,6 +370,69 @@ def main():
             )
             
             st.markdown("---")
+            st.subheader("🌐 Bloco 4 - Configuração do Site do Cliente")
+
+            criar_site = st.checkbox("Criar Site do Cliente Automaticamente", value=True, help="Cria site público para pedidos online")
+
+            if criar_site:
+                col1, col2 = st.columns(2)
+    
+                with col1:
+                    tipo_restaurante = st.selectbox(
+                        "Tipo de Restaurante *",
+                        ["pizzaria", "hamburgueria", "japones", "churrascaria", "la_carte", "acai", "marmitex", "geral"],
+                        format_func=lambda x: {
+                            "pizzaria": "🍕 Pizzaria",
+                            "hamburgueria": "🍔 Hamburgueria",
+                            "japones": "🍣 Culinária Japonesa",
+                            "churrascaria": "🥩 Churrascaria",
+                            "la_carte": "🍽️ À La Carte",
+                            "acai": "🍇 Açaí/Sorveteria",
+                            "marmitex": "🍱 Marmitex",
+                            "geral": "🍴 Geral"
+                        }.get(x, x),
+                        help="Define o tipo de cardápio e variações de produtos"
+                    )
+        
+                    cor_primaria = st.color_picker("Cor Primária do Site", "#FF6B35", help="Cor principal (botões, destaques)")
+        
+                    whatsapp = st.text_input(
+                         "WhatsApp (com DDD)",
+                          placeholder="11999999999",
+                          help="Aparecerá como botão flutuante na página inicial"
+                  )
+    
+                with col2:
+                    pedido_minimo = st.number_input(
+                        "Pedido Mínimo (R$)",
+                        min_value=0.0,
+                        value=15.0,
+                        step=5.0,
+                        help="Valor mínimo para aceitar pedidos"
+                    )
+        
+                    cor_secundaria = st.color_picker("Cor Secundária", "#004E89", help="Cor de apoio")
+        
+                    tempo_entrega = st.number_input(
+                       "Tempo Estimado de Entrega (min)",
+                        min_value=10,
+                        max_value=180,
+                        value=50,
+                        step=5
+                    )
+        
+                    tempo_retirada = st.number_input(
+                       "Tempo Estimado para Retirada (min)",
+                        min_value=5,
+                        max_value=120,
+                        value=20,
+                        step=5
+                    )
+    
+                st.info(f"💡 **Tipo selecionado: {tipo_restaurante.upper()}** - Categorias padrão serão criadas automaticamente")
+
+
+            st.markdown("---")
             st.subheader("💎 Bloco 3 - Plano de Assinatura")
             
             planos = {
@@ -432,6 +495,9 @@ def main():
                 if cnpj and not validar_cnpj(cnpj):
                     erros.append("CNPJ inválido (deve ter 14 dígitos)")
                 
+                if criar_site and not whatsapp:
+                    st.warning("⚠️ WhatsApp não informado. Site será criado sem botão flutuante de contato.")
+                
                 # Se houver erros, exibir
                 if erros:
                     st.error("❌ Erros encontrados:")
@@ -455,11 +521,70 @@ def main():
                     
                     if sucesso:
                         st.success(f"✅ {mensagem}")
+                        
+                        # ========== NOVO: CRIAR SITE DO CLIENTE ==========
+                        if criar_site:
+                            session = get_db_session()
+                            try:
+                                # Busca o restaurante recém-criado
+                                restaurante = session.query(Restaurante).filter(
+                                    Restaurante.email == dados_restaurante['email']
+                                ).first()
+                                
+                                if restaurante:
+                                    # Importa funções do menu_templates
+                                    from backend.app.utils.menu_templates import (
+                                        criar_categorias_padrao,
+                                        criar_site_config_padrao
+                                    )
+                                    
+                                    # Cria SiteConfig
+                                    dados_site = {
+                                        "cor_primaria": cor_primaria,
+                                        "cor_secundaria": cor_secundaria,
+                                        "whatsapp": whatsapp,
+                                        "pedido_minimo": pedido_minimo,
+                                        "tempo_entrega": tempo_entrega,
+                                        "tempo_retirada": tempo_retirada
+                                    }
+                                    
+                                    criar_site_config_padrao(
+                                        restaurante.id,
+                                        tipo_restaurante,
+                                        dados_site,
+                                        session
+                                    )
+                                    
+                                    # Cria categorias padrão
+                                    categorias = criar_categorias_padrao(
+                                        restaurante.id,
+                                        tipo_restaurante,
+                                        session
+                                    )
+                                    
+                                    session.commit()
+                                    
+                                    st.success(f"🌐 Site criado com sucesso! Tipo: {tipo_restaurante.upper()}")
+                                    st.success(f"✅ {len(categorias)} categorias criadas automaticamente")
+                                    
+                                    # Mostra URL do site
+                                    url_site = f"http://seu-dominio.com/site/{restaurante.codigo_acesso}"
+                                    st.markdown(f"### 🔗 URL do Site")
+                                    st.code(url_site, language="text")
+                                    st.markdown(f"[🌐 Abrir Site (após deploy)]({url_site})")
+                                    
+                            except Exception as e:
+                                session.rollback()
+                                st.error(f"❌ Erro ao criar site: {str(e)}")
+                            finally:
+                                session.close()
+                        
                         st.balloons()
                         st.info(f"📧 Email de login: **{dados_restaurante['email']}**")
                         st.info(f"📱 O restaurante pode acessar o sistema com este email e a senha fornecida.")
                     else:
                         st.error(f"❌ {mensagem}")
+
     
     # ==================== GERENCIAR RESTAURANTES ====================
     elif menu == "🏪 Gerenciar Restaurantes":

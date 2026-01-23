@@ -1,0 +1,170 @@
+<!-- backend/templates/base.html -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="{{ meta_description }}">
+    <meta name="keywords" content="{{ meta_keywords }}">
+    
+    <title>{% block title %}{{ restaurante.nome_fantasia }}{% endblock %}</title>
+    
+    <!-- Favicon -->
+    {% if site_config.favicon_url %}
+    <link rel="icon" href="{{ site_config.favicon_url }}" type="image/png">
+    {% endif %}
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CSS Customizado -->
+    <link rel="stylesheet" href="/static/css/site_base.css">
+    
+    <!-- Cores dinâmicas do restaurante -->
+    <style>
+        :root {
+            --primary-color: {{ site_config.tema_cor_primaria }};
+            --secondary-color: {{ site_config.tema_cor_secundaria }};
+        }
+        
+        .bg-primary { background-color: var(--primary-color) !important; }
+        .text-primary { color: var(--primary-color) !important; }
+        .border-primary { border-color: var(--primary-color) !important; }
+        
+        .bg-secondary { background-color: var(--secondary-color) !important; }
+        .text-secondary { color: var(--secondary-color) !important; }
+        
+        .btn-primary {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 0.75rem 2rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+    </style>
+    
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="bg-gray-50">
+    
+    <!-- Navbar -->
+    <nav class="bg-white shadow-lg fixed top-0 w-full z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <!-- Logo -->
+                <div class="flex items-center">
+                    <a href="/site/{{ restaurante.codigo_acesso }}">
+                        {% if site_config.logo_url %}
+                        <img src="{{ site_config.logo_url }}" alt="Logo" class="h-12 w-auto">
+                        {% else %}
+                        <span class="text-2xl font-bold text-primary">{{ restaurante.nome_fantasia }}</span>
+                        {% endif %}
+                    </a>
+                </div>
+                
+                <!-- Menu Desktop -->
+                <div class="hidden md:flex items-center space-x-8">
+                    <a href="/site/{{ restaurante.codigo_acesso }}" class="text-gray-700 hover:text-primary transition">Início</a>
+                    <a href="/site/{{ restaurante.codigo_acesso }}/cardapio" class="text-gray-700 hover:text-primary transition">Cardápio</a>
+                    
+                    <!-- Carrinho -->
+                    <a href="/site/{{ restaurante.codigo_acesso }}/carrinho" class="relative">
+                        <i class="fas fa-shopping-cart text-2xl text-gray-700 hover:text-primary transition"></i>
+                        <span id="carrinho-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center hidden">0</span>
+                    </a>
+                    
+                    <!-- Login -->
+                    <a href="/site/{{ restaurante.codigo_acesso }}/login" class="text-gray-700 hover:text-primary transition">
+                        <i class="fas fa-user"></i> Login
+                    </a>
+                </div>
+                
+                <!-- Menu Mobile (Hamburger) -->
+                <div class="md:hidden">
+                    <button id="mobile-menu-button" class="text-gray-700 focus:outline-none">
+                        <i class="fas fa-bars text-2xl"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Menu Mobile Dropdown -->
+        <div id="mobile-menu" class="hidden md:hidden bg-white shadow-lg">
+            <div class="px-4 py-3 space-y-3">
+                <a href="/site/{{ restaurante.codigo_acesso }}" class="block text-gray-700 hover:text-primary">Início</a>
+                <a href="/site/{{ restaurante.codigo_acesso }}/cardapio" class="block text-gray-700 hover:text-primary">Cardápio</a>
+                <a href="/site/{{ restaurante.codigo_acesso }}/carrinho" class="block text-gray-700 hover:text-primary">Carrinho</a>
+                <a href="/site/{{ restaurante.codigo_acesso }}/login" class="block text-gray-700 hover:text-primary">Login</a>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Espaço para navbar fixa -->
+    <div class="h-16"></div>
+    
+    <!-- Conteúdo Principal -->
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+    
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-white py-8 mt-12">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Coluna 1: Info -->
+                <div>
+                    <h3 class="text-xl font-bold mb-4">{{ restaurante.nome_fantasia }}</h3>
+                    <p class="text-gray-400 mb-2"><i class="fas fa-map-marker-alt"></i> {{ restaurante.endereco_completo }}</p>
+                    <p class="text-gray-400 mb-2"><i class="fas fa-phone"></i> {{ restaurante.telefone }}</p>
+                </div>
+                
+                <!-- Coluna 2: Horários -->
+                <div>
+                    <h3 class="text-xl font-bold mb-4">Horário de Funcionamento</h3>
+                    <p class="text-gray-400">{{ config.horario_abertura }} - {{ config.horario_fechamento }}</p>
+                    <p class="text-gray-400 text-sm mt-2">{{ ', '.join(config.dias_semana_abertos) }}</p>
+                </div>
+                
+                <!-- Coluna 3: Redes Sociais -->
+                <div>
+                    <h3 class="text-xl font-bold mb-4">Siga-nos</h3>
+                    <div class="flex space-x-4">
+                        <a href="#" class="text-gray-400 hover:text-white text-2xl"><i class="fab fa-facebook"></i></a>
+                        <a href="#" class="text-gray-400 hover:text-white text-2xl"><i class="fab fa-instagram"></i></a>
+                        <a href="#" class="text-gray-400 hover:text-white text-2xl"><i class="fab fa-twitter"></i></a>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-700 mt-8 pt-6 text-center text-gray-400 text-sm">
+                <p>&copy; 2026 {{ restaurante.nome_fantasia }}. Todos os direitos reservados.</p>
+                <p class="mt-2">Powered by <span class="text-primary font-semibold">Super Food SaaS</span></p>
+            </div>
+        </footer>
+    </footer>
+    
+    <!-- WhatsApp Flutuante (apenas home) -->
+    {% if site_config.whatsapp_ativo and site_config.whatsapp_numero and show_whatsapp %}
+    <a href="https://wa.me/55{{ site_config.whatsapp_numero }}?text={{ site_config.whatsapp_mensagem_padrao | urlencode }}" 
+       target="_blank" 
+       class="fixed bottom-6 right-6 bg-green-500 text-white rounded-full w-16 h-16 flex items-center justify-center shadow-2xl hover:bg-green-600 transition z-50">
+        <i class="fab fa-whatsapp text-3xl"></i>
+    </a>
+    {% endif %}
+    
+    <!-- Scripts -->
+    <script src="/static/js/menu.js"></script>
+    <script src="/static/js/carrinho.js"></script>
+    
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

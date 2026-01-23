@@ -1,0 +1,121 @@
+<!-- backend/templates/site/cardapio.html -->
+{% extends "base.html" %}
+
+{% block title %}Cardápio - {{ restaurante.nome_fantasia }}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    
+    <!-- Header -->
+    <div class="mb-8">
+        <h1 class="text-4xl font-bold text-gray-900 mb-2">Nosso Cardápio</h1>
+        <p class="text-gray-600">Escolha seus produtos favoritos e monte seu pedido</p>
+    </div>
+    
+    <!-- Busca -->
+    <div class="mb-8">
+        <div class="relative">
+            <input type="text" 
+                   id="busca-produto" 
+                   placeholder="🔍 Buscar produtos..." 
+                   class="w-full px-4 py-3 pl-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent">
+            <i class="fas fa-search absolute left-4 top-4 text-gray-400"></i>
+        </div>
+    </div>
+    
+    <!-- Filtro de Categorias (Pills) -->
+    <div class="flex overflow-x-auto space-x-3 pb-4 mb-8 scrollbar-hide">
+        <button class="categoria-pill active whitespace-nowrap px-6 py-2 rounded-full bg-primary text-white font-semibold" data-categoria="todos">
+            Todos
+        </button>
+        {% for categoria in categorias %}
+        <button class="categoria-pill whitespace-nowrap px-6 py-2 rounded-full bg-gray-200 text-gray-700 font-semibold hover:bg-gray-300" data-categoria="{{ categoria.id }}">
+            {{ categoria.icone or '' }} {{ categoria.nome }}
+        </button>
+        {% endfor %}
+    </div>
+    
+    <!-- Grid de Produtos -->
+    <div id="produtos-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {% for produto in produtos %}
+        <div class="produto-card bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition cursor-pointer" 
+             data-categoria="{{ produto.categoria_id }}" 
+             data-nome="{{ produto.nome.lower() }}"
+             onclick="abrirModalProduto({{ produto.id }})">
+            
+            <!-- Imagem -->
+            <div class="relative h-48 bg-gray-200">
+                {% if produto.imagem_url %}
+                <img src="{{ produto.imagem_url }}" alt="{{ produto.nome }}" class="w-full h-full object-cover">
+                {% else %}
+                <div class="w-full h-full flex items-center justify-center text-gray-400">
+                    <i class="fas fa-utensils text-6xl"></i>
+                </div>
+                {% endif %}
+                
+                <!-- Badges -->
+                {% if produto.destaque %}
+                <div class="absolute top-2 left-2 bg-yellow-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                    <i class="fas fa-star"></i> DESTAQUE
+                </div>
+                {% endif %}
+                
+                {% if produto.promocao %}
+                <div class="absolute top-2 right-2 bg-red-500 text-white px-2 py-1 rounded-full text-xs font-bold">
+                    <i class="fas fa-fire"></i> PROMO
+                </div>
+                {% endif %}
+            </div>
+            
+            <!-- Conteúdo -->
+            <div class="p-4">
+                <h3 class="font-bold text-lg mb-2">{{ produto.nome }}</h3>
+                <p class="text-gray-600 text-sm mb-3 line-clamp-2">{{ produto.descricao or '' }}</p>
+                
+                <!-- Preço e Botão -->
+                <div class="flex items-center justify-between">
+                    {% if produto.promocao and produto.preco_promocional %}
+                    <div>
+                        <p class="text-gray-400 line-through text-sm">R$ {{ "%.2f"|format(produto.preco) }}</p>
+                        <p class="text-primary font-bold text-xl">R$ {{ "%.2f"|format(produto.preco_promocional) }}</p>
+                    </div>
+                    {% else %}
+                    <p class="text-primary font-bold text-xl">
+                        {% if produto.variacoes %}
+                        A partir de
+                        {% endif %}
+                        R$ {{ "%.2f"|format(produto.preco) }}
+                    </p>
+                    {% endif %}
+                    
+                    <button class="bg-primary text-white px-4 py-2 rounded-lg hover:opacity-90 transition">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <!-- Mensagem quando não há produtos -->
+    <div id="sem-produtos" class="hidden text-center py-12">
+        <i class="fas fa-search text-6xl text-gray-300 mb-4"></i>
+        <p class="text-xl text-gray-500">Nenhum produto encontrado</p>
+    </div>
+    
+</div>
+
+<!-- Modal Produto (será preenchido via JS) -->
+<div id="modal-produto" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div id="modal-content">
+            <!-- Conteúdo carregado via AJAX -->
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/cardapio.js"></script>
+{% endblock %}

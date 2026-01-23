@@ -1,4 +1,9 @@
-# Substitua o arquivo completo backend/app/routers/pedidos.py (remove uso de .from_orm para compatibilidade Pydantic v2 + return direto do ORM)
+# backend/app/routers/pedidos.py
+
+"""
+Router Pedidos - Gerenciamento de pedidos do restaurante
+CORRIGIDO: Import correto de despacho.py
+"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -8,9 +13,18 @@ import requests
 import os
 
 from .. import models, schemas, database, auth
-from ..utils.despacho import atribuir_pedidos
+
+# ========== CORREÇÃO: Import correto ==========
+try:
+    from backend.app.utils.despacho import despachar_pedidos_automatico
+    DESPACHO_DISPONIVEL = True
+except ImportError:
+    DESPACHO_DISPONIVEL = False
+    print("⚠️ Módulo despacho não disponível")
+# =============================================
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
+
 
 def geocode_address(endereco: str):
     MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN")
@@ -23,6 +37,7 @@ def geocode_address(endereco: str):
         return None, None
     coords = response.json()["features"][0]["center"]
     return coords[1], coords[0]  # lat, lon
+
 
 @router.post("/", response_model=schemas.PedidoPublic)
 def criar_pedido(
@@ -49,16 +64,23 @@ def criar_pedido(
     db.commit()
     db.refresh(novo_pedido)
 
-    # Despacho automático (chama a função que faz broadcast realtime)
-    atribuir_pedidos(db, [novo_pedido])
+    # ========== CORREÇÃO: Usa função correta ==========
+    if DESPACHO_DISPONIVEL:
+        try:
+            despachar_pedidos_automatico(db, current_restaurante.id)
+        except Exception as e:
+            print(f"Erro no despacho automático: {e}")
+    # ==================================================
 
-    # Return direto do objeto ORM (compatível com Pydantic v2 graças ao from_attributes = True)
     return novo_pedido
+
 
 @router.get("/", response_model=List[schemas.PedidoPublic])
 def listar_pedidos(
     current_restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
     db: Session = Depends(database.get_db)
 ):
-    pedidos = db.query(models.Pedido).filter(models.Pedido.restaurante_id == current_restaurante.id).all()
+    pedidos = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == current_restaurante.id
+    ).all()
     return pedidos

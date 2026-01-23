@@ -1,9 +1,12 @@
+# streamlit_app/restaurante_app.py
 """
 restaurante_app.py - Dashboard Principal do Restaurante
 Sistema completo e integrado para gestão do restaurante
-Versão 2.1 com Rotas Inteligentes - TOTALMENTE MIGRADADO PARA SQLAlchemy
+Versão 2.1 com Rotas Inteligentes - TOTALMENTE MIGRADO PARA SQLAlchemy
 Mantém 100% da lógica original, UI, fluxos e todas as funções existentes
 Apenas o acesso ao banco foi substituído por SQLAlchemy (sem remoção de código)
+
+CORREÇÃO: Navegação via flag temporária para evitar conflito com widget key
 """
 
 # ==================== IMPORT STREAMLIT PRIMEIRO ====================
@@ -34,7 +37,8 @@ sys.path.insert(0, PROJECT_ROOT)
 from database.session import get_db_session
 from database.models import (
     Restaurante, ConfigRestaurante, Motoboy, MotoboySolicitacao,
-    Pedido, Produto, Entrega, Caixa, MovimentacaoCaixa, Notificacao
+    Pedido, Produto, Entrega, Caixa, MovimentacaoCaixa, Notificacao,
+    CategoriaMenu, SiteConfig
 )
 
 from utils.mapbox_api import autocomplete_address, check_coverage_zone
@@ -51,7 +55,6 @@ except ImportError as e:
     DESPACHO_DISPONIVEL = False
 
 # ==================== FUNÇÕES HELPER SQLAlchemy ====================
-
 def to_dict(obj):
     """Converte objeto SQLAlchemy para dict (compatível com código original)"""
     if obj is None:
@@ -63,7 +66,6 @@ def to_dict_list(objs):
     return [to_dict(obj) for obj in objs if obj is not None]
 
 # ==================== AUTENTICAÇÃO ====================
-
 def verificar_login():
     """Inicializa estado de sessão do restaurante"""
     if 'restaurante_logado' not in st.session_state:
@@ -71,6 +73,10 @@ def verificar_login():
         st.session_state.restaurante_id = None
         st.session_state.restaurante_dados = None
         st.session_state.restaurante_config = None
+    
+    # Flag de navegação temporária
+    if 'navegar_para' not in st.session_state:
+        st.session_state.navegar_para = None
 
 def fazer_login(email: str, senha: str) -> bool:
     """Login do restaurante usando SQLAlchemy (mantém lógica original)"""
@@ -109,9 +115,9 @@ def fazer_logout():
     st.session_state.restaurante_id = None
     st.session_state.restaurante_dados = None
     st.session_state.restaurante_config = None
+    st.session_state.navegar_para = None
 
 # ==================== TELA DE LOGIN ====================
-
 def tela_login():
     """Interface de login (mantida idêntica à original)"""
     st.title("🍕 Super Food - Login Restaurante")
@@ -142,12 +148,10 @@ def tela_login():
         st.markdown("---")
         st.info("💡 **Primeiro Acesso?** Use as credenciais fornecidas pelo Super Admin.")
         
-        # Debug (apenas em desenvolvimento)
         if os.getenv("DEBUG"):
             st.caption("🔧 Debug: teste@superfood.com / 123456")
 
 # ==================== SIDEBAR ====================
-
 def renderizar_sidebar():
     """Sidebar com menu e informações (lógica original preservada)"""
     with st.sidebar:
@@ -165,18 +169,35 @@ def renderizar_sidebar():
         st.markdown("---")
         st.subheader("📋 Menu Principal")
         
+        # Se existe navegação pendente, força o valor
+        valor_padrao_menu = None
+        if st.session_state.navegar_para:
+            valor_padrao_menu = st.session_state.navegar_para
+            st.session_state.navegar_para = None  # Limpa flag
+        
         menu = st.radio(
             "Navegação",
             [
                 "🏠 Dashboard",
                 "📦 Pedidos",
                 "🏍️ Motoboys",
+                "🍕 Gerenciar Cardápio",
                 "💰 Caixa",
                 "⚙️ Configurações",
                 "🖨️ Impressão",
                 "📊 Relatórios"
             ],
-            key="menu_principal"
+            key="menu_principal",
+            index=[
+                "🏠 Dashboard",
+                "📦 Pedidos",
+                "🏍️ Motoboys",
+                "🍕 Gerenciar Cardápio",
+                "💰 Caixa",
+                "⚙️ Configurações",
+                "🖨️ Impressão",
+                "📊 Relatórios"
+            ].index(valor_padrao_menu) if valor_padrao_menu else 0
         )
         
         st.markdown("---")
@@ -206,7 +227,6 @@ def renderizar_sidebar():
         return menu
 
 # ==================== DASHBOARD ====================
-
 def tela_dashboard():
     """Dashboard principal - lógica 100% original"""
     st.title("🏠 Dashboard")
@@ -269,12 +289,12 @@ def tela_dashboard():
                     st.rerun()
             else:
                 if st.button("💰 Ver Caixa", use_container_width=True):
-                    st.session_state.menu_principal = "💰 Caixa"
+                    st.session_state.navegar_para = "💰 Caixa"
                     st.rerun()
         
         with col3:
             if st.button("📦 Criar Pedido", use_container_width=True):
-                st.session_state.menu_principal = "📦 Pedidos"
+                st.session_state.navegar_para = "📦 Pedidos"
                 st.rerun()
         
         with col4:
@@ -284,7 +304,7 @@ def tela_dashboard():
             ).count()
             if solicitacoes > 0:
                 if st.button(f"🔔 {solicitacoes} Solicitações", use_container_width=True, type="primary"):
-                    st.session_state.menu_principal = "🏍️ Motoboys"
+                    st.session_state.navegar_para = "🏍️ Motoboys"
                     st.rerun()
         
         # Modal abrir caixa (lógica original completa)
@@ -346,7 +366,6 @@ def tela_dashboard():
         session.close()
 
 # ==================== PEDIDOS ====================
-
 def tela_pedidos():
     st.title("📦 Gerenciamento de Pedidos")
     tabs = st.tabs(["➕ Criar Pedido", "📋 Pedidos Ativos", "📜 Histórico"])
@@ -358,12 +377,10 @@ def tela_pedidos():
         historico_pedidos()
 
 def criar_pedido_manual():
-    """Criação de pedido manual - lógica original completa com autocomplete"""
     st.subheader("➕ Criar Novo Pedido")
     rest_id = st.session_state.restaurante_id
     session = get_db_session()
     try:
-        # Próxima comanda
         ultimo_pedido = session.query(Pedido).filter(Pedido.restaurante_id == rest_id).order_by(Pedido.id.desc()).first()
         proxima_comanda = str(int(ultimo_pedido.comanda) + 1) if ultimo_pedido and ultimo_pedido.comanda.isdigit() else "1"
         
@@ -483,7 +500,6 @@ def criar_pedido_manual():
         session.close()
 
 def listar_pedidos_ativos():
-    """Lista pedidos ativos com despacho automático - lógica original completa"""
     st.subheader("📋 Pedidos Ativos")
     rest_id = st.session_state.restaurante_id
     session = get_db_session()
@@ -596,7 +612,6 @@ def listar_pedidos_ativos():
         session.close()
 
 def historico_pedidos():
-    """Histórico completo - lógica original mantida"""
     st.subheader("📜 Histórico de Pedidos")
     rest_id = st.session_state.restaurante_id
     session = get_db_session()
@@ -617,7 +632,6 @@ def historico_pedidos():
             st.info("Nenhum pedido no período selecionado.")
             return
         
-        # Métricas
         total_pedidos = len(pedidos)
         total_vendas = sum(p.valor_total for p in pedidos)
         entregas = len([p for p in pedidos if p.tipo == "Entrega"])
@@ -651,7 +665,6 @@ def historico_pedidos():
         session.close()
 
 # ==================== MOTOBOYS ====================
-
 def tela_motoboys():
     st.title("🏍️ Gerenciamento de Motoboys")
     tabs = st.tabs(["📋 Motoboys Ativos", "🆕 Solicitações", "➕ Cadastrar Manual"])
@@ -670,7 +683,7 @@ def listar_motoboys_ativos():
             Motoboy.restaurante_id == st.session_state.restaurante_id,
             Motoboy.status == 'ativo'
         ).order_by(Motoboy.nome).all()
-        
+
         if not motoboys:
             st.info("Nenhum motoboy ativo.")
             return
@@ -710,7 +723,7 @@ def listar_solicitacoes():
             MotoboySolicitacao.restaurante_id == st.session_state.restaurante_id,
             MotoboySolicitacao.status == 'pendente'
         ).order_by(MotoboySolicitacao.data_solicitacao.desc()).all()
-        
+
         if not solicitacoes:
             st.info("Nenhuma solicitação pendente.")
             return
@@ -757,7 +770,7 @@ def cadastrar_motoboy_manual():
         usuario = st.text_input("Usuário *")
         telefone = st.text_input("Telefone *")
         senha = st.text_input("Senha Inicial *", type="password", value="123456")
-        
+
         if st.form_submit_button("✅ Cadastrar", use_container_width=True):
             erros = []
             if not nome or not usuario or not telefone or not senha:
@@ -769,7 +782,6 @@ def cadastrar_motoboy_manual():
             else:
                 session = get_db_session()
                 try:
-                    # Verifica se usuário já existe
                     existe = session.query(Motoboy).filter(
                         Motoboy.restaurante_id == st.session_state.restaurante_id,
                         Motoboy.usuario == usuario.lower()
@@ -795,7 +807,6 @@ def cadastrar_motoboy_manual():
                     session.close()
 
 # ==================== CAIXA ====================
-
 def tela_caixa():
     st.title("💰 Gerenciamento de Caixa")
     rest_id = st.session_state.restaurante_id
@@ -805,7 +816,7 @@ def tela_caixa():
             Caixa.restaurante_id == rest_id,
             Caixa.status == 'aberto'
         ).first()
-        
+
         if not caixa:
             st.warning("🔴 Caixa está FECHADO")
             col1, col2, col3 = st.columns([1, 2, 1])
@@ -920,19 +931,23 @@ def tela_caixa():
         session.close()
 
 # ==================== CONFIGURAÇÕES ====================
-
 def tela_configuracoes():
     st.title("⚙️ Configurações")
-    tabs = st.tabs(["🕐 Horários", "📍 Endereço", "💰 Taxas", "🔗 Integrações", "🔐 Segurança"])
-    
+    tabs = st.tabs(["🕐 Horários", "📍 Endereço", "💰 Taxas", "🌐 Site do Cliente", "🔗 Integrações", "🔐 Segurança"])
+
     rest_id = st.session_state.restaurante_id
     session = get_db_session()
+
     try:
-        config = session.query(ConfigRestaurante).filter(ConfigRestaurante.restaurante_id == rest_id).first()
+        config = session.query(ConfigRestaurante).filter(
+            ConfigRestaurante.restaurante_id == rest_id
+        ).first()
+        
+        rest = session.query(Restaurante).get(rest_id)
         
         with tabs[0]:
             st.subheader("🕐 Horários de Funcionamento")
-            with st.form("form_horarios"):
+            with st.form("form_horarios_config"):
                 col1, col2 = st.columns(2)
                 with col1:
                     abertura = st.time_input("Horário de Abertura", value=datetime.strptime(config.horario_abertura, '%H:%M').time())
@@ -950,18 +965,17 @@ def tela_configuracoes():
         
         with tabs[1]:
             st.subheader("📍 Endereço do Restaurante")
-            rest = session.query(Restaurante).get(rest_id)
-            st.info("Alterar o endereço pode afetar o cálculo de distâncias")
-            novo_endereco = st.text_area("Endereço Completo", value=rest.endereco_completo, height=150)
-            if st.button("💾 Atualizar Endereço"):
-                rest.endereco_completo = novo_endereco
-                session.commit()
-                st.success("Endereço atualizado!")
-                st.rerun()
+            with st.form("form_endereco_config"):
+                novo_endereco = st.text_area("Endereço Completo", value=rest.endereco_completo, height=150)
+                if st.form_submit_button("💾 Atualizar Endereço"):
+                    rest.endereco_completo = novo_endereco
+                    session.commit()
+                    st.success("Endereço atualizado!")
+                    st.rerun()
         
         with tabs[2]:
             st.subheader("💰 Taxas e Configurações de Entrega")
-            with st.form("form_taxas"):
+            with st.form("form_taxas_config"):
                 col1, col2 = st.columns(2)
                 with col1:
                     taxa_diaria = st.number_input("Taxa Diária Motoboy", value=config.taxa_diaria, step=5.0)
@@ -973,7 +987,8 @@ def tela_configuracoes():
                     raio_entrega = st.number_input("Raio de Entrega (km)", value=config.raio_entrega_km, step=1.0)
                 
                 despacho_auto = st.checkbox("Despacho Automático", value=config.despacho_automatico)
-                modo_despacho = st.selectbox("Modo de Despacho", ["auto_economico", "auto_rapido", "manual"], index=["auto_economico", "auto_rapido", "manual"].index(config.modo_despacho))
+                modo_despacho = st.selectbox("Modo de Despacho", ["auto_economico", "auto_rapido", "manual"], 
+                                             index=["auto_economico", "auto_rapido", "manual"].index(config.modo_despacho))
                 
                 if st.form_submit_button("💾 Salvar Taxas"):
                     config.taxa_diaria = taxa_diaria
@@ -989,10 +1004,75 @@ def tela_configuracoes():
                     st.rerun()
         
         with tabs[3]:
-            st.info("🚧 Integrações em desenvolvimento...")
+            st.subheader("🌐 Configuração do Site do Cliente")
+            site_config = session.query(SiteConfig).filter(SiteConfig.restaurante_id == rest_id).first()
+            
+            if not site_config:
+                st.warning("🌐 Site não configurado. Solicite ao Super Admin.")
+            else:
+                with st.form("form_site_config"):
+                    st.markdown("### 🎨 Aparência")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        cor_primaria = st.color_picker("Cor Primária", value=site_config.tema_cor_primaria)
+                        tempo_entrega = st.number_input("Tempo Entrega (min)", value=site_config.tempo_entrega_estimado, step=5)
+                        pedido_minimo = st.number_input("Pedido Mínimo (R$)", value=site_config.pedido_minimo, step=5.0)
+                    with col2:
+                        cor_secundaria = st.color_picker("Cor Secundária", value=site_config.tema_cor_secundaria)
+                        tempo_retirada = st.number_input("Tempo Retirada (min)", value=site_config.tempo_retirada_estimado, step=5)
+                        site_ativo = st.checkbox("Site Ativo", value=site_config.site_ativo)
+                    
+                    st.markdown("### 📞 WhatsApp")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        whatsapp = st.text_input("Número WhatsApp (com DDD)", value=site_config.whatsapp_numero or "", placeholder="11999999999")
+                        whatsapp_ativo = st.checkbox("WhatsApp Ativo", value=site_config.whatsapp_ativo)
+                    with col2:
+                        whatsapp_msg = st.text_area("Mensagem Padrão", value=site_config.whatsapp_mensagem_padrao, height=100)
+                    
+                    st.markdown("### 💳 Formas de Pagamento")
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        aceita_dinheiro = st.checkbox("💵 Dinheiro", value=site_config.aceita_dinheiro)
+                    with col2:
+                        aceita_cartao = st.checkbox("💳 Cartão", value=site_config.aceita_cartao)
+                    with col3:
+                        aceita_pix = st.checkbox("📱 PIX", value=site_config.aceita_pix)
+                    with col4:
+                        aceita_vale = st.checkbox("🎫 Vale Refeição", value=site_config.aceita_vale_refeicao)
+                    
+                    st.markdown("---")
+                    if st.form_submit_button("💾 Salvar Configurações", use_container_width=True, type="primary"):
+                        site_config.tema_cor_primaria = cor_primaria
+                        site_config.tema_cor_secundaria = cor_secundaria
+                        site_config.tempo_entrega_estimado = tempo_entrega
+                        site_config.tempo_retirada_estimado = tempo_retirada
+                        site_config.pedido_minimo = pedido_minimo
+                        site_config.site_ativo = site_ativo
+                        site_config.whatsapp_numero = whatsapp
+                        site_config.whatsapp_ativo = whatsapp_ativo
+                        site_config.whatsapp_mensagem_padrao = whatsapp_msg
+                        site_config.aceita_dinheiro = aceita_dinheiro
+                        site_config.aceita_cartao = aceita_cartao
+                        site_config.aceita_pix = aceita_pix
+                        site_config.aceita_vale_refeicao = aceita_vale
+                        site_config.atualizado_em = datetime.utcnow()
+                        session.commit()
+                        st.success("✅ Configurações do site salvas!")
+                        st.rerun()
+                
+                st.markdown("---")
+                st.markdown("### 🔗 URL do Seu Site")
+                url_site = f"http://seu-dominio.com/site/{rest.codigo_acesso}"
+                st.code(url_site, language="text")
+                st.markdown(f"[🌐 Abrir Site (após deploy)]({url_site})")
+        
         with tabs[4]:
+            st.info("🚧 Integrações em desenvolvimento...")
+        
+        with tabs[5]:
             st.subheader("🔐 Alterar Senha do Restaurante")
-            with st.form("form_senha"):
+            with st.form("form_senha_config"):
                 senha_atual = st.text_input("Senha Atual", type="password")
                 nova_senha = st.text_input("Nova Senha", type="password")
                 confirmar = st.text_input("Confirmar Nova Senha", type="password")
@@ -1002,7 +1082,6 @@ def tela_configuracoes():
                     elif not senha_atual or not nova_senha:
                         st.error("Preencha todos os campos")
                     else:
-                        rest = session.query(Restaurante).get(rest_id)
                         if rest.verificar_senha(senha_atual):
                             rest.set_senha(nova_senha)
                             session.commit()
@@ -1010,11 +1089,177 @@ def tela_configuracoes():
                             st.rerun()
                         else:
                             st.error("Senha atual incorreta")
+
+    finally:
+        session.close()
+
+# ==================== CARDÁPIO ====================
+def tela_gerenciar_cardapio():
+    st.title("🍕 Gerenciar Cardápio do Site")
+    rest_id = st.session_state.restaurante_id
+    session = get_db_session()
+    try:
+        site_config = session.query(SiteConfig).filter(SiteConfig.restaurante_id == rest_id).first()
+        if not site_config:
+            st.warning("🌐 Site não configurado. Solicite ao Super Admin para criar seu site.")
+            return
+
+        tabs = st.tabs(["📂 Categorias", "🍕 Produtos", "🏷️ Promoções"])
+
+        with tabs[0]:
+            st.subheader("📂 Categorias do Cardápio")
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("➕ Nova Categoria", use_container_width=True):
+                    st.session_state.modal_nova_categoria = True
+
+            categorias = session.query(CategoriaMenu).filter(CategoriaMenu.restaurante_id == rest_id).order_by(CategoriaMenu.ordem_exibicao).all()
+
+            if not categorias:
+                st.info("Nenhuma categoria cadastrada.")
+            else:
+                for cat in categorias:
+                    with st.expander(f"{cat.icone or '📁'} {cat.nome} (Ordem: {cat.ordem_exibicao})"):
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.markdown(f"**Descrição:** {cat.descricao or 'Sem descrição'}")
+                            st.markdown(f"**Status:** {'✅ Ativa' if cat.ativo else '❌ Inativa'}")
+                        with col2:
+                            if st.button("✏️ Editar", key=f"edit_cat_{cat.id}"):
+                                st.session_state.editar_categoria_id = cat.id
+                                st.rerun()
+                            if st.button("🗑️ Excluir", key=f"del_cat_{cat.id}"):
+                                session.delete(cat)
+                                session.commit()
+                                st.success("Categoria excluída!")
+                                st.rerun()
+
+            if st.session_state.get("modal_nova_categoria"):
+                with st.form("form_nova_categoria"):
+                    st.subheader("➕ Nova Categoria")
+                    nome = st.text_input("Nome *")
+                    descricao = st.text_area("Descrição")
+                    icone = st.text_input("Ícone (emoji)")
+                    ordem = st.number_input("Ordem de Exibição", min_value=0, value=len(categorias) + 1, step=1)
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.form_submit_button("✅ Salvar", use_container_width=True):
+                            if not nome:
+                                st.error("Nome obrigatório!")
+                            else:
+                                session.add(CategoriaMenu(
+                                    restaurante_id=rest_id,
+                                    nome=nome,
+                                    descricao=descricao,
+                                    icone=icone,
+                                    ordem_exibicao=ordem,
+                                    ativo=True
+                                ))
+                                session.commit()
+                                st.success("Categoria criada!")
+                                st.session_state.modal_nova_categoria = False
+                                st.rerun()
+                    with col2:
+                        if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                            st.session_state.modal_nova_categoria = False
+                            st.rerun()
+
+        with tabs[1]:
+            st.subheader("🍕 Produtos do Cardápio")
+            col1, col2 = st.columns([3, 1])
+            with col2:
+                if st.button("➕ Novo Produto", use_container_width=True):
+                    st.session_state.modal_novo_produto = True
+
+            categorias_filtro = session.query(CategoriaMenu).filter(CategoriaMenu.restaurante_id == rest_id).all()
+            cat_selecionada = st.selectbox("Filtrar por Categoria", ["Todas"] + [f"{c.icone or ''} {c.nome}" for c in categorias_filtro])
+
+            query_produtos = session.query(Produto).filter(Produto.restaurante_id == rest_id)
+            if cat_selecionada != "Todas":
+                cat_id = next((c.id for c in categorias_filtro if f"{c.icone or ''} {c.nome}" == cat_selecionada), None)
+                if cat_id:
+                    query_produtos = query_produtos.filter(Produto.categoria_id == cat_id)
+
+            produtos = query_produtos.order_by(Produto.ordem_exibicao, Produto.nome).all()
+
+            if not produtos:
+                st.info("Nenhum produto cadastrado.")
+            else:
+                for produto in produtos:
+                    with st.expander(f"{'⭐' if produto.destaque else ''} {'🔥' if produto.promocao else ''} {produto.nome} - R$ {produto.preco:.2f}"):
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            if produto.imagem_url:
+                                st.image(produto.imagem_url, width=200)
+                            st.markdown(f"**Descrição:** {produto.descricao or 'Sem descrição'}")
+                            st.markdown(f"**Preço:** R$ {produto.preco:.2f}")
+                            if produto.promocao and produto.preco_promocional:
+                                st.markdown(f"**Preço Promocional:** R$ {produto.preco_promocional:.2f}")
+                            st.markdown(f"**Status:** {'✅ Disponível' if produto.disponivel else '❌ Indisponível'}")
+                        with col2:
+                            if st.button("🗑️ Excluir", key=f"del_prod_{produto.id}"):
+                                session.delete(produto)
+                                session.commit()
+                                st.success("Produto excluído!")
+                                st.rerun()
+
+            if st.session_state.get("modal_novo_produto"):
+                with st.form("form_novo_produto"):
+                    st.subheader("➕ Novo Produto")
+                    nome = st.text_input("Nome *")
+                    descricao = st.text_area("Descrição")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        categoria_id = st.selectbox("Categoria *", [(c.id, f"{c.icone or ''} {c.nome}") for c in categorias_filtro], format_func=lambda x: x[1])[0]
+                        preco = st.number_input("Preço (R$)", min_value=0.0)
+                    with col2:
+                        disponivel = st.checkbox("Disponível", value=True)
+                        destaque = st.checkbox("Produto em Destaque")
+                    col_btn1, col_btn2 = st.columns(2)
+                    with col_btn1:
+                        if st.form_submit_button("✅ Salvar", use_container_width=True):
+                            session.add(Produto(
+                                restaurante_id=rest_id,
+                                categoria_id=categoria_id,
+                                nome=nome,
+                                descricao=descricao,
+                                preco=preco,
+                                disponivel=disponivel,
+                                destaque=destaque,
+                                ordem_exibicao=0
+                            ))
+                            session.commit()
+                            st.success("Produto criado!")
+                            st.session_state.modal_novo_produto = False
+                            st.rerun()
+                    with col_btn2:
+                        if st.form_submit_button("❌ Cancelar", use_container_width=True):
+                            st.session_state.modal_novo_produto = False
+                            st.rerun()
+
+        with tabs[2]:
+            st.subheader("🏷️ Produtos em Promoção")
+            produtos_promocao = session.query(Produto).filter(Produto.restaurante_id == rest_id, Produto.promocao.is_(True)).all()
+            if not produtos_promocao:
+                st.info("Nenhum produto em promoção.")
+            else:
+                for produto in produtos_promocao:
+                    with st.expander(f"🔥 {produto.nome}"):
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.markdown(f"**Preço Normal:** ~~R$ {produto.preco:.2f}~~")
+                            st.markdown(f"**Preço Promocional:** R$ {produto.preco_promocional:.2f}")
+                        with col2:
+                            if st.button("❌ Remover Promoção", key=f"rem_promo_{produto.id}"):
+                                produto.promocao = False
+                                produto.preco_promocional = None
+                                session.commit()
+                                st.success("Promoção removida!")
+                                st.rerun()
     finally:
         session.close()
 
 # ==================== IMPRESSÃO E RELATÓRIOS ====================
-
 def tela_impressao():
     st.title("🖨️ Impressão de Comandas")
     st.info("🚧 Sistema de impressão em desenvolvimento...")
@@ -1024,10 +1269,9 @@ def tela_relatorios():
     st.info("🚧 Relatórios detalhados em desenvolvimento...")
 
 # ==================== MAIN ====================
-
 def main():
     verificar_login()
-    
+
     if not st.session_state.restaurante_logado:
         tela_login()
     else:
@@ -1039,6 +1283,8 @@ def main():
             tela_pedidos()
         elif menu == "🏍️ Motoboys":
             tela_motoboys()
+        elif menu == "🍕 Gerenciar Cardápio":
+            tela_gerenciar_cardapio()
         elif menu == "💰 Caixa":
             tela_caixa()
         elif menu == "⚙️ Configurações":
