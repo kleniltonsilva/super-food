@@ -1,0 +1,54 @@
+# Configuração Streamlit para Produção - Super Food SaaS
+# Otimizado para evitar problemas de SessionInfo e timeout
+
+[global]
+# Desativa coleta de dados de uso
+developmentMode = false
+
+[server]
+# Headless para produção (sem browser automático)
+headless = true
+
+# Desabilita CORS para integração com FastAPI
+enableCORS = false
+
+# Desabilita XSRF para APIs internas
+enableXsrfProtection = false
+
+# Endereço de binding
+address = "0.0.0.0"
+
+# Timeout de script maior para evitar reinícios
+runOnSave = false
+
+# Desabilita compressão WebSocket (ajuda com SessionInfo)
+enableWebsocketCompression = false
+
+# Número máximo de mensagens em cache
+maxMessageSize = 200
+
+[browser]
+# Desativa coleta de estatísticas
+gatherUsageStats = false
+
+# Não abrir browser automaticamente
+serverAddress = "localhost"
+
+[client]
+# Toolbar minimizada
+toolbarMode = "minimal"
+
+# Desabilita verificação de atualizações
+showErrorDetails = false
+
+[runner]
+# Permite widgets aninhados
+magicEnabled = true
+
+# Não reexecutar em salvamento
+fastReruns = true
+
+[theme]
+# Tema padrão
+base = "light"
+primaryColor = "#FF4B4B"
