@@ -41,18 +41,113 @@ from database.models import (
     CategoriaMenu, SiteConfig
 )
 
-from utils.mapbox_api import autocomplete_address, check_coverage_zone
+from utils.mapbox_api import autocomplete_address, check_coverage_zone, autocomplete_endereco_restaurante
+from utils.calculos import calcular_taxa_entrega, calcular_entrega_completa
+from utils.motoboy_selector import (
+    selecionar_motoboy_para_rota,
+    atribuir_rota_motoboy,
+    finalizar_entrega_motoboy,
+    marcar_motoboy_disponivel,
+    listar_motoboys_disponiveis,
+    obter_estatisticas_motoboy,
+)
 
-try:
-    from backend.app.utils.despacho import (
-        despachar_pedidos_automatico, 
-        atribuir_pedido_manual,
-        calcular_capacidade_total_motoboys
-    )
-    DESPACHO_DISPONIVEL = True
-except ImportError as e:
-    print(f"⚠️ Módulo de despacho não disponível: {e}")
-    DESPACHO_DISPONIVEL = False
+# Módulo de despacho integrado
+DESPACHO_DISPONIVEL = True
+
+
+# ==================== FUNÇÕES DE DESPACHO ====================
+def despachar_pedidos_automatico(session, restaurante_id: int) -> dict:
+    """
+    Despacha pedidos prontos para motoboys disponíveis usando seleção justa.
+    """
+    # Buscar pedidos prontos não despachados
+    pedidos_prontos = session.query(Pedido).filter(
+        Pedido.restaurante_id == restaurante_id,
+        Pedido.status == 'pronto',
+        Pedido.despachado == False,
+        Pedido.tipo == 'Entrega'
+    ).order_by(Pedido.data_criacao.asc()).all()
+
+    if not pedidos_prontos:
+        return {'sucesso': False, 'mensagem': 'Nenhum pedido pronto para despachar'}
+
+    # Buscar config do restaurante
+    config = session.query(ConfigRestaurante).filter(
+        ConfigRestaurante.restaurante_id == restaurante_id
+    ).first()
+
+    max_por_rota = config.max_pedidos_por_rota if config else 5
+    alertas = []
+    rotas_criadas = 0
+
+    # Agrupar pedidos em rotas
+    pedidos_restantes = list(pedidos_prontos)
+
+    while pedidos_restantes:
+        # Selecionar motoboy
+        motoboy = selecionar_motoboy_para_rota(
+            restaurante_id,
+            min(len(pedidos_restantes), max_por_rota),
+            session
+        )
+
+        if not motoboy:
+            alertas.append(f"⚠️ {len(pedidos_restantes)} pedido(s) aguardando motoboy disponível")
+            break
+
+        # Pegar pedidos para esta rota
+        pedidos_rota = pedidos_restantes[:min(len(pedidos_restantes), max_por_rota)]
+        pedidos_ids = [p.id for p in pedidos_rota]
+
+        # Atribuir rota ao motoboy
+        resultado = atribuir_rota_motoboy(motoboy['motoboy_id'], pedidos_ids, session)
+
+        if resultado['sucesso']:
+            rotas_criadas += 1
+            pedidos_restantes = pedidos_restantes[len(pedidos_rota):]
+        else:
+            alertas.append(f"Erro ao atribuir rota: {resultado.get('erro', 'Desconhecido')}")
+            break
+
+    if rotas_criadas > 0:
+        return {
+            'sucesso': True,
+            'mensagem': f'✅ {rotas_criadas} rota(s) despachada(s) com sucesso!',
+            'rotas_criadas': rotas_criadas,
+            'alertas': alertas
+        }
+    else:
+        return {
+            'sucesso': False,
+            'mensagem': 'Não foi possível despachar pedidos',
+            'alertas': alertas
+        }
+
+
+def calcular_capacidade_total_motoboys(session, restaurante_id: int) -> dict:
+    """
+    Calcula capacidade total de entrega dos motoboys.
+    """
+    motoboys = session.query(Motoboy).filter(
+        Motoboy.restaurante_id == restaurante_id,
+        Motoboy.status == 'ativo'
+    ).all()
+
+    online = [m for m in motoboys if m.disponivel]
+    em_rota = [m for m in motoboys if m.em_rota]
+
+    capacidade_total = sum(m.capacidade_entregas or 3 for m in online)
+    pedidos_em_rota = sum(m.entregas_pendentes or 0 for m in em_rota)
+    capacidade_disponivel = capacidade_total - pedidos_em_rota
+
+    return {
+        'motoboys_online': len(online),
+        'motoboys_em_rota': len(em_rota),
+        'capacidade_total': capacidade_total,
+        'pedidos_em_rota': pedidos_em_rota,
+        'capacidade_disponivel': max(0, capacidade_disponivel)
+    }
 
 # ==================== FUNÇÕES HELPER SQLAlchemy ====================
 def to_dict(obj):
@@ -404,35 +499,74 @@ def criar_pedido_manual():
             lon_cliente = None
             validado_mapbox = False
             
+            # Variáveis para taxa de entrega
+            taxa_entrega_calculada = 0.0
+            distancia_km_calculada = 0.0
+
             if tipo_pedido == "Entrega":
                 st.markdown("### 📍 Endereço de Entrega")
-                endereco_busca = st.text_input("Digite o endereço", placeholder="Ex: Rua Augusta, 123, São Paulo, SP")
-                if endereco_busca and len(endereco_busca) > 5:
-                    rest = session.query(Restaurante).get(rest_id)
-                    proximity = (rest.latitude, rest.longitude) if rest and rest.latitude else None
-                    sugestoes = autocomplete_address(endereco_busca, proximity)
+
+                # Campo de busca de endereço
+                endereco_busca = st.text_input(
+                    "Digite o endereço",
+                    placeholder="Ex: Rua Augusta, 123",
+                    help="Digite pelo menos 3 caracteres para ver sugestões da sua cidade"
+                )
+
+                if endereco_busca and len(endereco_busca) >= 3:
+                    # Usa autocomplete inteligente filtrado pela cidade do restaurante
+                    sugestoes = autocomplete_endereco_restaurante(endereco_busca, rest_id, limite=5)
+
                     if sugestoes:
-                        opcoes = [s['place_name'] for s in sugestoes]
-                        endereco_selecionado = st.selectbox("Selecione o endereço correto:", opcoes)
-                        for sug in sugestoes:
-                            if sug['place_name'] == endereco_selecionado:
-                                endereco_entrega = sug['place_name']
-                                lat_cliente, lon_cliente = sug['coordinates']
-                                validado_mapbox = True
-                                config = session.query(ConfigRestaurante).filter(ConfigRestaurante.restaurante_id == rest_id).first()
-                                resultado_zona = check_coverage_zone(
-                                    (rest.latitude, rest.longitude),
-                                    (lat_cliente, lon_cliente),
-                                    config.raio_entrega_km if config else 10.0
-                                )
-                                if resultado_zona['dentro_zona']:
-                                    st.success(resultado_zona['mensagem'])
-                                else:
-                                    st.error(resultado_zona['mensagem'])
-                                    validado_mapbox = False
-                                break
+                        # Mostra opções com indicação de distância
+                        opcoes_display = []
+                        for s in sugestoes:
+                            dist_info = f" ({s['distancia_km']} km)" if 'distancia_km' in s else ""
+                            zona_icon = "✅" if s.get('dentro_zona', True) else "⚠️"
+                            opcoes_display.append(f"{zona_icon} {s['place_name']}{dist_info}")
+
+                        idx_selecionado = st.selectbox(
+                            "Selecione o endereço correto:",
+                            range(len(opcoes_display)),
+                            format_func=lambda i: opcoes_display[i]
+                        )
+
+                        sug_selecionada = sugestoes[idx_selecionado]
+                        endereco_entrega = sug_selecionada['place_name']
+                        lat_cliente, lon_cliente = sug_selecionada['coordinates']
+                        validado_mapbox = True
+
+                        # Verificar zona e calcular taxa
+                        config = session.query(ConfigRestaurante).filter(
+                            ConfigRestaurante.restaurante_id == rest_id
+                        ).first()
+
+                        distancia_km_calculada = sug_selecionada.get('distancia_km', 0)
+                        dentro_zona = sug_selecionada.get('dentro_zona', True)
+
+                        if dentro_zona:
+                            # Calcular taxa de entrega
+                            resultado_taxa = calcular_taxa_entrega(rest_id, distancia_km_calculada, session)
+                            taxa_entrega_calculada = resultado_taxa['taxa_total']
+
+                            # Mostrar informações da entrega
+                            col_info1, col_info2, col_info3 = st.columns(3)
+                            with col_info1:
+                                st.metric("📏 Distância", f"{distancia_km_calculada:.1f} km")
+                            with col_info2:
+                                st.metric("💰 Taxa de Entrega", f"R$ {taxa_entrega_calculada:.2f}")
+                            with col_info3:
+                                raio = config.raio_entrega_km if config else 10.0
+                                st.metric("✅ Zona", f"Dentro ({raio} km)")
+
+                            st.success(f"✅ Endereço válido! Taxa: R$ {taxa_entrega_calculada:.2f}")
+                        else:
+                            st.error(f"❌ Endereço fora da zona de entrega ({distancia_km_calculada:.1f} km)")
+                            validado_mapbox = False
                     else:
-                        st.warning("Nenhuma sugestão encontrada")
+                        st.warning("🔍 Nenhuma sugestão encontrada. Tente outro endereço.")
+                elif endereco_busca:
+                    st.info("💡 Digite pelo menos 3 caracteres para buscar")
             elif tipo_pedido == "Para mesa":
                 numero_mesa = st.text_input("Número da Mesa *")
             
@@ -469,6 +603,11 @@ def criar_pedido_manual():
                     for erro in erros:
                         st.error(f"❌ {erro}")
                 else:
+                    # Calcular valor total com taxa de entrega
+                    valor_total_com_taxa = valor_total
+                    if tipo_pedido == "Entrega" and taxa_entrega_calculada > 0:
+                        valor_total_com_taxa = valor_total + taxa_entrega_calculada
+
                     pedido = Pedido(
                         restaurante_id=rest_id,
                         comanda=proxima_comanda,
@@ -480,10 +619,11 @@ def criar_pedido_manual():
                         longitude_entrega=lon_cliente,
                         numero_mesa=numero_mesa,
                         itens=itens,
-                        valor_total=valor_total,
+                        valor_total=valor_total_com_taxa,
                         observacoes=observacoes,
                         tempo_estimado=tempo_estimado,
                         validado_mapbox=validado_mapbox,
+                        distancia_restaurante_km=distancia_km_calculada if tipo_pedido == "Entrega" else None,
                         status='pendente',
                         origem='manual',
                         forma_pagamento=forma_pagamento,
@@ -682,35 +822,91 @@ def listar_motoboys_ativos():
         motoboys = session.query(Motoboy).filter(
             Motoboy.restaurante_id == st.session_state.restaurante_id,
             Motoboy.status == 'ativo'
-        ).order_by(Motoboy.nome).all()
+        ).order_by(Motoboy.ordem_hierarquia.asc(), Motoboy.nome).all()
 
         if not motoboys:
             st.info("Nenhum motoboy ativo.")
             return
-        
+
+        # Resumo geral
+        online = len([m for m in motoboys if m.disponivel])
+        em_rota = len([m for m in motoboys if m.em_rota])
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Ativos", len(motoboys))
+        with col2:
+            st.metric("Online", online)
+        with col3:
+            st.metric("Em Rota", em_rota)
+        with col4:
+            st.metric("Disponíveis", online - em_rota)
+
+        st.markdown("---")
+
         for motoboy in motoboys:
-            with st.expander(f"🏍️ {motoboy.nome} - {motoboy.usuario}"):
-                col1, col2 = st.columns(2)
+            # Status visual
+            if motoboy.em_rota:
+                status_icon = "🚴"
+                status_text = "Em Rota"
+            elif motoboy.disponivel:
+                status_icon = "✅"
+                status_text = "Disponível"
+            else:
+                status_icon = "⏸️"
+                status_text = "Offline"
+
+            with st.expander(f"{status_icon} {motoboy.nome} - {status_text} (Posição: #{motoboy.ordem_hierarquia or 0})"):
+                col1, col2, col3 = st.columns(3)
                 with col1:
                     st.markdown(f"**Telefone:** {motoboy.telefone}")
-                    st.markdown(f"**Capacidade:** {motoboy.capacidade_entregas}")
-                    st.markdown(f"**Cadastro:** {motoboy.data_cadastro.strftime('%d/%m/%Y') if motoboy.data_cadastro else 'N/A'}")
+                    st.markdown(f"**Usuário:** {motoboy.usuario}")
+                    st.markdown(f"**Capacidade:** {motoboy.capacidade_entregas} entregas")
                 with col2:
-                    st.markdown(f"**Total Entregas:** {motoboy.total_entregas}")
-                    st.markdown(f"**Ganhos Totais:** R$ {motoboy.total_ganhos:.2f}")
-                
-                col_btn1, col_btn2 = st.columns(2)
+                    st.markdown(f"**Entregas Pendentes:** {motoboy.entregas_pendentes or 0}")
+                    st.markdown(f"**Total Entregas:** {motoboy.total_entregas or 0}")
+                    st.markdown(f"**Total KM:** {motoboy.total_km or 0:.1f} km")
+                with col3:
+                    st.markdown(f"**Ganhos Totais:** R$ {motoboy.total_ganhos or 0:.2f}")
+                    if motoboy.ultima_entrega_em:
+                        st.markdown(f"**Última Entrega:** {motoboy.ultima_entrega_em.strftime('%d/%m %H:%M')}")
+                    if motoboy.ultima_rota_em:
+                        st.markdown(f"**Última Rota:** {motoboy.ultima_rota_em.strftime('%d/%m %H:%M')}")
+
+                st.markdown("---")
+
+                # Botões de ação
+                col_btn1, col_btn2, col_btn3, col_btn4 = st.columns(4)
                 with col_btn1:
+                    if motoboy.disponivel:
+                        if st.button("⏸️ Marcar Offline", key=f"offline_{motoboy.id}"):
+                            resultado = marcar_motoboy_disponivel(motoboy.id, False, session=session)
+                            if resultado['sucesso']:
+                                st.success("Motoboy marcado como offline!")
+                                st.rerun()
+                    else:
+                        if st.button("✅ Marcar Online", key=f"online_{motoboy.id}"):
+                            resultado = marcar_motoboy_disponivel(motoboy.id, True, session=session)
+                            if resultado['sucesso']:
+                                st.success("Motoboy marcado como online!")
+                                st.rerun()
+                with col_btn2:
                     if st.button("❌ Desativar", key=f"desativar_{motoboy.id}"):
                         motoboy.status = 'inativo'
+                        motoboy.disponivel = False
+                        motoboy.em_rota = False
                         session.commit()
                         st.success("Motoboy desativado!")
                         st.rerun()
-                with col_btn2:
+                with col_btn3:
                     if st.button("🔄 Redefinir Senha", key=f"reset_senha_{motoboy.id}"):
-                        motoboy.senha = hashlib.sha256("123456".encode()).hexdigest()
+                        motoboy.set_senha("123456")
                         session.commit()
-                        st.success("Senha redefinida para 123456")
+                        st.success("Senha redefinida para: 123456")
+                with col_btn4:
+                    # Ver estatísticas detalhadas
+                    stats = obter_estatisticas_motoboy(motoboy.id, session)
+                    if stats:
+                        st.metric("Hoje", f"R$ {stats['ganhos_hoje']:.2f}")
                         st.rerun()
     finally:
         session.close()
@@ -943,7 +1139,7 @@ def tela_configuracoes():
             ConfigRestaurante.restaurante_id == rest_id
         ).first()
         
-        rest = session.query(Restaurante).get(rest_id)
+        rest = session.get(Restaurante, rest_id)
         
         with tabs[0]:
             st.subheader("🕐 Horários de Funcionamento")
@@ -953,8 +1149,23 @@ def tela_configuracoes():
                     abertura = st.time_input("Horário de Abertura", value=datetime.strptime(config.horario_abertura, '%H:%M').time())
                 with col2:
                     fechamento = st.time_input("Horário de Fechamento", value=datetime.strptime(config.horario_fechamento, '%H:%M').time())
-                dias = st.multiselect("Dias Abertos", ['segunda','terca','quarta','quinta','sexta','sabado','domingo'],
-                                      default=config.dias_semana_abertos.split(','))
+                # Normalizar valores do banco para corresponder às opções
+                opcoes_dias = ['segunda','terca','quarta','quinta','sexta','sabado','domingo']
+                mapeamento_dias = {
+                    'seg': 'segunda', 'ter': 'terca', 'qua': 'quarta', 'qui': 'quinta',
+                    'sex': 'sexta', 'sab': 'sabado', 'dom': 'domingo'
+                }
+                dias_salvos = config.dias_semana_abertos.split(',') if config.dias_semana_abertos else []
+                dias_normalizados = []
+                for d in dias_salvos:
+                    d_limpo = d.strip().lower()
+                    if d_limpo in mapeamento_dias:
+                        dias_normalizados.append(mapeamento_dias[d_limpo])
+                    elif d_limpo in opcoes_dias:
+                        dias_normalizados.append(d_limpo)
+                # Filtrar apenas valores válidos
+                dias_default = [d for d in dias_normalizados if d in opcoes_dias]
+                dias = st.multiselect("Dias Abertos", opcoes_dias, default=dias_default)
                 if st.form_submit_button("💾 Salvar Horários"):
                     config.horario_abertura = abertura.strftime('%H:%M')
                     config.horario_fechamento = fechamento.strftime('%H:%M')
@@ -976,31 +1187,120 @@ def tela_configuracoes():
         with tabs[2]:
             st.subheader("💰 Taxas e Configurações de Entrega")
             with st.form("form_taxas_config"):
+                st.markdown("#### 🚗 Taxa de Entrega (cobrada do cliente)")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    taxa_entrega_base = st.number_input(
+                        "Taxa Base (R$)",
+                        value=config.taxa_entrega_base or 5.0,
+                        step=1.0,
+                        help="Valor cobrado até a distância base"
+                    )
+                with col2:
+                    distancia_base = st.number_input(
+                        "Distância Base (km)",
+                        value=config.distancia_base_km or 3.0,
+                        step=0.5,
+                        help="Km incluídos na taxa base"
+                    )
+                with col3:
+                    taxa_km_extra = st.number_input(
+                        "Taxa por km Extra (R$)",
+                        value=config.taxa_km_extra or 1.5,
+                        step=0.1,
+                        help="Valor cobrado por km adicional"
+                    )
+
+                st.markdown("---")
+                st.markdown("#### 🏍️ Pagamento do Motoboy")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    valor_base_motoboy = st.number_input(
+                        "Valor Base por Entrega (R$)",
+                        value=config.valor_base_motoboy or 5.0,
+                        step=0.5,
+                        help="Valor pago ao motoboy até a distância base"
+                    )
+                with col2:
+                    valor_km_extra_motoboy = st.number_input(
+                        "Valor por km Extra (R$)",
+                        value=config.valor_km_extra_motoboy or 1.0,
+                        step=0.1,
+                        help="Valor adicional por km para o motoboy"
+                    )
+                with col3:
+                    taxa_diaria = st.number_input(
+                        "Taxa Diária (R$)",
+                        value=config.taxa_diaria or 0.0,
+                        step=5.0,
+                        help="Taxa fixa diária (opcional)"
+                    )
+
                 col1, col2 = st.columns(2)
                 with col1:
-                    taxa_diaria = st.number_input("Taxa Diária Motoboy", value=config.taxa_diaria, step=5.0)
-                    taxa_entrega_base = st.number_input("Taxa Entrega Base", value=config.taxa_entrega_base, step=1.0)
-                    distancia_base = st.number_input("Distância Base (km)", value=config.distancia_base_km, step=0.5)
+                    valor_lanche = st.number_input(
+                        "Valor Lanche (R$)",
+                        value=config.valor_lanche or 0.0,
+                        step=5.0,
+                        help="Valor para alimentação (opcional)"
+                    )
                 with col2:
-                    taxa_km_extra = st.number_input("Taxa por km Extra", value=config.taxa_km_extra, step=0.1)
-                    valor_km = st.number_input("Valor por km (motoboy)", value=config.valor_km, step=0.1)
-                    raio_entrega = st.number_input("Raio de Entrega (km)", value=config.raio_entrega_km, step=1.0)
-                
-                despacho_auto = st.checkbox("Despacho Automático", value=config.despacho_automatico)
-                modo_despacho = st.selectbox("Modo de Despacho", ["auto_economico", "auto_rapido", "manual"], 
-                                             index=["auto_economico", "auto_rapido", "manual"].index(config.modo_despacho))
-                
-                if st.form_submit_button("💾 Salvar Taxas"):
-                    config.taxa_diaria = taxa_diaria
+                    max_pedidos_rota = st.number_input(
+                        "Máx. Pedidos por Rota",
+                        value=config.max_pedidos_por_rota or 5,
+                        min_value=1,
+                        max_value=10,
+                        step=1,
+                        help="Quantos pedidos cada motoboy pode levar por vez"
+                    )
+
+                permitir_ver_saldo = st.checkbox(
+                    "Permitir motoboys verem seu saldo",
+                    value=config.permitir_ver_saldo_motoboy if config.permitir_ver_saldo_motoboy is not None else True,
+                    help="Se marcado, motoboys podem ver quanto ganharam no dia"
+                )
+
+                st.markdown("---")
+                st.markdown("#### 🗺️ Área de Entrega e Despacho")
+                col1, col2 = st.columns(2)
+                with col1:
+                    raio_entrega = st.number_input(
+                        "Raio de Entrega (km)",
+                        value=config.raio_entrega_km or 10.0,
+                        step=1.0,
+                        help="Distância máxima para entregas"
+                    )
+                    despacho_auto = st.checkbox(
+                        "Despacho Automático",
+                        value=config.despacho_automatico
+                    )
+                with col2:
+                    modo_despacho = st.selectbox(
+                        "Modo de Despacho",
+                        ["auto_economico", "auto_rapido", "manual"],
+                        index=["auto_economico", "auto_rapido", "manual"].index(config.modo_despacho or "auto_economico")
+                    )
+
+                st.markdown("---")
+                if st.form_submit_button("💾 Salvar Configurações", use_container_width=True, type="primary"):
+                    # Taxa do cliente
                     config.taxa_entrega_base = taxa_entrega_base
                     config.distancia_base_km = distancia_base
                     config.taxa_km_extra = taxa_km_extra
-                    config.valor_km = valor_km
+                    # Pagamento motoboy
+                    config.valor_base_motoboy = valor_base_motoboy
+                    config.valor_km_extra_motoboy = valor_km_extra_motoboy
+                    config.taxa_diaria = taxa_diaria
+                    config.valor_lanche = valor_lanche
+                    config.max_pedidos_por_rota = max_pedidos_rota
+                    config.permitir_ver_saldo_motoboy = permitir_ver_saldo
+                    # Área e despacho
                     config.raio_entrega_km = raio_entrega
                     config.despacho_automatico = despacho_auto
                     config.modo_despacho = modo_despacho
+
                     session.commit()
-                    st.success("Configurações salvas!")
+                    st.success("✅ Configurações salvas com sucesso!")
                     st.rerun()
         
         with tabs[3]:

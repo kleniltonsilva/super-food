@@ -1,112 +1,173 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Este arquivo fornece orientacoes para o Claude Code ao trabalhar com este repositorio.
 
-## Project Overview
+## Visao Geral do Projeto
 
-Super Food is a multi-tenant SaaS platform for restaurant management with real-time delivery tracking and route optimization. Built with Python 3.12+, Streamlit (frontend), SQLAlchemy 2.0+ ORM, and Alembic migrations.
+Super Food e uma plataforma SaaS multi-tenant para gestao de restaurantes com rastreamento de entregas em tempo real e otimizacao de rotas. Construido com Python 3.12+, Streamlit (frontend), SQLAlchemy 2.0+ ORM e migrations Alembic.
 
-## Common Commands
+**Versao Atual:** 2.7.1 (01/02/2026)
 
-### Running Applications
+## As 4 Cabecas do Sistema
+
+| App | Arquivo | Porta | Funcao |
+|-----|---------|-------|--------|
+| Super Admin | `streamlit_app/super_admin.py` | 8501 | Gestao do SaaS |
+| Dashboard Restaurante | `streamlit_app/restaurante_app.py` | 8502 | Gestao do restaurante |
+| App Motoboy | `app_motoboy/motoboy_app.py` | 8503 | PWA para entregadores |
+| Site Cliente | `streamlit_app/cliente_app.py` | 8504 | Pedidos online |
+
+## Comandos Comuns
+
+### Executar Aplicacoes
 ```bash
-# Activate virtual environment first
+# Ativar ambiente virtual
 source venv/bin/activate
 
-# Super Admin dashboard (port 8501)
+# Super Admin (porta 8501)
 streamlit run streamlit_app/super_admin.py
 
-# Restaurant dashboard (port 8502)
+# Dashboard Restaurante (porta 8502)
 streamlit run streamlit_app/restaurante_app.py --server.port=8502
 
-# Motoboy PWA (port 8503)
+# App Motoboy PWA (porta 8503)
 streamlit run app_motoboy/motoboy_app.py --server.port=8503
+
+# Site Cliente (porta 8504)
+streamlit run streamlit_app/cliente_app.py --server.port=8504
 ```
 
-### Database Operations
+### Operacoes de Banco
 ```bash
-# Initialize database with default data
+# Inicializar banco com dados padrao
 python init_database.py
 
-# Apply all pending migrations
+# Aplicar todas as migrations
 alembic upgrade head
 
-# Revert last migration
+# Reverter ultima migration
 alembic downgrade -1
 
-# Generate new migration from model changes
-alembic revision --autogenerate -m "description"
+# Ver versao atual
+alembic current
+
+# Gerar nova migration
+alembic revision --autogenerate -m "descricao"
 ```
 
-### Installation
+### Instalacao
 ```bash
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Architecture
+## Arquitetura
 
-### Multi-Tenant Design
-- All database queries MUST filter by `restaurante_id` to ensure tenant isolation
-- `SuperAdmin` manages all restaurants globally
-- Each restaurant is an isolated tenant with its own motoboys, orders, products, and configuration
+### Design Multi-Tenant
+- Todas as queries DEVEM filtrar por `restaurante_id` para isolamento
+- `SuperAdmin` gerencia todos os restaurantes globalmente
+- Cada restaurante e um tenant isolado
 
-### Layer Structure
+### Estrutura de Camadas
 ```
-Streamlit Apps / FastAPI Routes
-         |
-    SQLAlchemy ORM (database/models.py)
-         |
-    Session Management (database/session.py)
-         |
-    Utility Services (utils/)
-```
-
-### Key Directories
-- `database/` - SQLAlchemy ORM models and session management
-- `migrations/` - Alembic migration scripts
-- `streamlit_app/` - Super Admin and Restaurant dashboards
-- `app_motoboy/` - Mobile-first PWA for delivery drivers
-- `utils/` - Mapbox API integration, Haversine distance, TSP optimization
-- `backend/` - FastAPI backend (in development)
-
-### Database Models (16 tables)
-Core models in `database/models.py`:
-- `SuperAdmin`, `Restaurante`, `ConfigRestaurante` - Admin and tenant config
-- `Motoboy`, `MotoboySolicitacao`, `GPSMotoboy` - Driver management and tracking
-- `Pedido`, `Produto`, `CategoriaMenu`, `ItemPedido` - Orders and menu
-- `Entrega`, `RotaOtimizada` - Delivery and route optimization
-- `Caixa`, `MovimentacaoCaixa` - Financial management
-
-### ORM Patterns
-- Use `SessionLocal` from `database/session.py` for database sessions
-- Always use eager loading (`joinedload()`) for relationships to avoid `DetachedInstanceError`
-- Close sessions properly in Streamlit apps (use try/finally or context managers)
-
-### External APIs
-- **Mapbox**: Geocoding, routing, distance calculation (requires `MAPBOX_TOKEN` in `.env`)
-- **Haversine**: Offline fallback for distance calculations
-- **TSP Optimizer**: Nearest Neighbor algorithm for route optimization
-
-## Configuration
-
-Required `.env` variables:
-```
-MAPBOX_TOKEN=your_token_here
-DATABASE_URL=sqlite:///./database/super_food.db
+Streamlit Apps
+      |
+SQLAlchemy ORM (database/models.py)
+      |
+Session Management (database/session.py)
+      |
+Utility Services (utils/)
 ```
 
-For PostgreSQL production:
+### Diretorios Principais
+- `database/` - Models ORM e gerenciamento de sessao
+- `migrations/` - Scripts Alembic
+- `streamlit_app/` - Dashboards Streamlit
+- `app_motoboy/` - PWA mobile para motoboys
+- `utils/` - Integracao Mapbox, Haversine, TSP, Calculos, Selecao de Motoboys
+- `backend/` - FastAPI (em desenvolvimento)
+
+### Modelos do Banco (22+ tabelas)
+
+**Tenants:**
+- `super_admin`, `restaurantes`, `config_restaurante`, `site_config`
+
+**Motoboys:**
+- `motoboys` (com campos de selecao justa), `motoboys_solicitacoes`, `gps_motoboys`
+
+**Produtos:**
+- `categorias_menu`, `produtos`, `tipos_produto`, `variacoes_produto`
+
+**Pedidos:**
+- `pedidos`, `itens_pedido`, `entregas`, `rotas_otimizadas`
+
+**Clientes:**
+- `clientes`, `enderecos_cliente`, `carrinho`
+
+**Financeiro:**
+- `caixa`, `movimentacoes_caixa`, `notificacoes`
+
+### Modulos de Utils
+
+| Modulo | Funcao |
+|--------|--------|
+| `mapbox_api.py` | Geocoding, rotas, direcoes |
+| `haversine.py` | Calculo de distancia offline |
+| `calculos.py` | Taxa de entrega, ganhos do motoboy |
+| `motoboy_selector.py` | Selecao justa de motoboys |
+| `tsp_optimizer.py` | Otimizacao de rotas (TSP) |
+
+### Padroes ORM
+- Usar `get_db_session()` de `database/session.py`
+- Sempre usar eager loading (`joinedload()`) para relacionamentos
+- Fechar sessoes com try/finally
+
+### APIs Externas
+- **Mapbox**: Geocoding, rotas (requer `MAPBOX_TOKEN` no `.env`)
+- **Haversine**: Fallback offline para distancias
+
+## Configuracao
+
+Variaveis `.env` obrigatorias:
+```
+MAPBOX_TOKEN=seu_token_aqui
+DATABASE_URL=sqlite:///./super_food.db
+```
+
+**IMPORTANTE:** O banco fica na RAIZ do projeto (`super_food.db`), nao em `/database/`.
+
+Para producao (PostgreSQL):
 ```
 DATABASE_URL=postgresql+psycopg2://user:pass@host/db
 ```
 
-## Test Credentials
+## Credenciais de Teste
 - Super Admin: `superadmin` / `SuperFood2025!`
-- Test Restaurant: `teste@superfood.com` / `123456`
+- Restaurante Teste: `teste@superfood.com` / `123456`
 
-## Security Considerations
-- Passwords use SHA256 hashing via `set_senha()` and `verificar_senha()` methods
-- Access codes are auto-generated 8-character hex strings
-- Multi-tenant isolation is enforced at the query level (always filter by `restaurante_id`)
+## Seguranca
+- Senhas usam hash SHA256 via `set_senha()` e `verificar_senha()`
+- Codigos de acesso sao hex strings de 8 caracteres
+- Isolamento multi-tenant em todas as queries
+
+## Sistema de Selecao Justa de Motoboys
+
+Campos do modelo `Motoboy`:
+- `ordem_hierarquia` - Posicao na fila de rotacao
+- `disponivel` - Flag online/offline
+- `em_rota` - Flag se esta entregando
+- `entregas_pendentes` - Contador de entregas
+- `ultima_entrega_em` - Timestamp da ultima entrega
+- `ultima_rota_em` - Timestamp da ultima rota recebida
+
+Funcoes em `utils/motoboy_selector.py`:
+- `selecionar_motoboy_para_rota()` - Seleciona motoboy de forma justa
+- `atribuir_rota_motoboy()` - Atribui pedidos ao motoboy
+- `finalizar_entrega_motoboy()` - Finaliza entrega e calcula ganhos
+- `marcar_motoboy_disponivel()` - Toggle online/offline
+
+## Configuracoes de Idioma
+
+- Responda sempre em portugues, independentemente do idioma do comando.
+- Todas explicacoes, planos e mensagens devem estar em portugues.
