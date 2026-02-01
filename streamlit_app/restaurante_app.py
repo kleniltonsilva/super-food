@@ -1635,5 +1635,30 @@ def main():
             tela_relatorios()
 
 
+def safe_main():
+    """
+    Wrapper seguro para main() que captura erros de SessionInfo do Streamlit.
+    O erro 'Tentou usar SessionInfo antes de sua inicialização' ocorre quando
+    a conexão WebSocket do Streamlit expira ou fica dessincronizada.
+    """
+    try:
+        main()
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Detectar erro específico de SessionInfo
+        if 'sessioninfo' in error_msg or 'formato de mensagem' in error_msg:
+            # Limpar estado e mostrar mensagem amigável
+            try:
+                st.session_state.clear()
+            except Exception:
+                pass
+            st.error("⚠️ Sessão expirada devido a inatividade. Por favor, recarregue a página.")
+            st.info("💡 Dica: Clique em F5 ou no botão de recarregar do navegador.")
+            st.stop()
+        else:
+            # Re-raise outros erros
+            raise
+
+
 if __name__ == "__main__":
-    main()
+    safe_main()
