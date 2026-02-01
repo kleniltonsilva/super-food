@@ -64,26 +64,26 @@ def geocode_address(address: str) -> Optional[Tuple[float, float]]:
         return None
 
 
-# ==================== NOVO: AUTOCOMPLETE DE ENDEREÇOS ====================
+# ==================== AUTOCOMPLETE DE ENDEREÇOS ====================
 def autocomplete_address(query: str, proximity: Optional[Tuple[float, float]] = None) -> List[Dict]:
     """
     Retorna sugestões de endereços conforme o usuário digita
-    
+
     Args:
         query: Texto parcial digitado pelo usuário
         proximity: (lat, lon) para priorizar resultados próximos
-    
+
     Returns:
         Lista de sugestões: [{'place_name': str, 'coordinates': (lat, lon)}, ...]
-    
+
     Exemplo:
         sugestoes = autocomplete_address("Rua Augusta 123")
         # [{'place_name': 'Rua Augusta, 123, São Paulo, SP', 'coordinates': (-23.55, -46.63)}, ...]
     """
-    
+
     if not query or not MAPBOX_TOKEN:
         return []
-    
+
     url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{quote(query)}.json"
     params = {
         "access_token": MAPBOX_TOKEN,
@@ -92,16 +92,16 @@ def autocomplete_address(query: str, proximity: Optional[Tuple[float, float]] = 
         "language": "pt",
         "types": "address,poi"  # Endereços e pontos de interesse
     }
-    
+
     # Prioriza resultados próximos ao restaurante
     if proximity:
         params["proximity"] = f"{proximity[1]},{proximity[0]}"  # lon,lat
-    
+
     try:
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
         data = response.json()
-        
+
         sugestoes = []
         for feature in data.get("features", []):
             lng, lat = feature["center"]
@@ -109,11 +109,235 @@ def autocomplete_address(query: str, proximity: Optional[Tuple[float, float]] = 
                 'place_name': feature['place_name'],
                 'coordinates': (lat, lng)
             })
-        
+
         return sugestoes
-        
+
     except Exception as e:
         print(f"[WARNING] Falha no autocomplete: {e}")
+        return []
+
+
+def autocomplete_endereco_restaurante(
+    query: str,
+    restaurante_id: int,
+    limite: int = 5
+) -> List[Dict]:
+    """
+    Autocomplete inteligente de endereço filtrado pela cidade do restaurante.
+
+    Esta função garante que os endereços sugeridos sejam da mesma cidade
+    onde o restaurante está localizado, evitando sugestões de outras cidades.
+
+    Args:
+        query: Texto parcial digitado pelo usuário (ex: "Rua Mi")
+        restaurante_id: ID do restaurante para obter localização
+        limite: Número máximo de sugestões
+
+    Returns:
+        Lista de sugestões com place_name, coordinates, distancia_km e dentro_zona
+
+    Exemplo:
+        # Restaurante em São Paulo
+        sugestoes = autocomplete_endereco_restaurante("Rua Augusta", 1)
+        # Retorna apenas endereços de São Paulo
+    """
+    from database.models import Restaurante, ConfigRestaurante
+
+    if not query or len(query) < 3:
+        return []
+
+    if not MAPBOX_TOKEN:
+        print("[ERRO] MAPBOX_TOKEN não configurado")
+        return []
+
+    session = get_db_session()
+    try:
+        # Buscar restaurante
+        restaurante = session.query(Restaurante).filter(
+            Restaurante.id == restaurante_id
+        ).first()
+
+        if not restaurante:
+            print(f"[ERRO] Restaurante {restaurante_id} não encontrado")
+            return []
+
+        # Buscar config para raio de entrega
+        config = session.query(ConfigRestaurante).filter(
+            ConfigRestaurante.restaurante_id == restaurante_id
+        ).first()
+
+        raio_km = config.raio_entrega_km if config else 15.0
+
+        # Coordenadas do restaurante
+        rest_lat = restaurante.latitude
+        rest_lon = restaurante.longitude
+
+        # Se restaurante não tem coordenadas, tenta geocodificar
+        if not rest_lat or not rest_lon:
+            print(f"[INFO] Restaurante sem coordenadas, geocodificando: {restaurante.endereco_completo}")
+            coords = geocode_address(restaurante.endereco_completo)
+            if coords:
+                rest_lat, rest_lon = coords
+                restaurante.latitude = rest_lat
+                restaurante.longitude = rest_lon
+                session.commit()
+                print(f"[INFO] Coordenadas salvas: {rest_lat}, {rest_lon}")
+            else:
+                print("[ERRO] Não foi possível geocodificar o endereço do restaurante")
+
+        # Estratégia 1: Busca com proximity (se temos coordenadas)
+        if rest_lat and rest_lon:
+            sugestoes = _buscar_com_proximity(query, rest_lat, rest_lon, raio_km, limite)
+            if sugestoes:
+                return sugestoes
+
+        # Estratégia 2: Busca com cidade/estado
+        cidade = restaurante.cidade or ""
+        estado = restaurante.estado or ""
+
+        # Extrair cidade do endereço completo se não tiver
+        if not cidade and restaurante.endereco_completo:
+            # Tenta extrair cidade do endereço (formato: "..., Cidade - UF, ...")
+            partes = restaurante.endereco_completo.split(",")
+            for parte in partes:
+                if " - " in parte:
+                    cidade_estado = parte.strip().split(" - ")
+                    if len(cidade_estado) >= 2:
+                        cidade = cidade_estado[0].strip()
+                        estado = cidade_estado[1].strip()[:2]
+                        break
+
+        if cidade:
+            sugestoes = _buscar_com_cidade(query, cidade, estado, rest_lat, rest_lon, raio_km, limite)
+            if sugestoes:
+                return sugestoes
+
+        # Estratégia 3: Busca simples (fallback)
+        print("[INFO] Usando busca simples sem filtros")
+        return autocomplete_address(query, (rest_lat, rest_lon) if rest_lat and rest_lon else None)
+
+    except Exception as e:
+        print(f"[ERRO] Falha no autocomplete: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
+    finally:
+        session.close()
+
+
+def _buscar_com_proximity(
+    query: str,
+    rest_lat: float,
+    rest_lon: float,
+    raio_km: float,
+    limite: int
+) -> List[Dict]:
+    """Busca endereços usando proximity do Mapbox"""
+    try:
+        url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{quote(query)}.json"
+        params = {
+            "access_token": MAPBOX_TOKEN,
+            "limit": 10,
+            "country": "BR",
+            "language": "pt",
+            "types": "address,poi,place",
+            "proximity": f"{rest_lon},{rest_lat}"  # lon,lat
+        }
+
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        sugestoes = []
+        for feature in data.get("features", []):
+            lng, lat = feature["center"]
+            coords_cliente = (lat, lng)
+
+            # Calcular distância
+            distancia = haversine((rest_lat, rest_lon), coords_cliente)
+
+            # Incluir todos os resultados, apenas ordenar por distância
+            dentro_zona = distancia <= raio_km
+
+            sugestoes.append({
+                'place_name': feature['place_name'],
+                'coordinates': coords_cliente,
+                'distancia_km': round(distancia, 2),
+                'dentro_zona': dentro_zona,
+                'relevance': feature.get('relevance', 0)
+            })
+
+        # Ordenar por distância (mais próximos primeiro)
+        sugestoes.sort(key=lambda x: x['distancia_km'])
+
+        return sugestoes[:limite]
+
+    except Exception as e:
+        print(f"[WARNING] Falha na busca com proximity: {e}")
+        return []
+
+
+def _buscar_com_cidade(
+    query: str,
+    cidade: str,
+    estado: str,
+    rest_lat: Optional[float],
+    rest_lon: Optional[float],
+    raio_km: float,
+    limite: int
+) -> List[Dict]:
+    """Busca endereços filtrando por cidade"""
+    try:
+        # Construir query com cidade
+        query_completa = f"{query}, {cidade}"
+        if estado:
+            query_completa = f"{query_completa}, {estado}"
+
+        url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{quote(query_completa)}.json"
+        params = {
+            "access_token": MAPBOX_TOKEN,
+            "limit": 10,
+            "country": "BR",
+            "language": "pt",
+            "types": "address,poi,place"
+        }
+
+        # Adicionar proximity se disponível
+        if rest_lat and rest_lon:
+            params["proximity"] = f"{rest_lon},{rest_lat}"
+
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+
+        sugestoes = []
+        for feature in data.get("features", []):
+            lng, lat = feature["center"]
+            coords_cliente = (lat, lng)
+
+            # Calcular distância se temos coordenadas do restaurante
+            if rest_lat and rest_lon:
+                distancia = haversine((rest_lat, rest_lon), coords_cliente)
+                dentro_zona = distancia <= raio_km
+            else:
+                distancia = 0
+                dentro_zona = True
+
+            sugestoes.append({
+                'place_name': feature['place_name'],
+                'coordinates': coords_cliente,
+                'distancia_km': round(distancia, 2),
+                'dentro_zona': dentro_zona,
+                'relevance': feature.get('relevance', 0)
+            })
+
+        # Ordenar por distância
+        sugestoes.sort(key=lambda x: x['distancia_km'])
+
+        return sugestoes[:limite]
+
+    except Exception as e:
+        print(f"[WARNING] Falha na busca com cidade: {e}")
         return []
 
 
