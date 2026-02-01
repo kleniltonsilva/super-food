@@ -11,23 +11,24 @@ Sistema multi-tenant completo para gestao de restaurantes com entregas inteligen
 
 ## Visao Geral
 
-O Super Food e composto por **4 aplicacoes principais** (4 cabecas):
+O Super Food e composto por **4 aplicacoes principais**:
 
-| Aplicacao | Arquivo | Porta | Descricao |
-|-----------|---------|-------|-----------|
-| **Super Admin** | `streamlit_app/super_admin.py` | 8501 | Painel administrativo do SaaS |
-| **Dashboard Restaurante** | `streamlit_app/restaurante_app.py` | 8502 | Gestao completa do restaurante |
-| **App Motoboy (PWA)** | `app_motoboy/motoboy_app.py` | 8503 | App mobile para entregadores |
-| **Site do Cliente** | `streamlit_app/cliente_app.py` | 8504 | Pedidos online para clientes |
+| Aplicacao | Tecnologia | Porta | Descricao |
+|-----------|------------|-------|-----------|
+| **API Backend** | FastAPI + Uvicorn | 8000 | API REST, Site Cliente, WebSockets |
+| **Super Admin** | Streamlit | 8501 | Painel administrativo do SaaS |
+| **Dashboard Restaurante** | Streamlit | 8502 | Gestao completa do restaurante |
+| **App Motoboy (PWA)** | Streamlit | 8503 | App mobile para entregadores |
 
-**Destaques Tecnicos (v2.7.1 - 01/02/2026):**
+**Destaques Tecnicos (v2.7.6 - 01/02/2026):**
+- FastAPI como backend principal (API REST + WebSockets)
 - Banco de dados unificado em SQLAlchemy ORM
 - Sistema de selecao justa de motoboys
 - Calculo automatico de taxa de entrega e ganhos
 - Autocomplete de endereco com Mapbox
-- Site do cliente completo (4a cabeca)
+- Site do cliente via FastAPI + Templates HTML
 - Alembic configurado para migrations
-- Correcoes de bugs no multiselect de dias e URL do site
+- Script de inicializacao unificado (`start_services.sh`)
 
 ## Instalacao
 
@@ -63,23 +64,104 @@ python init_database.py
 alembic upgrade head
 ```
 
-## Executando as Aplicacoes
+## Executando o Sistema
+
+### Metodo Recomendado: Script Unificado
 
 ```bash
 # Ativar ambiente virtual
 source venv/bin/activate
 
+# Iniciar TODOS os servicos (FastAPI + Streamlit)
+./start_services.sh
+
+# Iniciar apenas a API FastAPI
+./start_services.sh --api-only
+```
+
+### Metodo Alternativo: Python
+
+```bash
+source venv/bin/activate
+
+# Todos os servicos em foreground
+python run_production.py
+
+# Apenas API
+python run_production.py --api-only
+```
+
+### Executar Servicos Individualmente
+
+```bash
+source venv/bin/activate
+
+# FastAPI Backend (porta 8000) - PRINCIPAL
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+
 # Super Admin (porta 8501)
-streamlit run streamlit_app/super_admin.py
+streamlit run streamlit_app/super_admin.py --server.port=8501
 
 # Dashboard Restaurante (porta 8502)
 streamlit run streamlit_app/restaurante_app.py --server.port=8502
 
 # App Motoboy PWA (porta 8503)
 streamlit run app_motoboy/motoboy_app.py --server.port=8503
+```
 
-# Site do Cliente (porta 8504)
-streamlit run streamlit_app/cliente_app.py --server.port=8504
+### Parar Todos os Servicos
+
+```bash
+pkill -f "uvicorn|streamlit"
+```
+
+## Testando o Sistema
+
+### Verificar se os Servicos Estao Rodando
+
+```bash
+# Verificar portas ativas
+lsof -i :8000,:8501,:8502,:8503 | grep LISTEN
+
+# Testar FastAPI
+curl http://localhost:8000/
+# Resposta esperada: {"mensagem":"Super Food API - Site do Cliente ativo!"}
+
+# Testar Swagger (documentacao da API)
+# Abrir no navegador: http://localhost:8000/docs
+
+# Testar site do cliente (substitua CODIGO pelo codigo do restaurante)
+curl http://localhost:8000/site/CODIGO
+```
+
+### Testar Endpoints HTTP
+
+```bash
+# FastAPI Backend
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/
+# Esperado: 200
+
+# Super Admin
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8501/
+# Esperado: 200
+
+# Dashboard Restaurante
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8502/
+# Esperado: 200
+
+# App Motoboy
+curl -s -o /dev/null -w "%{http_code}" http://localhost:8503/
+# Esperado: 200
+```
+
+### Verificar Logs
+
+```bash
+# Logs dos servicos (quando iniciados via start_services.sh)
+tail -f /tmp/superfood_api.log         # FastAPI
+tail -f /tmp/superfood_admin.log       # Super Admin
+tail -f /tmp/superfood_restaurante.log # Dashboard Restaurante
+tail -f /tmp/superfood_motoboy.log     # App Motoboy
 ```
 
 ## Credenciais de Teste
@@ -94,11 +176,19 @@ streamlit run streamlit_app/cliente_app.py --server.port=8504
 
 ```
 super-food/
+├── start_services.sh           # Script para iniciar todos os servicos
+├── run_production.py           # Script Python alternativo
 ├── alembic.ini                 # Configuracao Alembic
 ├── .env                        # Variaveis de ambiente
 ├── requirements.txt            # Dependencias Python
 ├── init_database.py            # Inicializador do banco
 ├── super_food.db               # Banco SQLite (dev)
+│
+├── backend/                    # FastAPI Backend
+│   └── app/
+│       ├── main.py             # Aplicacao principal
+│       ├── routers/            # Rotas da API
+│       └── templates/          # Templates HTML
 │
 ├── database/                   # SQLAlchemy ORM
 │   ├── __init__.py
@@ -118,27 +208,29 @@ super-food/
 │       └── 004_add_motoboy_selection_fields.py
 │
 ├── streamlit_app/              # Aplicacoes Streamlit
-│   ├── super_admin.py          # Cabeca 1: Admin SaaS
-│   ├── restaurante_app.py      # Cabeca 2: Dashboard Restaurante
-│   └── cliente_app.py          # Cabeca 4: Site do Cliente
+│   ├── super_admin.py          # Admin SaaS
+│   ├── restaurante_app.py      # Dashboard Restaurante
+│   └── cliente_app.py          # Site do Cliente (legado)
 │
 ├── app_motoboy/                # PWA Motoboy
-│   └── motoboy_app.py          # Cabeca 3: App Entregadores
+│   └── motoboy_app.py          # App Entregadores
 │
-├── utils/                      # Utilitarios
-│   ├── __init__.py
-│   ├── mapbox_api.py           # Integracao Mapbox (geocoding, rotas)
-│   ├── haversine.py            # Calculo de distancia offline
-│   ├── calculos.py             # Taxas e ganhos
-│   ├── motoboy_selector.py     # Selecao justa de motoboys
-│   └── tsp_optimizer.py        # Otimizacao de rotas
-│
-└── backend/                    # FastAPI (em desenvolvimento)
-    ├── main.py
-    └── app/
+└── utils/                      # Utilitarios
+    ├── __init__.py
+    ├── mapbox_api.py           # Integracao Mapbox
+    ├── haversine.py            # Calculo de distancia offline
+    ├── calculos.py             # Taxas e ganhos
+    ├── motoboy_selector.py     # Selecao justa de motoboys
+    └── tsp_optimizer.py        # Otimizacao de rotas
 ```
 
 ## Funcionalidades Principais
+
+### API FastAPI (Backend)
+- API REST completa com documentacao Swagger
+- Site do cliente via templates HTML
+- WebSockets para atualizacoes em tempo real
+- Escalavel com multiplos workers
 
 ### Super Admin
 - Criacao e gestao de restaurantes (tenants)
@@ -161,44 +253,23 @@ super-food/
 - Visualizacao de estatisticas e ganhos do dia
 - Toggle online/offline para disponibilidade
 
-### Site do Cliente
-- Acesso via codigo do restaurante (`?restaurante=CODIGO`)
+### Site do Cliente (via FastAPI)
+- Acesso via URL: `http://localhost:8000/site/{codigo_restaurante}`
 - Cardapio organizado por categorias
-- Carrinho de compras persistente
-- Autocomplete de endereco inteligente (filtra por cidade)
+- Carrinho de compras
 - Calculo de taxa de entrega em tempo real
 - Checkout com multiplas formas de pagamento
-- Acompanhamento do pedido em tempo real
 
-## Sistema de Selecao Justa de Motoboys
+## Endpoints da API FastAPI
 
-O Super Food implementa um algoritmo de selecao justa para distribuir entregas:
-
-1. **Disponibilidade**: Motoboy deve estar ativo e online
-2. **Sem rota ativa**: Prioriza quem nao esta em entrega
-3. **Menos pendencias**: Quem tem menos entregas pendentes
-4. **Rotacao hierarquica**: Quem recebeu ha mais tempo vai primeiro
-5. **Proximidade**: Em empate, o mais proximo do restaurante
-
-## Calculo de Taxa e Ganhos
-
-### Taxa de Entrega (cobrada do cliente)
-```
-Se distancia <= distancia_base:
-    taxa = taxa_base
-Senao:
-    km_extra = distancia - distancia_base
-    taxa = taxa_base + (km_extra * taxa_por_km_extra)
-```
-
-### Ganho do Motoboy (pago ao entregador)
-```
-Se distancia <= distancia_base:
-    ganho = valor_base_motoboy
-Senao:
-    km_extra = distancia - distancia_base
-    ganho = valor_base_motoboy + (km_extra * valor_km_extra_motoboy)
-```
+| Endpoint | Metodo | Descricao |
+|----------|--------|-----------|
+| `/` | GET | Health check |
+| `/docs` | GET | Documentacao Swagger interativa |
+| `/redoc` | GET | Documentacao ReDoc |
+| `/site/{codigo}` | GET | Site do cliente (HTML) |
+| `/site/{codigo}/cardapio` | GET | Cardapio do restaurante |
+| `/ws/{restaurante_id}` | WebSocket | Atualizacoes em tempo real |
 
 ## Configuracao
 
@@ -234,22 +305,6 @@ alembic current
 alembic revision --autogenerate -m "descricao"
 ```
 
-## Banco de Dados
-
-### Modelos Principais (22+ tabelas)
-
-- **Tenants**: `super_admin`, `restaurantes`, `config_restaurante`, `site_config`
-- **Motoboys**: `motoboys`, `motoboys_solicitacoes`, `gps_motoboys`
-- **Produtos**: `categorias_menu`, `produtos`, `tipos_produto`, `variacoes_produto`
-- **Pedidos**: `pedidos`, `itens_pedido`, `entregas`, `rotas_otimizadas`
-- **Clientes**: `clientes`, `enderecos_cliente`, `carrinho`
-- **Financeiro**: `caixa`, `movimentacoes_caixa`
-- **Sistema**: `notificacoes`
-
-### Isolamento Multi-Tenant
-
-Todas as queries filtram por `restaurante_id` para garantir isolamento de dados entre restaurantes.
-
 ## Roadmap
 
 - [x] Fase 1: Sistema base com ORM SQLAlchemy
@@ -257,15 +312,16 @@ Todas as queries filtram por `restaurante_id` para garantir isolamento de dados 
 - [x] Fase 3: Site do Cliente (4a cabeca)
 - [x] Fase 4: Selecao justa de motoboys
 - [x] Fase 5: Calculo automatico de taxas e ganhos
-- [ ] Fase 6: Backend FastAPI completo
+- [x] Fase 6: Backend FastAPI com Site Cliente
 - [ ] Fase 7: WebSockets para GPS em tempo real
 - [ ] Fase 8: Integracao iFood
 - [ ] Fase 9: App nativo (WebView)
 
 ## Tecnologias
 
-- **Frontend**: Streamlit (PWA-ready)
-- **Backend**: Python 3.12+, FastAPI (em dev)
+- **Backend**: FastAPI + Uvicorn
+- **Dashboards**: Streamlit (PWA-ready)
+- **Linguagem**: Python 3.12+
 - **ORM**: SQLAlchemy 2.0+
 - **Migrations**: Alembic
 - **Banco**: SQLite (dev) / PostgreSQL (prod)

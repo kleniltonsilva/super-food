@@ -28,8 +28,7 @@ SERVICES = {
             "uvicorn", "backend.app.main:app",
             "--host", "0.0.0.0",
             "--port", "8000",
-            "--workers", "4",  # Múltiplos workers para escalabilidade
-            "--reload",  # Remover em produção final
+            "--reload",  # Modo desenvolvimento (remove para prod e adiciona --workers 4)
         ],
         "essential": True,
         "description": "API REST + WebSockets (principal)"
@@ -81,12 +80,15 @@ def start_service(service_id: str) -> subprocess.Popen:
     print(f"🚀 Iniciando {service['name']}...")
     print(f"   Comando: {' '.join(service['command'])}")
 
+    # Usar subprocess.DEVNULL para evitar bloqueio do buffer de pipe
+    # start_new_session=True cria um novo grupo de processos (daemon)
     process = subprocess.Popen(
         service["command"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
         cwd=Path(__file__).parent,
-        env={**os.environ, "PYTHONUNBUFFERED": "1"}
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        start_new_session=True  # Permite que subprocessos sobrevivam ao script pai
     )
 
     return process
