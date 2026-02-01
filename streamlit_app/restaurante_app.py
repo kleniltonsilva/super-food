@@ -162,16 +162,30 @@ def to_dict_list(objs):
 
 # ==================== AUTENTICAÇÃO ====================
 def verificar_login():
-    """Inicializa estado de sessão do restaurante"""
-    if 'restaurante_logado' not in st.session_state:
-        st.session_state.restaurante_logado = False
-        st.session_state.restaurante_id = None
-        st.session_state.restaurante_dados = None
-        st.session_state.restaurante_config = None
-    
-    # Flag de navegação temporária
-    if 'navegar_para' not in st.session_state:
-        st.session_state.navegar_para = None
+    """Inicializa estado de sessão do restaurante de forma segura"""
+    # Inicialização defensiva - sempre garantir que todas as variáveis existem
+    defaults = {
+        'restaurante_logado': False,
+        'restaurante_id': None,
+        'restaurante_dados': None,
+        'restaurante_config': None,
+        'navegar_para': None,
+        '_session_initialized': True
+    }
+
+    for key, default_value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
+
+
+def is_session_valid():
+    """Verifica se a sessão está válida e inicializada"""
+    return (
+        hasattr(st, 'session_state') and
+        st.session_state.get('_session_initialized', False) and
+        st.session_state.get('restaurante_logado', False) and
+        st.session_state.get('restaurante_id') is not None
+    )
 
 def fazer_login(email: str, senha: str) -> bool:
     """Login do restaurante usando SQLAlchemy (mantém lógica original)"""
@@ -205,12 +219,14 @@ def fazer_login(email: str, senha: str) -> bool:
         session.close()
 
 def fazer_logout():
-    """Logout do restaurante"""
-    st.session_state.restaurante_logado = False
-    st.session_state.restaurante_id = None
-    st.session_state.restaurante_dados = None
-    st.session_state.restaurante_config = None
-    st.session_state.navegar_para = None
+    """Logout do restaurante de forma segura"""
+    keys_to_clear = [
+        'restaurante_logado', 'restaurante_id', 'restaurante_dados',
+        'restaurante_config', 'navegar_para'
+    ]
+    for key in keys_to_clear:
+        if key in st.session_state:
+            st.session_state[key] = None if key != 'restaurante_logado' else False
 
 # ==================== TELA DE LOGIN ====================
 def tela_login():
@@ -249,9 +265,17 @@ def tela_login():
 # ==================== SIDEBAR ====================
 def renderizar_sidebar():
     """Sidebar com menu e informações (lógica original preservada)"""
+    # Verificação defensiva no início
+    if not is_session_valid():
+        return "🏠 Dashboard"  # Retorna valor padrão se sessão inválida
+
     with st.sidebar:
-        rest = st.session_state.restaurante_dados
-        config = st.session_state.restaurante_config
+        rest = st.session_state.get('restaurante_dados')
+        config = st.session_state.get('restaurante_config')
+
+        # Se dados do restaurante não existem, retorna padrão
+        if not rest:
+            return "🏠 Dashboard"
         
         st.title(f"🍕 {rest['nome_fantasia']}")
         st.caption(f"Plano: **{rest['plano'].upper()}**")
@@ -266,8 +290,8 @@ def renderizar_sidebar():
         
         # Se existe navegação pendente, força o valor
         valor_padrao_menu = None
-        if st.session_state.navegar_para:
-            valor_padrao_menu = st.session_state.navegar_para
+        if st.session_state.get('navegar_para'):
+            valor_padrao_menu = st.session_state.get('navegar_para')
             st.session_state.navegar_para = None  # Limpa flag
         
         menu = st.radio(
@@ -296,18 +320,22 @@ def renderizar_sidebar():
         )
         
         st.markdown("---")
-        
-        session = get_db_session()
-        try:
-            notificacoes = session.query(Notificacao).filter(
-                Notificacao.restaurante_id == st.session_state.restaurante_id,
-                Notificacao.lida == False
-            ).count()
-            if notificacoes > 0:
-                st.warning(f"🔔 {notificacoes} notificação(ões)")
-        finally:
-            session.close()
-        
+
+        # Verificação defensiva antes de acessar banco de dados
+        if is_session_valid():
+            session = get_db_session()
+            try:
+                notificacoes = session.query(Notificacao).filter(
+                    Notificacao.restaurante_id == st.session_state.restaurante_id,
+                    Notificacao.lida == False
+                ).count()
+                if notificacoes > 0:
+                    st.warning(f"🔔 {notificacoes} notificação(ões)")
+            except Exception:
+                pass  # Ignora erros silenciosamente para não quebrar a UI
+            finally:
+                session.close()
+
         st.markdown("---")
         
         if st.button("🚪 Sair", use_container_width=True):
@@ -1570,13 +1598,25 @@ def tela_relatorios():
 
 # ==================== MAIN ====================
 def main():
-    verificar_login()
+    # Sempre inicializar sessão primeiro - evita erro "SessionInfo antes de sua inicialização"
+    try:
+        verificar_login()
+    except Exception:
+        # Se houver qualquer erro na inicialização, reinicializar
+        st.session_state.clear()
+        verificar_login()
 
-    if not st.session_state.restaurante_logado:
+    # Verificação segura do estado de login
+    if not st.session_state.get('restaurante_logado', False):
         tela_login()
+    elif not is_session_valid():
+        # Sessão inválida - mostrar login novamente
+        st.warning("Sessão expirada. Por favor, faça login novamente.")
+        fazer_logout()
+        st.rerun()
     else:
         menu = renderizar_sidebar()
-        
+
         if menu == "🏠 Dashboard":
             tela_dashboard()
         elif menu == "📦 Pedidos":
@@ -1593,6 +1633,7 @@ def main():
             tela_impressao()
         elif menu == "📊 Relatórios":
             tela_relatorios()
+
 
 if __name__ == "__main__":
     main()
