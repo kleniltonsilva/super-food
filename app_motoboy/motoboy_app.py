@@ -25,11 +25,20 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Importar session e models do banco SQLAlchemy
 from database.session import get_db_session
-from database.models import Motoboy, Restaurante, GPSMotoboy, MotoboySolicitacao, Entrega, Pedido
+from database.models import Motoboy, Restaurante, GPSMotoboy, MotoboySolicitacao, Entrega, Pedido, ConfigRestaurante
 
 # Import para eager loading
 from sqlalchemy.orm import joinedload
 import sqlalchemy as sa
+
+# Import para cálculos de ganhos
+from utils.calculos import obter_ganhos_dia_motoboy
+# Imports de utils mantidos apenas os necessários
+from utils.motoboy_selector import (
+    finalizar_entrega_motoboy,
+    marcar_motoboy_disponivel,
+    obter_estatisticas_motoboy
+)
 
 # Configuração da página para PWA (mobile-friendly)
 st.set_page_config(
@@ -113,28 +122,77 @@ def verificar_login():
         st.session_state.motoboy_dados = None
         st.session_state.restaurante_id = None
 
-def fazer_login_motoboy(usuario: str, senha: str) -> bool:
-    """Faz login do motoboy usando ORM com eager loading para relacionamentos"""
+def fazer_login_motoboy(codigo_restaurante: str, usuario: str, senha: str) -> dict:
+    """
+    Faz login do motoboy usando código do restaurante + usuário + senha.
+
+    O código do restaurante é obrigatório para isolamento multi-tenant.
+    Isso garante que motoboys com mesmo usuário em restaurantes diferentes
+    não tenham conflito.
+
+    Returns:
+        dict com 'sucesso' (bool) e 'erro' (str) se falhou
+    """
     session = get_db_session()
     try:
+        # Primeiro, validar o código do restaurante
+        restaurante = session.query(Restaurante).filter(
+            Restaurante.codigo_acesso == codigo_restaurante.strip().upper(),
+            Restaurante.ativo == True
+        ).first()
+
+        if not restaurante:
+            return {'sucesso': False, 'erro': 'Código do restaurante inválido'}
+
         senha_hash = hashlib.sha256(senha.encode()).hexdigest()
-        
+
+        # Buscar motoboy filtrando por restaurante_id para isolamento
         motoboy = session.query(Motoboy).options(
-            joinedload(Motoboy.restaurante)  # Eager load para evitar DetachedInstanceError
+            joinedload(Motoboy.restaurante)
         ).filter(
-            Motoboy.usuario == usuario,
+            Motoboy.restaurante_id == restaurante.id,  # ISOLAMENTO POR RESTAURANTE
+            Motoboy.usuario == usuario.strip().lower(),
             Motoboy.senha == senha_hash,
             Motoboy.status == 'ativo'
         ).first()
-        
-        if motoboy:
-            st.session_state.motoboy_logado = True
-            st.session_state.motoboy_id = motoboy.id
-            st.session_state.motoboy_dados = motoboy  # Armazena o objeto ORM diretamente
-            st.session_state.restaurante_id = motoboy.restaurante_id
-            return True
-        
-        return False
+
+        if not motoboy:
+            return {'sucesso': False, 'erro': 'Usuário ou senha incorretos'}
+
+        # Marcar motoboy como disponível ao fazer login
+        motoboy.disponivel = True
+        motoboy.ultimo_status_online = datetime.now()
+        session.commit()
+
+        # Converter ORM para dict para evitar DetachedInstanceError
+        motoboy_dados = {
+            'id': motoboy.id,
+            'nome': motoboy.nome,
+            'usuario': motoboy.usuario,
+            'telefone': motoboy.telefone,
+            'status': motoboy.status,
+            'disponivel': motoboy.disponivel,
+            'em_rota': motoboy.em_rota,
+            'restaurante_id': motoboy.restaurante_id,
+            'restaurante_nome': motoboy.restaurante.nome_fantasia if motoboy.restaurante else 'N/A',
+            'restaurante_codigo': motoboy.restaurante.codigo_acesso if motoboy.restaurante else '',
+            'capacidade_entregas': motoboy.capacidade_entregas or 3,
+            'entregas_pendentes': motoboy.entregas_pendentes or 0,
+            'total_entregas': motoboy.total_entregas or 0,
+            'total_ganhos': motoboy.total_ganhos or 0,
+            'total_km': motoboy.total_km or 0,
+            'ordem_hierarquia': motoboy.ordem_hierarquia or 0,
+        }
+
+        st.session_state.motoboy_logado = True
+        st.session_state.motoboy_id = motoboy.id
+        st.session_state.motoboy_dados = motoboy_dados
+        st.session_state.restaurante_id = motoboy.restaurante_id
+
+        return {'sucesso': True}
+
+    except Exception as e:
+        return {'sucesso': False, 'erro': str(e)}
     finally:
         session.close()
 
@@ -195,33 +253,54 @@ def tela_cadastro():
                 
                 session = get_db_session()
                 try:
-                    # Validação do código
+                    # Validação do código do restaurante
                     restaurante = session.query(Restaurante).filter(
                         Restaurante.codigo_acesso == codigo_limpo,
                         Restaurante.ativo == True
                     ).first()
-                    
+
                     if not restaurante:
                         st.error("❌ Código de acesso inválido!")
                     else:
-                        # Inserção na tabela de solicitações
-                        solicitacao = MotoboySolicitacao(
-                            restaurante_id=restaurante.id,
-                            nome=nome.strip(),
-                            usuario=usuario.strip().lower(),
-                            telefone=telefone_limpo,
-                            codigo_acesso=codigo_limpo,
-                            data_solicitacao=datetime.now(),
-                            status='pendente'
-                        )
-                        session.add(solicitacao)
-                        session.commit()
-                        
-                        st.success("✅ Solicitação enviada! Aguarde aprovação do restaurante.")
-                        st.balloons()
-                        st.info("💡 Quando aprovado, use a senha padrão **123456** para login.")
-                        time.sleep(3)
-                        st.rerun()
+                        usuario_limpo = usuario.strip().lower()
+
+                        # Verificar se usuário já existe como motoboy neste restaurante
+                        motoboy_existente = session.query(Motoboy).filter(
+                            Motoboy.restaurante_id == restaurante.id,
+                            Motoboy.usuario == usuario_limpo
+                        ).first()
+
+                        if motoboy_existente:
+                            st.error("❌ Este usuário já está cadastrado neste restaurante!")
+                        else:
+                            # Verificar se já existe solicitação pendente com mesmo usuário
+                            solicitacao_existente = session.query(MotoboySolicitacao).filter(
+                                MotoboySolicitacao.restaurante_id == restaurante.id,
+                                MotoboySolicitacao.usuario == usuario_limpo,
+                                MotoboySolicitacao.status == 'pendente'
+                            ).first()
+
+                            if solicitacao_existente:
+                                st.warning("⚠️ Já existe uma solicitação pendente com este usuário. Aguarde a aprovação.")
+                            else:
+                                # Criar solicitação
+                                solicitacao = MotoboySolicitacao(
+                                    restaurante_id=restaurante.id,
+                                    nome=nome.strip(),
+                                    usuario=usuario_limpo,
+                                    telefone=telefone_limpo,
+                                    codigo_acesso=codigo_limpo,
+                                    data_solicitacao=datetime.now(),
+                                    status='pendente'
+                                )
+                                session.add(solicitacao)
+                                session.commit()
+
+                                st.success("✅ Solicitação enviada! Aguarde aprovação do restaurante.")
+                                st.balloons()
+                                st.info(f"💡 Quando aprovado, use:\n- **Código:** {codigo_limpo}\n- **Usuário:** {usuario_limpo}\n- **Senha:** 123456")
+                                time.sleep(3)
+                                st.rerun()
                 except Exception as e:
                     session.rollback()
                     st.error(f"❌ Erro ao enviar solicitação: {str(e)}")
@@ -240,32 +319,40 @@ def tela_login():
     """Interface de login do motoboy"""
     st.title("🏍️ Motoboy App")
     st.markdown("### 🔐 Faça seu Login")
-    
+
     with st.form("form_login_motoboy"):
-        usuario = st.text_input("Usuário", placeholder="Seu usuário")
-        senha = st.text_input("Senha", type="password", placeholder="Senha (padrão: 123456)")
-        
+        codigo_restaurante = st.text_input(
+            "Código do Restaurante *",
+            placeholder="Ex: ABC12345",
+            max_chars=8,
+            help="Código de 8 dígitos fornecido pelo restaurante"
+        )
+        usuario = st.text_input("Usuário *", placeholder="Seu usuário")
+        senha = st.text_input("Senha *", type="password", placeholder="Senha (padrão: 123456)")
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
             submit = st.form_submit_button("🚀 Entrar", use_container_width=True, type="primary")
-        
+
         with col2:
             cadastro = st.form_submit_button("📝 Cadastrar", use_container_width=True)
-        
+
         if submit:
-            if not usuario or not senha:
+            if not codigo_restaurante or not usuario or not senha:
                 st.error("❌ Preencha todos os campos!")
-            elif fazer_login_motoboy(usuario, senha):
-                st.success("✅ Login realizado!")
-                st.rerun()
             else:
-                st.error("❌ Usuário ou senha incorretos, ou cadastro não aprovado!")
-        
+                resultado = fazer_login_motoboy(codigo_restaurante, usuario, senha)
+                if resultado['sucesso']:
+                    st.success("✅ Login realizado!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {resultado['erro']}")
+
         if cadastro:
             st.session_state.tela_atual = "cadastro"
             st.rerun()
-    
+
     st.markdown("---")
     st.info("💡 **Não tem cadastro?** Clique em 'Cadastrar' e solicite seu acesso ao restaurante!")
 
@@ -274,11 +361,12 @@ def tela_login():
 def tela_mapa():
     """Mapa com localização em tempo real"""
     st.title("🗺️ Sua Localização")
-    
+
     motoboy = st.session_state.motoboy_dados
-    
-    st.markdown(f"### 👤 Olá, {motoboy.nome}!")
-    st.markdown(f"**Restaurante:** {motoboy.restaurante.nome_fantasia}")
+
+    # Acessar como dict (não ORM) para evitar DetachedInstanceError
+    st.markdown(f"### 👤 Olá, {motoboy['nome']}!")
+    st.markdown(f"**Restaurante:** {motoboy['restaurante_nome']}")
     
     session = get_db_session()
     try:
@@ -334,255 +422,404 @@ def tela_mapa():
 
 # ==================== ENTREGAS ====================
 
+def tocar_som_notificacao():
+    """Injeta JavaScript para tocar som de notificação"""
+    # Som de notificação usando Web Audio API (funciona em PWA)
+    st.markdown("""
+    <script>
+    (function() {
+        // Criar contexto de áudio
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Criar oscilador para som de notificação
+        function playNotificationSound() {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+
+            oscillator.frequency.value = 800;
+            oscillator.type = 'sine';
+
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.5);
+        }
+
+        // Tocar som 3 vezes com intervalo
+        playNotificationSound();
+        setTimeout(playNotificationSound, 600);
+        setTimeout(playNotificationSound, 1200);
+    })();
+    </script>
+    """, unsafe_allow_html=True)
+
+
 def tela_entregas():
-    """Tela de entregas COM ORDEM OTIMIZADA TSP"""
+    """Tela de entregas COM ORDEM OTIMIZADA e sistema sequencial"""
     st.title("📦 Suas Entregas")
-   
+
     session = get_db_session()
     try:
+        # Buscar todas as entregas pendentes ou em rota
         entregas = session.query(Entrega).join(Pedido).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
             Entrega.status.in_(['pendente', 'em_rota'])
         ).order_by(Entrega.posicao_rota_otimizada.asc()).all()
-   
-        if entregas:
-            if any(e.status == 'em_rota' for e in entregas):
-                st.markdown('<div class="status-ocupado">🏍️ EM ROTA</div>', unsafe_allow_html=True)
-            else:
-                st.markdown('<div class="status-disponivel">✅ ENTREGAS ATRIBUÍDAS</div>', unsafe_allow_html=True)
+
+        # Verificar se há novas entregas para tocar som
+        entregas_ids = [e.id for e in entregas]
+        if 'ultimas_entregas_ids' not in st.session_state:
+            st.session_state.ultimas_entregas_ids = []
+
+        # Se há novas entregas, tocar som de notificação
+        novas_entregas = [e for e in entregas_ids if e not in st.session_state.ultimas_entregas_ids]
+        if novas_entregas and entregas:
+            tocar_som_notificacao()
+            st.toast(f"🔔 Nova(s) entrega(s) recebida(s)!", icon="🏍️")
+
+        st.session_state.ultimas_entregas_ids = entregas_ids
+
+        total_entregas = len(entregas)
+        entregas_em_rota = [e for e in entregas if e.status == 'em_rota']
+        entregas_pendentes = [e for e in entregas if e.status == 'pendente']
+
+        # ==================== STATUS GERAL ====================
+        if entregas_em_rota:
+            entrega_atual = entregas_em_rota[0]
+            posicao_atual = next((i+1 for i, e in enumerate(entregas) if e.id == entrega_atual.id), 1)
+            st.markdown(f"""
+            <div class="status-ocupado">
+                🏍️ EM ENTREGA - Pedido {posicao_atual}/{total_entregas}
+            </div>
+            """, unsafe_allow_html=True)
+        elif entregas_pendentes:
+            st.markdown(f"""
+            <div class="status-disponivel" style="background-color: #FFA500;">
+                📦 {total_entregas} ENTREGA(S) ATRIBUÍDA(S)
+            </div>
+            """, unsafe_allow_html=True)
         else:
             st.markdown('<div class="status-disponivel">✅ DISPONÍVEL</div>', unsafe_allow_html=True)
-            st.info("⏳ Aguardando pedidos...")
+            st.info("⏳ Aguardando pedidos do restaurante...")
+            st.caption("💡 A tela atualiza automaticamente quando você receber novos pedidos.")
             return
-   
-        st.markdown(f"### 📦 {len(entregas)} entrega(s) na fila (ordem otimizada)")
-   
+
         st.markdown("---")
-   
-        primeira_entrega = entregas[0]
-        outras_entregas = entregas[1:] if len(entregas) > 1 else []
-   
-        st.markdown("### 🎯 Próxima Entrega:")
-   
-        # ========== MOSTRA POSIÇÃO NA ROTA OTIMIZADA ==========
-        st.info(f"📍 **Posição na Rota:** {primeira_entrega.posicao_rota_otimizada or '?'} de {len(entregas)}")
-        # ====================================================
-   
-        st.markdown(f"""
-        <div class="pedido-card">
-            <h3>📦 Comanda #{primeira_entrega.pedido.comanda}</h3>
-            <p><strong>👤 Cliente:</strong> {primeira_entrega.pedido.cliente_nome}</p>
-            <p><strong>📞 Telefone:</strong> {primeira_entrega.pedido.cliente_telefone}</p>
-            <p><strong>📍 Endereço:</strong> {primeira_entrega.pedido.endereco_entrega}</p>
-            <p><strong>📏 Distância:</strong> {primeira_entrega.distancia_km or 0:.2f} km</p>
-            <p><strong>⏱️ Tempo Estimado:</strong> {primeira_entrega.tempo_entrega or '?'} min</p>
-            <p><strong>💰 Valor da Entrega:</strong> R$ {primeira_entrega.valor_entrega or 0:.2f}</p>
-        </div>
-        """, unsafe_allow_html=True)
-   
-        if primeira_entrega.pedido.observacoes:
-            st.warning(f"📝 **Observações:** {primeira_entrega.pedido.observacoes}")
-   
-        st.markdown("---")
-   
-        if primeira_entrega.status == 'pendente':
-            st.markdown("### ⚡ Ações:")
-       
-            col1, col2 = st.columns(2)
-       
-            with col1:
-                # Link para ligar (tel:)
-                telefone_limpo = ''.join(filter(str.isdigit, primeira_entrega.pedido.cliente_telefone))
-                st.markdown(f"[📞 Ligar para Cliente](tel:{telefone_limpo})")
-       
-            with col2:
-                if st.button("🚀 Iniciar Rota", use_container_width=True, type="primary"):
+
+        # ==================== BOTÃO INICIAR ENTREGAS (quando tem pendentes) ====================
+        if entregas_pendentes and not entregas_em_rota:
+            st.markdown(f"### 📦 {total_entregas} Entrega(s) na Fila")
+
+            # Mostrar resumo das entregas
+            for i, e in enumerate(entregas_pendentes[:4], 1):  # Mostra até 4
+                st.markdown(f"**{i}.** {e.pedido.cliente_nome} - {e.pedido.endereco_entrega[:40]}...")
+
+            if len(entregas_pendentes) > 4:
+                st.caption(f"... e mais {len(entregas_pendentes) - 4} entrega(s)")
+
+            st.markdown("---")
+
+            # Botão grande para iniciar
+            if st.button("🚀 INICIAR ENTREGAS", use_container_width=True, type="primary", key="btn_iniciar_todas"):
+                try:
+                    # Inicia a primeira entrega da fila
+                    primeira = entregas_pendentes[0]
+                    primeira.status = 'em_rota'
+                    primeira.atribuido_em = datetime.now()
+                    primeira.pedido.status = 'saiu_entrega'
+                    session.commit()
+                    st.success("✅ Rota iniciada! Siga para a primeira entrega.")
+                    time.sleep(1)
+                    st.rerun()
+                except Exception as e:
+                    session.rollback()
+                    st.error(f"Erro: {str(e)}")
+            return
+
+        # ==================== ENTREGA ATUAL (em rota) ====================
+        if entregas_em_rota:
+            entrega_atual = entregas_em_rota[0]
+            posicao_atual = next((i+1 for i, e in enumerate(entregas) if e.id == entrega_atual.id), 1)
+
+            st.markdown(f"### 🎯 Entrega Atual ({posicao_atual}/{total_entregas})")
+
+            # Card da entrega atual
+            st.markdown(f"""
+            <div class="pedido-card" style="border-color: #00AA00; border-width: 3px;">
+                <h3>📦 Comanda #{entrega_atual.pedido.comanda}</h3>
+                <p><strong>👤 Cliente:</strong> {entrega_atual.pedido.cliente_nome}</p>
+                <p><strong>📞 Telefone:</strong> {entrega_atual.pedido.cliente_telefone or 'Não informado'}</p>
+                <p><strong>📍 Endereço:</strong> {entrega_atual.pedido.endereco_entrega}</p>
+                <p><strong>📏 Distância:</strong> {entrega_atual.distancia_km or entrega_atual.pedido.distancia_restaurante_km or 0:.1f} km</p>
+                <p><strong>💰 Ganho Estimado:</strong> R$ {entrega_atual.valor_motoboy or entrega_atual.valor_entrega or 0:.2f}</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if entrega_atual.pedido.observacoes:
+                st.warning(f"📝 **Observações:** {entrega_atual.pedido.observacoes}")
+
+            # Forma de pagamento
+            if entrega_atual.pedido.forma_pagamento:
+                pagamento = entrega_atual.pedido.forma_pagamento
+                troco = entrega_atual.pedido.troco_para
+                if troco and pagamento == 'Dinheiro':
+                    st.info(f"💵 Pagamento: {pagamento} - Troco para R$ {troco:.2f}")
+                else:
+                    st.info(f"💳 Pagamento: {pagamento}")
+
+            st.markdown("---")
+
+            # ==================== BOTÕES DE NAVEGAÇÃO GPS ====================
+            st.markdown("### 🗺️ Navegação")
+
+            endereco_encoded = entrega_atual.pedido.endereco_entrega.replace(' ', '+').replace('\n', '+')
+            gmap_url = f"https://www.google.com/maps/dir/?api=1&destination={endereco_encoded}"
+            waze_url = f"https://waze.com/ul?q={endereco_encoded}&navigate=yes"
+
+            col_nav1, col_nav2 = st.columns(2)
+            with col_nav1:
+                st.markdown(f"""
+                <a href="{gmap_url}" target="_blank" style="
+                    display: block;
+                    padding: 15px;
+                    background-color: #4285F4;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 10px;
+                    font-weight: bold;
+                    text-align: center;
+                ">📍 Google Maps</a>
+                """, unsafe_allow_html=True)
+            with col_nav2:
+                st.markdown(f"""
+                <a href="{waze_url}" target="_blank" style="
+                    display: block;
+                    padding: 15px;
+                    background-color: #00D8FF;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 10px;
+                    font-weight: bold;
+                    text-align: center;
+                ">🚗 Waze</a>
+                """, unsafe_allow_html=True)
+
+            st.markdown("---")
+
+            # ==================== AÇÕES DA ENTREGA ====================
+            st.markdown("### ⚡ Ações")
+
+            # Verificar estado atual
+            estado_entrega = st.session_state.get(f'estado_entrega_{entrega_atual.id}', 'em_rota')
+
+            if estado_entrega == 'em_rota':
+                # Botão: Cheguei ao Destino
+                if st.button("📍 CHEGUEI AO DESTINO", use_container_width=True, type="primary"):
+                    st.session_state[f'estado_entrega_{entrega_atual.id}'] = 'no_destino'
+                    st.rerun()
+
+                # Ligar para cliente
+                telefone = entrega_atual.pedido.cliente_telefone
+                if telefone:
+                    telefone_limpo = ''.join(filter(str.isdigit, telefone))
+                    st.markdown(f"[📞 Ligar para Cliente](tel:{telefone_limpo})")
+
+            elif estado_entrega == 'no_destino':
+                st.success("📍 Você chegou ao destino!")
+
+                # Botão principal: Entrega Concluída
+                if st.button("✅ ENTREGA CONCLUÍDA", use_container_width=True, type="primary"):
                     try:
-                        primeira_entrega.status = 'em_rota'
-                        primeira_entrega.atribuido_em = datetime.now()  # Corrigido para horario_saida? Ajustar se necessário
-                        session.commit()
-                   
-                        st.success("✅ Rota iniciada!")
-                   
-                        # ========== NOVO: ABRE GPS EXTERNO ==========
-                        endereco_encoded = primeira_entrega.pedido.endereco_entrega.replace(' ', '+')
-                   
-                        # Tenta abrir Google Maps (padrão Android)
-                        gmap_url = f"https://www.google.com/maps/dir/?api=1&destination={endereco_encoded}"
-                   
-                        # Tenta abrir Waze (se instalado)
-                        waze_url = f"https://waze.com/ul?q={endereco_encoded}&navigate=yes"
-                   
-                        st.markdown(f"""
-                        ### 🗺️ Abrir Navegação:
-                       
-                        <a href="{gmap_url}" target="_blank" style="
-                            display: inline-block;
-                            padding: 15px 30px;
-                            background-color: #4285F4;
-                            color: white;
-                            text-decoration: none;
-                            border-radius: 10px;
-                            font-weight: bold;
-                            margin: 10px;
-                        ">📍 Google Maps</a>
-                       
-                        <a href="{waze_url}" target="_blank" style="
-                            display: inline-block;
-                            padding: 15px 30px;
-                            background-color: #00D8FF;
-                            color: white;
-                            text-decoration: none;
-                            border-radius: 10px;
-                            font-weight: bold;
-                            margin: 10px;
-                        ">🚗 Waze</a>
-                        """, unsafe_allow_html=True)
-                        # ============================================
-                   
-                        time.sleep(2)
-                        st.rerun()
+                        distancia_km = entrega_atual.distancia_km or entrega_atual.pedido.distancia_restaurante_km or 0
+
+                        resultado = finalizar_entrega_motoboy(
+                            entrega_atual.id,
+                            distancia_km if distancia_km else None,
+                            session
+                        )
+
+                        if resultado['sucesso']:
+                            valor_ganho = resultado.get('valor_ganho', 0)
+                            st.success(f"✅ Entrega concluída! Ganho: R$ {valor_ganho:.2f}")
+
+                            # Limpar estado
+                            if f'estado_entrega_{entrega_atual.id}' in st.session_state:
+                                del st.session_state[f'estado_entrega_{entrega_atual.id}']
+
+                            # Verificar se há mais entregas
+                            proximas = [e for e in entregas if e.id != entrega_atual.id and e.status == 'pendente']
+                            if proximas:
+                                st.info(f"📦 Ainda há {len(proximas)} entrega(s) restante(s)!")
+                            else:
+                                st.balloons()
+                                st.success("🎉 Todas as entregas concluídas!")
+
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error(f"Erro: {resultado.get('erro', 'Desconhecido')}")
                     except Exception as e:
                         session.rollback()
                         st.error(f"Erro: {str(e)}")
-   
-        elif primeira_entrega.status == 'em_rota':
-            st.success("🏍️ Você está em rota!")
-       
-            st.markdown("### ⚡ Ações na Entrega:")
-       
-            col1, col2 = st.columns(2)
-       
-            with col1:
-                telefone_limpo = ''.join(filter(str.isdigit, primeira_entrega.pedido.cliente_telefone))
-                st.markdown(f"[📞 Ligar para Cliente](tel:{telefone_limpo})")
-       
-            with col2:
-                if st.button("✅ Marcar como Entregue", use_container_width=True, type="primary"):
-                    try:
-                        primeira_entrega.status = 'entregue'
-                        primeira_entrega.entregue_em = datetime.now()
-                   
-                        primeira_entrega.pedido.status = 'entregue'
-                   
-                        # Atualiza estatísticas do motoboy
-                        motoboy = st.session_state.motoboy_dados
-                        motoboy.total_entregas = session.query(Entrega).filter(
-                            Entrega.motoboy_id == motoboy.id,
-                            Entrega.status == 'entregue'
-                        ).count()
-                        motoboy.total_ganhos = session.query(
-                            sa.func.coalesce(sa.func.sum(Entrega.valor_entrega), 0)
-                        ).filter(
-                            Entrega.motoboy_id == motoboy.id,
-                            Entrega.status == 'entregue'
-                        ).scalar()
-                   
-                        session.commit()
-                   
-                        st.success("✅ Pedido entregue com sucesso!")
-                        st.balloons()
-                        time.sleep(2)
+
+                st.markdown("---")
+
+                # Opções de problema
+                st.markdown("##### ⚠️ Problemas com a entrega?")
+                col_prob1, col_prob2 = st.columns(2)
+
+                with col_prob1:
+                    if st.button("🚪 Cliente Ausente", use_container_width=True):
+                        st.session_state.modal_ausente = True
                         st.rerun()
-                    except Exception as e:
-                        session.rollback()
-                        st.error(f"Erro: {str(e)}")
-       
+
+                with col_prob2:
+                    if st.button("❌ Cliente Cancelou", use_container_width=True):
+                        st.session_state.modal_rejeitar = True
+                        st.rerun()
+
+            # Modals
+            if st.session_state.get('modal_rejeitar'):
+                modal_rejeitar_pedido(entrega_atual, session)
+
+            if st.session_state.get('modal_ausente'):
+                modal_cliente_ausente(entrega_atual, session)
+
+        # ==================== PRÓXIMAS ENTREGAS ====================
+        proximas_entregas = [e for e in entregas if e.status == 'pendente']
+        if proximas_entregas:
             st.markdown("---")
-       
-            # Opções de recusa/ausência (mantém código existente)
-            col3, col4 = st.columns(2)
-       
-            with col3:
-                if st.button("❌ Cliente Recusou", use_container_width=True):
-                    st.session_state.modal_rejeitar = True
-                    st.rerun()
-       
-            with col4:
-                if st.button("🚪 Cliente Ausente", use_container_width=True):
-                    st.session_state.modal_ausente = True
-                    st.rerun()
-   
-        # Modals (mantém código existente)
-        if st.session_state.get('modal_rejeitar'):
-            modal_rejeitar_pedido(primeira_entrega, session)
-   
-        if st.session_state.get('modal_ausente'):
-            modal_cliente_ausente(primeira_entrega, session)
-   
-        # ========== MOSTRA PRÓXIMAS ENTREGAS COM ORDEM OTIMIZADA ==========
-        if outras_entregas:
-            st.markdown("---")
-            st.markdown(f"### 📋 Próximas entregas ({len(outras_entregas)}) - Ordem Otimizada:")
-       
-            for entrega in outras_entregas:
-                posicao = entrega.posicao_rota_otimizada or '?'
-                with st.expander(f"#{posicao} - Comanda {entrega.pedido.comanda} - {entrega.distancia_km or 0:.1f} km"):
-                    st.markdown(f"Cliente: {entrega.pedido.cliente_nome}")
-                    st.markdown(f"Endereço: {entrega.pedido.endereco_entrega}")
-                    st.markdown(f"Valor: R$ {entrega.valor_entrega or 0:.2f}")
+            st.markdown(f"### 📋 Próximas Entregas ({len(proximas_entregas)})")
+
+            for i, entrega in enumerate(proximas_entregas, 1):
+                posicao = i + 1 if entregas_em_rota else i
+                with st.expander(f"#{posicao} - {entrega.pedido.cliente_nome} - {entrega.distancia_km or 0:.1f} km"):
+                    st.markdown(f"**Comanda:** #{entrega.pedido.comanda}")
+                    st.markdown(f"**Endereço:** {entrega.pedido.endereco_entrega}")
+                    st.markdown(f"**Telefone:** {entrega.pedido.cliente_telefone or 'Não informado'}")
+                    if entrega.pedido.observacoes:
+                        st.markdown(f"**Obs:** {entrega.pedido.observacoes}")
     finally:
         session.close()
 
 def modal_rejeitar_pedido(entrega, session):
     with st.form("form_rejeitar"):
-        st.warning("⚠️ Rejeitar Pedido")
-        st.markdown("Por que você está rejeitando este pedido?")
-        
-        motivo = st.text_area("Motivo", placeholder="Explique o motivo...")
-        
+        st.warning("⚠️ Cliente Cancelou/Recusou")
+        st.markdown("Registre o motivo do cancelamento:")
+
+        motivo = st.selectbox(
+            "Motivo:",
+            [
+                "Cliente cancelou o pedido",
+                "Cliente recusou receber",
+                "Pedido errado",
+                "Problema com pagamento",
+                "Outro motivo"
+            ]
+        )
+
+        obs = st.text_area("Observações adicionais", placeholder="Detalhes...")
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
-            if st.form_submit_button("❌ Confirmar Rejeição", use_container_width=True):
+            if st.form_submit_button("❌ Confirmar Cancelamento", use_container_width=True):
                 try:
                     entrega.status = 'cancelado'
-                    entrega.motivo_cancelamento = motivo
+                    entrega.motivo_cancelamento = f"{motivo}. {obs}" if obs else motivo
+                    entrega.entregue_em = datetime.now()
+
+                    # Atualizar pedido
+                    entrega.pedido.status = 'cancelado'
+
+                    # Atualizar motoboy - decrementar entregas pendentes
+                    motoboy = session.query(Motoboy).filter(
+                        Motoboy.id == entrega.motoboy_id
+                    ).first()
+                    if motoboy:
+                        motoboy.entregas_pendentes = max(0, (motoboy.entregas_pendentes or 1) - 1)
+                        if motoboy.entregas_pendentes == 0:
+                            motoboy.em_rota = False
+
                     session.commit()
-                    st.error("❌ Pedido rejeitado!")
+
+                    # Limpar estado
+                    if f'estado_entrega_{entrega.id}' in st.session_state:
+                        del st.session_state[f'estado_entrega_{entrega.id}']
+
+                    st.warning("⚠️ Pedido cancelado e registrado!")
                     st.session_state.modal_rejeitar = False
                     time.sleep(2)
                     st.rerun()
                 except Exception as e:
                     session.rollback()
                     st.error(f"Erro: {str(e)}")
-        
+
         with col2:
-            if st.form_submit_button("🔙 Cancelar", use_container_width=True):
+            if st.form_submit_button("🔙 Voltar", use_container_width=True):
                 st.session_state.modal_rejeitar = False
                 st.rerun()
+
 
 def modal_cliente_ausente(entrega, session):
     with st.form("form_ausente"):
         st.warning("🚪 Cliente Ausente")
-        st.markdown("O que você fez?")
-        
+        st.markdown("O que aconteceu?")
+
         acao = st.radio(
             "Ação tomada:",
-            ["Tentei ligar e não atendeu", "Bati na porta e não respondeu", "Aguardei no local"]
+            [
+                "Tentei ligar e não atendeu",
+                "Toquei campainha/bati na porta",
+                "Aguardei no local por mais de 5 minutos",
+                "Vizinho informou que não está em casa"
+            ]
         )
-        
-        observacoes = st.text_area("Observações adicionais")
-        
+
+        obs = st.text_area("Observações adicionais")
+
         col1, col2 = st.columns(2)
-        
+
         with col1:
-            if st.form_submit_button("✅ Registrar", use_container_width=True):
+            if st.form_submit_button("✅ Registrar Ausência", use_container_width=True):
                 try:
-                    motivo = f"Cliente ausente: {acao}. {observacoes}"
+                    motivo = f"Cliente ausente - {acao}. {obs}" if obs else f"Cliente ausente - {acao}"
                     entrega.status = 'cancelado'
                     entrega.motivo_cancelamento = motivo
+                    entrega.entregue_em = datetime.now()
+
+                    # Atualizar pedido para cliente_ausente
+                    entrega.pedido.status = 'cliente_ausente'
+
+                    # Atualizar motoboy
+                    motoboy = session.query(Motoboy).filter(
+                        Motoboy.id == entrega.motoboy_id
+                    ).first()
+                    if motoboy:
+                        motoboy.entregas_pendentes = max(0, (motoboy.entregas_pendentes or 1) - 1)
+                        if motoboy.entregas_pendentes == 0:
+                            motoboy.em_rota = False
+
                     session.commit()
-                    st.warning("⚠️ Registrado como cliente ausente!")
+
+                    # Limpar estado
+                    if f'estado_entrega_{entrega.id}' in st.session_state:
+                        del st.session_state[f'estado_entrega_{entrega.id}']
+
+                    st.warning("⚠️ Registrado como cliente ausente! O restaurante será notificado.")
                     st.session_state.modal_ausente = False
                     time.sleep(2)
                     st.rerun()
                 except Exception as e:
                     session.rollback()
                     st.error(f"Erro: {str(e)}")
-        
+
         with col2:
-            if st.form_submit_button("🔙 Cancelar", use_container_width=True):
+            if st.form_submit_button("🔙 Voltar", use_container_width=True):
                 st.session_state.modal_ausente = False
                 st.rerun()
 
@@ -591,81 +828,136 @@ def modal_cliente_ausente(entrega, session):
 def tela_ganhos():
     session = get_db_session()
     try:
-        # Estatísticas agregadas
+        # Buscar motoboy para obter restaurante_id
+        motoboy = session.query(Motoboy).filter(
+            Motoboy.id == st.session_state.motoboy_id
+        ).first()
+
+        if not motoboy:
+            st.error("Motoboy não encontrado")
+            return
+
+        # Verificar se restaurante permite ver saldo
+        config = session.query(ConfigRestaurante).filter(
+            ConfigRestaurante.restaurante_id == motoboy.restaurante_id
+        ).first()
+
+        # Por padrão permite ver saldo se não houver config
+        permitir_ver_saldo = config.permitir_ver_saldo_motoboy if config else True
+
+        if not permitir_ver_saldo:
+            st.warning("⚠️ O restaurante não habilitou a visualização de saldo para motoboys.")
+            st.info("Entre em contato com o gerente para mais informações.")
+            return
+
+        # Buscar ganhos do dia usando a nova função
+        ganhos_hoje = obter_ganhos_dia_motoboy(st.session_state.motoboy_id, session=session)
+
+        # Estatísticas totais (usa valor_motoboy - o ganho real do motoboy)
         total_entregas = session.query(Entrega).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
             Entrega.status == 'entregue'
         ).count()
-        
+
         total_ganho = session.query(
-            sa.func.coalesce(sa.func.sum(Entrega.valor_entrega), 0)
+            sa.func.coalesce(sa.func.sum(Entrega.valor_motoboy), 0)
         ).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
             Entrega.status == 'entregue'
         ).scalar()
-        
+
         total_km = session.query(
             sa.func.coalesce(sa.func.sum(Entrega.distancia_km), 0)
         ).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
             Entrega.status == 'entregue'
         ).scalar()
-        
-        stats = {
-            "total_entregas": total_entregas,
-            "total_ganho": total_ganho,
-            "total_km": total_km
-        }
-        
+
+        # Exibir ganhos do dia em destaque
+        st.subheader("💰 Ganhos de Hoje")
+        col_hoje1, col_hoje2, col_hoje3 = st.columns(3)
+
+        with col_hoje1:
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, #00AA00, #008800);">
+                <h2 style="color: white;">R$ {ganhos_hoje['total_ganhos']:.2f}</h2>
+                <p style="color: #DDD;">Ganho Hoje</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_hoje2:
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, #0066CC, #004488);">
+                <h2 style="color: white;">{ganhos_hoje['total_entregas']}</h2>
+                <p style="color: #DDD;">Entregas Hoje</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_hoje3:
+            st.markdown(f"""
+            <div class="metric-card" style="background: linear-gradient(135deg, #FF6600, #CC4400);">
+                <h2 style="color: white;">{ganhos_hoje['total_km']:.1f} km</h2>
+                <p style="color: #DDD;">Percorridos Hoje</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # Estatísticas totais
+        st.subheader("📊 Estatísticas Gerais")
         col1, col2, col3 = st.columns(3)
-        
+
         with col1:
             st.markdown(f"""
             <div class="metric-card">
-                <h2>{stats['total_entregas']}</h2>
-                <p>Entregas</p>
+                <h2>{total_entregas}</h2>
+                <p>Total Entregas</p>
             </div>
             """, unsafe_allow_html=True)
-        
+
         with col2:
             st.markdown(f"""
             <div class="metric-card">
-                <h2>R$ {stats['total_ganho']:.2f}</h2>
+                <h2>R$ {total_ganho:.2f}</h2>
                 <p>Total Ganho</p>
             </div>
             """, unsafe_allow_html=True)
-        
+
         with col3:
             st.markdown(f"""
             <div class="metric-card">
-                <h2>{stats['total_km']:.1f} km</h2>
-                <p>Distância</p>
+                <h2>{total_km:.1f} km</h2>
+                <p>Total Percorrido</p>
             </div>
             """, unsafe_allow_html=True)
-        
+
         st.markdown("---")
-        
+
         st.subheader("📜 Histórico de Entregas")
-        
+
         historico = session.query(Entrega).join(Pedido).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
             Entrega.status == 'entregue'
         ).order_by(Entrega.entregue_em.desc()).limit(20).all()
-        
+
         if not historico:
             st.info("Nenhuma entrega realizada ainda.")
         else:
             for entrega in historico:
-                with st.expander(f"📦 Comanda {entrega.pedido.comanda} - R$ {entrega.valor_entrega or 0:.2f}"):
+                # Usar valor_motoboy (ganho do motoboy) ao invés de valor_entrega (taxa do cliente)
+                valor_ganho = entrega.valor_motoboy or 0
+                with st.expander(f"📦 Comanda {entrega.pedido.comanda} - R$ {valor_ganho:.2f}"):
                     col1, col2 = st.columns(2)
-                    
+
                     with col1:
                         st.markdown(f"**Cliente:** {entrega.pedido.cliente_nome}")
                         st.markdown(f"**Distância:** {entrega.distancia_km or 0:.2f} km")
-                    
+
                     with col2:
-                        st.markdown(f"**Valor:** R$ {entrega.valor_entrega or 0:.2f}")
-                        st.markdown(f"**Data:** {entrega.entregue_em.isoformat()[:16] if entrega.entregue_em else 'N/A'}")
+                        st.markdown(f"**Ganho:** R$ {valor_ganho:.2f}")
+                        if entrega.valor_base_motoboy and entrega.valor_extra_motoboy:
+                            st.caption(f"Base: R$ {entrega.valor_base_motoboy:.2f} + Extra: R$ {entrega.valor_extra_motoboy:.2f}")
+                        st.markdown(f"**Data:** {entrega.entregue_em.strftime('%d/%m %H:%M') if entrega.entregue_em else 'N/A'}")
     finally:
         session.close()
 
@@ -673,25 +965,95 @@ def tela_ganhos():
 
 def tela_perfil():
     st.title("👤 Meu Perfil")
-    
-    motoboy = st.session_state.motoboy_dados
-    
-    st.markdown(f"### {motoboy.nome}")
-    st.markdown(f"**Usuário:** {motoboy.usuario}")
-    st.markdown(f"**Telefone:** {motoboy.telefone or 'Não informado'}")
-    st.markdown(f"**Restaurante:** {motoboy.restaurante.nome_fantasia}")
-    
-    st.markdown("---")
-    
-    st.markdown("### 📊 Estatísticas")
-    st.metric("Total de Entregas", motoboy.total_entregas or 0)
-    st.metric("Total Ganho", f"R$ {motoboy.total_ganhos or 0.0:.2f}")
-    
-    st.markdown("---")
-    
-    if st.button("🚪 Sair", use_container_width=True, type="primary"):
-        fazer_logout()
-        st.rerun()
+
+    session = get_db_session()
+    try:
+        # Buscar dados atualizados do motoboy
+        motoboy = session.query(Motoboy).filter(
+            Motoboy.id == st.session_state.motoboy_id
+        ).options(joinedload(Motoboy.restaurante)).first()
+
+        if not motoboy:
+            st.error("Motoboy não encontrado")
+            return
+
+        st.markdown(f"### {motoboy.nome}")
+        st.markdown(f"**Usuário:** {motoboy.usuario}")
+        st.markdown(f"**Telefone:** {motoboy.telefone or 'Não informado'}")
+        st.markdown(f"**Restaurante:** {motoboy.restaurante.nome_fantasia}")
+
+        st.markdown("---")
+
+        # Toggle de disponibilidade
+        st.markdown("### 🟢 Status de Disponibilidade")
+
+        col_status1, col_status2 = st.columns(2)
+
+        with col_status1:
+            if motoboy.disponivel:
+                st.success("✅ ONLINE - Disponível para entregas")
+                if st.button("⏸️ Ficar Offline", use_container_width=True, type="secondary"):
+                    resultado = marcar_motoboy_disponivel(motoboy.id, False, session=session)
+                    if resultado['sucesso']:
+                        st.warning("Você está offline agora")
+                        time.sleep(1)
+                        st.rerun()
+            else:
+                st.warning("⏸️ OFFLINE - Não recebendo entregas")
+                if st.button("✅ Ficar Online", use_container_width=True, type="primary"):
+                    resultado = marcar_motoboy_disponivel(motoboy.id, True, session=session)
+                    if resultado['sucesso']:
+                        st.success("Você está online agora!")
+                        time.sleep(1)
+                        st.rerun()
+
+        with col_status2:
+            if motoboy.em_rota:
+                st.info(f"🏍️ Em Rota - {motoboy.entregas_pendentes or 0} entrega(s) pendente(s)")
+            else:
+                st.info("📍 Sem rota ativa")
+
+        st.markdown("---")
+
+        # Estatísticas
+        st.markdown("### 📊 Estatísticas")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Entregas", motoboy.total_entregas or 0)
+        with col2:
+            st.metric("Total Ganho", f"R$ {motoboy.total_ganhos or 0:.2f}")
+        with col3:
+            st.metric("Total KM", f"{motoboy.total_km or 0:.1f}")
+
+        # Estatísticas do dia
+        stats = obter_estatisticas_motoboy(motoboy.id, session)
+        if stats:
+            st.markdown("#### Hoje")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Entregas Hoje", stats['entregas_hoje'])
+            with col2:
+                st.metric("Ganho Hoje", f"R$ {stats['ganhos_hoje']:.2f}")
+            with col3:
+                st.metric("KM Hoje", f"{stats['km_hoje']:.1f}")
+
+        st.markdown("---")
+
+        # Posição na hierarquia
+        st.markdown(f"**Posição na fila de entregas:** #{motoboy.ordem_hierarquia or 0}")
+        st.caption("Quanto menor o número, mais cedo você receberá a próxima rota.")
+
+        st.markdown("---")
+
+        if st.button("🚪 Sair", use_container_width=True, type="primary"):
+            # Marcar como offline ao sair
+            marcar_motoboy_disponivel(motoboy.id, False, session=session)
+            fazer_logout()
+            st.rerun()
+
+    finally:
+        session.close()
 
 # ==================== MENU INFERIOR ====================
 

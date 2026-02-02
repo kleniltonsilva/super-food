@@ -6,7 +6,7 @@ Este arquivo fornece orientacoes para o Claude Code ao trabalhar com este reposi
 
 Super Food e uma plataforma SaaS multi-tenant para gestao de restaurantes com rastreamento de entregas em tempo real e otimizacao de rotas. Construido com Python 3.12+, FastAPI (backend), Streamlit (dashboards), SQLAlchemy 2.0+ ORM e migrations Alembic.
 
-**Versao Atual:** 2.7.6 (01/02/2026)
+**Versao Atual:** 2.8.0 (02/02/2026)
 
 ## Arquitetura do Sistema
 
@@ -115,6 +115,7 @@ pip install -r requirements.txt
 - Todas as queries DEVEM filtrar por `restaurante_id` para isolamento
 - `SuperAdmin` gerencia todos os restaurantes globalmente
 - Cada restaurante e um tenant isolado
+- **Motoboys sao isolados por restaurante** (usuario unico por restaurante)
 
 ### Estrutura de Camadas
 
@@ -172,6 +173,7 @@ Utility Services (utils/)
 - Usar `get_db_session()` de `database/session.py`
 - Sempre usar eager loading (`joinedload()`) para relacionamentos
 - Fechar sessoes com try/finally
+- **NAO armazenar objetos ORM no session_state** - converter para dict primeiro
 
 ### APIs Externas
 - **Mapbox**: Geocoding, rotas (requer `MAPBOX_TOKEN` no `.env`)
@@ -200,22 +202,38 @@ DATABASE_URL=postgresql+psycopg2://user:pass@host/db
 - Senhas usam hash SHA256 via `set_senha()` e `verificar_senha()`
 - Codigos de acesso sao hex strings de 8 caracteres
 - Isolamento multi-tenant em todas as queries
+- **Motoboys isolados por codigo do restaurante** (login requer codigo + usuario + senha)
 
 ## Sistema de Selecao Justa de Motoboys
 
-Campos do modelo `Motoboy`:
+### Fluxo de Motoboy Online/Offline
+1. Restaurante cadastra motoboy -> **motoboy fica OFFLINE**
+2. Motoboy faz login no App (codigo + usuario + senha) -> **motoboy fica ONLINE**
+3. Restaurante despacha pedidos -> **apenas para motoboys ONLINE**
+4. Motoboy faz logout -> **motoboy fica OFFLINE**
+
+### Campos do modelo `Motoboy`:
 - `ordem_hierarquia` - Posicao na fila de rotacao
-- `disponivel` - Flag online/offline
+- `disponivel` - Flag online/offline (True = online)
 - `em_rota` - Flag se esta entregando
-- `entregas_pendentes` - Contador de entregas
+- `entregas_pendentes` - Contador de entregas atuais
+- `capacidade_entregas` - Maximo de pedidos por vez (configuravel: 1-20)
 - `ultima_entrega_em` - Timestamp da ultima entrega
 - `ultima_rota_em` - Timestamp da ultima rota recebida
+- `ultimo_status_online` - Timestamp do ultimo login
 
-Funcoes em `utils/motoboy_selector.py`:
+### Funcoes em `utils/motoboy_selector.py`:
 - `selecionar_motoboy_para_rota()` - Seleciona motoboy de forma justa
 - `atribuir_rota_motoboy()` - Atribui pedidos ao motoboy
 - `finalizar_entrega_motoboy()` - Finaliza entrega e calcula ganhos
 - `marcar_motoboy_disponivel()` - Toggle online/offline
+
+### Logica de Despacho Automatico
+1. Busca pedidos prontos nao despachados
+2. Verifica motoboys online com capacidade
+3. Seleciona motoboy com menor carga (rotacao justa)
+4. Atribui pedidos respeitando capacidade do motoboy
+5. Pedidos excedentes ficam aguardando proximo motoboy
 
 ## Endpoints da API FastAPI
 
@@ -226,6 +244,16 @@ Funcoes em `utils/motoboy_selector.py`:
 | `/site/{codigo}` | GET | Site do cliente (HTML) |
 | `/site/{codigo}/cardapio` | GET | Cardapio do restaurante |
 | `/ws/{restaurante_id}` | WS | WebSocket tempo real |
+
+## Migrations Alembic
+
+| Migration | Descricao |
+|-----------|-----------|
+| 001 | Schema inicial completo |
+| 002 | Tabela GPS motoboys |
+| 003 | Schema site cliente |
+| 004 | Campos selecao justa motoboys |
+| 005 | Constraint usuario unico por restaurante |
 
 ## Configuracoes de Idioma
 

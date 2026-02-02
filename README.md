@@ -20,10 +20,14 @@ O Super Food e composto por **4 aplicacoes principais**:
 | **Dashboard Restaurante** | Streamlit | 8502 | Gestao completa do restaurante |
 | **App Motoboy (PWA)** | Streamlit | 8503 | App mobile para entregadores |
 
-**Destaques Tecnicos (v2.7.6 - 01/02/2026):**
+**Destaques Tecnicos (v2.8.0 - 02/02/2026):**
 - FastAPI como backend principal (API REST + WebSockets)
 - Banco de dados unificado em SQLAlchemy ORM
-- Sistema de selecao justa de motoboys
+- Sistema de selecao justa de motoboys com rotacao
+- Despacho automatico respeitando capacidade do motoboy
+- Isolamento multi-tenant completo (motoboys por restaurante)
+- Login de motoboy com codigo do restaurante
+- Capacidade de entregas configuravel por motoboy
 - Calculo automatico de taxa de entrega e ganhos
 - Autocomplete de endereco com Mapbox
 - Site do cliente via FastAPI + Templates HTML
@@ -170,7 +174,26 @@ tail -f /tmp/superfood_motoboy.log     # App Motoboy
 |-----------|---------------|-------|
 | Super Admin | `superadmin` | `SuperFood2025!` |
 | Restaurante Teste | `teste@superfood.com` | `123456` |
-| Motoboy | Criar via dashboard | Codigo de acesso do restaurante |
+| Motoboy | Codigo do restaurante + usuario + senha | Configurado no cadastro |
+
+## Fluxo de Motoboys
+
+### Cadastro e Login
+1. **Restaurante cadastra motoboy** -> motoboy fica OFFLINE
+2. **Motoboy faz login no App** (codigo restaurante + usuario + senha) -> fica ONLINE
+3. **Restaurante despacha pedidos** -> apenas para motoboys ONLINE
+4. **Motoboy finaliza entregas** -> recebe novos pedidos ou fica disponivel
+
+### Capacidade de Entregas
+- Cada motoboy tem capacidade configuravel (1-20 pedidos)
+- Padrao: 3 pedidos por motoboy
+- Pode ser ajustado por tipo de veiculo (moto=3, carro=8, bicicleta=2)
+- Configuravel no cadastro e na lista de motoboys
+
+### Despacho Automatico
+- Respeita capacidade do motoboy
+- Distribui pedidos de forma justa (rotacao)
+- Pedidos excedentes ficam aguardando proximo motoboy
 
 ## Estrutura do Projeto
 
@@ -205,7 +228,8 @@ super-food/
 │       ├── 001_initial_schema.py
 │       ├── 002_add_gps_motoboys_table.py
 │       ├── 003_add_site_cliente_schema.py
-│       └── 004_add_motoboy_selection_fields.py
+│       ├── 004_add_motoboy_selection_fields.py
+│       └── 005_add_motoboy_usuario_unique_constraint.py
 │
 ├── streamlit_app/              # Aplicacoes Streamlit
 │   ├── super_admin.py          # Admin SaaS
@@ -241,12 +265,15 @@ super-food/
 ### Dashboard Restaurante
 - Criacao e gestao de pedidos (Entrega, Retirada, Mesa)
 - Despacho automatico com selecao justa de motoboys
+- **Configuracao de capacidade por motoboy**
 - Configuracao de taxas de entrega
 - Configuracao de pagamento de motoboys
 - Ranking de motoboys por performance
 - Gestao de caixa
+- Visualizacao de ultimo login de cada motoboy
 
 ### App Motoboy (PWA)
+- **Login com codigo do restaurante + usuario + senha**
 - Cadastro com codigo de acesso do restaurante
 - Recebimento de rotas otimizadas (TSP)
 - Finalizacao de entregas com calculo automatico de ganhos
@@ -305,6 +332,22 @@ alembic current
 alembic revision --autogenerate -m "descricao"
 ```
 
+## Changelog v2.8.0
+
+### Novidades
+- Login de motoboy com codigo do restaurante (isolamento multi-tenant)
+- Capacidade de entregas configuravel por motoboy (1-20)
+- Despacho automatico respeita capacidade do motoboy
+- Pedidos excedentes ficam aguardando proximo motoboy
+- Visualizacao de ultimo login na lista de motoboys
+- Constraint unica (restaurante_id + usuario) no banco
+
+### Correcoes
+- Bug SQLAlchemy ao finalizar entrega corrigido
+- Motoboys agora so ficam online ao fazer login no App
+- Menu do restaurante estavel (sem recarregamento em loop)
+- Erro JavaScript "removeChild" corrigido
+
 ## Roadmap
 
 - [x] Fase 1: Sistema base com ORM SQLAlchemy
@@ -313,9 +356,10 @@ alembic revision --autogenerate -m "descricao"
 - [x] Fase 4: Selecao justa de motoboys
 - [x] Fase 5: Calculo automatico de taxas e ganhos
 - [x] Fase 6: Backend FastAPI com Site Cliente
-- [ ] Fase 7: WebSockets para GPS em tempo real
-- [ ] Fase 8: Integracao iFood
-- [ ] Fase 9: App nativo (WebView)
+- [x] Fase 7: Isolamento multi-tenant de motoboys
+- [ ] Fase 8: WebSockets para GPS em tempo real
+- [ ] Fase 9: Integracao iFood
+- [ ] Fase 10: App nativo (WebView)
 
 ## Tecnologias
 
