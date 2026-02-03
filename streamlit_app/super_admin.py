@@ -60,6 +60,17 @@ def criar_restaurante(dados):
         if existe:
             return False, "Este email já está cadastrado!"
         
+        # ========== CORREÇÃO CIRÚRGICA 1: Verificar CNPJ duplicado ==========
+        cnpj_limpo = dados.get('cnpj')
+        if cnpj_limpo:  # Só verifica se CNPJ foi informado
+            existe_cnpj = db.query(Restaurante).filter(
+                Restaurante.cnpj == cnpj_limpo
+            ).first()
+            
+            if existe_cnpj:
+                return False, f"Este CNPJ já está cadastrado no restaurante '{existe_cnpj.nome_fantasia}'!"
+        # ====================================================================
+        
         # Calcular data de vencimento (30 dias)
         data_vencimento = datetime.now() + timedelta(days=30)
         
@@ -67,12 +78,13 @@ def criar_restaurante(dados):
         telefone_numeros = re.sub(r'\D', '', dados['telefone'])
         senha_padrao = telefone_numeros[:6] if len(telefone_numeros) >= 6 else "123456"
         
+        # ========== CORREÇÃO CIRÚRGICA 2: CNPJ NULL se vazio ==========
         # Criar restaurante
         restaurante = Restaurante(
             nome=dados['nome_fantasia'],
             nome_fantasia=dados['nome_fantasia'],
-            razao_social=dados.get('razao_social', ''),
-            cnpj=dados.get('cnpj', ''),
+            razao_social=dados.get('razao_social') or None,
+            cnpj=cnpj_limpo or None,  # NULL se vazio (evita string vazia)
             email=dados['email'],
             telefone=dados['telefone'],
             endereco_completo=dados['endereco_completo'],
@@ -83,6 +95,7 @@ def criar_restaurante(dados):
             status='ativo',
             data_vencimento=data_vencimento
         )
+        # ================================================================
         
         # Gerar código de acesso único
         restaurante.gerar_codigo_acesso()
@@ -504,11 +517,15 @@ def main():
                     for erro in erros:
                         st.error(f"  • {erro}")
                 else:
+                    # ========== CORREÇÃO CIRÚRGICA 3: Limpar CNPJ ==========
+                    cnpj_limpo = re.sub(r'\D', '', cnpj) if cnpj and cnpj.strip() else None
+                    # =======================================================
+                    
                     # Criar restaurante
                     dados_restaurante = {
                         'nome_fantasia': nome_fantasia.strip(),
-                        'razao_social': razao_social.strip() if razao_social else '',
-                        'cnpj': re.sub(r'\D', '', cnpj) if cnpj else '',
+                        'razao_social': razao_social.strip() if razao_social and razao_social.strip() else None,
+                        'cnpj': cnpj_limpo,
                         'email': email.strip().lower(),
                         'telefone': re.sub(r'\D', '', telefone),
                         'endereco_completo': endereco_completo.strip(),
@@ -567,13 +584,11 @@ def main():
                                     st.success(f"🌐 Site criado com sucesso! Tipo: {tipo_restaurante.upper()}")
                                     st.success(f"✅ {len(categorias)} categorias criadas automaticamente")
                                     
-                                    # Mostra URL do site (local e produção)
-                                    url_site_local = f"http://localhost:8504?restaurante={restaurante.codigo_acesso}"
-                                    st.markdown(f"### 🔗 URL do Site do Cliente")
-                                    st.markdown("**Ambiente Local:**")
-                                    st.code(url_site_local, language="text")
-                                    st.markdown(f"[🌐 Abrir Site (Local)]({url_site_local})")
-                                    st.markdown("**Produção:** Configure sua URL base e use: `?restaurante={}`".format(restaurante.codigo_acesso))
+                                    # Mostra URL do site
+                                    url_site = f"http://seu-dominio.com/site/{restaurante.codigo_acesso}"
+                                    st.markdown(f"### 🔗 URL do Site")
+                                    st.code(url_site, language="text")
+                                    st.markdown(f"[🌐 Abrir Site (após deploy)]({url_site})")
                                     
                             except Exception as e:
                                 session.rollback()
@@ -684,207 +699,53 @@ def main():
     # ==================== ASSINATURAS ====================
     elif menu == "💰 Assinaturas":
         st.header("Gestão de Assinaturas")
-
+        
         restaurantes = listar_restaurantes()
-
+        
         if not restaurantes:
             st.info("Nenhum restaurante cadastrado ainda.")
         else:
             # Resumo financeiro
-            col1, col2, col3, col4 = st.columns(4)
-
+            col1, col2, col3 = st.columns(3)
+            
             receita_mensal = sum(r['valor_plano'] for r in restaurantes if r['status'] == 'ativo')
-            ativos = [r for r in restaurantes if r['status'] == 'ativo']
-            suspensos = [r for r in restaurantes if r['status'] == 'suspenso']
-            cancelados = [r for r in restaurantes if r['status'] == 'cancelado']
-
+            
             with col1:
-                st.metric("Receita Mensal", f"R$ {receita_mensal:,.2f}")
-
+                st.metric("Receita Mensal Recorrente", f"R$ {receita_mensal:,.2f}")
+            
             with col2:
                 receita_anual = receita_mensal * 12
-                st.metric("Receita Anual", f"R$ {receita_anual:,.2f}")
-
+                st.metric("Receita Anual Projetada", f"R$ {receita_anual:,.2f}")
+            
             with col3:
+                ativos = [r for r in restaurantes if r['status'] == 'ativo']
                 ticket_medio = receita_mensal / len(ativos) if ativos else 0
                 st.metric("Ticket Médio", f"R$ {ticket_medio:,.2f}")
-
-            with col4:
-                st.metric("Ativos/Total", f"{len(ativos)}/{len(restaurantes)}")
-
+            
             st.markdown("---")
-
-            # Tabs para diferentes visões
-            tab_alertas, tab_renovar, tab_upgrade, tab_relatorio = st.tabs([
-                "⚠️ Alertas", "🔄 Renovar", "⬆️ Upgrade/Downgrade", "📊 Relatório"
-            ])
-
-            with tab_alertas:
-                st.subheader("⚠️ Alertas de Vencimento")
-
-                alertas = []
-                for r in restaurantes:
-                    if r['status'] == 'ativo' and r['data_vencimento']:
-                        data_venc = datetime.strptime(r['data_vencimento'], '%Y-%m-%d %H:%M:%S.%f')
-                        dias_restantes = (data_venc - datetime.now()).days
-
-                        if dias_restantes <= 7:
-                            alertas.append((r, dias_restantes))
-
-                if alertas:
-                    for restaurante, dias in sorted(alertas, key=lambda x: x[1]):
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            if dias < 0:
-                                st.error(f"🔴 **{restaurante['nome_fantasia']}** - VENCIDO há {abs(dias)} dias")
-                            elif dias == 0:
-                                st.warning(f"🟡 **{restaurante['nome_fantasia']}** - Vence HOJE")
-                            else:
-                                st.warning(f"🟡 **{restaurante['nome_fantasia']}** - Vence em {dias} dia(s)")
-                        with col2:
-                            if st.button("🔄 Renovar", key=f"alerta_renovar_{restaurante['id']}"):
-                                if renovar_assinatura(restaurante['id'], restaurante['valor_plano'], 'Renovação Manual'):
-                                    st.success("✅ Renovado!")
-                                    st.rerun()
-                else:
-                    st.success("✅ Nenhum alerta de vencimento nos próximos 7 dias")
-
-            with tab_renovar:
-                st.subheader("🔄 Renovar Assinatura")
-
-                # Busca rápida de restaurante
-                restaurante_selecionado = st.selectbox(
-                    "Selecionar Restaurante",
-                    options=[r['id'] for r in restaurantes],
-                    format_func=lambda x: next(r['nome_fantasia'] for r in restaurantes if r['id'] == x),
-                    key="renovar_restaurante"
-                )
-
-                rest_info = next(r for r in restaurantes if r['id'] == restaurante_selecionado)
-
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.info(f"**Plano atual:** {rest_info['plano']}")
-                    st.info(f"**Valor mensal:** R$ {rest_info['valor_plano']:.2f}")
-                with col2:
-                    if rest_info['data_vencimento']:
-                        data_venc = datetime.strptime(rest_info['data_vencimento'], '%Y-%m-%d %H:%M:%S.%f')
-                        st.info(f"**Vencimento atual:** {data_venc.strftime('%d/%m/%Y')}")
-                    st.info(f"**Status:** {rest_info['status']}")
-
-                st.markdown("---")
-
-                with st.form("form_renovar"):
-                    valor_pago = st.number_input(
-                        "Valor Pago (R$)",
-                        min_value=0.0,
-                        value=rest_info['valor_plano'],
-                        step=10.0
-                    )
-                    forma_pagamento = st.selectbox(
-                        "Forma de Pagamento",
-                        ["PIX", "Transferência", "Boleto", "Cartão de Crédito", "Dinheiro"]
-                    )
-                    observacao = st.text_input("Observação (opcional)")
-
-                    if st.form_submit_button("✅ Confirmar Renovação", type="primary"):
-                        if renovar_assinatura(restaurante_selecionado, valor_pago, forma_pagamento):
-                            st.success(f"✅ Assinatura renovada por mais 30 dias!")
-                            st.balloons()
-                            st.rerun()
-                        else:
-                            st.error("❌ Erro ao renovar assinatura")
-
-            with tab_upgrade:
-                st.subheader("⬆️ Upgrade/Downgrade de Plano")
-
-                planos = {
-                    "Básico": {"valor": 199.00, "motoboys": 3},
-                    "Essencial": {"valor": 269.00, "motoboys": 6},
-                    "Avançado": {"valor": 360.00, "motoboys": 12},
-                    "Premium": {"valor": 599.00, "motoboys": 999}
-                }
-
-                restaurante_upgrade = st.selectbox(
-                    "Selecionar Restaurante",
-                    options=[r['id'] for r in restaurantes],
-                    format_func=lambda x: next(r['nome_fantasia'] for r in restaurantes if r['id'] == x),
-                    key="upgrade_restaurante"
-                )
-
-                rest_up = next(r for r in restaurantes if r['id'] == restaurante_upgrade)
-                st.info(f"**Plano atual:** {rest_up['plano']} (R$ {rest_up['valor_plano']:.2f}/mês)")
-
-                novo_plano = st.selectbox(
-                    "Novo Plano",
-                    options=list(planos.keys()),
-                    format_func=lambda x: f"{x} - R$ {planos[x]['valor']:.2f}/mês ({planos[x]['motoboys']} motoboys)"
-                )
-
-                diferenca = planos[novo_plano]['valor'] - rest_up['valor_plano']
-                if diferenca > 0:
-                    st.success(f"⬆️ UPGRADE: +R$ {diferenca:.2f}/mês")
-                elif diferenca < 0:
-                    st.warning(f"⬇️ DOWNGRADE: -R$ {abs(diferenca):.2f}/mês")
-                else:
-                    st.info("Mesmo plano atual")
-
-                if st.button("✅ Alterar Plano", type="primary", disabled=(novo_plano == rest_up['plano'])):
-                    db = get_db_session()
-                    try:
-                        restaurante = db.query(Restaurante).filter(Restaurante.id == restaurante_upgrade).first()
-                        if restaurante:
-                            restaurante.plano = novo_plano
-                            restaurante.valor_plano = planos[novo_plano]['valor']
-                            restaurante.limite_motoboys = planos[novo_plano]['motoboys']
-                            db.commit()
-                            st.success(f"✅ Plano alterado para {novo_plano}!")
-                            st.rerun()
-                    except Exception as e:
-                        db.rollback()
-                        st.error(f"Erro: {e}")
-                    finally:
-                        db.close()
-
-            with tab_relatorio:
-                st.subheader("📊 Relatório Financeiro")
-
-                # Distribuição por plano
-                st.markdown("### Por Plano")
-                planos_dist = {}
-                for r in restaurantes:
-                    plano = r['plano']
-                    if plano not in planos_dist:
-                        planos_dist[plano] = {'qtd': 0, 'receita': 0}
-                    planos_dist[plano]['qtd'] += 1
-                    if r['status'] == 'ativo':
-                        planos_dist[plano]['receita'] += r['valor_plano']
-
-                for plano, dados in sorted(planos_dist.items()):
-                    col1, col2, col3 = st.columns([2, 1, 1])
-                    with col1:
-                        st.write(f"**{plano}**")
-                    with col2:
-                        st.write(f"{dados['qtd']} restaurante(s)")
-                    with col3:
-                        st.write(f"R$ {dados['receita']:.2f}/mês")
-
-                st.markdown("---")
-
-                # Resumo por status
-                st.markdown("### Por Status")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("✅ Ativos", len(ativos))
-                with col2:
-                    st.metric("⏸️ Suspensos", len(suspensos))
-                with col3:
-                    st.metric("❌ Cancelados", len(cancelados))
-
-                # Taxa de churn
-                if len(restaurantes) > 0:
-                    churn_rate = (len(cancelados) / len(restaurantes)) * 100
-                    st.metric("Taxa de Cancelamento (Churn)", f"{churn_rate:.1f}%")
+            
+            # Alertas de vencimento
+            st.subheader("⚠️ Alertas de Vencimento")
+            
+            alertas = []
+            for r in restaurantes:
+                if r['status'] == 'ativo' and r['data_vencimento']:
+                    data_venc = datetime.strptime(r['data_vencimento'], '%Y-%m-%d %H:%M:%S.%f')
+                    dias_restantes = (data_venc - datetime.now()).days
+                    
+                    if dias_restantes <= 7:
+                        alertas.append((r, dias_restantes))
+            
+            if alertas:
+                for restaurante, dias in sorted(alertas, key=lambda x: x[1]):
+                    if dias < 0:
+                        st.error(f"🔴 **{restaurante['nome_fantasia']}** - VENCIDO há {abs(dias)} dias")
+                    elif dias == 0:
+                        st.warning(f"🟡 **{restaurante['nome_fantasia']}** - Vence HOJE")
+                    else:
+                        st.warning(f"🟡 **{restaurante['nome_fantasia']}** - Vence em {dias} dia(s)")
+            else:
+                st.success("✅ Nenhum alerta de vencimento nos próximos 7 dias")
 
 if __name__ == "__main__":
     main()

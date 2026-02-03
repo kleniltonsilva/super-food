@@ -15,7 +15,8 @@ from .base import Base
 load_dotenv()
 
 # URL do banco de dados (SQLite para dev, PostgreSQL para prod)
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database/super_food.db")
+# IMPORTANTE: O banco fica na RAIZ do projeto, não dentro de /database/
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./super_food.db")
 
 # Configurações do engine
 if "sqlite" in DATABASE_URL:
@@ -69,32 +70,25 @@ def get_db_session():
 
 
 # ==================== FUNÇÕES AUXILIARES ====================
+# Estas funções são wrappers para manter compatibilidade com código existente.
+# A lógica principal está em database/seed/
 
 def criar_super_admin_padrao():
-    """Cria super admin padrão se não existir"""
-    from .models import SuperAdmin
-    
+    """
+    Cria super admin padrão se não existir.
+
+    Wrapper para compatibilidade - usa o sistema de seeds.
+    """
+    from database.seed.seed_001_super_admin import SuperAdminSeed
+
     db = get_db_session()
     try:
-        # Verificar se já existe
-        admin = db.query(SuperAdmin).filter(
-            SuperAdmin.usuario == os.getenv("SUPER_ADMIN_USER", "superadmin")
-        ).first()
-        
-        if not admin:
-            admin = SuperAdmin(
-                usuario=os.getenv("SUPER_ADMIN_USER", "superadmin"),
-                email="admin@superfood.com.br",
-                ativo=True
-            )
-            admin.set_senha(os.getenv("SUPER_ADMIN_PASS", "SuperFood2025!"))
-            
-            db.add(admin)
-            db.commit()
+        seed = SuperAdminSeed()
+        count = seed.run(db)
+        if count > 0:
             print("✅ Super Admin padrão criado")
         else:
             print("ℹ️ Super Admin já existe")
-            
     except Exception as e:
         print(f"❌ Erro ao criar super admin: {e}")
         db.rollback()
@@ -103,38 +97,38 @@ def criar_super_admin_padrao():
 
 
 def criar_config_padrao_restaurante(restaurante_id: int):
-    """Cria configuração padrão para um restaurante"""
-    from .models import ConfigRestaurante
-    
+    """
+    Cria configuração padrão para um restaurante.
+
+    Wrapper para compatibilidade - usa o sistema de seeds.
+    """
+    from database.seed import criar_config_para_restaurante
+
     db = get_db_session()
     try:
-        # Verificar se já existe
-        config = db.query(ConfigRestaurante).filter(
-            ConfigRestaurante.restaurante_id == restaurante_id
-        ).first()
-        
-        if not config:
-            config = ConfigRestaurante(
-                restaurante_id=restaurante_id,
-                status_atual='fechado',
-                modo_despacho='auto_economico',
-                taxa_diaria=50.0,
-                valor_lanche=15.0,
-                taxa_entrega_base=5.0,
-                distancia_base_km=3.0,
-                taxa_km_extra=1.5,
-                valor_km=2.0,
-                horario_abertura='18:00',
-                horario_fechamento='23:00',
-                dias_semana_abertos='segunda,terca,quarta,quinta,sexta,sabado,domingo'
-            )
-            
-            db.add(config)
-            db.commit()
-            print(f"✅ Config criada para restaurante {restaurante_id}")
-            
+        criar_config_para_restaurante(db, restaurante_id)
+        print(f"✅ Config criada para restaurante {restaurante_id}")
     except Exception as e:
         print(f"❌ Erro ao criar config: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
+def criar_categorias_padrao_restaurante(restaurante_id: int):
+    """
+    Cria categorias de menu padrão para um restaurante.
+
+    Função nova - usa o sistema de seeds.
+    """
+    from database.seed import criar_categorias_para_restaurante
+
+    db = get_db_session()
+    try:
+        count = criar_categorias_para_restaurante(db, restaurante_id)
+        print(f"✅ {count} categorias criadas para restaurante {restaurante_id}")
+    except Exception as e:
+        print(f"❌ Erro ao criar categorias: {e}")
         db.rollback()
     finally:
         db.close()

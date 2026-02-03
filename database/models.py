@@ -49,6 +49,9 @@ class Restaurante(Base):
     telefone = Column(String(20), nullable=False)
     # Localização
     endereco_completo = Column(Text, nullable=False)
+    cidade = Column(String(100))  # Cidade do restaurante (para filtros de autocomplete)
+    estado = Column(String(2))    # UF do estado
+    cep = Column(String(10))      # CEP
     latitude = Column(Float)
     longitude = Column(Float)
     # Plano e limites
@@ -336,13 +339,27 @@ class ConfigRestaurante(Base):
     raio_entrega_km = Column(Float, default=10.0)
     tempo_medio_preparo = Column(Integer, default=30)
     despacho_automatico = Column(Boolean, default=True)
-    # Taxas
-    taxa_diaria = Column(Float, default=50.0)
-    valor_lanche = Column(Float, default=15.0)
-    taxa_entrega_base = Column(Float, default=5.0)
-    distancia_base_km = Column(Float, default=3.0)
-    taxa_km_extra = Column(Float, default=1.5)
-    valor_km = Column(Float, default=2.0)
+
+    # Modo de prioridade de entrega (Melhoria v2.8.1)
+    # rapido_economico: TSP por proximidade (padrão)
+    # cronologico_inteligente: Agrupa por tempo, depois TSP
+    # manual: Restaurante atribui manualmente
+    modo_prioridade_entrega = Column(String(50), default='rapido_economico')
+    # Taxas de entrega (cobradas do cliente)
+    taxa_entrega_base = Column(Float, default=5.0)      # Taxa base até distancia_base_km
+    distancia_base_km = Column(Float, default=3.0)      # Km incluídos na taxa base
+    taxa_km_extra = Column(Float, default=1.5)          # Taxa por km adicional
+    valor_km = Column(Float, default=2.0)               # Valor por km (legado)
+
+    # Pagamento do motoboy
+    valor_base_motoboy = Column(Float, default=5.0)     # Valor base por entrega
+    valor_km_extra_motoboy = Column(Float, default=1.0) # Adicional por km extra
+    taxa_diaria = Column(Float, default=0.0)            # Taxa diária (opcional)
+    valor_lanche = Column(Float, default=0.0)           # Valor para lanche (opcional)
+
+    # Configurações de rota
+    max_pedidos_por_rota = Column(Integer, default=5)   # Máximo de pedidos por rota
+    permitir_ver_saldo_motoboy = Column(Boolean, default=True)  # Motoboy pode ver seu saldo
     # Horários
     horario_abertura = Column(String(5), default='18:00')
     horario_fechamento = Column(String(5), default='23:00')
@@ -356,7 +373,7 @@ class ConfigRestaurante(Base):
 
 # ==================== MOTOBOYS ====================
 class Motoboy(Base):
-    """Motoboy - Isolado por restaurante"""
+    """Motoboy - Isolado por restaurante com suporte a seleção justa"""
     __tablename__ = "motoboys"
     id = Column(Integer, primary_key=True, index=True)
     restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
@@ -364,19 +381,33 @@ class Motoboy(Base):
     usuario = Column(String(50), nullable=False)
     telefone = Column(String(20), nullable=False)
     senha = Column(String(256))
-    status = Column(String(20), default='pendente')
+    status = Column(String(20), default='pendente')  # pendente, ativo, inativo, excluido
     capacidade_entregas = Column(Integer, default=3)
     ultimo_status_online = Column(DateTime)
+
     # GPS
     latitude_atual = Column(Float)
     longitude_atual = Column(Float)
     ultima_atualizacao_gps = Column(DateTime)
+
     # Estatísticas
     total_entregas = Column(Integer, default=0)
     total_ganhos = Column(Float, default=0.0)
+    total_km = Column(Float, default=0.0)  # Total de km percorridos
+
+    # Seleção Justa de Entregas
+    ordem_hierarquia = Column(Integer, default=0)          # Posição na fila (rotação)
+    disponivel = Column(Boolean, default=False)            # Disponível para receber entregas
+    em_rota = Column(Boolean, default=False)               # Está em rota ativa
+    entregas_pendentes = Column(Integer, default=0)        # Entregas não finalizadas
+    ultima_entrega_em = Column(DateTime)                   # Quando finalizou última entrega
+    ultima_rota_em = Column(DateTime)                      # Quando recebeu última rota
+
     # Timestamps
     data_cadastro = Column(DateTime, default=datetime.utcnow)
     data_solicitacao = Column(DateTime, default=datetime.utcnow)
+    data_exclusao = Column(DateTime)  # Se excluído, pode reativar em até 30 dias
+
     # Relacionamentos
     restaurante = relationship("Restaurante", back_populates="motoboys")
     entregas = relationship("Entrega", back_populates="motoboy", cascade="all, delete-orphan")
@@ -385,6 +416,8 @@ class Motoboy(Base):
     __table_args__ = (
         Index('idx_motoboy_restaurante', 'restaurante_id', 'status'),
         Index('idx_motoboy_usuario', 'restaurante_id', 'usuario'),
+        Index('idx_motoboy_disponivel', 'restaurante_id', 'disponivel', 'em_rota'),
+        Index('idx_motoboy_hierarquia', 'restaurante_id', 'ordem_hierarquia'),
     )
 
     def set_senha(self, senha: str):
@@ -505,11 +538,20 @@ class Entrega(Base):
     posicao_rota_original = Column(Integer)
     posicao_rota_otimizada = Column(Integer)
     tempo_preparacao = Column(Integer)
-    # Valores
-    valor_entrega = Column(Float, default=0.0)
-    taxa_base = Column(Float, default=0.0)
-    taxa_km_extra = Column(Float, default=0.0)
+    # Valores cobrados do cliente
+    valor_entrega = Column(Float, default=0.0)          # Taxa total cobrada do cliente
+    taxa_base = Column(Float, default=0.0)              # Parte base da taxa
+    taxa_km_extra = Column(Float, default=0.0)          # Parte extra da taxa
+
+    # Valores pagos ao motoboy
+    valor_motoboy = Column(Float, default=0.0)          # Valor pago ao motoboy
+    valor_base_motoboy = Column(Float, default=0.0)     # Parte base do pagamento
+    valor_extra_motoboy = Column(Float, default=0.0)    # Parte extra do pagamento
+
     status = Column(String(50), default='pendente')
+    # Motivo de finalização (para entregas canceladas/cliente ausente)
+    motivo_finalizacao = Column(String(50))  # 'entregue', 'cliente_ausente', 'cancelado_cliente', 'cancelado_restaurante'
+    motivo_cancelamento = Column(Text)  # Detalhes do cancelamento
     # Timestamps
     atribuido_em = Column(DateTime, default=datetime.utcnow)
     entregue_em = Column(DateTime)

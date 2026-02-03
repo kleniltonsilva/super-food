@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from .routers import restaurantes, pedidos, site_cliente, carrinho
+from .routers import restaurantes, pedidos, site_cliente, carrinho, gps
 from .database import engine, Base, get_db
 from . import models
 from typing import List, Dict
@@ -27,6 +27,7 @@ app.include_router(restaurantes.router)
 app.include_router(pedidos.router)
 app.include_router(site_cliente.router)
 app.include_router(carrinho.router)
+app.include_router(gps.router)
 
 # ==================== ROTAS HTML (SITE DO CLIENTE) ====================
 

@@ -284,17 +284,24 @@ def atribuir_rota_motoboy(
 def finalizar_entrega_motoboy(
     entrega_id: int,
     distancia_km: float = None,
-    session=None
+    session=None,
+    motivo_finalizacao: str = 'entregue',
+    observacao: str = None
 ) -> Dict:
     """
     Finaliza uma entrega e atualiza estatísticas do motoboy.
 
+    IMPORTANTE: O motoboy SEMPRE recebe o valor da entrega, mesmo em cancelamentos
+    ou cliente ausente, pois ele foi até o local e gastou combustível.
+
     Atualiza:
-    - entrega.status = 'entregue'
+    - entrega.status = status apropriado baseado no motivo
+    - entrega.motivo_finalizacao = motivo
     - entrega.entregue_em = agora
     - motoboy.entregas_pendentes -= 1
     - motoboy.total_entregas += 1
     - motoboy.total_km += distancia
+    - motoboy.total_ganhos += valor (SEMPRE, independente do motivo)
     - motoboy.ultima_entrega_em = agora
     - Se entregas_pendentes == 0: motoboy.em_rota = False
     - Calcula e registra ganho do motoboy
@@ -303,6 +310,8 @@ def finalizar_entrega_motoboy(
         entrega_id: ID da entrega
         distancia_km: Distância percorrida (usa valor salvo se None)
         session: Sessão SQLAlchemy (opcional)
+        motivo_finalizacao: 'entregue', 'cliente_ausente', 'cancelado_cliente', 'cancelado_restaurante'
+        observacao: Observação adicional sobre a finalização
 
     Returns:
         Dict com status e valores calculados
@@ -319,7 +328,8 @@ def finalizar_entrega_motoboy(
         if not entrega:
             return {'sucesso': False, 'erro': 'Entrega não encontrada'}
 
-        if entrega.status == 'entregue':
+        # Verificar se já foi finalizada (qualquer motivo)
+        if entrega.status in ['entregue', 'cliente_ausente', 'cancelado_cliente', 'cancelado_restaurante']:
             return {'sucesso': False, 'erro': 'Entrega já finalizada'}
 
         motoboy = session.query(Motoboy).filter(
@@ -336,7 +346,8 @@ def finalizar_entrega_motoboy(
         # Usar distância fornecida ou a salva na entrega
         dist = distancia_km if distancia_km is not None else (entrega.distancia_km or 0)
 
-        # Calcular ganho do motoboy
+        # Calcular ganho do motoboy - SEMPRE calcula, independente do motivo
+        # O motoboy gastou combustível e tempo indo até o local
         from utils.calculos import calcular_ganho_motoboy
         ganho = calcular_ganho_motoboy(
             pedido.restaurante_id if pedido else motoboy.restaurante_id,
@@ -344,15 +355,29 @@ def finalizar_entrega_motoboy(
             session
         )
 
+        # Determinar status da entrega baseado no motivo
+        status_map = {
+            'entregue': 'entregue',
+            'cliente_ausente': 'cliente_ausente',
+            'cancelado_cliente': 'cancelado_cliente',
+            'cancelado_restaurante': 'cancelado_restaurante'
+        }
+        status_entrega = status_map.get(motivo_finalizacao, 'entregue')
+
         # Atualizar entrega
-        entrega.status = 'entregue'
+        entrega.status = status_entrega
+        entrega.motivo_finalizacao = motivo_finalizacao
         entrega.entregue_em = datetime.utcnow()
         entrega.distancia_km = dist
         entrega.valor_motoboy = ganho['valor_total']
         entrega.valor_base_motoboy = ganho['valor_base']
         entrega.valor_extra_motoboy = ganho['valor_extra']
 
-        # Atualizar motoboy
+        # Salvar observação se fornecida
+        if observacao:
+            entrega.motivo_cancelamento = observacao
+
+        # Atualizar motoboy - SEMPRE atualiza estatísticas e ganhos
         motoboy.entregas_pendentes = max(0, (motoboy.entregas_pendentes or 1) - 1)
         motoboy.total_entregas = (motoboy.total_entregas or 0) + 1
         motoboy.total_km = (motoboy.total_km or 0) + dist
@@ -365,9 +390,9 @@ def finalizar_entrega_motoboy(
             # Atualizar hierarquia para rotação justa
             _atualizar_hierarquia_motoboys(motoboy.restaurante_id, session)
 
-        # Atualizar pedido
+        # Atualizar pedido com status apropriado
         if pedido:
-            pedido.status = 'entregue'
+            pedido.status = status_entrega
 
         session.commit()
 
@@ -381,6 +406,7 @@ def finalizar_entrega_motoboy(
             'valor_extra': ganho['valor_extra'],
             'entregas_pendentes': motoboy.entregas_pendentes,
             'em_rota': motoboy.em_rota,
+            'motivo_finalizacao': motivo_finalizacao,
             'total_ganhos_dia': _calcular_ganhos_dia(motoboy.id, session)
         }
 
@@ -413,14 +439,25 @@ def _atualizar_hierarquia_motoboys(restaurante_id: int, session) -> None:
 
 
 def _calcular_ganhos_dia(motoboy_id: int, session) -> float:
-    """Calcula total de ganhos do motoboy no dia atual."""
+    """
+    Calcula total de ganhos do motoboy no dia atual.
+
+    IMPORTANTE: Inclui todas as entregas finalizadas, incluindo:
+    - entregue: entrega normal
+    - cliente_ausente: motoboy foi até o local mas cliente não estava
+    - cancelado_cliente: cliente cancelou após motoboy sair
+
+    O motoboy recebe o valor em todos esses casos pois ele foi até o local.
+    """
     from datetime import date
     hoje = date.today()
 
-    # Query simples e correta
+    # Incluir todos os status que geram pagamento ao motoboy
+    status_pagos = ['entregue', 'cliente_ausente', 'cancelado_cliente']
+
     entregas_hoje = session.query(Entrega).filter(
         Entrega.motoboy_id == motoboy_id,
-        Entrega.status == 'entregue',
+        Entrega.status.in_(status_pagos),
         Entrega.entregue_em >= datetime.combine(hoje, datetime.min.time())
     ).all()
 

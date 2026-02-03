@@ -1,0 +1,55 @@
+# Repare os bugs
+
+## 1️⃣ App Motoboy – Atualização de entregas
+- Status "EM ENTREGA – Pedido 1/3" não atualiza após cada entrega.
+- Deve mostrar "Pedido 2/3", "3/3" etc.
+- Testar app motoboy para garantir que todas as infos atualizam corretamente.
+
+## 2️⃣ App Motoboy – Permissão localização e notificações
+- Navegador não solicita permissão de localização.
+- Notificações chegam sem som.
+- Solicitar permissão de localização para visualizar motoboy no mapa do restaurante e permitir testes.
+
+## 3️⃣ Restaurante – Notificação de despacho
+- Após despachar pedidos, mensagem permanece mesmo com todos entregues:
+✅ 3 pedido(s) despachado(s) em 1 rota(s)!
+⏳ 1 pedido(s) aguardando próximo motoboy disponível.
+
+markdown
+Copiar código
+- Notificação deve sumir ao clicar, duração mínima 3s.
+- Confirmar atualização correta do app motoboy.
+
+## 4️⃣ Restaurante – Status aberto/fechado
+- Menu lateral mostra sempre 🔴 FECHADO.
+- Deve refletir status real do restaurante.
+
+## 5️⃣ Caixa do restaurante
+- Retirada não funciona.
+- Caixa só abre com valor inicial se restaurante estiver aberto; pode fechar com restaurante aberto.
+- Todos os pedidos não cancelados devem ser contabilizados no caixa (site, iFood e integrações futuras).
+
+## 6️⃣ App Motoboy – Erro JS
+NotFoundError: Falha ao executar 'removeChild' em 'Node': O nó a ser removido não é filho deste nó.
+
+markdown
+Copiar código
+- Corrigir para que não ocorra mais.
+
+## 7️⃣ Teste modos de despacho
+- Cronológico e Inteligente Econômico devem respeitar intervalos:
+  - Intervalo ≤ 10 min → modo inteligente econômico.
+  - Intervalo > 10 min → modo cronológico escolhido.
+- Testar todos os modos, sequências e intervalos.
+- Confirmar funcionamento correto do despacho e cálculos de ganhos.
+
+---
+
+## ✅ Procedimentos pós-bug
+1. Testar exaustivamente todos os bugs listados.
+2. Garantir atualização correta de todas informações no app motoboy e restaurante.
+3. Atualizar documentação:
+   - `README.md`
+   - `ARQUITETURA.md`
+   - `CLAUDE.md`
+4. Commit + push atualizando o projeto.

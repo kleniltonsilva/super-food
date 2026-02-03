@@ -141,4 +141,142 @@ def calcular_metricas_rota(origem: Tuple[float, float], rota_ordenada: List[Dict
         'distancia_total_km': round(distancia_total, 2),
         'tempo_total_min': tempo_total_min
     }
-    
+
+
+# ==================== MODOS DE DESPACHO ====================
+
+def otimizar_rota_rapido_economico(
+    origem: Tuple[float, float],
+    destinos: List[Dict]
+) -> List[Dict]:
+    """
+    Modo Rápido Econômico (Padrão)
+
+    Usa TSP para otimizar rotas por proximidade.
+    Não considera ordem cronológica.
+    Prioriza economia de combustível.
+
+    Args:
+        origem: (lat, lon) do restaurante
+        destinos: Lista de dicts com {pedido_id, lat, lon, data_criacao, ...}
+
+    Returns:
+        Lista ordenada por proximidade (TSP)
+    """
+    return otimizar_rota_tsp(origem, destinos)
+
+
+def otimizar_rota_cronologico_inteligente(
+    origem: Tuple[float, float],
+    destinos: List[Dict],
+    intervalo_agrupamento_min: int = 10
+) -> List[Dict]:
+    """
+    Modo Cronológico Inteligente
+
+    Agrupa pedidos com diferença <= intervalo_agrupamento_min.
+    Dentro do grupo: usa modo rápido econômico (TSP).
+    Entre grupos: respeita ordem cronológica de saída.
+
+    Args:
+        origem: (lat, lon) do restaurante
+        destinos: Lista de dicts com {pedido_id, lat, lon, data_criacao, ...}
+        intervalo_agrupamento_min: Intervalo máximo para agrupar pedidos (padrão: 10 min)
+
+    Returns:
+        Lista ordenada respeitando cronologia entre grupos e TSP dentro dos grupos
+    """
+    from datetime import timedelta
+
+    if not destinos:
+        return []
+
+    if len(destinos) == 1:
+        return destinos
+
+    # Ordenar por data de criação
+    destinos_ordenados = sorted(destinos, key=lambda x: x.get('data_criacao') or 0)
+
+    # Agrupar pedidos por intervalo de tempo
+    grupos = []
+    grupo_atual = [destinos_ordenados[0]]
+
+    for i in range(1, len(destinos_ordenados)):
+        destino_atual = destinos_ordenados[i]
+        destino_anterior = destinos_ordenados[i - 1]
+
+        data_atual = destino_atual.get('data_criacao')
+        data_anterior = destino_anterior.get('data_criacao')
+
+        # Calcular diferença de tempo
+        if data_atual and data_anterior:
+            diferenca = (data_atual - data_anterior).total_seconds() / 60
+        else:
+            diferenca = 0
+
+        if diferenca <= intervalo_agrupamento_min:
+            # Mesmo grupo
+            grupo_atual.append(destino_atual)
+        else:
+            # Novo grupo
+            grupos.append(grupo_atual)
+            grupo_atual = [destino_atual]
+
+    # Adicionar último grupo
+    if grupo_atual:
+        grupos.append(grupo_atual)
+
+    # Otimizar cada grupo com TSP e concatenar
+    rota_final = []
+    ponto_atual = origem
+
+    for grupo in grupos:
+        if len(grupo) == 1:
+            rota_final.extend(grupo)
+            ponto_atual = (grupo[0]['lat'], grupo[0]['lon'])
+        else:
+            # Otimizar grupo com TSP
+            grupo_otimizado = otimizar_rota_tsp(ponto_atual, grupo)
+            rota_final.extend(grupo_otimizado)
+            if grupo_otimizado:
+                ponto_atual = (grupo_otimizado[-1]['lat'], grupo_otimizado[-1]['lon'])
+
+    return rota_final
+
+
+def otimizar_rota_por_modo(
+    origem: Tuple[float, float],
+    destinos: List[Dict],
+    modo: str = 'rapido_economico',
+    intervalo_agrupamento_min: int = 10
+) -> List[Dict]:
+    """
+    Função principal que seleciona o algoritmo de otimização baseado no modo.
+
+    Args:
+        origem: (lat, lon) do restaurante
+        destinos: Lista de dicts com {pedido_id, lat, lon, data_criacao, ...}
+        modo: 'rapido_economico', 'cronologico_inteligente', ou 'manual'
+        intervalo_agrupamento_min: Para modo cronológico, intervalo de agrupamento
+
+    Returns:
+        Lista ordenada conforme o modo selecionado
+    """
+    if not destinos:
+        return []
+
+    if modo == 'rapido_economico':
+        return otimizar_rota_rapido_economico(origem, destinos)
+
+    elif modo == 'cronologico_inteligente':
+        return otimizar_rota_cronologico_inteligente(
+            origem, destinos, intervalo_agrupamento_min
+        )
+
+    elif modo == 'manual':
+        # Modo manual: retorna na ordem original (sem otimização)
+        return destinos
+
+    else:
+        # Fallback para modo padrão
+        return otimizar_rota_rapido_economico(origem, destinos)

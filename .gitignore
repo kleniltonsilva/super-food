@@ -4,37 +4,52 @@ __pycache__/
 *$py.class
 *.so
 .Python
+*.egg-info/
+*.egg
+
+# Virtual Environment
 env/
 venv/
 .venv/
-pip-delete-this-directory.txt
-pip-wheel-metadata/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# Banco de dados
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Banco de dados (dev)
+*.db
 motoboy.db
-
-# Outros
-venv/
-__pycache__/
-*.pyc
-.env
 motoboys.db
-docker_data/
-*.log.DS_Store
-Thumbs.db
-venv/
-__pycache__/
-*.pyc
-.env
-motoboys.db
-docker_data/
-*.log
-firebase_admin_key.json
-firebase_admin_key.json
-venv/
-*.pyc
-__pycache__/
 super_food.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker_data/
+
+# Firebase/Keys
+firebase_admin_key.json
+*.pem
+*.key
+
+# Backup/Temp
+_backup/
+tmp/
+temp/
+
+# Arquivos de contexto Claude (opcionais)
+ondeparei.txt
+continuar.txt
+INSTRUCTIONS.txt
