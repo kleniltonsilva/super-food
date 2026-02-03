@@ -1,261 +1,113 @@
 # CLAUDE.md
 
-Este arquivo fornece orientacoes para o Claude Code ao trabalhar com este repositorio.
+Orientações obrigatórias para o Claude Code trabalhar neste repositório.
 
-## Visao Geral do Projeto
+## Projeto
 
-Super Food e uma plataforma SaaS multi-tenant para gestao de restaurantes com rastreamento de entregas em tempo real e otimizacao de rotas. Construido com Python 3.12+, FastAPI (backend), Streamlit (dashboards), SQLAlchemy 2.0+ ORM e migrations Alembic.
+**Super Food** é um SaaS multi-tenant para gestão de restaurantes com despacho inteligente de entregas.
 
-**Versao Atual:** 2.8.0 (02/02/2026)
+Stack:
+- Python 3.12+
+- FastAPI (backend)
+- Streamlit (dashboards)
+- SQLAlchemy 2.0 + Alembic
+- SQLite (dev) / PostgreSQL (prod)
 
-## Arquitetura do Sistema
+Versão atual: **2.8.2 (03/02/2026)**
 
-O sistema possui duas camadas de execucao:
+---
 
-| Camada | Tecnologia | Porta | Uso |
-|--------|------------|-------|-----|
-| API Backend | FastAPI + Uvicorn | 8000 | Site cliente, WebSockets, API REST |
-| Dashboards | Streamlit | 8501-8503 | Admin, Restaurante, Motoboy |
+## Arquitetura Essencial
 
-### As 4 Cabecas do Sistema
+Serviços principais:
+- FastAPI → `backend/app/main.py` (porta 8000)
+- Streamlit:
+  - Super Admin → `streamlit_app/super_admin.py` (8501)
+  - Restaurante → `streamlit_app/restaurante_app.py` (8502)
+  - Motoboy PWA → `app_motoboy/motoboy_app.py` (8503)
 
-| App | Arquivo | Porta | Funcao |
-|-----|---------|-------|--------|
-| FastAPI Backend | `backend/app/main.py` | 8000 | API REST + Site Cliente |
-| Super Admin | `streamlit_app/super_admin.py` | 8501 | Gestao do SaaS |
-| Dashboard Restaurante | `streamlit_app/restaurante_app.py` | 8502 | Gestao do restaurante |
-| App Motoboy | `app_motoboy/motoboy_app.py` | 8503 | PWA para entregadores |
+Estrutura:
+backend/ # API FastAPI + WebSockets + Site Cliente
+database/ # ORM + sessão
+migrations/ # Alembic
+streamlit_app/ # Dashboards
+app_motoboy/ # PWA motoboy
+utils/ # Mapbox, TSP, cálculos, seleção de motoboy
 
-## Comandos Comuns
+markdown
+Copiar código
 
-### Iniciar Sistema Completo (Recomendado)
+---
 
+## REGRAS CRÍTICAS (NUNCA VIOLAR)
+
+- Sistema **multi-tenant**
+- TODAS as queries DEVEM filtrar por `restaurante_id`
+- Motoboys são isolados por restaurante
+- Nunca armazenar objetos ORM no `session_state`
+- Sempre usar `get_db_session()`
+- Usar eager loading (`joinedload`) quando houver relacionamento
+- Gerar **código completo**, nunca snippets parciais
+- Não hardcodar segredos (usar `.env`)
+- Responder sempre em **português**
+
+---
+
+## Banco de Dados
+
+- Banco padrão: `super_food.db` (na raiz do projeto)
+- ORM: `database/models.py`
+- Sessão: `database/session.py`
+
+Migrations:
 ```bash
-# Ativar ambiente virtual
-source venv/bin/activate
-
-# Iniciar todos os servicos (FastAPI + Streamlit)
-./start_services.sh
-
-# Ou apenas a API FastAPI
-./start_services.sh --api-only
-```
-
-### Iniciar Servicos Individualmente
-
-```bash
-# Ativar ambiente virtual
-source venv/bin/activate
-
-# FastAPI Backend (porta 8000) - PRINCIPAL
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
-
-# Super Admin (porta 8501)
-streamlit run streamlit_app/super_admin.py --server.port=8501
-
-# Dashboard Restaurante (porta 8502)
-streamlit run streamlit_app/restaurante_app.py --server.port=8502
-
-# App Motoboy PWA (porta 8503)
-streamlit run app_motoboy/motoboy_app.py --server.port=8503
-```
-
-### Parar Todos os Servicos
-
-```bash
-pkill -f "uvicorn|streamlit"
-```
-
-### Testar Endpoints
-
-```bash
-# Testar se FastAPI esta rodando
-curl http://localhost:8000/
-
-# Testar documentacao Swagger
-curl http://localhost:8000/docs
-
-# Testar site do cliente (substitua CODIGO pelo codigo do restaurante)
-curl http://localhost:8000/site/CODIGO
-
-# Verificar portas ativas
-lsof -i :8000,:8501,:8502,:8503 | grep LISTEN
-```
-
-### Operacoes de Banco
-
-```bash
-# Inicializar banco com dados padrao
-python init_database.py
-
-# Aplicar todas as migrations
 alembic upgrade head
-
-# Reverter ultima migration
 alembic downgrade -1
-
-# Ver versao atual
 alembic current
+Sistema de Motoboys (Resumo Funcional)
+Estados:
 
-# Gerar nova migration
-alembic revision --autogenerate -m "descricao"
-```
+OFFLINE → cadastrado
 
-### Instalacao
+ONLINE → login no app
 
-```bash
-python3 -m venv venv
+EM ROTA → entregando
+
+Seleção:
+
+Rotação justa
+
+Respeita capacidade do motoboy
+
+Apenas motoboys ONLINE recebem pedidos
+
+Arquivos-chave:
+
+utils/motoboy_selector.py
+
+utils/tsp_optimizer.py
+
+utils/calculos.py
+
+Mapas e Rotas
+Mapbox para geocoding e rotas
+
+Haversine como fallback offline
+
+MAPBOX_TOKEN obrigatório no .env
+
+Comandos Rápidos
+bash
+Copiar código
 source venv/bin/activate
-pip install -r requirements.txt
-```
+./start_services.sh
+Parar tudo:
 
-## Arquitetura
-
-### Design Multi-Tenant
-- Todas as queries DEVEM filtrar por `restaurante_id` para isolamento
-- `SuperAdmin` gerencia todos os restaurantes globalmente
-- Cada restaurante e um tenant isolado
-- **Motoboys sao isolados por restaurante** (usuario unico por restaurante)
-
-### Estrutura de Camadas
-
-```
-FastAPI Backend (API REST + WebSockets)
-      |
-Streamlit Apps (Dashboards internos)
-      |
-SQLAlchemy ORM (database/models.py)
-      |
-Session Management (database/session.py)
-      |
-Utility Services (utils/)
-```
-
-### Diretorios Principais
-- `backend/` - FastAPI (API REST, WebSockets, Site Cliente)
-- `database/` - Models ORM e gerenciamento de sessao
-- `migrations/` - Scripts Alembic
-- `streamlit_app/` - Dashboards Streamlit
-- `app_motoboy/` - PWA mobile para motoboys
-- `utils/` - Integracao Mapbox, Haversine, TSP, Calculos, Selecao de Motoboys
-
-### Modelos do Banco (22+ tabelas)
-
-**Tenants:**
-- `super_admin`, `restaurantes`, `config_restaurante`, `site_config`
-
-**Motoboys:**
-- `motoboys` (com campos de selecao justa), `motoboys_solicitacoes`, `gps_motoboys`
-
-**Produtos:**
-- `categorias_menu`, `produtos`, `tipos_produto`, `variacoes_produto`
-
-**Pedidos:**
-- `pedidos`, `itens_pedido`, `entregas`, `rotas_otimizadas`
-
-**Clientes:**
-- `clientes`, `enderecos_cliente`, `carrinho`
-
-**Financeiro:**
-- `caixa`, `movimentacoes_caixa`, `notificacoes`
-
-### Modulos de Utils
-
-| Modulo | Funcao |
-|--------|--------|
-| `mapbox_api.py` | Geocoding, rotas, direcoes |
-| `haversine.py` | Calculo de distancia offline |
-| `calculos.py` | Taxa de entrega, ganhos do motoboy |
-| `motoboy_selector.py` | Selecao justa de motoboys |
-| `tsp_optimizer.py` | Otimizacao de rotas (TSP) |
-
-### Padroes ORM
-- Usar `get_db_session()` de `database/session.py`
-- Sempre usar eager loading (`joinedload()`) para relacionamentos
-- Fechar sessoes com try/finally
-- **NAO armazenar objetos ORM no session_state** - converter para dict primeiro
-
-### APIs Externas
-- **Mapbox**: Geocoding, rotas (requer `MAPBOX_TOKEN` no `.env`)
-- **Haversine**: Fallback offline para distancias
-
-## Configuracao
-
-Variaveis `.env` obrigatorias:
-```
-MAPBOX_TOKEN=seu_token_aqui
+bash
+Copiar código
+pkill -f "uvicorn|streamlit"
+Ambiente (.env)
+env
+Copiar código
 DATABASE_URL=sqlite:///./super_food.db
-```
-
-**IMPORTANTE:** O banco fica na RAIZ do projeto (`super_food.db`), nao em `/database/`.
-
-Para producao (PostgreSQL):
-```
-DATABASE_URL=postgresql+psycopg2://user:pass@host/db
-```
-
-## Credenciais de Teste
-- Super Admin: `superadmin` / `SuperFood2025!`
-- Restaurante Teste: `teste@superfood.com` / `123456`
-
-## Seguranca
-- Senhas usam hash SHA256 via `set_senha()` e `verificar_senha()`
-- Codigos de acesso sao hex strings de 8 caracteres
-- Isolamento multi-tenant em todas as queries
-- **Motoboys isolados por codigo do restaurante** (login requer codigo + usuario + senha)
-
-## Sistema de Selecao Justa de Motoboys
-
-### Fluxo de Motoboy Online/Offline
-1. Restaurante cadastra motoboy -> **motoboy fica OFFLINE**
-2. Motoboy faz login no App (codigo + usuario + senha) -> **motoboy fica ONLINE**
-3. Restaurante despacha pedidos -> **apenas para motoboys ONLINE**
-4. Motoboy faz logout -> **motoboy fica OFFLINE**
-
-### Campos do modelo `Motoboy`:
-- `ordem_hierarquia` - Posicao na fila de rotacao
-- `disponivel` - Flag online/offline (True = online)
-- `em_rota` - Flag se esta entregando
-- `entregas_pendentes` - Contador de entregas atuais
-- `capacidade_entregas` - Maximo de pedidos por vez (configuravel: 1-20)
-- `ultima_entrega_em` - Timestamp da ultima entrega
-- `ultima_rota_em` - Timestamp da ultima rota recebida
-- `ultimo_status_online` - Timestamp do ultimo login
-
-### Funcoes em `utils/motoboy_selector.py`:
-- `selecionar_motoboy_para_rota()` - Seleciona motoboy de forma justa
-- `atribuir_rota_motoboy()` - Atribui pedidos ao motoboy
-- `finalizar_entrega_motoboy()` - Finaliza entrega e calcula ganhos
-- `marcar_motoboy_disponivel()` - Toggle online/offline
-
-### Logica de Despacho Automatico
-1. Busca pedidos prontos nao despachados
-2. Verifica motoboys online com capacidade
-3. Seleciona motoboy com menor carga (rotacao justa)
-4. Atribui pedidos respeitando capacidade do motoboy
-5. Pedidos excedentes ficam aguardando proximo motoboy
-
-## Endpoints da API FastAPI
-
-| Endpoint | Metodo | Descricao |
-|----------|--------|-----------|
-| `/` | GET | Health check |
-| `/docs` | GET | Documentacao Swagger |
-| `/site/{codigo}` | GET | Site do cliente (HTML) |
-| `/site/{codigo}/cardapio` | GET | Cardapio do restaurante |
-| `/ws/{restaurante_id}` | WS | WebSocket tempo real |
-
-## Migrations Alembic
-
-| Migration | Descricao |
-|-----------|-----------|
-| 001 | Schema inicial completo |
-| 002 | Tabela GPS motoboys |
-| 003 | Schema site cliente |
-| 004 | Campos selecao justa motoboys |
-| 005 | Constraint usuario unico por restaurante |
-
-## Configuracoes de Idioma
-
-- Responda sempre em portugues, independentemente do idioma do comando.
-- Todas explicacoes, planos e mensagens devem estar em portugues.
+MAPBOX_TOKEN=seu_token

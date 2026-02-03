@@ -60,12 +60,12 @@ st.markdown("""
         border-radius: 10px;
         margin: 5px 0;
     }
-    
+
     .stButton button[kind="primary"] {
         background-color: #00AA00;
         color: white;
     }
-    
+
     .metric-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 20px;
@@ -74,7 +74,7 @@ st.markdown("""
         text-align: center;
         margin: 10px 0;
     }
-    
+
     .status-disponivel {
         background-color: #00AA00;
         color: white;
@@ -84,7 +84,7 @@ st.markdown("""
         font-size: 20px;
         font-weight: bold;
     }
-    
+
     .status-ocupado {
         background-color: #FFA500;
         color: white;
@@ -94,7 +94,7 @@ st.markdown("""
         font-size: 20px;
         font-weight: bold;
     }
-    
+
     .pedido-card {
         background: white;
         border: 2px solid #ddd;
@@ -103,14 +103,367 @@ st.markdown("""
         margin: 10px 0;
         box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
-    
+
     .map-container {
         border-radius: 15px;
         overflow: hidden;
         margin: 10px 0;
     }
+
+    .gps-status {
+        padding: 5px 10px;
+        border-radius: 5px;
+        font-size: 12px;
+        display: inline-block;
+    }
+
+    .gps-active {
+        background-color: #00AA00;
+        color: white;
+    }
+
+    .gps-inactive {
+        background-color: #FF6600;
+        color: white;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+# ==================== GPS EM TEMPO REAL ====================
+
+def injetar_gps_tracker(motoboy_id: int, restaurante_id: int):
+    """
+    Injeta JavaScript para rastreamento GPS em tempo real.
+
+    O script:
+    1. Solicita permissão de geolocalização ao usuário
+    2. Solicita permissão de notificações
+    3. Obtém posição a cada 10 segundos
+    4. Envia para a API /api/gps/update
+    5. Atualiza indicador visual de status
+    """
+    # URL base da API (mesmo servidor, porta 8000)
+    api_base = "http://localhost:8000"
+
+    gps_script = f"""
+    <div id="gps-status-container" style="
+        position: fixed;
+        bottom: 80px;
+        right: 10px;
+        z-index: 9999;
+        padding: 8px 12px;
+        border-radius: 20px;
+        font-size: 11px;
+        font-weight: bold;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background-color: #666;
+        color: white;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    " onclick="window.requestGPSPermission && window.requestGPSPermission()">
+        <span id="gps-icon">📍</span>
+        <span id="gps-text">GPS...</span>
+    </div>
+
+    <script>
+    (function() {{
+        const MOTOBOY_ID = {motoboy_id};
+        const RESTAURANTE_ID = {restaurante_id};
+        const API_URL = '{api_base}/api/gps/update';
+        const UPDATE_INTERVAL = 10000; // 10 segundos
+
+        let watchId = null;
+        let lastPosition = null;
+        let isTracking = false;
+        let permissionRequested = false;
+
+        const statusContainer = document.getElementById('gps-status-container');
+        const statusIcon = document.getElementById('gps-icon');
+        const statusText = document.getElementById('gps-text');
+
+        // Solicitar permissão de notificação no início
+        async function requestNotificationPermission() {{
+            if ('Notification' in window && Notification.permission === 'default') {{
+                try {{
+                    await Notification.requestPermission();
+                }} catch (e) {{
+                    console.log('Notificações não suportadas');
+                }}
+            }}
+        }}
+
+        function updateStatus(status, message) {{
+            if (!statusContainer) return;
+
+            switch(status) {{
+                case 'active':
+                    statusContainer.style.backgroundColor = '#00AA00';
+                    statusIcon.textContent = '📍';
+                    statusText.textContent = message || 'GPS Ativo';
+                    break;
+                case 'sending':
+                    statusContainer.style.backgroundColor = '#0066CC';
+                    statusIcon.textContent = '📡';
+                    statusText.textContent = 'Enviando...';
+                    break;
+                case 'error':
+                    statusContainer.style.backgroundColor = '#CC0000';
+                    statusIcon.textContent = '⚠️';
+                    statusText.textContent = message || 'Erro GPS';
+                    break;
+                case 'permission':
+                    statusContainer.style.backgroundColor = '#FF6600';
+                    statusIcon.textContent = '🔒';
+                    statusText.textContent = message || 'Clique para permitir GPS';
+                    break;
+                default:
+                    statusContainer.style.backgroundColor = '#666';
+                    statusIcon.textContent = '📍';
+                    statusText.textContent = message || 'GPS...';
+            }}
+        }}
+
+        async function sendGPSUpdate(position) {{
+            if (!position) return;
+
+            updateStatus('sending');
+
+            const data = {{
+                motoboy_id: MOTOBOY_ID,
+                restaurante_id: RESTAURANTE_ID,
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                velocidade: position.coords.speed || 0,
+                precisao: position.coords.accuracy,
+                heading: position.coords.heading
+            }};
+
+            try {{
+                const response = await fetch(API_URL, {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json',
+                    }},
+                    body: JSON.stringify(data)
+                }});
+
+                if (response.ok) {{
+                    const result = await response.json();
+                    if (result.sucesso) {{
+                        const speed = (position.coords.speed || 0) * 3.6; // m/s para km/h
+                        updateStatus('active', speed > 1 ? speed.toFixed(0) + ' km/h' : 'GPS Ativo');
+                    }} else {{
+                        updateStatus('error', 'Offline');
+                    }}
+                }} else {{
+                    updateStatus('error', 'Erro API');
+                }}
+            }} catch (error) {{
+                console.error('Erro GPS:', error);
+                updateStatus('error', 'Sem conexão');
+            }}
+        }}
+
+        function onPositionUpdate(position) {{
+            lastPosition = position;
+            sendGPSUpdate(position);
+        }}
+
+        function onPositionError(error) {{
+            console.error('Erro de geolocalização:', error);
+            switch(error.code) {{
+                case error.PERMISSION_DENIED:
+                    updateStatus('permission', 'Clique para permitir');
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    updateStatus('error', 'Indisponível');
+                    break;
+                case error.TIMEOUT:
+                    updateStatus('error', 'Timeout');
+                    break;
+                default:
+                    updateStatus('error', 'Erro GPS');
+            }}
+        }}
+
+        // Função para solicitar permissão de GPS explicitamente
+        window.requestGPSPermission = function() {{
+            if (!navigator.geolocation) {{
+                alert('Seu navegador não suporta GPS. Use um navegador moderno como Chrome ou Firefox.');
+                return;
+            }}
+
+            updateStatus('default', 'Solicitando...');
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {{
+                    onPositionUpdate(position);
+                    startTracking();
+                }},
+                function(error) {{
+                    if (error.code === error.PERMISSION_DENIED) {{
+                        alert('Para receber entregas, você precisa permitir acesso à localização.\\n\\n' +
+                              'Vá em Configurações do navegador > Permissões > Localização e permita para este site.');
+                    }}
+                    onPositionError(error);
+                }},
+                {{
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }}
+            );
+        }};
+
+        function startTracking() {{
+            if (!navigator.geolocation) {{
+                updateStatus('error', 'Não suportado');
+                return;
+            }}
+
+            if (isTracking) return;
+            isTracking = true;
+
+            const options = {{
+                enableHighAccuracy: true,
+                timeout: 15000,
+                maximumAge: 5000
+            }};
+
+            // Watch contínuo com alta precisão
+            watchId = navigator.geolocation.watchPosition(
+                onPositionUpdate,
+                onPositionError,
+                options
+            );
+
+            // Também enviar a cada 10 segundos (backup)
+            setInterval(() => {{
+                if (lastPosition) {{
+                    sendGPSUpdate(lastPosition);
+                }} else {{
+                    navigator.geolocation.getCurrentPosition(
+                        onPositionUpdate,
+                        onPositionError,
+                        options
+                    );
+                }}
+            }}, UPDATE_INTERVAL);
+
+            updateStatus('active', 'Iniciando...');
+        }}
+
+        // Verificar permissão atual de geolocalização
+        async function checkAndRequestPermission() {{
+            // Solicitar permissão de notificação
+            await requestNotificationPermission();
+
+            if (navigator.permissions && navigator.permissions.query) {{
+                try {{
+                    const result = await navigator.permissions.query({{ name: 'geolocation' }});
+
+                    if (result.state === 'granted') {{
+                        // Já tem permissão, iniciar rastreamento
+                        startTracking();
+                        navigator.geolocation.getCurrentPosition(onPositionUpdate, onPositionError, {{
+                            enableHighAccuracy: true, timeout: 15000, maximumAge: 5000
+                        }});
+                    }} else if (result.state === 'prompt') {{
+                        // Precisa solicitar - mostrar indicador clicável
+                        updateStatus('permission', 'Clique para permitir');
+                        // Tentar solicitar automaticamente
+                        if (!permissionRequested) {{
+                            permissionRequested = true;
+                            navigator.geolocation.getCurrentPosition(
+                                function(pos) {{
+                                    onPositionUpdate(pos);
+                                    startTracking();
+                                }},
+                                onPositionError,
+                                {{ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }}
+                            );
+                        }}
+                    }} else {{
+                        // Negado
+                        updateStatus('permission', 'GPS Negado');
+                    }}
+
+                    // Monitorar mudanças de permissão
+                    result.addEventListener('change', function() {{
+                        if (result.state === 'granted' && !isTracking) {{
+                            startTracking();
+                            navigator.geolocation.getCurrentPosition(onPositionUpdate, onPositionError);
+                        }}
+                    }});
+                }} catch (e) {{
+                    // Fallback para navegadores que não suportam permissions API
+                    navigator.geolocation.getCurrentPosition(
+                        function(pos) {{ onPositionUpdate(pos); startTracking(); }},
+                        onPositionError,
+                        {{ enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }}
+                    );
+                }}
+            }} else {{
+                // Navegador não suporta permissions API - tentar diretamente
+                navigator.geolocation.getCurrentPosition(
+                    function(pos) {{ onPositionUpdate(pos); startTracking(); }},
+                    onPositionError,
+                    {{ enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }}
+                );
+            }}
+        }}
+
+        // Iniciar verificação de permissão
+        if (document.readyState === 'complete') {{
+            checkAndRequestPermission();
+        }} else {{
+            window.addEventListener('load', checkAndRequestPermission);
+        }}
+
+        // Backup: também tentar após 1 segundo
+        setTimeout(checkAndRequestPermission, 1000);
+    }})();
+    </script>
+    """
+
+    st.markdown(gps_script, unsafe_allow_html=True)
+
+
+def salvar_gps_direto(motoboy_id: int, restaurante_id: int, latitude: float, longitude: float, velocidade: float = 0):
+    """
+    Salva posição GPS diretamente no banco (fallback se API não disponível).
+    """
+    session = get_db_session()
+    try:
+        # Criar registro GPS
+        gps_record = GPSMotoboy(
+            motoboy_id=motoboy_id,
+            restaurante_id=restaurante_id,
+            latitude=latitude,
+            longitude=longitude,
+            velocidade=velocidade,
+            timestamp=datetime.now()
+        )
+        session.add(gps_record)
+
+        # Atualizar motoboy
+        motoboy = session.query(Motoboy).filter(Motoboy.id == motoboy_id).first()
+        if motoboy:
+            motoboy.latitude_atual = latitude
+            motoboy.longitude_atual = longitude
+            motoboy.ultima_atualizacao_gps = datetime.now()
+
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        return False
+    finally:
+        session.close()
+
 
 # ==================== AUTENTICAÇÃO ====================
 
@@ -356,103 +709,88 @@ def tela_login():
     st.markdown("---")
     st.info("💡 **Não tem cadastro?** Clique em 'Cadastrar' e solicite seu acesso ao restaurante!")
 
-# ==================== MAPA EM TEMPO REAL ====================
-
-def tela_mapa():
-    """Mapa com localização em tempo real"""
-    st.title("🗺️ Sua Localização")
-
-    motoboy = st.session_state.motoboy_dados
-
-    # Acessar como dict (não ORM) para evitar DetachedInstanceError
-    st.markdown(f"### 👤 Olá, {motoboy['nome']}!")
-    st.markdown(f"**Restaurante:** {motoboy['restaurante_nome']}")
-    
-    session = get_db_session()
-    try:
-        posicao = session.query(GPSMotoboy).filter(
-            GPSMotoboy.motoboy_id == st.session_state.motoboy_id
-        ).order_by(GPSMotoboy.timestamp.desc()).first()
-        
-        if posicao:
-            st.success(f"📍 Última atualização: {posicao.timestamp}")
-            st.markdown(f"**Latitude:** {posicao.latitude}")
-            st.markdown(f"**Longitude:** {posicao.longitude}")
-            st.markdown(f"**Velocidade:** {posicao.velocidade:.1f} km/h")
-        else:
-            st.info("📍 Aguardando primeira atualização de localização...")
-    finally:
-        session.close()
-    
-    st.markdown("---")
-    
-    st.markdown("### 📡 Atualizar Localização")
-    
-    with st.form("form_atualizar_gps"):
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            lat = st.number_input("Latitude", value=-23.550520, format="%.6f")
-        
-        with col2:
-            lon = st.number_input("Longitude", value=-46.633308, format="%.6f")
-        
-        velocidade = st.number_input("Velocidade (km/h)", min_value=0.0, max_value=120.0, value=0.0)
-        
-        if st.form_submit_button("📍 Atualizar Posição", use_container_width=True, type="primary"):
-            session = get_db_session()
-            try:
-                nova_posicao = GPSMotoboy(
-                    motoboy_id=st.session_state.motoboy_id,
-                    restaurante_id=st.session_state.restaurante_id,
-                    latitude=lat,
-                    longitude=lon,
-                    velocidade=velocidade,
-                    timestamp=datetime.now()
-                )
-                session.add(nova_posicao)
-                session.commit()
-                st.success("✅ Localização atualizada!")
-                st.rerun()
-            except Exception as e:
-                session.rollback()
-                st.error(f"❌ Erro ao atualizar localização: {str(e)}")
-            finally:
-                session.close()
-
 # ==================== ENTREGAS ====================
 
 def tocar_som_notificacao():
-    """Injeta JavaScript para tocar som de notificação"""
-    # Som de notificação usando Web Audio API (funciona em PWA)
+    """
+    Injeta JavaScript para tocar som de notificação.
+    Usa Web Audio API com resume automático para funcionar em PWA.
+    Também tenta enviar notificação do sistema se permitido.
+    """
     st.markdown("""
     <script>
     (function() {
+        // Evitar tocar múltiplas vezes em reruns rápidos
+        if (window.lastNotificationTime && (Date.now() - window.lastNotificationTime) < 2000) {
+            return;
+        }
+        window.lastNotificationTime = Date.now();
+
         // Criar contexto de áudio
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let audioContext = window.audioContextGlobal;
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            window.audioContextGlobal = audioContext;
+        }
+
+        // Resumir contexto se necessário (política de autoplay)
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
 
         // Criar oscilador para som de notificação
         function playNotificationSound() {
-            const oscillator = audioContext.createOscillator();
-            const gainNode = audioContext.createGain();
+            try {
+                // Resumir novamente para garantir
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume();
+                }
 
-            oscillator.connect(gainNode);
-            gainNode.connect(audioContext.destination);
+                const oscillator = audioContext.createOscillator();
+                const gainNode = audioContext.createGain();
 
-            oscillator.frequency.value = 800;
-            oscillator.type = 'sine';
+                oscillator.connect(gainNode);
+                gainNode.connect(audioContext.destination);
 
-            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                // Tom mais alto e audível
+                oscillator.frequency.value = 880; // La4 (mais audível)
+                oscillator.type = 'sine';
 
-            oscillator.start(audioContext.currentTime);
-            oscillator.stop(audioContext.currentTime + 0.5);
+                // Volume mais alto
+                gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+
+                oscillator.start(audioContext.currentTime);
+                oscillator.stop(audioContext.currentTime + 0.4);
+            } catch (e) {
+                console.error('Erro ao tocar som:', e);
+            }
         }
 
-        // Tocar som 3 vezes com intervalo
+        // Padrão de notificação: 3 toques rápidos
         playNotificationSound();
-        setTimeout(playNotificationSound, 600);
-        setTimeout(playNotificationSound, 1200);
+        setTimeout(playNotificationSound, 400);
+        setTimeout(playNotificationSound, 800);
+
+        // Tentar enviar notificação do sistema também
+        if ('Notification' in window && Notification.permission === 'granted') {
+            try {
+                new Notification('Super Food - Nova Entrega!', {
+                    body: 'Você recebeu uma nova entrega. Confira o app.',
+                    icon: '/logo192.png',
+                    tag: 'nova-entrega',
+                    requireInteraction: true,
+                    vibrate: [200, 100, 200, 100, 200]
+                });
+            } catch (e) {
+                console.log('Notificação não suportada:', e);
+            }
+        }
+
+        // Vibrar dispositivo se disponível
+        if ('vibrate' in navigator) {
+            navigator.vibrate([200, 100, 200, 100, 300]);
+        }
     })();
     </script>
     """, unsafe_allow_html=True)
@@ -461,6 +799,13 @@ def tocar_som_notificacao():
 def tela_entregas():
     """Tela de entregas COM ORDEM OTIMIZADA e sistema sequencial"""
     st.title("📦 Suas Entregas")
+
+    # Inicializar estados de forma segura para evitar erro removeChild
+    if 'entregas_container_key' not in st.session_state:
+        st.session_state.entregas_container_key = 0
+
+    # Container principal com key estável para evitar erro de DOM
+    main_container = st.container()
 
     session = get_db_session()
     try:
@@ -488,12 +833,23 @@ def tela_entregas():
         entregas_pendentes = [e for e in entregas if e.status == 'pendente']
 
         # ==================== STATUS GERAL ====================
+        # Calcular posição correta: quantas entregas já foram completadas nesta rota
+        entregas_concluidas = session.query(Entrega).filter(
+            Entrega.motoboy_id == st.session_state.motoboy_id,
+            Entrega.status.in_(['entregue', 'cliente_ausente', 'cancelado_cliente']),
+            Entrega.entregue_em >= datetime.now().replace(hour=0, minute=0, second=0)
+        ).count()
+
+        # Total de entregas na rota atual (pendentes + em_rota + concluídas hoje)
+        total_rota_hoje = total_entregas + entregas_concluidas
+
         if entregas_em_rota:
             entrega_atual = entregas_em_rota[0]
-            posicao_atual = next((i+1 for i, e in enumerate(entregas) if e.id == entrega_atual.id), 1)
+            # Posição atual = entregas concluídas + 1 (a atual em andamento)
+            posicao_atual = entregas_concluidas + 1
             st.markdown(f"""
             <div class="status-ocupado">
-                🏍️ EM ENTREGA - Pedido {posicao_atual}/{total_entregas}
+                🏍️ EM ENTREGA - Pedido {posicao_atual} de {total_rota_hoje} ({total_entregas} restante{'s' if total_entregas > 1 else ''})
             </div>
             """, unsafe_allow_html=True)
         elif entregas_pendentes:
@@ -523,8 +879,8 @@ def tela_entregas():
 
             st.markdown("---")
 
-            # Botão grande para iniciar
-            if st.button("🚀 INICIAR ENTREGAS", use_container_width=True, type="primary", key="btn_iniciar_todas"):
+            # Botão grande para iniciar - key estável baseada no motoboy
+            if st.button("🚀 INICIAR ENTREGAS", use_container_width=True, type="primary", key=f"btn_iniciar_{st.session_state.motoboy_id}"):
                 try:
                     # Inicia a primeira entrega da fila
                     primeira = entregas_pendentes[0]
@@ -617,8 +973,8 @@ def tela_entregas():
             estado_entrega = st.session_state.get(f'estado_entrega_{entrega_atual.id}', 'em_rota')
 
             if estado_entrega == 'em_rota':
-                # Botão: Cheguei ao Destino
-                if st.button("📍 CHEGUEI AO DESTINO", use_container_width=True, type="primary"):
+                # Botão: Cheguei ao Destino - key estável
+                if st.button("📍 CHEGUEI AO DESTINO", use_container_width=True, type="primary", key=f"cheguei_{entrega_atual.id}"):
                     st.session_state[f'estado_entrega_{entrega_atual.id}'] = 'no_destino'
                     st.rerun()
 
@@ -631,8 +987,8 @@ def tela_entregas():
             elif estado_entrega == 'no_destino':
                 st.success("📍 Você chegou ao destino!")
 
-                # Botão principal: Entrega Concluída
-                if st.button("✅ ENTREGA CONCLUÍDA", use_container_width=True, type="primary"):
+                # Botão principal: Entrega Concluída - key estável
+                if st.button("✅ ENTREGA CONCLUÍDA", use_container_width=True, type="primary", key=f"concluir_{entrega_atual.id}"):
                     try:
                         distancia_km = entrega_atual.distancia_km or entrega_atual.pedido.distancia_restaurante_km or 0
 
@@ -673,12 +1029,12 @@ def tela_entregas():
                 col_prob1, col_prob2 = st.columns(2)
 
                 with col_prob1:
-                    if st.button("🚪 Cliente Ausente", use_container_width=True):
+                    if st.button("🚪 Cliente Ausente", use_container_width=True, key=f"ausente_{entrega_atual.id}"):
                         st.session_state.modal_ausente = True
                         st.rerun()
 
                 with col_prob2:
-                    if st.button("❌ Cliente Cancelou", use_container_width=True):
+                    if st.button("❌ Cliente Cancelou", use_container_width=True, key=f"cancelou_{entrega_atual.id}"):
                         st.session_state.modal_rejeitar = True
                         st.rerun()
 
@@ -707,9 +1063,12 @@ def tela_entregas():
         session.close()
 
 def modal_rejeitar_pedido(entrega, session):
-    with st.form("form_rejeitar"):
+    # Key estável baseada no ID do motoboy para evitar erro removeChild
+    form_key = f"form_rejeitar_{st.session_state.motoboy_id}"
+    with st.form(form_key):
         st.warning("⚠️ Cliente Cancelou/Recusou")
         st.markdown("Registre o motivo do cancelamento:")
+        st.info("💰 Você receberá o valor da entrega normalmente, pois foi até o local.")
 
         motivo = st.selectbox(
             "Motivo:",
@@ -729,29 +1088,28 @@ def modal_rejeitar_pedido(entrega, session):
         with col1:
             if st.form_submit_button("❌ Confirmar Cancelamento", use_container_width=True):
                 try:
-                    entrega.status = 'cancelado'
-                    entrega.motivo_cancelamento = f"{motivo}. {obs}" if obs else motivo
-                    entrega.entregue_em = datetime.now()
+                    observacao_completa = f"{motivo}. {obs}" if obs else motivo
+                    distancia_km = entrega.distancia_km or entrega.pedido.distancia_restaurante_km or 0
 
-                    # Atualizar pedido
-                    entrega.pedido.status = 'cancelado'
-
-                    # Atualizar motoboy - decrementar entregas pendentes
-                    motoboy = session.query(Motoboy).filter(
-                        Motoboy.id == entrega.motoboy_id
-                    ).first()
-                    if motoboy:
-                        motoboy.entregas_pendentes = max(0, (motoboy.entregas_pendentes or 1) - 1)
-                        if motoboy.entregas_pendentes == 0:
-                            motoboy.em_rota = False
-
-                    session.commit()
+                    # Usar função atualizada que registra ganho do motoboy
+                    resultado = finalizar_entrega_motoboy(
+                        entrega.id,
+                        distancia_km if distancia_km else None,
+                        session,
+                        motivo_finalizacao='cancelado_cliente',
+                        observacao=observacao_completa
+                    )
 
                     # Limpar estado
                     if f'estado_entrega_{entrega.id}' in st.session_state:
                         del st.session_state[f'estado_entrega_{entrega.id}']
 
-                    st.warning("⚠️ Pedido cancelado e registrado!")
+                    if resultado['sucesso']:
+                        valor_ganho = resultado.get('valor_ganho', 0)
+                        st.success(f"✅ Registrado! Você ganhou R$ {valor_ganho:.2f}")
+                    else:
+                        st.warning(f"⚠️ Pedido cancelado. {resultado.get('erro', '')}")
+
                     st.session_state.modal_rejeitar = False
                     time.sleep(2)
                     st.rerun()
@@ -766,9 +1124,12 @@ def modal_rejeitar_pedido(entrega, session):
 
 
 def modal_cliente_ausente(entrega, session):
-    with st.form("form_ausente"):
+    # Key estável baseada no ID do motoboy para evitar erro removeChild
+    form_key = f"form_ausente_{st.session_state.motoboy_id}"
+    with st.form(form_key):
         st.warning("🚪 Cliente Ausente")
         st.markdown("O que aconteceu?")
+        st.info("💰 Você receberá o valor da entrega normalmente, pois foi até o local.")
 
         acao = st.radio(
             "Ação tomada:",
@@ -787,30 +1148,29 @@ def modal_cliente_ausente(entrega, session):
         with col1:
             if st.form_submit_button("✅ Registrar Ausência", use_container_width=True):
                 try:
-                    motivo = f"Cliente ausente - {acao}. {obs}" if obs else f"Cliente ausente - {acao}"
-                    entrega.status = 'cancelado'
-                    entrega.motivo_cancelamento = motivo
-                    entrega.entregue_em = datetime.now()
+                    observacao_completa = f"Cliente ausente - {acao}. {obs}" if obs else f"Cliente ausente - {acao}"
+                    distancia_km = entrega.distancia_km or entrega.pedido.distancia_restaurante_km or 0
 
-                    # Atualizar pedido para cliente_ausente
-                    entrega.pedido.status = 'cliente_ausente'
-
-                    # Atualizar motoboy
-                    motoboy = session.query(Motoboy).filter(
-                        Motoboy.id == entrega.motoboy_id
-                    ).first()
-                    if motoboy:
-                        motoboy.entregas_pendentes = max(0, (motoboy.entregas_pendentes or 1) - 1)
-                        if motoboy.entregas_pendentes == 0:
-                            motoboy.em_rota = False
-
-                    session.commit()
+                    # Usar função atualizada que registra ganho do motoboy
+                    resultado = finalizar_entrega_motoboy(
+                        entrega.id,
+                        distancia_km if distancia_km else None,
+                        session,
+                        motivo_finalizacao='cliente_ausente',
+                        observacao=observacao_completa
+                    )
 
                     # Limpar estado
                     if f'estado_entrega_{entrega.id}' in st.session_state:
                         del st.session_state[f'estado_entrega_{entrega.id}']
 
-                    st.warning("⚠️ Registrado como cliente ausente! O restaurante será notificado.")
+                    if resultado['sucesso']:
+                        valor_ganho = resultado.get('valor_ganho', 0)
+                        st.success(f"✅ Registrado! Você ganhou R$ {valor_ganho:.2f}")
+                        st.info("O restaurante será notificado.")
+                    else:
+                        st.warning(f"⚠️ Registrado como ausente. {resultado.get('erro', '')}")
+
                     st.session_state.modal_ausente = False
                     time.sleep(2)
                     st.rerun()
@@ -853,24 +1213,27 @@ def tela_ganhos():
         # Buscar ganhos do dia usando a nova função
         ganhos_hoje = obter_ganhos_dia_motoboy(st.session_state.motoboy_id, session=session)
 
+        # Status que geram pagamento ao motoboy (inclui cancelamentos onde ele foi até o local)
+        status_pagos = ['entregue', 'cliente_ausente', 'cancelado_cliente']
+
         # Estatísticas totais (usa valor_motoboy - o ganho real do motoboy)
         total_entregas = session.query(Entrega).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
-            Entrega.status == 'entregue'
+            Entrega.status.in_(status_pagos)
         ).count()
 
         total_ganho = session.query(
             sa.func.coalesce(sa.func.sum(Entrega.valor_motoboy), 0)
         ).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
-            Entrega.status == 'entregue'
+            Entrega.status.in_(status_pagos)
         ).scalar()
 
         total_km = session.query(
             sa.func.coalesce(sa.func.sum(Entrega.distancia_km), 0)
         ).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
-            Entrega.status == 'entregue'
+            Entrega.status.in_(status_pagos)
         ).scalar()
 
         # Exibir ganhos do dia em destaque
@@ -935,9 +1298,10 @@ def tela_ganhos():
 
         st.subheader("📜 Histórico de Entregas")
 
+        # Incluir todos os status que geram pagamento
         historico = session.query(Entrega).join(Pedido).filter(
             Entrega.motoboy_id == st.session_state.motoboy_id,
-            Entrega.status == 'entregue'
+            Entrega.status.in_(status_pagos)
         ).order_by(Entrega.entregue_em.desc()).limit(20).all()
 
         if not historico:
@@ -946,12 +1310,25 @@ def tela_ganhos():
             for entrega in historico:
                 # Usar valor_motoboy (ganho do motoboy) ao invés de valor_entrega (taxa do cliente)
                 valor_ganho = entrega.valor_motoboy or 0
-                with st.expander(f"📦 Comanda {entrega.pedido.comanda} - R$ {valor_ganho:.2f}"):
+
+                # Indicador de status especial
+                status_icon = "📦"
+                status_texto = ""
+                if entrega.status == 'cliente_ausente':
+                    status_icon = "🚪"
+                    status_texto = " (Ausente)"
+                elif entrega.status == 'cancelado_cliente':
+                    status_icon = "❌"
+                    status_texto = " (Cancelado)"
+
+                with st.expander(f"{status_icon} Comanda {entrega.pedido.comanda} - R$ {valor_ganho:.2f}{status_texto}"):
                     col1, col2 = st.columns(2)
 
                     with col1:
                         st.markdown(f"**Cliente:** {entrega.pedido.cliente_nome}")
                         st.markdown(f"**Distância:** {entrega.distancia_km or 0:.2f} km")
+                        if entrega.status != 'entregue':
+                            st.caption(f"Status: {entrega.status.replace('_', ' ').title()}")
 
                     with col2:
                         st.markdown(f"**Ganho:** R$ {valor_ganho:.2f}")
@@ -1059,26 +1436,22 @@ def tela_perfil():
 
 def menu_inferior():
     st.markdown("---")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
+
+    # Menu simplificado com 3 opções (removido Mapa)
+    col1, col2, col3 = st.columns(3)
+
     with col1:
-        if st.button("🗺️\nMapa", use_container_width=True):
-            st.session_state.tela_atual = "mapa"
-            st.rerun()
-    
-    with col2:
-        if st.button("📦\nEntregas", use_container_width=True):
+        if st.button("📦\nEntregas", use_container_width=True, key="menu_entregas"):
             st.session_state.tela_atual = "entregas"
             st.rerun()
-    
-    with col3:
-        if st.button("💰\nGanhos", use_container_width=True):
+
+    with col2:
+        if st.button("💰\nGanhos", use_container_width=True, key="menu_ganhos"):
             st.session_state.tela_atual = "ganhos"
             st.rerun()
-    
-    with col4:
-        if st.button("👤\nPerfil", use_container_width=True):
+
+    with col3:
+        if st.button("👤\nPerfil", use_container_width=True, key="menu_perfil"):
             st.session_state.tela_atual = "perfil"
             st.rerun()
 
@@ -1086,21 +1459,29 @@ def menu_inferior():
 
 def main():
     verificar_login()
-    
+
     if 'tela_atual' not in st.session_state:
         st.session_state.tela_atual = "entregas"
-    
+
     if not st.session_state.motoboy_logado:
         if st.session_state.get('tela_atual') == "cadastro":
             tela_cadastro()
         else:
             tela_login()
     else:
+        # Injetar GPS Tracker quando motoboy está online
+        # O JavaScript roda em background e envia localização a cada 10 segundos
+        motoboy_dados = st.session_state.get('motoboy_dados')
+        if motoboy_dados and motoboy_dados.get('disponivel', False):
+            injetar_gps_tracker(
+                st.session_state.motoboy_id,
+                st.session_state.restaurante_id
+            )
+
         tela = st.session_state.tela_atual
-        
-        if tela == "mapa":
-            tela_mapa()
-        elif tela == "entregas":
+
+        # Roteamento de telas (removido tela_mapa)
+        if tela == "entregas":
             tela_entregas()
         elif tela == "ganhos":
             tela_ganhos()
@@ -1108,7 +1489,7 @@ def main():
             tela_perfil()
         else:
             tela_entregas()
-        
+
         menu_inferior()
 
 if __name__ == "__main__":

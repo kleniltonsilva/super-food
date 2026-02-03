@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 import os
 import sys
 import hashlib
+import time
 
 # Configuração de path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -37,11 +38,11 @@ from database.session import get_db_session
 from database.models import (
     Restaurante, ConfigRestaurante, Motoboy, MotoboySolicitacao,
     Pedido, Produto, Entrega, Caixa, MovimentacaoCaixa, Notificacao,
-    CategoriaMenu, SiteConfig
+    CategoriaMenu, SiteConfig, GPSMotoboy
 )
 
 from utils.mapbox_api import autocomplete_endereco_restaurante
-from utils.calculos import calcular_taxa_entrega
+from utils.calculos import calcular_taxa_entrega, atualizar_coordenadas_restaurante
 from utils.motoboy_selector import (
     selecionar_motoboy_para_rota,
     atribuir_rota_motoboy,
@@ -52,7 +53,29 @@ from utils.motoboy_selector import (
 
 # ==================== FUNÇÕES DE DESPACHO ====================
 def despachar_pedidos_automatico(session, restaurante_id: int) -> dict:
-    """Despacha pedidos prontos para motoboys disponíveis usando seleção justa."""
+    """
+    Despacha pedidos prontos para motoboys disponíveis usando seleção justa.
+
+    Suporta 3 modos de prioridade de entrega:
+    - rapido_economico: TSP por proximidade (padrão)
+    - cronologico_inteligente: Agrupa por tempo, depois TSP
+    - manual: Não despacha automaticamente
+    """
+    # Buscar config do restaurante
+    config = session.query(ConfigRestaurante).filter(
+        ConfigRestaurante.restaurante_id == restaurante_id
+    ).first()
+
+    # Verificar modo de despacho
+    modo_prioridade = config.modo_prioridade_entrega if config else 'rapido_economico'
+
+    if modo_prioridade == 'manual':
+        return {
+            'sucesso': False,
+            'mensagem': '⚙️ Modo Manual ativo. Atribua os pedidos manualmente aos motoboys.',
+            'modo': 'manual'
+        }
+
     # Buscar pedidos prontos não despachados
     pedidos_prontos = session.query(Pedido).filter(
         Pedido.restaurante_id == restaurante_id,
@@ -84,16 +107,50 @@ def despachar_pedidos_automatico(session, restaurante_id: int) -> dict:
             'mensagem': f'❌ Nenhum motoboy online.\n\n📱 Os motoboys precisam fazer login no App Motoboy para ficarem online e receberem entregas.\n\nMotoboys cadastrados: {", ".join(nomes)}'
         }
 
-    # Buscar config do restaurante
-    config = session.query(ConfigRestaurante).filter(
-        ConfigRestaurante.restaurante_id == restaurante_id
-    ).first()
-
     max_por_rota = config.max_pedidos_por_rota if config else 5
     alertas = []
     rotas_criadas = 0
     pedidos_despachados = 0
     pedidos_restantes = list(pedidos_prontos)
+
+    # Otimizar ordem dos pedidos conforme modo selecionado
+    from utils.tsp_optimizer import otimizar_rota_por_modo
+
+    # Buscar restaurante para coordenadas de origem
+    restaurante = session.query(Restaurante).filter(
+        Restaurante.id == restaurante_id
+    ).first()
+
+    if restaurante and restaurante.latitude and restaurante.longitude:
+        origem = (restaurante.latitude, restaurante.longitude)
+
+        # Preparar destinos para otimização
+        destinos = []
+        for p in pedidos_restantes:
+            if p.latitude_entrega and p.longitude_entrega:
+                destinos.append({
+                    'pedido_id': p.id,
+                    'lat': p.latitude_entrega,
+                    'lon': p.longitude_entrega,
+                    'data_criacao': p.data_criacao
+                })
+
+        if destinos:
+            # Otimizar ordem
+            destinos_otimizados = otimizar_rota_por_modo(origem, destinos, modo_prioridade)
+
+            # Reordenar pedidos_restantes conforme otimização
+            id_para_pedido = {p.id: p for p in pedidos_restantes}
+            pedidos_otimizados = []
+            for d in destinos_otimizados:
+                if d['pedido_id'] in id_para_pedido:
+                    pedidos_otimizados.append(id_para_pedido[d['pedido_id']])
+
+            # Adicionar pedidos sem coordenadas ao final
+            pedidos_sem_coord = [p for p in pedidos_restantes if p.id not in [d['pedido_id'] for d in destinos_otimizados]]
+            pedidos_restantes = pedidos_otimizados + pedidos_sem_coord
+
+            alertas.append(f"📍 Modo: {modo_prioridade.replace('_', ' ').title()}")
 
     while pedidos_restantes:
         # Primeiro, selecionar motoboy disponível (pedindo apenas 1 para verificar disponibilidade)
@@ -264,7 +321,6 @@ def renderizar_sidebar():
     """Sidebar com menu - Padrão estável igual ao super_admin.py"""
     with st.sidebar:
         rest = st.session_state.get('restaurante_dados')
-        config = st.session_state.get('restaurante_config')
 
         if not rest:
             return "🏠 Dashboard"
@@ -272,10 +328,19 @@ def renderizar_sidebar():
         st.title(f"🍕 {rest['nome_fantasia']}")
         st.caption(f"Plano: **{rest['plano'].upper()}**")
 
-        if config and config.get('status_atual') == 'aberto':
-            st.success("🟢 **ABERTO**")
-        else:
-            st.error("🔴 **FECHADO**")
+        # Buscar status ATUAL do banco (não do session_state cache)
+        session = get_db_session()
+        try:
+            config = session.query(ConfigRestaurante).filter(
+                ConfigRestaurante.restaurante_id == rest['id']
+            ).first()
+
+            if config and config.status_atual == 'aberto':
+                st.success("🟢 **ABERTO**")
+            else:
+                st.error("🔴 **FECHADO**")
+        finally:
+            session.close()
 
         st.markdown("---")
 
@@ -586,15 +651,19 @@ def listar_pedidos_ativos():
             if st.button("🚀 Despachar Prontos", use_container_width=True, type="primary"):
                 resultado = despachar_pedidos_automatico(session, rest_id)
                 if resultado['sucesso']:
-                    st.success(resultado['mensagem'])
+                    # Usar toast para mensagem temporária que desaparece após 3 segundos
+                    st.toast(resultado['mensagem'], icon="✅")
                     if resultado.get('alertas'):
                         for a in resultado['alertas']:
-                            st.info(a)
+                            st.toast(a, icon="📋")
+                    # Forçar rerun para atualizar lista de pedidos
+                    time.sleep(1)
+                    st.rerun()
                 else:
-                    st.error(resultado['mensagem'])
+                    st.toast(resultado['mensagem'], icon="❌")
                     if resultado.get('alertas'):
                         for a in resultado['alertas']:
-                            st.warning(a)
+                            st.toast(a, icon="⚠️")
 
         # Métricas de capacidade
         capacidade = calcular_capacidade_total_motoboys(session, rest_id)
@@ -695,14 +764,266 @@ def historico_pedidos():
 # ==================== MOTOBOYS ====================
 def tela_motoboys():
     st.title("🏍️ Gerenciamento de Motoboys")
-    tabs = st.tabs(["📋 Motoboys Ativos", "🆕 Solicitações", "➕ Cadastrar Manual"])
+    tabs = st.tabs(["📋 Motoboys Ativos", "🗺️ Mapa em Tempo Real", "🆕 Solicitações", "➕ Cadastrar Manual"])
 
     with tabs[0]:
         listar_motoboys_ativos()
     with tabs[1]:
-        listar_solicitacoes()
+        mapa_motoboys_tempo_real()
     with tabs[2]:
+        listar_solicitacoes()
+    with tabs[3]:
         cadastrar_motoboy_manual()
+
+
+def mapa_motoboys_tempo_real():
+    """Mapa em tempo real com localização dos motoboys online - Atualiza a cada 10 segundos"""
+    st.subheader("🗺️ Mapa em Tempo Real")
+
+    # Controles de atualização
+    col_ctrl1, col_ctrl2, col_ctrl3 = st.columns([2, 1, 2])
+    with col_ctrl1:
+        auto_refresh = st.checkbox("🔄 Atualização automática (10s)", value=True, key="auto_refresh_mapa")
+    with col_ctrl2:
+        if st.button("🔄 Atualizar Agora", key="btn_refresh_mapa"):
+            st.rerun()
+    with col_ctrl3:
+        st.caption(f"⏰ Última: {datetime.now().strftime('%H:%M:%S')}")
+
+    # Auto-refresh via JavaScript
+    if auto_refresh:
+        st.markdown("""
+        <script>
+        (function() {
+            // Auto-refresh a cada 10 segundos
+            const REFRESH_INTERVAL = 10000;
+
+            // Evitar múltiplos intervalos
+            if (window.mapRefreshInterval) {
+                clearInterval(window.mapRefreshInterval);
+            }
+
+            window.mapRefreshInterval = setInterval(() => {
+                // Verificar se ainda estamos na página do mapa
+                const mapElement = document.querySelector('[data-testid="stVerticalBlock"]');
+                if (mapElement) {
+                    // Simular clique no botão de refresh ou recarregar
+                    const refreshBtn = document.querySelector('[data-testid="baseButton-secondary"]');
+                    if (refreshBtn && refreshBtn.innerText.includes('Atualizar')) {
+                        refreshBtn.click();
+                    } else {
+                        // Fallback: recarregar página
+                        window.parent.postMessage({type: 'streamlit:rerun'}, '*');
+                    }
+                }
+            }, REFRESH_INTERVAL);
+        })();
+        </script>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    rest_id = st.session_state.restaurante_id
+    session = get_db_session()
+
+    try:
+        # Buscar restaurante para coordenadas centrais
+        restaurante = session.query(Restaurante).filter(
+            Restaurante.id == rest_id
+        ).first()
+
+        # Buscar motoboys online
+        motoboys_online = session.query(Motoboy).filter(
+            Motoboy.restaurante_id == rest_id,
+            Motoboy.status == 'ativo',
+            Motoboy.disponivel == True
+        ).all()
+
+        if not motoboys_online:
+            st.info("📍 Nenhum motoboy online no momento.")
+            st.caption("Quando os motoboys fizerem login no App, eles aparecerão no mapa.")
+            st.markdown("""
+            **💡 Dica:** Os motoboys precisam:
+            1. Fazer login no App Motoboy
+            2. Permitir acesso à localização no navegador
+            3. Manter o App aberto para enviar GPS
+            """)
+            return
+
+        # Coletar posições GPS dos motoboys
+        motoboys_com_gps = []
+        motoboys_sem_gps = []
+
+        for motoboy in motoboys_online:
+            # Buscar última posição GPS (dos últimos 5 minutos)
+            from datetime import timedelta
+            limite_tempo = datetime.now() - timedelta(minutes=5)
+
+            gps = session.query(GPSMotoboy).filter(
+                GPSMotoboy.motoboy_id == motoboy.id,
+                GPSMotoboy.timestamp >= limite_tempo
+            ).order_by(GPSMotoboy.timestamp.desc()).first()
+
+            if gps:
+                motoboys_com_gps.append({
+                    'id': motoboy.id,
+                    'nome': motoboy.nome,
+                    'lat': gps.latitude,
+                    'lon': gps.longitude,
+                    'velocidade': gps.velocidade or 0,
+                    'ultima_atualizacao': gps.timestamp,
+                    'em_rota': motoboy.em_rota,
+                    'entregas_pendentes': motoboy.entregas_pendentes or 0,
+                    'gps_recente': True
+                })
+            elif motoboy.latitude_atual and motoboy.longitude_atual:
+                # Fallback para coordenada salva no motoboy
+                motoboys_com_gps.append({
+                    'id': motoboy.id,
+                    'nome': motoboy.nome,
+                    'lat': motoboy.latitude_atual,
+                    'lon': motoboy.longitude_atual,
+                    'velocidade': 0,
+                    'ultima_atualizacao': motoboy.ultima_atualizacao_gps,
+                    'em_rota': motoboy.em_rota,
+                    'entregas_pendentes': motoboy.entregas_pendentes or 0,
+                    'gps_recente': False
+                })
+            else:
+                motoboys_sem_gps.append(motoboy.nome)
+
+        # Métricas
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("🟢 Online", len(motoboys_online))
+        with col2:
+            st.metric("📍 Com GPS", len(motoboys_com_gps))
+        with col3:
+            em_rota = len([m for m in motoboys_com_gps if m['em_rota']])
+            st.metric("🏍️ Em Rota", em_rota)
+        with col4:
+            st.metric("⚠️ Sem GPS", len(motoboys_sem_gps))
+
+        # Alertar sobre motoboys sem GPS
+        if motoboys_sem_gps:
+            st.warning(f"⚠️ Motoboys sem localização GPS: **{', '.join(motoboys_sem_gps)}**")
+            st.caption("Eles precisam permitir acesso à localização no navegador.")
+
+        st.markdown("---")
+
+        if not motoboys_com_gps:
+            st.warning("⚠️ Nenhum motoboy com localização GPS disponível.")
+            st.caption("Os motoboys precisam permitir acesso à localização no App.")
+            return
+
+        # Criar mapa com folium
+        try:
+            import folium
+            from streamlit_folium import st_folium
+
+            # Centro do mapa: restaurante ou média das posições
+            if restaurante and restaurante.latitude and restaurante.longitude:
+                centro = [restaurante.latitude, restaurante.longitude]
+            else:
+                lat_media = sum(m['lat'] for m in motoboys_com_gps) / len(motoboys_com_gps)
+                lon_media = sum(m['lon'] for m in motoboys_com_gps) / len(motoboys_com_gps)
+                centro = [lat_media, lon_media]
+
+            # Criar mapa com estilo escuro para melhor visualização
+            mapa = folium.Map(
+                location=centro,
+                zoom_start=14,
+                tiles='cartodbpositron'  # Estilo mais clean
+            )
+
+            # Adicionar marcador do restaurante
+            if restaurante and restaurante.latitude and restaurante.longitude:
+                folium.Marker(
+                    [restaurante.latitude, restaurante.longitude],
+                    popup=f"<b>🏪 {restaurante.nome_fantasia}</b><br>Seu restaurante",
+                    icon=folium.Icon(color='red', icon='home', prefix='fa'),
+                    tooltip="🏪 Restaurante"
+                ).add_to(mapa)
+
+            # Adicionar marcadores dos motoboys
+            for m in motoboys_com_gps:
+                # Cor baseada no status
+                if m['em_rota']:
+                    cor = 'orange'
+                    icone = 'motorcycle'
+                    status_txt = '🏍️ Em Rota'
+                elif m['gps_recente']:
+                    cor = 'green'
+                    icone = 'user'
+                    status_txt = '✅ Disponível'
+                else:
+                    cor = 'gray'
+                    icone = 'user'
+                    status_txt = '📍 GPS antigo'
+
+                # Tempo desde última atualização
+                if m['ultima_atualizacao']:
+                    delta = datetime.now() - m['ultima_atualizacao']
+                    if delta.seconds < 60:
+                        tempo_txt = f"{delta.seconds}s atrás"
+                    elif delta.seconds < 3600:
+                        tempo_txt = f"{delta.seconds // 60}min atrás"
+                    else:
+                        tempo_txt = m['ultima_atualizacao'].strftime('%H:%M')
+                else:
+                    tempo_txt = 'N/A'
+
+                popup_html = f"""
+                <div style="font-family: Arial; min-width: 150px;">
+                    <b style="font-size: 14px;">🏍️ {m['nome']}</b><br>
+                    <hr style="margin: 5px 0;">
+                    <b>Status:</b> {status_txt}<br>
+                    <b>Entregas:</b> {m['entregas_pendentes']}<br>
+                    <b>Velocidade:</b> {m['velocidade']:.1f} km/h<br>
+                    <b>Atualizado:</b> {tempo_txt}
+                </div>
+                """
+
+                folium.Marker(
+                    [m['lat'], m['lon']],
+                    popup=folium.Popup(popup_html, max_width=250),
+                    icon=folium.Icon(color=cor, icon=icone, prefix='fa'),
+                    tooltip=f"{m['nome']} - {status_txt}"
+                ).add_to(mapa)
+
+            # Renderizar mapa (chave única baseada no timestamp para forçar refresh)
+            map_key = f"mapa_motoboys_{datetime.now().strftime('%H%M%S')}"
+            st_folium(mapa, width=700, height=450, key=map_key)
+
+        except ImportError:
+            st.error("❌ Biblioteca 'folium' ou 'streamlit-folium' não instalada.")
+            st.code("pip install folium streamlit-folium")
+
+            # Fallback: mostrar lista de posições
+            st.markdown("### 📍 Posições dos Motoboys")
+            for m in motoboys_com_gps:
+                status = "🏍️ Em Rota" if m['em_rota'] else "✅ Disponível"
+                st.markdown(f"**{m['nome']}** - {status}")
+                st.caption(f"📍 {m['lat']:.6f}, {m['lon']:.6f} | Velocidade: {m['velocidade']:.1f} km/h")
+
+        # Lista de motoboys
+        st.markdown("---")
+        st.markdown("### 📋 Detalhes dos Motoboys Online")
+        for m in motoboys_com_gps:
+            status_icon = "🏍️" if m['em_rota'] else "✅"
+            with st.expander(f"{status_icon} {m['nome']} - {m['entregas_pendentes']} entrega(s)"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown(f"**Status:** {'Em Rota' if m['em_rota'] else 'Disponível'}")
+                    st.markdown(f"**Entregas:** {m['entregas_pendentes']}")
+                with col2:
+                    st.markdown(f"**Coordenadas:** {m['lat']:.6f}, {m['lon']:.6f}")
+                    st.markdown(f"**Velocidade:** {m['velocidade']:.1f} km/h")
+                if m['ultima_atualizacao']:
+                    st.caption(f"Última atualização: {m['ultima_atualizacao'].strftime('%d/%m/%Y %H:%M:%S')}")
+
+    finally:
+        session.close()
 
 
 def listar_motoboys_ativos():
@@ -943,60 +1264,133 @@ def tela_caixa():
 
         if not caixa:
             st.warning("🔴 Caixa FECHADO")
+
+            # Caixa pode ser aberto independente do status do restaurante
+            st.info("💡 O caixa pode ser aberto mesmo com o restaurante fechado.")
+
             with st.form("form_abrir"):
-                valor = st.number_input("Valor de Abertura", min_value=0.0, value=100.0)
-                if st.form_submit_button("💰 Abrir Caixa", type="primary"):
+                valor = st.number_input("Valor de Abertura (R$)", min_value=0.0, value=100.0, step=10.0)
+                if st.form_submit_button("💰 Abrir Caixa", type="primary", use_container_width=True):
                     novo = Caixa(
                         restaurante_id=rest_id,
                         data_abertura=datetime.now(),
                         operador_abertura=st.session_state.restaurante_dados['email'],
                         valor_abertura=valor,
+                        total_vendas=0.0,
+                        valor_retiradas=0.0,
                         status='aberto'
                     )
                     session.add(novo)
                     session.flush()
                     session.add(MovimentacaoCaixa(
                         caixa_id=novo.id, tipo='abertura',
-                        valor=valor, descricao='Abertura', data_hora=datetime.now()
+                        valor=valor, descricao='Abertura de caixa', data_hora=datetime.now()
                     ))
                     session.commit()
+                    st.toast("✅ Caixa aberto com sucesso!", icon="💰")
                     st.rerun()
         else:
             st.success("🟢 Caixa ABERTO")
-            saldo = caixa.valor_abertura + caixa.total_vendas - caixa.valor_retiradas
+            st.caption(f"Aberto em: {caixa.data_abertura.strftime('%d/%m/%Y %H:%M')}")
+
+            # Calcular totais
+            valor_abertura = caixa.valor_abertura or 0.0
+            total_vendas = caixa.total_vendas or 0.0
+            valor_retiradas = caixa.valor_retiradas or 0.0
+            saldo = valor_abertura + total_vendas - valor_retiradas
 
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("Abertura", f"R$ {caixa.valor_abertura:.2f}")
+                st.metric("Abertura", f"R$ {valor_abertura:.2f}")
             with col2:
-                st.metric("Vendas", f"R$ {caixa.total_vendas:.2f}")
+                st.metric("Vendas", f"R$ {total_vendas:.2f}")
             with col3:
-                st.metric("Retiradas", f"R$ {caixa.valor_retiradas:.2f}")
+                st.metric("Retiradas", f"R$ {valor_retiradas:.2f}")
             with col4:
                 st.metric("Saldo", f"R$ {saldo:.2f}")
 
-            with st.form("form_retirada"):
-                st.subheader("💸 Retirada")
-                valor = st.number_input("Valor", min_value=0.01, step=10.0)
-                desc = st.text_input("Motivo *")
-                if st.form_submit_button("Retirar"):
-                    if desc:
-                        session.add(MovimentacaoCaixa(
-                            caixa_id=caixa.id, tipo='retirada',
-                            valor=valor, descricao=desc, data_hora=datetime.now()
-                        ))
-                        caixa.valor_retiradas += valor
-                        session.commit()
-                        st.rerun()
+            st.markdown("---")
+
+            # Formulário de retirada melhorado
+            st.subheader("💸 Fazer Retirada")
+
+            # Usar session_state para manter valores do formulário
+            if 'valor_retirada' not in st.session_state:
+                st.session_state.valor_retirada = 10.0
+            if 'motivo_retirada' not in st.session_state:
+                st.session_state.motivo_retirada = ""
+
+            with st.form("form_retirada", clear_on_submit=True):
+                col_ret1, col_ret2 = st.columns([1, 2])
+                with col_ret1:
+                    valor_ret = st.number_input(
+                        "Valor (R$)",
+                        min_value=0.01,
+                        max_value=float(saldo) if saldo > 0 else 10000.0,
+                        value=10.0,
+                        step=10.0,
+                        key="input_valor_retirada"
+                    )
+                with col_ret2:
+                    motivo = st.text_input(
+                        "Motivo da retirada *",
+                        placeholder="Ex: Pagamento fornecedor, Troco, etc.",
+                        key="input_motivo_retirada"
+                    )
+
+                submitted = st.form_submit_button("💸 Confirmar Retirada", type="primary", use_container_width=True)
+
+                if submitted:
+                    if not motivo or len(motivo.strip()) < 3:
+                        st.error("❌ Informe o motivo da retirada (mínimo 3 caracteres)")
+                    elif valor_ret > saldo:
+                        st.error(f"❌ Valor maior que o saldo disponível (R$ {saldo:.2f})")
                     else:
-                        st.error("Informe o motivo")
+                        # Registrar retirada
+                        mov = MovimentacaoCaixa(
+                            caixa_id=caixa.id,
+                            tipo='retirada',
+                            valor=valor_ret,
+                            descricao=motivo.strip(),
+                            data_hora=datetime.now()
+                        )
+                        session.add(mov)
+                        caixa.valor_retiradas = (caixa.valor_retiradas or 0.0) + valor_ret
+                        session.commit()
+                        st.toast(f"✅ Retirada de R$ {valor_ret:.2f} registrada!", icon="💸")
+                        time.sleep(0.5)
+                        st.rerun()
 
             st.markdown("---")
-            if st.button("🔒 Fechar Caixa"):
-                caixa.status = 'fechado'
-                caixa.data_fechamento = datetime.now()
-                session.commit()
-                st.rerun()
+
+            # Histórico de movimentações do dia
+            with st.expander("📋 Movimentações do Caixa"):
+                movimentacoes = session.query(MovimentacaoCaixa).filter(
+                    MovimentacaoCaixa.caixa_id == caixa.id
+                ).order_by(MovimentacaoCaixa.data_hora.desc()).limit(20).all()
+
+                if movimentacoes:
+                    for mov in movimentacoes:
+                        tipo_icon = "💰" if mov.tipo == 'abertura' else ("💸" if mov.tipo == 'retirada' else "📦")
+                        sinal = "-" if mov.tipo == 'retirada' else "+"
+                        st.markdown(f"{tipo_icon} {mov.data_hora.strftime('%H:%M')} | {sinal}R$ {mov.valor:.2f} | {mov.descricao}")
+                else:
+                    st.info("Nenhuma movimentação registrada.")
+
+            st.markdown("---")
+
+            # Botão de fechar caixa com confirmação
+            col_fechar1, col_fechar2 = st.columns([3, 1])
+            with col_fechar2:
+                if st.button("🔒 Fechar Caixa", type="secondary"):
+                    caixa.status = 'fechado'
+                    caixa.data_fechamento = datetime.now()
+                    caixa.valor_fechamento = saldo
+                    caixa.operador_fechamento = st.session_state.restaurante_dados['email']
+                    session.commit()
+                    st.toast("✅ Caixa fechado!", icon="🔒")
+                    time.sleep(0.5)
+                    st.rerun()
     finally:
         session.close()
 
@@ -1016,7 +1410,7 @@ def tela_configuracoes():
             st.error("Configuração não encontrada")
             return
 
-        tabs = st.tabs(["💰 Taxas", "🕐 Horários", "📍 Endereço"])
+        tabs = st.tabs(["💰 Taxas", "🚀 Modo de Despacho", "🕐 Horários", "📍 Endereço"])
 
         with tabs[0]:
             with st.form("form_taxas"):
@@ -1051,6 +1445,70 @@ def tela_configuracoes():
                     st.success("✅ Salvo!")
 
         with tabs[1]:
+            st.subheader("🚀 Modo de Prioridade de Entrega")
+
+            st.markdown("""
+            Escolha como os pedidos serão organizados para entrega:
+            """)
+
+            modo_atual = config.modo_prioridade_entrega or 'rapido_economico'
+
+            # Explicação dos modos
+            col_exp1, col_exp2, col_exp3 = st.columns(3)
+
+            with col_exp1:
+                st.markdown("#### 🏎️ Rápido Econômico")
+                st.markdown("""
+                - Otimiza por proximidade (TSP)
+                - Menor km percorrido
+                - Ideal para delivery denso
+                """)
+                if modo_atual == 'rapido_economico':
+                    st.success("✅ Ativo")
+
+            with col_exp2:
+                st.markdown("#### ⏰ Cronológico Inteligente")
+                st.markdown("""
+                - Agrupa pedidos próximos em tempo
+                - Respeita ordem de chegada
+                - Ideal para alto volume
+                """)
+                if modo_atual == 'cronologico_inteligente':
+                    st.success("✅ Ativo")
+
+            with col_exp3:
+                st.markdown("#### 🖐️ Manual")
+                st.markdown("""
+                - Você atribui cada pedido
+                - Controle total
+                - Ideal para operações especiais
+                """)
+                if modo_atual == 'manual':
+                    st.success("✅ Ativo")
+
+            st.markdown("---")
+
+            with st.form("form_modo_despacho"):
+                opcoes_modo = {
+                    'rapido_economico': '🏎️ Rápido Econômico (TSP por proximidade)',
+                    'cronologico_inteligente': '⏰ Cronológico Inteligente (Agrupa por tempo)',
+                    'manual': '🖐️ Manual (Você atribui cada pedido)'
+                }
+
+                modo_selecionado = st.radio(
+                    "Selecione o modo:",
+                    list(opcoes_modo.keys()),
+                    format_func=lambda x: opcoes_modo[x],
+                    index=list(opcoes_modo.keys()).index(modo_atual)
+                )
+
+                if st.form_submit_button("💾 Salvar Modo", type="primary", use_container_width=True):
+                    config.modo_prioridade_entrega = modo_selecionado
+                    session.commit()
+                    st.success(f"✅ Modo alterado para: {opcoes_modo[modo_selecionado]}")
+                    st.rerun()
+
+        with tabs[2]:
             with st.form("form_horarios"):
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1064,14 +1522,33 @@ def tela_configuracoes():
                     session.commit()
                     st.success("✅ Salvo!")
 
-        with tabs[2]:
+        with tabs[3]:
             rest = session.get(Restaurante, rest_id)
             with st.form("form_endereco"):
                 endereco = st.text_area("Endereço Completo", value=rest.endereco_completo or "")
-                if st.form_submit_button("💾 Salvar"):
-                    rest.endereco_completo = endereco
-                    session.commit()
-                    st.success("✅ Salvo!")
+
+                # Mostrar coordenadas atuais
+                if rest.latitude and rest.longitude:
+                    st.caption(f"📍 Coordenadas atuais: {rest.latitude:.6f}, {rest.longitude:.6f}")
+                else:
+                    st.warning("⚠️ Coordenadas não definidas. Salve o endereço para geocodificar.")
+
+                if st.form_submit_button("💾 Salvar e Geocodificar"):
+                    if endereco != rest.endereco_completo:
+                        # Endereço mudou - atualizar coordenadas via geocodificação
+                        resultado = atualizar_coordenadas_restaurante(rest_id, endereco, session)
+                        if resultado['sucesso']:
+                            st.success(f"✅ Endereço salvo! Coordenadas: {resultado['latitude']:.6f}, {resultado['longitude']:.6f}")
+                            if resultado.get('cidade'):
+                                st.info(f"📍 {resultado.get('cidade')}, {resultado.get('estado', '')}")
+                        else:
+                            # Salvar endereço mesmo sem coordenadas
+                            rest.endereco_completo = endereco
+                            session.commit()
+                            st.warning(f"⚠️ Endereço salvo, mas não foi possível geocodificar: {resultado.get('erro', 'Erro desconhecido')}")
+                    else:
+                        # Endereço não mudou - só confirmar
+                        st.info("ℹ️ Endereço não foi alterado.")
 
     finally:
         session.close()

@@ -20,7 +20,7 @@ O Super Food e composto por **4 aplicacoes principais**:
 | **Dashboard Restaurante** | Streamlit | 8502 | Gestao completa do restaurante |
 | **App Motoboy (PWA)** | Streamlit | 8503 | App mobile para entregadores |
 
-**Destaques Tecnicos (v2.8.0 - 02/02/2026):**
+**Destaques Tecnicos (v2.8.2 - 03/02/2026):**
 - FastAPI como backend principal (API REST + WebSockets)
 - Banco de dados unificado em SQLAlchemy ORM
 - Sistema de selecao justa de motoboys com rotacao
@@ -33,6 +33,10 @@ O Super Food e composto por **4 aplicacoes principais**:
 - Site do cliente via FastAPI + Templates HTML
 - Alembic configurado para migrations
 - Script de inicializacao unificado (`start_services.sh`)
+- **NOVO:** Rastreamento GPS em tempo real de motoboys
+- **NOVO:** Mapa tempo real no painel do restaurante (Folium)
+- **NOVO:** 3 modos de despacho (rapido economico, cronologico, manual)
+- **NOVO:** API GPS completa (`/api/gps/*`)
 
 ## Instalacao
 
@@ -195,6 +199,19 @@ tail -f /tmp/superfood_motoboy.log     # App Motoboy
 - Distribui pedidos de forma justa (rotacao)
 - Pedidos excedentes ficam aguardando proximo motoboy
 
+### Modos de Despacho (v2.8.1)
+| Modo | Descricao |
+|------|-----------|
+| **Rapido Economico** | TSP por proximidade - otimiza combustivel (padrao) |
+| **Cronologico Inteligente** | Agrupa pedidos por tempo (10 min), depois TSP |
+| **Manual** | Restaurante atribui manualmente cada pedido |
+
+### Rastreamento GPS em Tempo Real (v2.8.1)
+- Motoboy online envia GPS automaticamente a cada 10 segundos
+- Mapa em tempo real no painel do restaurante (aba "Mapa")
+- Historico de posicoes armazenado no banco
+- Indicador visual de status GPS no app do motoboy
+
 ## Estrutura do Projeto
 
 ```
@@ -229,7 +246,8 @@ super-food/
 │       ├── 002_add_gps_motoboys_table.py
 │       ├── 003_add_site_cliente_schema.py
 │       ├── 004_add_motoboy_selection_fields.py
-│       └── 005_add_motoboy_usuario_unique_constraint.py
+│       ├── 005_add_motoboy_usuario_unique_constraint.py
+│       └── 006_add_modo_prioridade_e_motivo_finalizacao.py
 │
 ├── streamlit_app/              # Aplicacoes Streamlit
 │   ├── super_admin.py          # Admin SaaS
@@ -297,6 +315,9 @@ super-food/
 | `/site/{codigo}` | GET | Site do cliente (HTML) |
 | `/site/{codigo}/cardapio` | GET | Cardapio do restaurante |
 | `/ws/{restaurante_id}` | WebSocket | Atualizacoes em tempo real |
+| `/api/gps/update` | POST | Atualiza localizacao GPS do motoboy |
+| `/api/gps/motoboys/{restaurante_id}` | GET | Lista motoboys online com GPS |
+| `/api/gps/historico/{motoboy_id}` | GET | Historico de posicoes GPS |
 
 ## Configuracao
 
@@ -332,6 +353,50 @@ alembic current
 alembic revision --autogenerate -m "descricao"
 ```
 
+## Changelog v2.8.2 (03/02/2026)
+
+### Correcoes
+- **App Motoboy - Status de entregas** - Contador "Pedido X de Y" agora atualiza corretamente apos cada entrega
+- **App Motoboy - Permissao GPS** - Solicitacao explicita de permissao com indicador clicavel e mensagem de ajuda
+- **App Motoboy - Notificacoes com som** - Som de notificacao mais alto e vibracao no dispositivo
+- **App Motoboy - Erro removeChild** - Keys estaveis nos formularios evitam erro de DOM
+- **Restaurante - Notificacoes temporarias** - Mensagens de despacho agora usam toast e desaparecem apos 3s
+- **Restaurante - Status ABERTO/FECHADO** - Menu lateral agora mostra status em tempo real do banco
+- **Caixa - Retirada funcional** - Formulario de retirada corrigido com validacoes e feedback
+- **Caixa - Historico** - Adicionada visualizacao de movimentacoes do caixa
+- **Modos de despacho** - Validados: rapido economico (TSP), cronologico inteligente, manual
+
+### Melhorias
+- Solicitacao automatica de permissao de notificacao no login do motoboy
+- Vibracao do dispositivo ao receber novas entregas
+- Indicador GPS clicavel para reautorizar permissao negada
+- Caixa pode ser aberto independente do status do restaurante
+
+---
+
+## Changelog v2.8.1 (02/02/2026)
+
+### Novidades
+- **Rastreamento GPS em tempo real** - Motoboy envia localizacao a cada 10s
+- **Mapa tempo real no restaurante** - Visualiza motoboys online no mapa (Folium)
+- **3 modos de despacho** - Rapido economico, cronologico inteligente, manual
+- **API GPS completa** - Endpoints para update, listagem e historico
+- **Motivo de finalizacao** - Rastreia se entrega foi entregue, cliente ausente, etc.
+- **Motoboy recebe em cancelamentos** - Ganho registrado mesmo com cliente ausente
+
+### Correcoes
+- Ganhos do motoboy em entregas canceladas (cliente ausente agora paga)
+- Inconsistencia entre ganho total vs ganho diario
+- Erro JavaScript "removeChild" no Streamlit (keys unicos)
+- Cache de coordenadas do restaurante atualizado automaticamente
+
+### Migration 006
+- Campo `modo_prioridade_entrega` em config_restaurante
+- Campo `motivo_finalizacao` em entregas
+- Campo `motivo_cancelamento` em entregas
+
+---
+
 ## Changelog v2.8.0
 
 ### Novidades
@@ -357,7 +422,7 @@ alembic revision --autogenerate -m "descricao"
 - [x] Fase 5: Calculo automatico de taxas e ganhos
 - [x] Fase 6: Backend FastAPI com Site Cliente
 - [x] Fase 7: Isolamento multi-tenant de motoboys
-- [ ] Fase 8: WebSockets para GPS em tempo real
+- [x] Fase 8: GPS em tempo real + Mapa no restaurante (v2.8.1)
 - [ ] Fase 9: Integracao iFood
 - [ ] Fase 10: App nativo (WebView)
 
