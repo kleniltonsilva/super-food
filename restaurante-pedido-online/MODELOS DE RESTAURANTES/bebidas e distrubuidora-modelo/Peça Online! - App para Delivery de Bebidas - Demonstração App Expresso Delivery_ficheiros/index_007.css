@@ -1,0 +1,177 @@
+.headModalItem {
+  display: flex;
+  padding: 14px;
+  border-radius: 24px 24px 0 0;
+}
+
+.headModalItem h4 {
+  margin: 0;
+  padding: 0;
+  font-size: 20px;
+  width: 100%;
+}
+
+.hideModal i{
+  font-size: 30px;
+  color: red;
+  padding-right: 14px;
+}
+
+.contentModalItem {
+  padding: 10px 14px;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.contentModalItem.ios_browser{
+  max-height: 60vh;
+}
+
+.footerModalItem {
+  display: flex;
+  padding: 14px 14px 28px 14px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.buttonsQuantity .component_modal_item_btn_quantity_card{
+  height: 48px;
+}
+
+.buttonsQuantity .component_modal_item_quantity_decrease, .buttonsQuantity .component_modal_item_quantity_increase {
+  margin: auto;
+}
+
+.btnAddModalItem {
+  width: 60%;
+  background: #00b400;
+  color: #fff;
+  font-size: 16px;
+  cursor: pointer;
+  text-transform: uppercase;
+  border-radius: 25px;
+  font-weight: 500;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.buttonsQuantity{
+  width: 45%;
+  margin-right: 14px;
+}
+
+.swal2-container{
+  z-index: 10000;
+}
+
+.btnBlock{
+  background: #d4d4d4!important;
+  color: #616161!important;
+}
+
+.component_modal_item_btn_quantity_card{
+  width: 100%;
+  float: right;
+  height: 35px;
+  border: 1px solid #d4d4d4;
+  border-radius: 25px;
+  min-width: 100px;
+  display: flex
+}
+
+.component_modal_item_quantity_decrease{
+  width: 33%;
+  line-height: 35px;
+  display: block;
+  float: left;
+  text-align: center;
+  font-size: 29px;
+  color: #ff0d0d;
+  cursor: pointer;
+}
+
+.component_modal_item_quantity_value{
+  width: 34%;
+  line-height: 35px;
+  display: block;
+  float: left;
+  text-align: center;
+  font-size: 18px;
+  color: #444;
+  background: transparent;
+  border: none;
+}
+
+.component_modal_item_quantity_increase{
+  width: 33%;
+  line-height: 35px;
+  display: block;
+  float: left;
+  text-align: center;
+  font-size: 22px;
+  color: #00b400;
+  cursor: pointer;
+}
+
+.component_modal_item_div_image{
+  display: flex;
+  margin-bottom: 1.5rem;
+}
+
+.component_modal_item_image{
+  margin-right: 15px;
+  width: 100px;
+}
+
+.component_modal_item_image img{
+  width: 100px;
+}
+
+.component_modal_item_name{
+  font-size: 18px;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+
+.component_modal_item_name_description{
+  flex: 1;
+}
+
+.component_modal_item_description{
+  line-height: normal;
+  font-size: 16px;
+  font-family: 'Lato';
+}
+
+.info-alert{
+  color: #004085;
+  background: #cce5ff;
+  padding: .75rem;
+  margin-bottom: 1rem;
+  border: 1px solid #b8daff;
+  border-radius: .25rem;
+}
+
+.component_modal_item_search_item{
+  border: 1px solid #d4d4d4;
+  color: #767676;
+  border-radius: 4px;
+  width: 87%;
+  font-size: 16px;
+  margin: 0 auto;
+  padding: 9px;
+  padding-left: 42px;
+  margin-bottom: 10px;
+  background: url(../../../img/icon-buscar.png) left top no-repeat;
+}
+
+@media (min-width: 768px) {
+  .buttonsQuantity{
+    width: 49%;
+  }
+
+  .component_modal_item_search_item{
+    width: 100%;
+  }
+}

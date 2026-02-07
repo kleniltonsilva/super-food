@@ -1,0 +1,311 @@
+.component_editor_pizza_container .select2-container--default .select2-selection--single {
+  border: none;
+  font-size: 18px;
+  background: #ee302e;
+  color: #fff;
+  border: none;
+  border-radius: 25px;
+  height: 45px;
+}
+
+#component_editor_pizza_container{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: auto;
+  height: 90%;
+}
+
+.component_editor_pizza_buttons_actions {
+  display: inline-block;
+  width: 100%;
+  margin: 10px 0 0 0;
+  padding: 5px 0;
+  max-width: 300px;
+}
+
+#component_editor_pizza_container .areapizza{
+  width: 240px;
+  height: 240px;
+  margin: 15px 9px;
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  -webkit-border-radius: 100%;
+  -moz-border-radius: 100%;
+  border-radius: 100%;
+  cursor: pointer;
+}
+
+#component_editor_pizza_container.component_editor_pizza_type_editor_montarpizzaquadrada .areapizza{
+  border-radius: 8px;
+}
+
+#component_editor_pizza_container .icones.removesabor{
+  width: 31px;
+  height: 31px;
+  display: none;
+  position: absolute;
+  z-index: 9997 !important;
+  cursor: pointer;
+  background: none;
+}
+
+#component_editor_pizza_container .icones.removesabor i {
+  font-size: 31px;
+  color: #fff;
+}
+
+.component_editor_pizza_div_editor{
+  position: relative;
+  min-width: 0px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#component_editor_pizza_container .icones.removesabor i {
+  font-size: 31px;
+  color: #fff;
+}
+
+.component_editor_pizza_componentsPizza{
+  width: 90%;
+  max-width: 300px;
+  text-align: center;
+  padding: 5px;
+}
+
+.component_editor_pizza_editFlavor, .component_editor_pizza_editDough {
+  width: 84%;
+  margin: 0 10px;
+  cursor: pointer;
+  height: inherit!important;
+  text-decoration: none;
+  color: #333;
+  text-transform: capitalize;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: inherit !important;
+  text-align: left;
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#component_editor_pizza_container .lblsabor {
+  border-radius: 25px;
+  background-color: #fff;
+  color: #333;
+  font-size: 13px;
+  line-height: 34px;
+  box-shadow: 0.5px 0.866px 2px 0px rgb(47, 44, 36);
+  margin: 0 auto 20px;
+  width: 100%;
+  max-width: 300px;
+  display: flex;
+}
+
+#component_editor_pizza_container .material-icons{
+  vertical-align: middle;
+}
+
+#component_editor_pizza_container #btns_complementos {
+  display: inline-block;
+  width: 100%;
+  max-width: 300px;
+  margin-top: 14px;
+}
+
+#component_editor_pizza_container span.total_pizza {
+  margin: 0 auto;
+  font-size: 14px;
+  text-align: center;
+  font-family: oswald, sans-serif !important;
+  text-transform: uppercase !important;
+}
+
+#component_editor_pizza_container #pizzaNumberFlavors {
+  padding: 4px 10px !important;
+  display: flex;
+  align-items: center;
+  margin-top: 14px;
+}
+
+#component_editor_pizza_container #pizzaNumberFlavors button {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+#component_editor_pizza_container #pizzaNumberFlavors button i {
+  color: #fff;
+}
+
+#component_editor_pizza_container #pizzaNumberFlavors span {
+  flex: 1;
+  text-align: center;
+}
+
+#component_editor_pizza_container #pizzaObservations {
+  cursor: pointer;
+}
+
+.select2-container--open {
+  z-index: 9999;
+}
+
+.component_editor_pizza_btn_finish{
+  width: 100%;
+  color: #fff;
+  font-size: 1.4rem;
+  text-align: center;
+  background: #00b400;
+  border-top: 3px solid #008a00;
+  padding: 10px;
+  height: 100%;
+  cursor: pointer;
+}
+
+.component_editor_pizza_div_btn_finish{
+  height: 50px;
+}
+
+.component_editor_pizza_btn_finish p {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.content_mdl-modal.listasabores{
+  position: inherit;
+}
+
+#component_editor_pizza_container .select2-container--default .select2-selection--single .select2-selection__rendered {
+  line-height: 44px;
+  font-size: 18px;
+  text-transform: uppercase;
+  font-family: "Roboto", "Helvetica", "Arial", sans-serif;
+  border: none;
+  color: #fff!important;
+  border-radius: 24px;
+  text-align: left;
+  padding: 1px 17px;
+}
+
+#component_editor_pizza_container .select2-container--default .select2-selection--single .select2-selection__arrow b{
+  border-color: #fff transparent transparent transparent;
+}
+
+#component_editor_pizza_container .select2-container--default.select2-container--open .select2-selection--single .select2-selection__arrow b{
+  border-color: transparent transparent #fff transparent;
+}
+
+#component_editor_pizza_container .select2-container--default .select2-selection--single {
+  border: none;
+  font-size: 18px;
+  background: #ee302e!important;
+  color: #fff;
+  border: none;
+  border-radius: 25px;
+  height: 45px;
+}
+
+#component_editor_pizza_container .select2-container--default .select2-selection--single .select2-selection__arrow{
+  top:10px;
+}
+
+#component_editor_pizza_container .select2-dropdown{
+  border: none;
+}
+
+#component_editor_pizza_container .select2-search--dropdown .select2-search__field{
+  padding: 8px;
+  font-size: 18px;
+  color: #797979;
+}
+
+#component_editor_pizza_container .select2-container--open .select2-dropdown--below{
+  filter: drop-shadow(0px 5px 5px #5e5e5e);
+}
+
+#component_editor_pizza_container .select2-container--default .select2-results>.select2-results__options{
+  max-height: calc(100vh - 200px);
+}
+
+.component_editor_pizza_type_editor_montarpizzaquadrada .pztop-abs.tres_meio{
+  right: 12%;
+  width: 75%;
+  height: 75%;
+  z-index: 99;
+  -ms-transform: rotate(45deg);
+  -webkit-transform: rotate(45deg);
+  transform: rotate(45deg);
+  top: -41.8%;
+  overflow: hidden;      
+}
+
+.component_editor_pizza_type_editor_montarpizzaquadrada .bgtaboa{
+  background: url("https://static.expressodelivery.com.br/media/0.01.001/img/formaquadrada_meio.png") top center no-repeat;
+  background-position: 46px 47px;
+}
+
+#component_editor_pizza_container .fotosabmeio.montarpizzaquadrada{
+  background-repeat: no-repeat;
+  background-position: 57px 62px;
+}
+
+@media (max-width: 768px) {
+  .component_editor_pizza_componentsPizza{
+    max-width: none;
+  }
+
+  .session_upsell{
+    width: 100%;
+  }
+
+  #pg_montarpizza .modalFlavors .headModalItem{
+    background-color: var(--headerColor);
+  }
+
+  #pg_montarpizza .modalFlavors .headModalItem .hideModal i{
+    color: #fff;
+  }
+
+  #pg_montarpizza .modalFlavors .itemName{
+    color: #fff;
+    font-family: oswald, sans-serif !important;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  #pg_montarpizza .modalFlavors .tit_ing{
+    background-color: transparent;
+  }
+
+  #pg_montarpizza .modalFlavors .component_list_items_info_title{
+    color: var(--btnHomeColor);
+  }
+
+  #pg_montarpizza .modalFlavors .component_list_items_info_title, #pg_montarpizza .modalFlavors .component_list_items_name{
+    font-family: oswald, sans-serif !important;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  #pg_montarpizza .modalFlavors .component_list_items_description, #pg_montarpizza .modalFlavors .modalFlavors_component_list_items_tag{
+    font-family: "Helvetica", "Arial", sans-serif;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  textarea#obs_item {
+    background-color: #fff!important;
+    color: #797979!important;
+  }
+}

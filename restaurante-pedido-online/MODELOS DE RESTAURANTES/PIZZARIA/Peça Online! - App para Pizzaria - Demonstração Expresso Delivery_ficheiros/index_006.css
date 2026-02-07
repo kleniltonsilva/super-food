@@ -1,0 +1,17 @@
+.comboItem_component_list_items_tag{
+  float: inherit!important;
+  position: inherit!important;
+  margin: 5px 0 0 0 !important;
+}
+
+.comboDetailsItemCustomizable p{
+  font-family: Lato;
+  color: #7d7d7d!important;
+  font-size: 14px!important;
+  margin: 0;
+  line-height: 19px;
+}
+
+.list_items_combo a{
+  text-decoration: none;
+}

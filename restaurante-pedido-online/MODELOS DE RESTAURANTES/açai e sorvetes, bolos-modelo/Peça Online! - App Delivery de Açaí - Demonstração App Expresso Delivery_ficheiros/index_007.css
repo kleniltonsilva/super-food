@@ -1,0 +1,58 @@
+.drop_composition{
+  display: flex;
+  flex-direction: column;
+}
+
+.div_title_drop_composition{
+  margin-bottom: 5px;
+}
+
+.div_info_drop_composition{
+  padding: 0px 10px;
+  font-size: 1.2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.itemComposition{
+  display: flex;
+  justify-content: space-between;
+}
+
+.itemComposition .mdl-list__item-primary-content{
+  max-width: 67%;
+  text-align: start;
+}
+
+.itemComposition .btn_qtd_card{
+  max-width: 33%;
+  min-width: 98px;
+}
+
+.toggle_compositions{
+  margin-bottom: 10px;
+}
+
+.radio_composition{
+  padding-bottom: 20px;
+}
+
+.radio_composition .mdl-radio__outer-circle, .checkbox_composition .mdl-checkbox__box-outline{
+  width: 20px;
+  height: 20px;
+}
+
+.input_checkbox_composition{
+  width: 20px;
+  height: 20px;
+}
+
+.input_checkbox_composition:read-only{
+  opacity: 1;
+}
+
+@media (min-width: 768px) {
+  .itemComposition .mdl-list__item-primary-content{
+    max-width: 80%;
+  }
+}

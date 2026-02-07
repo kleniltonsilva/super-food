@@ -1,0 +1,114 @@
+
+@media (max-width: 768px) {
+  .lblsabor span{
+    width: 16%!important;
+  }
+
+  .lblsabor {
+    border-radius: 25px;
+    background-color: #fff;
+    color: #333;
+    font-size: 13px;
+    line-height: 34px;
+    box-shadow: 0.5px 0.866px 2px 0px rgb(47, 44, 36);
+    margin: 0 auto 20px;
+    width: 90%;
+    max-width: 300px;
+    display: flex;
+  }
+  
+  .lblsabor i {
+    font-size: 20px;
+  }
+  
+  a.lbldesc {
+    margin: 0 10px;
+    cursor: pointer;
+    height: 100%;
+    display: inline-block;
+    margin-top: 2px;
+    text-decoration: none;
+    color: #333;
+    text-transform: capitalize;
+    font-size: 16px;
+    float: left;
+    margin: 3px 0 0 6px;
+    max-height: 37px;
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    width: 84%;
+  }
+  
+  a.lbldescopt {
+    width: 100%;
+    max-width: 185px;
+    text-align: left;
+    padding-right: 24px;
+  }
+  
+  a.editarestesabor, a.openModalEdges, a.openModalDough, a.openModalObservations, .component_editor_pizza_edit_ingredients {
+    width: 100%;
+    max-width: inherit!important;
+    text-align: left;
+    padding-right: 10px;
+    display: flex!important;
+    align-items: center;
+    justify-content: space-between;
+  }
+}
+
+
+
+
+.descriptionObservations, .descriptionEdges, .descriptionDough, .descriptionFlavor{
+  width: 85%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.drop_montador, .btn_montador_rounded{
+  font-size: 18px;
+  background: #ee302e;
+  color: #fff;
+  border: none;
+  border-radius: 25px;
+  padding: 12px 16px !important;
+  width: 100%;
+  text-transform: uppercase;
+  font-family: "Roboto","Helvetica","Arial",sans-serif;
+  margin-bottom: 14px;
+  height: auto!important;
+  text-align: left;
+  box-shadow: 0.5px 0.866px 2px 0px rgb(47, 44, 36);
+}
+
+.btn_montador_rounded.opcionais{
+  font-size: 16px;
+  padding: 8px 12px !important;
+}
+
+.lbl_drop_montador{
+  display: block;
+  font-size: 14px;
+  text-transform: uppercase;
+  font-weight: bold;
+  text-align: left;
+  padding: 0 0 2px 14px;
+}
+
+#obs_item{
+  resize: none;
+  border: solid 1px #ccc;
+  font-size: 18px;
+  font-family: open sans;
+  padding: 10px;
+  margin-top: 20px;
+  width: 100%;
+  border-radius: 5px;
+  color: #797979;
+  box-sizing: border-box;
+  background: #fff;
+}

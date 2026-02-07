@@ -1,0 +1,38 @@
+.linkModalServiceHours{
+  padding: 5px 0;
+  border-radius: 5px;
+  cursor: pointer;
+  margin: 5px 0px;
+  display: inline-block;
+  text-decoration: underline;
+}
+
+.divModalServiceHour{
+  border-bottom: 1px solid #d4d4d4;
+  padding: 5px;
+  display: flex;
+  text-align: left;
+}
+
+.divModalServiceHour span {
+  width: 50%;
+}
+
+.modalServiceHours{
+  height: auto!important;
+}
+
+.sweet-notification-app .swal2-image{
+  border-radius: 6px;
+}
+
+#notificationDeliveryClosed, #notificationAroundClosingTime{
+  position: fixed;
+  bottom: 0px;
+  width: 100%;
+  z-index: 1000;
+}
+
+.swal2-content{
+  white-space: pre-line;
+}

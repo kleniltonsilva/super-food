@@ -1,0 +1,170 @@
+    #corposlide{
+        height: auto;
+        text-align: center;
+        margin-bottom: 20px;
+        background: none;
+    }
+    #slideShow{
+        width: 100%;
+        max-width: 1180px;
+        text-align: center;
+        display: inline-block;
+        min-width: 970px;
+        margin-top: 8px;
+    }
+    
+    #slide-left{
+        width: 66.10169491525424%;
+        /*width: 100%;*/
+        float: left;
+    }
+    #slide-rigth{
+        width: 32.20338983050847%;
+        display: inline-block;
+		float: right;
+    }
+    
+    #slideTopo{
+        width: 100%!important;
+        display: inline-block;
+    }
+    #slideMini{
+        width: 100%;
+        display: inline-block;
+    }
+    
+    
+    /* PRODUTO PIZZA  */
+    img.imgprod {
+        border-radius: 50%;
+        width: 100%;
+        max-width: 160px;
+        padding: 3px 0 2px 0;
+        margin: 6px;
+    }
+    img.imgprod.noradiuns{
+        border-radius: 0;
+    }
+    .nome-prod{
+        font-size: 1.6em;
+        text-transform: capitalize;
+    }
+    a.compraritem {
+        width: 100%;
+        display: inline-block;
+        text-align: center;
+    }
+
+    .brevdesc-prod {
+        text-align: center;
+        text-transform: capitalize;
+        color: #333;
+    }
+    
+    .box-produto.hvr-overline-from-left.prodpizza {
+        /* height: 100%;*/
+        height: auto;
+        min-height: 280px;
+    }
+    
+    .preco-prod{
+        text-transform: capitalize;
+    }
+    
+    @media screen and (max-width: 1165px) {
+        .box-produto {
+            width: 30%;
+        }
+    }
+    
+    .campo-btncomprar{
+        position: absolute;
+        width: 100%;
+        min-height: 280px;
+        top: 0;
+        left: 0;
+        text-align: center;
+        z-index: 800;
+        cursor: pointer;
+        height: 100%;
+    }
+    .btn-comprar-pizza{
+        display: none;
+    }
+    .campo-btncomprar:hover{
+        background: url(../img/bg_montarpizza.png);
+    }
+    
+    .campo-btncomprar:hover .btn-comprar-pizza{
+        display: inline-block;
+    }
+    
+    .formapizza-lista{
+        position: relative;
+        /*background: url(../img/forma_listapz.png) no-repeat center;*/        
+        padding: 3px 0 0 0;
+        text-align: center;
+		width:170px;
+		/*height: 170px;*/
+    }
+    
+    
+    .btn-comprar-pizza {
+        cursor: pointer;
+        border: 1px solid #015500;
+        border-radius: 5px;
+        background-image: -moz-linear-gradient( 90deg, rgb(8,118,7) 0%, rgb(1,148,0) 100%);
+        background-image: -webkit-linear-gradient( 90deg, rgb(8,118,7) 0%, rgb(1,148,0) 100%);
+        background-image: -ms-linear-gradient( 90deg, rgb(8,118,7) 0%, rgb(1,148,0) 100%);
+        font-size: 1.3em;
+        font-weight: 600;
+        color: #fff;
+        text-align: center;
+        padding: 10px;
+        /* position: absolute; */
+        margin-top: 102px;
+        width: 120px;
+        /* margin-left: 20px; */
+        /* display: none; */
+        display: none;
+    }
+    
+    
+/* max height cont-left  */
+.cont-left{
+    /*height: 1667px;*/
+    overflow: hidden;
+    position: relative;
+    padding-bottom: 64px;
+}
+.cont-left.mostrar-allpizzas{
+    height : auto;
+}
+
+div#box-btn-mostrarmais {
+    position: absolute;
+    bottom: 0px;
+    width: 100%;
+    /* height: 50px; */
+    left: 0;
+    text-align: center;
+    background: #fff;
+}
+
+a.link-mostrar-mais {
+    display: inline-block;
+    padding: 10px;
+    font-size: 1.8em;
+    color: white;
+    border: 1px solid #015500;
+    border-radius: 5px;
+    background-image: -moz-linear-gradient( 90deg, rgb(8,118,7) 0%, rgb(1,148,0) 100%);
+    background-image: -webkit-linear-gradient( 90deg, rgb(8,118,7) 0%, rgb(1,148,0) 100%);
+    background-image: -ms-linear-gradient( 90deg, rgb(8,118,7) 0%, rgb(1,148,0) 100%);
+    border-radius: 5px;
+    text-transform: uppercase;
+}
+
+
+
+

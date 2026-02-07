@@ -1,0 +1,41 @@
+.modalEddy {
+  width: 100%;
+  background: #fff;
+  position: fixed;
+  bottom: 0;
+  z-index: 9998;
+  border-radius: 24px 24px 0 0;
+  font-family: "Roboto", "Helvetica", "Arial", sans-serif;
+  box-shadow: 0 0 12px rgba(0, 0, 0, .2);
+  display: none;
+}
+
+.backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 9997; 
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .modalEddy {
+    width: 406px;
+    bottom: auto;
+    top: 5vh;
+    border-radius: 24px;
+    margin: 0 auto;
+  }
+
+  .contentModalItem{
+    font-size: 13px;
+    max-height: 70vh!important;
+  }
+
+  .component_modal_item_div_image{
+    margin-bottom: 1rem;
+  }
+}

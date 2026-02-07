@@ -1,234 +1,166 @@
-/**
- * API Client para Super Food FastAPI
- * Substitui tRPC para consumir a API REST do backend Python
- */
-import axios from 'axios';
+import axios from "axios";
 
-// URL base da API FastAPI (configurável via env)
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
-
-// Código do restaurante (extraído da URL ou armazenado)
-let restauranteCodigo: string | null = null;
-
-export function setRestauranteCodigo(codigo: string) {
-  restauranteCodigo = codigo;
+// Codigo do restaurante injetado pelo servidor
+function getCodigoAcesso(): string {
+  return (window as any).RESTAURANTE_CODIGO || "demo";
 }
 
-export function getRestauranteCodigo(): string | null {
-  if (!restauranteCodigo) {
-    // Tenta de window (injetado pelo FastAPI)
-    restauranteCodigo = (window as any).RESTAURANTE_CODIGO;
-    // Fallback: URL query param
-    if (!restauranteCodigo) {
-      const params = new URLSearchParams(window.location.search);
-      restauranteCodigo = params.get('restaurante');
-    }
-    // Fallback: path /cliente/CODIGO
-    if (!restauranteCodigo) {
-      const match = window.location.pathname.match(/\/cliente\/([^\/]+)/);
-      if (match) restauranteCodigo = match[1];
-    }
+// Session ID para carrinho anonimo
+function getSessionId(): string {
+  let sid = localStorage.getItem("sf_session_id");
+  if (!sid) {
+    sid = crypto.randomUUID();
+    localStorage.setItem("sf_session_id", sid);
   }
-  return restauranteCodigo;
+  return sid;
 }
 
-// Instância axios configurada
 const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  baseURL: "/",
+  headers: { "Content-Type": "application/json" },
 });
 
-// Interceptor para adicionar token de autenticação
+// Interceptor: adiciona headers em toda request
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token');
+  config.headers["X-Session-ID"] = getSessionId();
+  const token = localStorage.getItem("sf_token");
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers["Authorization"] = `Bearer ${token}`;
   }
   return config;
 });
 
-// ==================== SITE INFO ====================
+// ==================== SITE ====================
+
 export async function getSiteInfo() {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}`);
-  return response.data;
+  const { data } = await api.get(`/site/${getCodigoAcesso()}`);
+  return data;
 }
 
-// ==================== MENU ====================
 export async function getCategorias() {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/categorias`);
-  return response.data;
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/categorias`);
+  return data;
 }
 
-export async function getProdutos(params?: {
-  categoria_id?: number;
-  destaque?: boolean;
-  promocao?: boolean;
-  busca?: string;
-}) {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/produtos`, { params });
-  return response.data;
+export async function getProdutos(categoriaId?: number, destaque?: boolean) {
+  const params: Record<string, any> = {};
+  if (categoriaId) params.categoria_id = categoriaId;
+  if (destaque) params.destaque = true;
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/produtos`, { params });
+  return data;
 }
 
-export async function getProdutoDetalhado(produtoId: number) {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/produto/${produtoId}`);
-  return response.data;
-}
-
-// ==================== BAIRROS ====================
-export async function getBairros() {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/bairros`);
-  return response.data;
-}
-
-export async function getBairroPorNome(nomeBairro: string) {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/bairro/${encodeURIComponent(nomeBairro)}`);
-  return response.data;
+export async function getProdutoDetalhe(produtoId: number) {
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/produto/${produtoId}`);
+  return data;
 }
 
 // ==================== ENTREGA ====================
-export async function validarEntrega(data: {
-  endereco_texto?: string;
+
+export async function validarEntrega(payload: {
+  endereco: string;
   latitude?: number;
   longitude?: number;
+  bairro?: string;
 }) {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.post(`/site/${codigo}/validar-entrega`, data);
-  return response.data;
+  const { data } = await api.post(`/site/${getCodigoAcesso()}/validar-entrega`, payload);
+  return data;
 }
 
-export async function autocompleteEndereco(query: string) {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/autocomplete-endereco`, {
-    params: { query },
+export async function getBairros() {
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/bairros`);
+  return data;
+}
+
+export async function getTaxaBairro(nomeBairro: string) {
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/bairro/${encodeURIComponent(nomeBairro)}`);
+  return data;
+}
+
+export async function autocompleteEndereco(q: string) {
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/autocomplete-endereco`, { params: { q } });
+  return data;
+}
+
+// ==================== CARRINHO ====================
+
+export async function getCarrinho() {
+  const { data } = await api.get("/carrinho/");
+  return data;
+}
+
+export async function adicionarAoCarrinho(item: {
+  produto_id: number;
+  quantidade: number;
+  observacao?: string;
+  variacoes?: { variacao_id: number; quantidade?: number }[];
+}) {
+  const { data } = await api.post("/carrinho/adicionar", {
+    ...item,
+    codigo_acesso: getCodigoAcesso(),
   });
-  return response.data;
+  return data;
+}
+
+export async function atualizarQuantidade(itemIndex: number, quantidade: number) {
+  const { data } = await api.put(`/carrinho/atualizar-quantidade/${itemIndex}`, { quantidade });
+  return data;
+}
+
+export async function removerDoCarrinho(itemIndex: number) {
+  const { data } = await api.delete(`/carrinho/remover/${itemIndex}`);
+  return data;
+}
+
+export async function limparCarrinho() {
+  const { data } = await api.delete("/carrinho/limpar");
+  return data;
+}
+
+export async function finalizarPedido(payload: {
+  tipo_entrega: "delivery" | "retirada";
+  endereco_id?: number;
+  forma_pagamento: string;
+  troco_para?: number;
+  cupom_codigo?: string;
+  observacao?: string;
+}) {
+  const { data } = await api.post("/carrinho/finalizar", {
+    ...payload,
+    codigo_acesso: getCodigoAcesso(),
+  });
+  return data;
 }
 
 // ==================== FIDELIDADE ====================
+
 export async function getPontosFidelidade(clienteId: number) {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/fidelidade/pontos/${clienteId}`);
-  return response.data;
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/fidelidade/pontos/${clienteId}`);
+  return data;
 }
 
 export async function getPremiosFidelidade() {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/fidelidade/premios`);
-  return response.data;
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/fidelidade/premios`);
+  return data;
 }
 
 export async function resgatarPremio(clienteId: number, premioId: number) {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.post(`/site/${codigo}/fidelidade/resgatar/${clienteId}`, {
+  const { data } = await api.post(`/site/${getCodigoAcesso()}/fidelidade/resgatar/${clienteId}`, {
     premio_id: premioId,
   });
-  return response.data;
+  return data;
 }
 
 // ==================== PROMOCOES ====================
+
 export async function getPromocoes() {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.get(`/site/${codigo}/promocoes`);
-  return response.data;
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/promocoes`);
+  return data;
 }
 
-export async function validarCupom(codigoCupom: string, valorPedido: number) {
-  const codigo = getRestauranteCodigo();
-  if (!codigo) throw new Error('Código do restaurante não definido');
-  const response = await api.post(`/site/${codigo}/validar-cupom`, {
-    codigo_cupom: codigoCupom,
-    valor_pedido: valorPedido,
-  });
-  return response.data;
-}
-
-// ==================== CARRINHO (via API principal) ====================
-export async function getCarrinho(clienteId: number) {
-  const codigo = getRestauranteCodigo();
-  const response = await api.get(`/carrinho/${clienteId}`, {
-    params: { restaurante_codigo: codigo },
-  });
-  return response.data;
-}
-
-export async function adicionarAoCarrinho(data: {
-  cliente_id: number;
-  produto_id: number;
-  quantidade: number;
-  variacoes?: number[];
-  observacoes?: string;
-}) {
-  const codigo = getRestauranteCodigo();
-  const response = await api.post(`/carrinho/adicionar`, {
-    ...data,
-    restaurante_codigo: codigo,
-  });
-  return response.data;
-}
-
-export async function atualizarItemCarrinho(itemId: number, quantidade: number) {
-  const response = await api.put(`/carrinho/item/${itemId}`, { quantidade });
-  return response.data;
-}
-
-export async function removerItemCarrinho(itemId: number) {
-  const response = await api.delete(`/carrinho/item/${itemId}`);
-  return response.data;
-}
-
-export async function limparCarrinho(clienteId: number) {
-  const response = await api.delete(`/carrinho/${clienteId}/limpar`);
-  return response.data;
-}
-
-// ==================== PEDIDOS ====================
-export async function criarPedido(data: {
-  cliente_id: number;
-  tipo_entrega: 'entrega' | 'retirada';
-  forma_pagamento: string;
-  endereco_entrega?: string;
-  observacoes?: string;
-  cupom_codigo?: string;
-}) {
-  const codigo = getRestauranteCodigo();
-  const response = await api.post(`/pedidos/criar`, {
-    ...data,
-    restaurante_codigo: codigo,
-  });
-  return response.data;
-}
-
-export async function getPedidosCliente(clienteId: number) {
-  const codigo = getRestauranteCodigo();
-  const response = await api.get(`/pedidos/cliente/${clienteId}`, {
-    params: { restaurante_codigo: codigo },
-  });
-  return response.data;
-}
-
-export async function getPedidoDetalhes(pedidoId: number) {
-  const response = await api.get(`/pedidos/${pedidoId}`);
-  return response.data;
+export async function validarCupom(codigo: string, subtotal: number) {
+  const { data } = await api.post(`/site/${getCodigoAcesso()}/validar-cupom`, { codigo, subtotal });
+  return data;
 }
 
 export default api;

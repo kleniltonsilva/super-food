@@ -27,6 +27,8 @@ import os
 import sys
 import hashlib
 import time
+import io
+import pandas as pd
 
 # Configuração de path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -38,7 +40,8 @@ from database.session import get_db_session
 from database.models import (
     Restaurante, ConfigRestaurante, Motoboy, MotoboySolicitacao,
     Pedido, Produto, Entrega, Caixa, MovimentacaoCaixa, Notificacao,
-    CategoriaMenu, SiteConfig, GPSMotoboy
+    CategoriaMenu, SiteConfig, GPSMotoboy, VariacaoProduto,
+    BairroEntrega, PremioFidelidade, Promocao, TipoProduto
 )
 
 from utils.mapbox_api import autocomplete_endereco_restaurante
@@ -720,6 +723,20 @@ def listar_pedidos_ativos():
                     if pedido.status in ['pronto', 'saiu_entrega']:
                         if st.button("✅ Finalizar", key=f"fin_{pedido.id}"):
                             pedido.status = 'entregue' if pedido.tipo == "Entrega" else 'finalizado'
+                            # Atualizar caixa
+                            caixa = session.query(Caixa).filter(
+                                Caixa.restaurante_id == rest_id,
+                                Caixa.status == 'aberto'
+                            ).first()
+                            if caixa and pedido.valor_total:
+                                caixa.total_vendas = (caixa.total_vendas or 0) + pedido.valor_total
+                                session.add(MovimentacaoCaixa(
+                                    caixa_id=caixa.id,
+                                    tipo='venda',
+                                    valor=pedido.valor_total,
+                                    descricao=f"Pedido #{pedido.comanda}",
+                                    data_hora=datetime.now()
+                                ))
                             session.commit()
                             st.rerun()
                 with col4:
@@ -1226,6 +1243,7 @@ def cadastrar_motoboy_manual():
         with col1:
             nome = st.text_input("Nome Completo *")
             usuario = st.text_input("Usuário *")
+            cpf = st.text_input("CPF (opcional)", help="Com CPF: dados financeiros preservados ao excluir. Sem CPF: dados descartados.")
         with col2:
             telefone = st.text_input("Telefone *")
             senha = st.text_input("Senha *", type="password", value="123456")
@@ -1260,6 +1278,7 @@ def cadastrar_motoboy_manual():
                             nome=nome,
                             usuario=usuario.lower(),
                             telefone=telefone,
+                            cpf=cpf.strip() if cpf else None,
                             senha=hashlib.sha256(senha.encode()).hexdigest(),
                             status='ativo',
                             disponivel=False,  # SEMPRE OFFLINE até fazer login
@@ -1292,7 +1311,7 @@ def ranking_motoboys():
         if config and config.permitir_finalizar_fora_raio:
             st.warning("⚠️ **Ranking sem validação antifraude por localização** - Motoboys podem finalizar entregas fora do raio de 50m do endereço.")
         else:
-            st.success("✅ **Ranking com validação antifraude** - Motoboys só podem finalizar entregas dentro do raio de 50m do endereço.")
+            st.success("✅ **Ranking com validação antifraude** - Motoboys só podem finalizar entregas dentro do raio de 50m do endereço de entrega.")
 
         # Filtro de período
         col1, col2, col3 = st.columns([1, 1, 1])
@@ -1478,7 +1497,7 @@ def pagamento_motoboys():
                 st.markdown(f"**💵 TOTAL A PAGAR: R$ {valor_total:.2f}**")
 
                 # Lista de entregas
-                with st.expander("📜 Ver lista de entregas"):
+                if st.checkbox("📜 Ver lista de entregas", key=f"lista_{motoboy_id}"):
                     if entregas:
                         for e in entregas:
                             pedido = e.pedido
@@ -1487,25 +1506,37 @@ def pagamento_motoboys():
                     else:
                         st.info("Nenhuma entrega no período.")
 
-                # Botão de imprimir relatório
-                if st.button(f"🖨️ Imprimir Relatório", key=f"print_{motoboy_id}"):
-                    st.markdown("---")
-                    st.markdown(f"## 📄 Relatório de Pagamento")
-                    st.markdown(f"**Motoboy:** {motoboy_nome}")
-                    st.markdown(f"**Período:** {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
-                    st.markdown(f"**Total de entregas:** {len(entregas)}")
-                    st.markdown("---")
-                    st.markdown(f"| Taxa Base | Extras km | Alimentação | Diárias | **TOTAL** |")
-                    st.markdown(f"|---|---|---|---|---|")
-                    st.markdown(f"| R$ {valor_base:.2f} | R$ {valor_extras:.2f} | R$ {valor_lanche:.2f} | R$ {valor_diaria:.2f} | **R$ {valor_total:.2f}** |")
-                    st.markdown("---")
-                    st.markdown("**Lista de Entregas:**")
+                # Exportar relatório CSV
+                if entregas:
+                    dados_csv = []
                     for e in entregas:
                         pedido = e.pedido
-                        data_str = e.entregue_em.strftime('%d/%m/%Y %H:%M') if e.entregue_em else 'N/A'
-                        st.markdown(f"- {data_str} | Pedido #{pedido.comanda} | {e.distancia_km or 0:.1f}km | R$ {e.valor_motoboy or 0:.2f}")
-                    st.markdown("---")
-                    st.caption("Use Ctrl+P para imprimir esta página.")
+                        dados_csv.append({
+                            'Data': e.entregue_em.strftime('%d/%m/%Y %H:%M') if e.entregue_em else 'N/A',
+                            'Pedido': f'#{pedido.comanda}',
+                            'Distancia_km': round(e.distancia_km or 0, 1),
+                            'Valor_Base': round(e.valor_base_motoboy or 0, 2),
+                            'Valor_Extra': round(e.valor_extra_motoboy or 0, 2),
+                            'Valor_Lanche': round(e.valor_lanche or 0, 2),
+                            'Valor_Diaria': round(e.valor_diaria or 0, 2),
+                            'Valor_Total': round(e.valor_motoboy or 0, 2),
+                        })
+                    df = pd.DataFrame(dados_csv)
+                    # Linha de totais
+                    totais = pd.DataFrame([{
+                        'Data': 'TOTAL', 'Pedido': f'{len(entregas)} entregas',
+                        'Distancia_km': '', 'Valor_Base': valor_base,
+                        'Valor_Extra': valor_extras, 'Valor_Lanche': valor_lanche,
+                        'Valor_Diaria': valor_diaria, 'Valor_Total': valor_total,
+                    }])
+                    df_export = pd.concat([df, totais], ignore_index=True)
+                    csv_data = df_export.to_csv(index=False, sep=';', decimal=',')
+                    nome_arquivo = f"pagamento_{motoboy_nome.replace(' ','_')}_{data_inicio.strftime('%d%m%Y')}_{data_fim.strftime('%d%m%Y')}.csv"
+                    st.download_button(
+                        "📥 Exportar CSV",
+                        data=csv_data, file_name=nome_arquivo,
+                        mime='text/csv', key=f"csv_{motoboy_id}"
+                    )
 
         # Total geral
         st.markdown("---")
@@ -1646,16 +1677,32 @@ def tela_caixa():
 
             st.markdown("---")
 
-            # Botão de fechar caixa com confirmação
-            col_fechar1, col_fechar2 = st.columns([3, 1])
-            with col_fechar2:
-                if st.button("🔒 Fechar Caixa", type="secondary"):
+            # Fechamento de caixa com valor contado
+            st.subheader("🔒 Fechar Caixa")
+            with st.form("form_fechar_caixa"):
+                valor_contado = st.number_input(
+                    "Valor em dinheiro contado (R$)",
+                    min_value=0.0, value=round(saldo, 2), step=10.0,
+                    help="Conte o dinheiro físico no caixa e informe aqui"
+                )
+                if st.form_submit_button("🔒 Confirmar Fechamento", type="primary", use_container_width=True):
+                    diferenca = round(valor_contado - saldo, 2)
                     caixa.status = 'fechado'
                     caixa.data_fechamento = datetime.now()
-                    caixa.valor_fechamento = saldo
+                    caixa.valor_contado = valor_contado
+                    caixa.diferenca = diferenca
                     caixa.operador_fechamento = st.session_state.restaurante_dados['email']
+                    session.add(MovimentacaoCaixa(
+                        caixa_id=caixa.id, tipo='fechamento',
+                        valor=valor_contado,
+                        descricao=f'Fechamento | Diferença: R$ {diferenca:+.2f}',
+                        data_hora=datetime.now()
+                    ))
                     session.commit()
-                    st.toast("✅ Caixa fechado!", icon="🔒")
+                    if diferenca != 0:
+                        st.warning(f"⚠️ Diferença de R$ {diferenca:+.2f} registrada!")
+                    else:
+                        st.toast("✅ Caixa fechado sem diferença!", icon="🔒")
                     time.sleep(0.5)
                     st.rerun()
     finally:
@@ -1691,11 +1738,15 @@ def tela_configuracoes():
                     taxa_km = st.number_input("Taxa/km Extra (R$)", value=config.taxa_km_extra or 1.5)
 
                 st.subheader("Pagamento Motoboy")
-                col1, col2 = st.columns(2)
+                col1, col2, col3, col4 = st.columns(4)
                 with col1:
-                    moto_base = st.number_input("Valor Base (R$)", value=config.valor_base_motoboy or 5.0)
+                    moto_base = st.number_input("Valor Base (R$)", value=config.valor_base_motoboy or 5.0, help="Valor fixo pago ao motoboy por entrega até a distância base")
                 with col2:
-                    moto_km = st.number_input("Valor/km Extra (R$)", value=config.valor_km_extra_motoboy or 1.0)
+                    moto_km = st.number_input("Valor/km Extra (R$)", value=config.valor_km_extra_motoboy or 1.0, help="Valor adicional por km acima da distância base")
+                with col3:
+                    moto_diaria = st.number_input("Taxa Diária (R$)", value=config.taxa_diaria or 0.0, help="Valor diário fixo pago ao motoboy (pode ser zero)")
+                with col4:
+                    moto_lanche = st.number_input("Alimentação (R$)", value=config.valor_lanche or 0.0, help="Valor adicional para lanche/alimentação")
 
                 permitir_ver_saldo = st.checkbox(
                     "Motoboys podem ver saldo acumulado",
@@ -1720,6 +1771,8 @@ def tela_configuracoes():
                     config.taxa_km_extra = taxa_km
                     config.valor_base_motoboy = moto_base
                     config.valor_km_extra_motoboy = moto_km
+                    config.taxa_diaria = moto_diaria
+                    config.valor_lanche = moto_lanche
                     config.permitir_ver_saldo_motoboy = permitir_ver_saldo
                     config.permitir_finalizar_fora_raio = permitir_fora_raio
                     config.raio_entrega_km = raio
@@ -1839,8 +1892,615 @@ def tela_configuracoes():
 
 # ==================== CARDÁPIO ====================
 def tela_gerenciar_cardapio():
-    st.title("🍕 Cardápio")
-    st.info("🚧 Gerenciamento de cardápio em desenvolvimento...")
+    st.title("🍕 Gerenciamento de Cardápio")
+    rest_id = st.session_state.restaurante_id
+
+    tab_cat, tab_prod, tab_var, tab_bairro, tab_promo, tab_fidel, tab_config = st.tabs([
+        "📂 Categorias", "🍽️ Produtos", "🔧 Variações",
+        "📍 Bairros", "🎫 Promoções", "⭐ Fidelidade", "⚙️ Config Site"
+    ])
+
+    # ==================== TAB CATEGORIAS ====================
+    with tab_cat:
+        _tab_categorias(rest_id)
+
+    # ==================== TAB PRODUTOS ====================
+    with tab_prod:
+        _tab_produtos(rest_id)
+
+    # ==================== TAB VARIAÇÕES ====================
+    with tab_var:
+        _tab_variacoes(rest_id)
+
+    # ==================== TAB BAIRROS ====================
+    with tab_bairro:
+        _tab_bairros(rest_id)
+
+    # ==================== TAB PROMOÇÕES ====================
+    with tab_promo:
+        _tab_promocoes(rest_id)
+
+    # ==================== TAB FIDELIDADE ====================
+    with tab_fidel:
+        _tab_fidelidade(rest_id)
+
+    # ==================== TAB CONFIG SITE ====================
+    with tab_config:
+        _tab_config_site(rest_id)
+
+
+# ==================== SUB-FUNÇÕES DO CARDÁPIO ====================
+
+def _tab_categorias(rest_id):
+    """Gestão de categorias do cardápio"""
+    st.subheader("📂 Categorias do Cardápio")
+    session = get_db_session()
+    try:
+        categorias = session.query(CategoriaMenu).filter(
+            CategoriaMenu.restaurante_id == rest_id
+        ).order_by(CategoriaMenu.ordem_exibicao).all()
+
+        # Botão carregar padrão
+        site_cfg = session.query(SiteConfig).filter(SiteConfig.restaurante_id == rest_id).first()
+        tipo_rest = site_cfg.tipo_restaurante if site_cfg else "geral"
+
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("📥 Carregar Categorias Padrão", key="btn_cat_padrao"):
+                from backend.app.utils.menu_templates import criar_categorias_padrao
+                criar_categorias_padrao(rest_id, tipo_rest, session)
+                session.commit()
+                st.success("Categorias padrão carregadas!")
+                st.rerun()
+
+        # Formulário nova categoria
+        with st.expander("➕ Nova Categoria", expanded=False):
+            with st.form("form_nova_cat", clear_on_submit=True):
+                c1, c2 = st.columns(2)
+                nome = c1.text_input("Nome", placeholder="Ex: 🍕 Pizzas Salgadas")
+                icone = c2.text_input("Ícone (emoji)", placeholder="🍕")
+                descricao = st.text_input("Descrição (opcional)")
+                ordem = st.number_input("Ordem de exibição", min_value=0, value=len(categorias) + 1)
+                if st.form_submit_button("Salvar Categoria"):
+                    if nome:
+                        nova = CategoriaMenu(
+                            restaurante_id=rest_id, nome=nome, icone=icone,
+                            descricao=descricao, ordem_exibicao=ordem, ativo=True
+                        )
+                        session.add(nova)
+                        session.commit()
+                        st.success(f"Categoria '{nome}' criada!")
+                        st.rerun()
+                    else:
+                        st.warning("Nome é obrigatório.")
+
+        # Listar categorias
+        if not categorias:
+            st.info("Nenhuma categoria cadastrada. Clique em 'Carregar Categorias Padrão' para começar.")
+            return
+
+        for cat in categorias:
+            cols = st.columns([0.5, 3, 1, 1, 1, 1])
+            cols[0].write(f"**{cat.ordem_exibicao}**")
+            cols[1].write(f"{cat.icone or ''} {cat.nome}")
+            cols[2].write("✅ Ativo" if cat.ativo else "❌ Inativo")
+
+            # Mover ordem
+            if cols[3].button("⬆️", key=f"cat_up_{cat.id}"):
+                if cat.ordem_exibicao > 1:
+                    anterior = session.query(CategoriaMenu).filter(
+                        CategoriaMenu.restaurante_id == rest_id,
+                        CategoriaMenu.ordem_exibicao == cat.ordem_exibicao - 1
+                    ).first()
+                    if anterior:
+                        anterior.ordem_exibicao += 1
+                    cat.ordem_exibicao -= 1
+                    session.commit()
+                    st.rerun()
+
+            # Ativar/desativar
+            label_ativo = "Desativar" if cat.ativo else "Ativar"
+            if cols[4].button(label_ativo, key=f"cat_tog_{cat.id}"):
+                cat.ativo = not cat.ativo
+                session.commit()
+                st.rerun()
+
+            # Editar
+            if cols[5].button("✏️", key=f"cat_edit_{cat.id}"):
+                st.session_state[f"edit_cat_{cat.id}"] = True
+
+            if st.session_state.get(f"edit_cat_{cat.id}", False):
+                with st.form(f"form_edit_cat_{cat.id}"):
+                    e1, e2 = st.columns(2)
+                    novo_nome = e1.text_input("Nome", value=cat.nome, key=f"en_{cat.id}")
+                    novo_icone = e2.text_input("Ícone", value=cat.icone or "", key=f"ei_{cat.id}")
+                    nova_desc = st.text_input("Descrição", value=cat.descricao or "", key=f"ed_{cat.id}")
+                    nova_ordem = st.number_input("Ordem", value=cat.ordem_exibicao, key=f"eo_{cat.id}")
+                    if st.form_submit_button("Atualizar"):
+                        cat.nome = novo_nome
+                        cat.icone = novo_icone
+                        cat.descricao = nova_desc
+                        cat.ordem_exibicao = nova_ordem
+                        session.commit()
+                        st.session_state[f"edit_cat_{cat.id}"] = False
+                        st.success("Categoria atualizada!")
+                        st.rerun()
+    finally:
+        session.close()
+
+
+def _tab_produtos(rest_id):
+    """Gestão de produtos do cardápio"""
+    st.subheader("🍽️ Produtos")
+    session = get_db_session()
+    try:
+        categorias = session.query(CategoriaMenu).filter(
+            CategoriaMenu.restaurante_id == rest_id, CategoriaMenu.ativo == True
+        ).order_by(CategoriaMenu.ordem_exibicao).all()
+
+        if not categorias:
+            st.warning("Cadastre categorias primeiro na aba 'Categorias'.")
+            return
+
+        # Filtro por categoria
+        cat_opcoes = {c.nome: c.id for c in categorias}
+        cat_selecionada = st.selectbox("Filtrar por categoria", list(cat_opcoes.keys()), key="filtro_cat_prod")
+        cat_id = cat_opcoes[cat_selecionada]
+
+        produtos = session.query(Produto).filter(
+            Produto.restaurante_id == rest_id,
+            Produto.categoria_id == cat_id
+        ).order_by(Produto.ordem_exibicao).all()
+
+        # Formulário novo produto
+        with st.expander("➕ Novo Produto", expanded=False):
+            with st.form("form_novo_prod", clear_on_submit=True):
+                p1, p2 = st.columns(2)
+                nome = p1.text_input("Nome do produto")
+                preco = p2.number_input("Preço (R$)", min_value=0.0, step=0.5, format="%.2f")
+                descricao = st.text_area("Descrição", height=80)
+                imagem_url = st.text_input("URL da imagem (opcional)")
+                pc1, pc2, pc3 = st.columns(3)
+                destaque = pc1.checkbox("Destaque")
+                promo = pc2.checkbox("Em promoção")
+                preco_promo = pc3.number_input("Preço promocional", min_value=0.0, step=0.5, format="%.2f") if promo else 0.0
+                ec1, ec2 = st.columns(2)
+                estoque_ilim = ec1.checkbox("Estoque ilimitado", value=True)
+                estoque_qtd = ec2.number_input("Quantidade em estoque", min_value=0, value=0) if not estoque_ilim else 0
+                ordem = st.number_input("Ordem de exibição", min_value=0, value=len(produtos) + 1)
+
+                if st.form_submit_button("Salvar Produto"):
+                    if nome and preco > 0:
+                        novo = Produto(
+                            restaurante_id=rest_id, categoria_id=cat_id,
+                            nome=nome, descricao=descricao, preco=preco,
+                            imagem_url=imagem_url or None, destaque=destaque,
+                            promocao=promo, preco_promocional=preco_promo if promo else None,
+                            estoque_ilimitado=estoque_ilim, estoque_quantidade=estoque_qtd,
+                            ordem_exibicao=ordem, disponivel=True
+                        )
+                        session.add(novo)
+                        session.commit()
+                        st.success(f"Produto '{nome}' criado!")
+                        st.rerun()
+                    else:
+                        st.warning("Nome e preço são obrigatórios.")
+
+        # Listar produtos
+        if not produtos:
+            st.info("Nenhum produto nesta categoria.")
+            return
+
+        for prod in produtos:
+            with st.container():
+                cols = st.columns([3, 1, 1, 1, 1])
+                nome_display = f"{'⭐ ' if prod.destaque else ''}{prod.nome}"
+                if prod.promocao and prod.preco_promocional:
+                    cols[0].write(f"**{nome_display}** — ~~R$ {prod.preco:.2f}~~ R$ {prod.preco_promocional:.2f}")
+                else:
+                    cols[0].write(f"**{nome_display}** — R$ {prod.preco:.2f}")
+
+                cols[1].write("✅" if prod.disponivel else "❌")
+
+                if cols[2].button("✏️", key=f"prod_edit_{prod.id}"):
+                    st.session_state[f"edit_prod_{prod.id}"] = True
+
+                label_disp = "Indisponível" if prod.disponivel else "Disponível"
+                if cols[3].button(label_disp, key=f"prod_tog_{prod.id}"):
+                    prod.disponivel = not prod.disponivel
+                    session.commit()
+                    st.rerun()
+
+                if cols[4].button("🗑️", key=f"prod_del_{prod.id}"):
+                    session.delete(prod)
+                    session.commit()
+                    st.success("Produto removido!")
+                    st.rerun()
+
+                # Formulário editar
+                if st.session_state.get(f"edit_prod_{prod.id}", False):
+                    with st.form(f"form_edit_prod_{prod.id}"):
+                        ep1, ep2 = st.columns(2)
+                        novo_nome = ep1.text_input("Nome", value=prod.nome, key=f"epn_{prod.id}")
+                        novo_preco = ep2.number_input("Preço", value=prod.preco, step=0.5, format="%.2f", key=f"epp_{prod.id}")
+                        nova_desc = st.text_area("Descrição", value=prod.descricao or "", key=f"epd_{prod.id}")
+                        nova_img = st.text_input("URL imagem", value=prod.imagem_url or "", key=f"epi_{prod.id}")
+                        epc1, epc2 = st.columns(2)
+                        novo_dest = epc1.checkbox("Destaque", value=prod.destaque, key=f"epdt_{prod.id}")
+                        nova_promo = epc2.checkbox("Promoção", value=prod.promocao, key=f"eppr_{prod.id}")
+                        novo_preco_promo = st.number_input("Preço promo", value=prod.preco_promocional or 0.0, format="%.2f", key=f"eppp_{prod.id}") if nova_promo else None
+                        nova_cat = st.selectbox("Categoria", list(cat_opcoes.keys()),
+                            index=list(cat_opcoes.values()).index(prod.categoria_id) if prod.categoria_id in cat_opcoes.values() else 0,
+                            key=f"epc_{prod.id}")
+                        nova_ordem = st.number_input("Ordem", value=prod.ordem_exibicao, key=f"epo_{prod.id}")
+                        if st.form_submit_button("Atualizar Produto"):
+                            prod.nome = novo_nome
+                            prod.preco = novo_preco
+                            prod.descricao = nova_desc
+                            prod.imagem_url = nova_img or None
+                            prod.destaque = novo_dest
+                            prod.promocao = nova_promo
+                            prod.preco_promocional = novo_preco_promo
+                            prod.categoria_id = cat_opcoes[nova_cat]
+                            prod.ordem_exibicao = nova_ordem
+                            session.commit()
+                            st.session_state[f"edit_prod_{prod.id}"] = False
+                            st.success("Produto atualizado!")
+                            st.rerun()
+                st.divider()
+    finally:
+        session.close()
+
+
+def _tab_variacoes(rest_id):
+    """Gestão de variações por produto"""
+    st.subheader("🔧 Variações de Produto")
+    session = get_db_session()
+    try:
+        produtos = session.query(Produto).filter(
+            Produto.restaurante_id == rest_id, Produto.disponivel == True
+        ).order_by(Produto.nome).all()
+
+        if not produtos:
+            st.warning("Cadastre produtos primeiro.")
+            return
+
+        prod_opcoes = {p.nome: p.id for p in produtos}
+        prod_selecionado = st.selectbox("Selecione o produto", list(prod_opcoes.keys()), key="sel_prod_var")
+        prod_id = prod_opcoes[prod_selecionado]
+
+        TIPOS_VARIACAO = ["tamanho", "sabor", "borda", "adicional", "ponto_carne"]
+        tabs_var = st.tabs([t.capitalize() for t in TIPOS_VARIACAO])
+
+        for i, tipo in enumerate(TIPOS_VARIACAO):
+            with tabs_var[i]:
+                variacoes = session.query(VariacaoProduto).filter(
+                    VariacaoProduto.produto_id == prod_id,
+                    VariacaoProduto.tipo_variacao == tipo
+                ).order_by(VariacaoProduto.ordem).all()
+
+                # Novo
+                with st.expander(f"➕ Novo {tipo.capitalize()}", expanded=False):
+                    with st.form(f"form_var_{tipo}_{prod_id}", clear_on_submit=True):
+                        v1, v2 = st.columns(2)
+                        nome = v1.text_input("Nome", key=f"vn_{tipo}_{prod_id}")
+                        preco_ad = v2.number_input("Preço adicional (R$)", min_value=0.0, step=0.5, format="%.2f", key=f"vp_{tipo}_{prod_id}")
+                        desc = st.text_input("Descrição (opcional)", key=f"vd_{tipo}_{prod_id}")
+                        ordem = st.number_input("Ordem", min_value=0, value=len(variacoes) + 1, key=f"vo_{tipo}_{prod_id}")
+                        if st.form_submit_button("Salvar"):
+                            if nome:
+                                nova = VariacaoProduto(
+                                    produto_id=prod_id, tipo_variacao=tipo,
+                                    nome=nome, descricao=desc, preco_adicional=preco_ad,
+                                    ordem=ordem, ativo=True
+                                )
+                                session.add(nova)
+                                session.commit()
+                                st.success(f"{tipo.capitalize()} '{nome}' adicionado!")
+                                st.rerun()
+
+                # Listar
+                if not variacoes:
+                    st.info(f"Nenhum {tipo} cadastrado para este produto.")
+                    continue
+
+                for v in variacoes:
+                    vc = st.columns([3, 1, 1, 1])
+                    vc[0].write(f"**{v.nome}** — +R$ {v.preco_adicional:.2f}")
+                    vc[1].write("✅" if v.ativo else "❌")
+                    tog_label = "Desativar" if v.ativo else "Ativar"
+                    if vc[2].button(tog_label, key=f"vtog_{v.id}"):
+                        v.ativo = not v.ativo
+                        session.commit()
+                        st.rerun()
+                    if vc[3].button("🗑️", key=f"vdel_{v.id}"):
+                        session.delete(v)
+                        session.commit()
+                        st.rerun()
+
+        # Botão carregar variações padrão
+        st.divider()
+        site_cfg = session.query(SiteConfig).filter(SiteConfig.restaurante_id == rest_id).first()
+        tipo_rest = site_cfg.tipo_restaurante if site_cfg else "geral"
+        if st.button("📥 Carregar variações padrão do template", key="btn_var_padrao"):
+            from backend.app.utils.menu_templates import get_template
+            tmpl = get_template(tipo_rest)
+            cfg = tmpl.get("config_produto", {})
+            count = 0
+            # Tamanhos
+            for t in cfg.get("tamanhos_padrao", []):
+                session.add(VariacaoProduto(
+                    produto_id=prod_id, tipo_variacao="tamanho",
+                    nome=t["nome"], preco_adicional=t.get("preco_base", 0), ordem=count, ativo=True
+                ))
+                count += 1
+            # Bordas
+            for b in cfg.get("bordas_padrao", []):
+                session.add(VariacaoProduto(
+                    produto_id=prod_id, tipo_variacao="borda",
+                    nome=b["nome"], preco_adicional=b.get("preco", 0), ordem=count, ativo=True
+                ))
+                count += 1
+            # Adicionais
+            for a in cfg.get("adicionais_padrao", []):
+                session.add(VariacaoProduto(
+                    produto_id=prod_id, tipo_variacao="adicional",
+                    nome=a["nome"], preco_adicional=a.get("preco", 0), ordem=count, ativo=True
+                ))
+                count += 1
+            # Ponto carne
+            for pc in cfg.get("pontos_carne", []):
+                session.add(VariacaoProduto(
+                    produto_id=prod_id, tipo_variacao="ponto_carne",
+                    nome=pc, preco_adicional=0, ordem=count, ativo=True
+                ))
+                count += 1
+            session.commit()
+            st.success(f"{count} variações padrão carregadas para '{prod_selecionado}'!")
+            st.rerun()
+    finally:
+        session.close()
+
+
+def _tab_bairros(rest_id):
+    """Gestão de bairros de entrega"""
+    st.subheader("📍 Bairros de Entrega")
+    st.caption("Opcional: o sistema também calcula taxa por km. Use bairros para taxas fixas por região.")
+    session = get_db_session()
+    try:
+        bairros = session.query(BairroEntrega).filter(
+            BairroEntrega.restaurante_id == rest_id
+        ).order_by(BairroEntrega.nome).all()
+
+        with st.expander("➕ Novo Bairro", expanded=False):
+            with st.form("form_novo_bairro", clear_on_submit=True):
+                b1, b2, b3 = st.columns(3)
+                nome = b1.text_input("Nome do bairro")
+                taxa = b2.number_input("Taxa de entrega (R$)", min_value=0.0, step=0.5, format="%.2f")
+                tempo = b3.number_input("Tempo estimado (min)", min_value=5, value=30)
+                if st.form_submit_button("Salvar Bairro"):
+                    if nome:
+                        session.add(BairroEntrega(
+                            restaurante_id=rest_id, nome=nome,
+                            taxa_entrega=taxa, tempo_estimado_min=tempo, ativo=True
+                        ))
+                        session.commit()
+                        st.success(f"Bairro '{nome}' adicionado!")
+                        st.rerun()
+
+        if not bairros:
+            st.info("Nenhum bairro cadastrado.")
+            return
+
+        for b in bairros:
+            bc = st.columns([3, 1, 1, 1])
+            bc[0].write(f"**{b.nome}** — R$ {b.taxa_entrega:.2f} | {b.tempo_estimado_min} min")
+            bc[1].write("✅" if b.ativo else "❌")
+            tog = "Desativar" if b.ativo else "Ativar"
+            if bc[2].button(tog, key=f"btog_{b.id}"):
+                b.ativo = not b.ativo
+                session.commit()
+                st.rerun()
+            if bc[3].button("🗑️", key=f"bdel_{b.id}"):
+                session.delete(b)
+                session.commit()
+                st.rerun()
+    finally:
+        session.close()
+
+
+def _tab_promocoes(rest_id):
+    """Gestão de promoções e cupons"""
+    st.subheader("🎫 Promoções e Cupons")
+    session = get_db_session()
+    try:
+        promos = session.query(Promocao).filter(
+            Promocao.restaurante_id == rest_id
+        ).order_by(Promocao.criado_em.desc()).all()
+
+        with st.expander("➕ Nova Promoção", expanded=False):
+            with st.form("form_nova_promo", clear_on_submit=True):
+                nome = st.text_input("Nome da promoção")
+                descricao = st.text_area("Descrição", height=60)
+                pr1, pr2 = st.columns(2)
+                tipo = pr1.selectbox("Tipo de desconto", ["percentual", "fixo"])
+                valor = pr2.number_input("Valor do desconto", min_value=0.0, step=0.5, format="%.2f")
+                pr3, pr4 = st.columns(2)
+                pedido_min = pr3.number_input("Pedido mínimo (R$)", min_value=0.0, format="%.2f")
+                desc_max = pr4.number_input("Desconto máximo (R$)", min_value=0.0, format="%.2f", help="Para desconto percentual")
+                codigo = st.text_input("Código do cupom (opcional)", placeholder="EX: PROMO10")
+                dt1, dt2 = st.columns(2)
+                data_ini = dt1.date_input("Data início")
+                data_fim = dt2.date_input("Data fim")
+                uso_lim = st.checkbox("Limitar número de usos")
+                limite = st.number_input("Limite de usos", min_value=1, value=100) if uso_lim else None
+
+                if st.form_submit_button("Salvar Promoção"):
+                    if nome and valor > 0:
+                        session.add(Promocao(
+                            restaurante_id=rest_id, nome=nome, descricao=descricao,
+                            tipo_desconto=tipo, valor_desconto=valor,
+                            valor_pedido_minimo=pedido_min, desconto_maximo=desc_max or None,
+                            codigo_cupom=codigo.upper() if codigo else None,
+                            data_inicio=datetime.combine(data_ini, datetime.min.time()),
+                            data_fim=datetime.combine(data_fim, datetime.max.time()),
+                            uso_limitado=uso_lim, limite_usos=limite, ativo=True
+                        ))
+                        session.commit()
+                        st.success(f"Promoção '{nome}' criada!")
+                        st.rerun()
+
+        if not promos:
+            st.info("Nenhuma promoção cadastrada.")
+            return
+
+        for p in promos:
+            with st.container():
+                pc = st.columns([3, 1, 1, 1])
+                tipo_txt = f"{p.valor_desconto}%" if p.tipo_desconto == "percentual" else f"R$ {p.valor_desconto:.2f}"
+                cupom_txt = f" | Cupom: {p.codigo_cupom}" if p.codigo_cupom else ""
+                pc[0].write(f"**{p.nome}** — {tipo_txt}{cupom_txt}")
+                pc[1].write("✅" if p.ativo else "❌")
+                tog = "Desativar" if p.ativo else "Ativar"
+                if pc[2].button(tog, key=f"ptog_{p.id}"):
+                    p.ativo = not p.ativo
+                    session.commit()
+                    st.rerun()
+                if pc[3].button("🗑️", key=f"pdel_{p.id}"):
+                    session.delete(p)
+                    session.commit()
+                    st.rerun()
+                if p.usos_realizados:
+                    st.caption(f"Usos: {p.usos_realizados}" + (f"/{p.limite_usos}" if p.uso_limitado else ""))
+                st.divider()
+    finally:
+        session.close()
+
+
+def _tab_fidelidade(rest_id):
+    """Gestão de prêmios de fidelidade"""
+    st.subheader("⭐ Prêmios de Fidelidade")
+    session = get_db_session()
+    try:
+        premios = session.query(PremioFidelidade).filter(
+            PremioFidelidade.restaurante_id == rest_id
+        ).order_by(PremioFidelidade.ordem_exibicao).all()
+
+        with st.expander("➕ Novo Prêmio", expanded=False):
+            with st.form("form_novo_premio", clear_on_submit=True):
+                nome = st.text_input("Nome do prêmio")
+                descricao = st.text_area("Descrição", height=60)
+                fp1, fp2, fp3 = st.columns(3)
+                tipo = fp1.selectbox("Tipo", ["desconto", "item_gratis", "brinde"])
+                custo = fp2.number_input("Custo em pontos", min_value=1, value=100)
+                valor = fp3.text_input("Valor/Item", placeholder="10% desconto ou Nome do item")
+                ordem = st.number_input("Ordem exibição", min_value=0, value=len(premios) + 1)
+                if st.form_submit_button("Salvar Prêmio"):
+                    if nome:
+                        session.add(PremioFidelidade(
+                            restaurante_id=rest_id, nome=nome, descricao=descricao,
+                            tipo_premio=tipo, custo_pontos=custo, valor_premio=valor,
+                            ordem_exibicao=ordem, ativo=True
+                        ))
+                        session.commit()
+                        st.success(f"Prêmio '{nome}' criado!")
+                        st.rerun()
+
+        if not premios:
+            st.info("Nenhum prêmio cadastrado.")
+            return
+
+        for pr in premios:
+            prc = st.columns([3, 1, 1, 1])
+            prc[0].write(f"**{pr.nome}** — {pr.custo_pontos} pts | {pr.tipo_premio}")
+            prc[1].write("✅" if pr.ativo else "❌")
+            tog = "Desativar" if pr.ativo else "Ativar"
+            if prc[2].button(tog, key=f"frtog_{pr.id}"):
+                pr.ativo = not pr.ativo
+                session.commit()
+                st.rerun()
+            if prc[3].button("🗑️", key=f"frdel_{pr.id}"):
+                session.delete(pr)
+                session.commit()
+                st.rerun()
+    finally:
+        session.close()
+
+
+def _tab_config_site(rest_id):
+    """Configuração do site do cliente"""
+    st.subheader("⚙️ Configuração do Site")
+    session = get_db_session()
+    try:
+        config = session.query(SiteConfig).filter(SiteConfig.restaurante_id == rest_id).first()
+
+        if not config:
+            st.warning("Site não configurado. Criando configuração padrão...")
+            if st.button("Criar configuração padrão"):
+                from backend.app.utils.menu_templates import criar_site_config_padrao
+                criar_site_config_padrao(rest_id, "geral", {}, session)
+                session.commit()
+                st.success("Configuração criada!")
+                st.rerun()
+            return
+
+        with st.form("form_config_site"):
+            TIPOS = ["pizzaria", "hamburgueria", "japones", "churrascaria", "la_carte", "acai", "marmitex", "geral"]
+            tipo_idx = TIPOS.index(config.tipo_restaurante) if config.tipo_restaurante in TIPOS else len(TIPOS) - 1
+            tipo = st.selectbox("Tipo de restaurante", TIPOS, index=tipo_idx)
+
+            st.markdown("**Visual**")
+            vc1, vc2 = st.columns(2)
+            cor_pri = vc1.color_picker("Cor primária", value=config.tema_cor_primaria or "#FF6B35")
+            cor_sec = vc2.color_picker("Cor secundária", value=config.tema_cor_secundaria or "#004E89")
+            logo = st.text_input("URL do logo", value=config.logo_url or "")
+            banner = st.text_input("URL do banner", value=config.banner_principal_url or "")
+
+            st.markdown("**WhatsApp**")
+            wc1, wc2 = st.columns(2)
+            whats_num = wc1.text_input("Número WhatsApp", value=config.whatsapp_numero or "")
+            whats_ativo = wc2.checkbox("WhatsApp ativo", value=config.whatsapp_ativo)
+
+            st.markdown("**Operacional**")
+            oc1, oc2, oc3 = st.columns(3)
+            ped_min = oc1.number_input("Pedido mínimo (R$)", value=config.pedido_minimo or 0.0, format="%.2f")
+            t_entrega = oc2.number_input("Tempo entrega (min)", value=config.tempo_entrega_estimado or 50)
+            t_retirada = oc3.number_input("Tempo retirada (min)", value=config.tempo_retirada_estimado or 20)
+            site_ativo = st.checkbox("Site ativo", value=config.site_ativo)
+
+            st.markdown("**Formas de Pagamento**")
+            pgc1, pgc2, pgc3, pgc4 = st.columns(4)
+            ac_din = pgc1.checkbox("Dinheiro", value=config.aceita_dinheiro)
+            ac_cart = pgc2.checkbox("Cartão", value=config.aceita_cartao)
+            ac_pix = pgc3.checkbox("PIX", value=config.aceita_pix)
+            ac_vale = pgc4.checkbox("Vale Refeição", value=config.aceita_vale_refeicao)
+
+            if st.form_submit_button("💾 Salvar Configuração"):
+                config.tipo_restaurante = tipo
+                config.tema_cor_primaria = cor_pri
+                config.tema_cor_secundaria = cor_sec
+                config.logo_url = logo or None
+                config.banner_principal_url = banner or None
+                config.whatsapp_numero = whats_num or None
+                config.whatsapp_ativo = whats_ativo
+                config.pedido_minimo = ped_min
+                config.tempo_entrega_estimado = t_entrega
+                config.tempo_retirada_estimado = t_retirada
+                config.site_ativo = site_ativo
+                config.aceita_dinheiro = ac_din
+                config.aceita_cartao = ac_cart
+                config.aceita_pix = ac_pix
+                config.aceita_vale_refeicao = ac_vale
+                session.commit()
+                st.success("Configuração salva!")
+                st.rerun()
+
+        # Link de preview
+        restaurante = session.query(Restaurante).filter(Restaurante.id == rest_id).first()
+        if restaurante and restaurante.codigo_acesso:
+            st.markdown(f"**Preview do site:** `/cliente/{restaurante.codigo_acesso}`")
+    finally:
+        session.close()
 
 
 # ==================== IMPRESSÃO E RELATÓRIOS ====================

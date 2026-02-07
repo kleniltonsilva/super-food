@@ -1,0 +1,214 @@
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    margin: 0; 
+}
+
+.mdl-list__item.component_list_items_item{
+  background: #fff;
+  border-bottom: 1px solid #d4d4d4;
+}
+
+.component_list_items_item{
+  display: flex;
+  justify-content: space-between;
+}
+
+.modalEddy .component_list_items_item{
+  padding: 16px 0;
+}
+
+.component_list_items_name_description{
+  display: flex;
+  margin-left: 10px;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: start;
+  width: calc(100% - 68px);
+}
+
+.component_list_items_name, .component_list_items_description{
+  font-family: Lato;
+  color: #444;
+  font-size: 16px;
+  margin: 0;
+  padding: 0;
+  vertical-align: baseline;
+  text-transform: capitalize;
+  line-height: initial;
+}
+
+.component_list_items_name{
+  margin-right: 10px;
+}
+
+.component_list_items_description, .component_list_items_ingredients{
+  font-size: 12px!important;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  line-height: 14px;
+}
+
+.component_list_items_image_background{
+  width: 68px;
+  height: 68px;
+  margin: 0px;
+  border-radius: 8px;
+  position: relative;
+}
+
+.component_list_items_background_image{
+  position: absolute;
+  width: 66px;
+}
+
+.component_list_items_image{
+  border-radius: 8px;
+  position: absolute;
+  padding: 3px;
+  float: initial;
+  width: 60px;
+  height: 60px;
+  margin: 0;
+}
+
+.component_list_items_item_info {
+  display: flex;
+  width: 75%;
+}
+
+.component_list_items_selector .mdl-radio.is-checked .mdl-radio__outer-circle{
+  border: 2px solid var(--btnHomeColor)!important;
+}
+
+.component_list_items_btn_quantity_card{
+  width: 100%;
+  float: right;
+  height: 35px;
+  border: 1px solid #d4d4d4;
+  border-radius: 25px;
+  min-width: 100px;
+  display: flex
+}
+
+.component_list_items_quantity_decrease{
+  width: 33%;
+  line-height: 35px;
+  display: block;
+  float: left;
+  text-align: center;
+  font-size: 29px;
+  color: #ff0d0d;
+  cursor: pointer;
+}
+
+.component_list_items_quantity_value{
+  width: 34%;
+  line-height: 35px;
+  display: block;
+  float: left;
+  text-align: center;
+  font-size: 18px;
+  color: #444;
+  background: transparent;
+  border: none;
+  -webkit-appearance: none;
+}
+
+.component_list_items_quantity_increase{
+  width: 33%;
+  line-height: 35px;
+  display: block;
+  float: left;
+  text-align: center;
+  font-size: 22px;
+  color: #00b400;
+  cursor: pointer;
+}
+
+.component_list_items_info_description{
+  padding: 0px 10px;
+  font-size: 1.2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.component_list_items_selector{
+  max-width: 20%;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.component_list_items_selector_radio_label{
+  padding-bottom: 20px;
+}
+
+.component_list_items_selector_radio_label .mdl-radio__outer-circle{
+  width: 20px;
+  height: 20px;
+}
+
+.component_list_items_selector_editor {
+  float: right;
+  background-color: #0062ab;
+  padding: 0 11px;
+}
+
+.component_list_items_div_name {
+  display: flex;
+}
+
+.component_list_items_remove_item{
+  color: red;
+}
+
+.component_list_items_item .mdl-checkbox__focus-helper, .component_list_items_item .mdl-checkbox__box-outline {
+  width: 21px;
+  height: 21px;
+}
+
+.component_list_items_item .mdl-checkbox__focus-helper {
+  background-color: #fff;
+  border-radius: 25%;
+}
+.component_list_items_selector_editor{
+  background-color: transparent;
+}
+
+.component_list_items_selector_editor i{
+  font-size: 2rem;
+}
+
+.component_list_items_pricefull{
+  font-size: 0.8rem;
+  text-decoration: line-through;
+}
+
+.component_list_items_pricepromo{
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+@media (min-width: 768px) {
+  :root{
+    --btnHomeColor: #087607;
+  }
+  
+  .component_list_items_info_title{
+    font-size: 1rem;
+  }
+
+  .component_list_items_info_description{
+    font-size: 0.9rem;
+  }
+
+  .component_list_items_selector_editor i{
+    font-size: 1.5rem;
+  }
+
+  .mdl-radio.is-checked .mdl-radio__outer-circle{
+    background-color: rgb(1, 148, 0) !important;
+  }
+}

@@ -1,349 +1,165 @@
 # Repare os bugs/ ou atualize 
 
-ATENÇÃO VOCÊ JÁ ESTAVA REALIZANDO AS ATUALIZAÇÕES ABAIXO, MAS O COMPUTADOR FOI DESLIGADO NO MEIO DO PROCESSO, IDENTIFIQUE ONDE PARASTE E CONTINUE
-A ULTIMA PASTA QUE ESTAVAS ERA utils/motoboy_selector.py, não faça searching global economize tokens
+Sistema de Caixa – Descrição Completa
+1. Conceito Geral
 
-ESPECIFICAÇÃO – FINALIZAÇÃO DE ENTREGA FORA DO RAIO E IMPACTO NO RANKING
-1. Contexto
+O sistema de caixa gerencia todas as transações financeiras de um ponto de venda, garantindo transparência, histórico completo e auditoria. Ele registra entradas e saídas de dinheiro e pagamentos, controla saldo, permite conciliação diária e auxilia na segurança financeira do restaurante ou rede de restaurantes.
 
-O sistema possui ranking de motoboys exclusivo por restaurante.
-Esse ranking pode ou não ser atestado como antifraude por localização, dependendo de uma configuração definida pelo administrador do restaurante.
+Cada caixa representa uma instância de operação diária ou por turno, onde todas as movimentações (vendas, retiradas, ajustes) são registradas.
 
-2. Configuração por restaurante
+2. Estrutura de Funcionalidades
+2.1 Abertura de Caixa
 
-Na seção Configurações → Motoboys, deve existir uma opção:
+Responsável: Operador ou gerente autorizado.
 
-Permitir que o motoboy finalize a entrega fora da zona do endereço
+Informações registradas:
 
-Tipo: booleano (ativado / desativado)
+Usuário responsável
 
-Escopo: exclusivo do restaurante
+Data e hora de abertura
 
-3. Raio de referência
+Valor inicial em caixa (dinheiro físico ou saldo inicial do sistema)
 
-Raio fixo de validação: 50 metros
+Regras de operação:
 
-Usado para comparação entre:
+Só é permitido abrir um caixa se não houver outro aberto no mesmo ponto de venda.
 
-Localização atual do motoboy
+O valor inicial serve como ponto de partida para a conciliação do dia.
 
-Localização do endereço da entrega
+2.2 Registro de Vendas
 
-4. Comportamento quando a opção estiver DESATIVADA
+Entradas no caixa: Todas as vendas concluídas (dinheiro, cartão, Pix, voucher, crédito interno).
 
-O motoboy não pode finalizar a entrega se estiver fora do raio de 50 metros
+Informações registradas:
 
-A finalização deve ser bloqueada
+ID da venda
 
-O ranking do restaurante é considerado:
+Valor total
 
-Atestado como antifraude por localização
+Forma de pagamento
 
-5. Comportamento quando a opção estiver ATIVADA
+Data e hora da operação
 
-O motoboy pode finalizar a entrega mesmo estando fora do raio de 50 metros
+Usuário/operador que realizou a venda
 
-A finalização não deve ser bloqueada
+Status do pedido (aberto, concluído, cancelado)
 
-O ranking continua sendo calculado normalmente
+Regras de operação:
 
-O ranking do restaurante não pode ser atestado como antifraude por localização
+Pedidos cancelados não entram no total do caixa.
 
-6. Aviso obrigatório ao administrador
+Estornos ou reembolsos devem ser registrados como saída correspondente do caixa.
 
-Sempre que essa opção estiver ativada, deve existir um aviso visível ao administrador do restaurante informando que:
+2.3 Saídas de Caixa
 
-Motoboys podem finalizar entregas fora da zona do endereço
+Retiradas: Valores retirados do caixa durante o expediente (troco, pagamento de fornecedores, despesas internas).
 
-INSTRUÇÃO – CRIAÇÃO DO RANKING DE MOTOBOYS
-COM VALORES, TAXAS E PAGAMENTO DOS MOTOBOYS
-1. Escopo do ranking
+Informações registradas:
 
-O ranking de motoboys é exclusivo por restaurante
+Valor da retirada
 
-Não existe ranking global
+Motivo ou categoria (ex.: troco, despesa interna, pagamento a fornecedor)
 
-Cada restaurante visualiza apenas seus próprios motoboys
+Usuário responsável
 
-2. Objetivo do ranking
+Data e hora
 
-Avaliar a eficiência operacional dos motoboys considerando:
+Regras de operação:
 
-Tempo real de entrega
+A retirada não pode ultrapassar o saldo disponível no caixa.
 
-Quantidade de entregas concluídas
+Cada retirada deve ser justificada e registrada para auditoria.
 
-Valores financeiros pagos ao motoboy
+2.4 Fechamento de Caixa
 
-Confiabilidade baseada na validação por localização
+Momento de fechamento: Final do expediente ou turno.
 
-3. Base de cálculo do tempo de entrega
-3.1 Início
+Informações registradas:
 
-O tempo de entrega inicia quando o motoboy:
+Usuário responsável pelo fechamento
 
-Inicia a primeira entrega ativa
+Data e hora do fechamento
 
-Registrar:
+Total de entradas e saídas
 
-delivery_started_at
+Saldo final esperado
 
-motoboy_id
+Valor em caixa físico (dinheiro contado)
 
-restaurant_id
+Diferença entre saldo esperado e valor real (se houver)
 
-3.2 Final
+Regras de operação:
 
-O tempo de entrega finaliza quando o motoboy:
+Caixa só pode ser fechado se tiver sido previamente aberto.
 
-Finaliza a entrega no aplicativo
+Todos os movimentos do período (vendas, retiradas, ajustes) devem ser incluídos na conciliação.
 
-Registrar:
+Diferenças precisam ser registradas para auditoria.
 
-delivery_finished_at
+2.5 Ajustes e Operações Especiais
 
-3.3 Tempo real
-tempo_entrega = delivery_finished_at - delivery_started_at
+Estorno ou reembolso: Retira do caixa o valor correspondente.
 
+Notas de crédito: Caso o restaurante aceite crédito ou voucher interno.
 
-Esse tempo:
+Transferências entre caixas: Para redes com múltiplos pontos de venda.
 
-É persistido
+3. Fluxo de Caixa Diário (Exemplo)
 
-Não pode ser alterado
+Abertura
 
-Alimenta diretamente o ranking
+Valor inicial: R$ 500,00
 
-4. Critérios do ranking
+Usuário: Operador 1
 
-O ranking deve ser calculado com base em:
+Durante o dia
 
-Tempo médio de entrega
+Venda 1: R$ 80,00 (Pix) → registrado
 
-Total de entregas concluídas
+Venda 2: R$ 45,00 (Cartão) → registrado
 
-Total de valores pagos ao motoboy
+Retirada: R$ 50,00 (troco) → registrado
 
-Período de análise configurável
+Venda 3: R$ 120,00 (Dinheiro) → registrado
 
-Sempre filtrado por:
+Venda 4: R$ 60,00 → cancelada → não entra no total do caixa
 
-restaurant_id
+Fechamento
 
-5. Valores exibidos no ranking
+Total entradas: R$ 245,00
 
-No ranking deve ser exibido, para cada motoboy:
+Total retiradas: R$ 50,00
 
-Valor total recebido em entregas
+Saldo final esperado: R$ 695,00 (500 inicial + 245 entradas – 50 retiradas)
 
-Valor total recebido em taxas extras
+Saldo real contado: R$ 695,00 → conferido
 
-Valor total recebido em alimentação (lanche)
+Usuário fecha o caixa, tudo registrado no histórico
 
-Valor total acumulado
+4. Considerações Técnicas
 
-Todos os valores devem ser:
+Cada movimento de caixa deve ter timestamp e usuário, garantindo rastreabilidade e auditoria.
 
-Persistidos
+Pedidos cancelados não entram no total do caixa, mas devem ser registrados no log de cancelamentos.
 
-Somados corretamente
+Sistema deve permitir relatórios filtrados por data, usuário, tipo de movimento e forma de pagamento.
 
-Vinculados ao período selecionado
+Segurança: Apenas usuários autorizados podem abrir/fechar o caixa ou realizar retiradas.
 
-6. Configurações de taxas (obrigatórias)
+Persistência: Todas as operações devem ser gravadas no banco de dados isolado por restaurante id
 
-Todas as taxas devem ser configuráveis por restaurante, em uma seção própria.
+Integração com pedidos: O caixa deve puxar automaticamente valores de pedidos concluídos registrados no sistema, garantindo conciliação automática.
 
-6.1 Taxas relacionadas ao cliente
+Dashboard em tempo real mostrando saldo atual do caixa.
 
-Taxa de Entrega (cliente)
+Alertas de diferença entre saldo físico e saldo esperado.
 
-Base de distância (km)
 
-Taxa extra por km acima da base
+Histórico exportável (CSV/PDF) para contabilidade.
 
-7. Configurações de pagamento do motoboy
+Logs detalhados de auditoria de cada movimento, usuário e timestamp.
 
-A lógica existente deve ser mantida, com os seguintes conceitos e descrições:
-
-7.1 Taxa diária do motoboy
-
-Valor diário fixo pago ao motoboy
-
-Pode ser zero
-
-7.2 Taxa base do valor de entrega
-
-Valor fixo pago ao motoboy até um limite de distância
-
-Distância base configurável
-
-7.3 Taxa extra por km acima da taxa base
-
-Valor adicional por quilômetro excedente
-
-Aplicado somente acima do limite configurado
-
-7.4 Alimentação do motoboy
-
-Valor adicional referente ao lanche/alimentação
-
-Pode ser zero ou um valor definido
-
-8. Persistência financeira no ranking
-
-Para cada motoboy devem ser armazenados:
-
-Valores por entrega
-
-Valores por distância
-
-Valores de taxas extras
-
-Valores de alimentação
-
-Valor total acumulado
-
-Esses dados:
-
-Não são apagados automaticamente
-
-São preservados quando CPF existir
-
-9. Identificação única do motoboy (CPF)
-
-CPF é a chave lógica única do motoboy
-
-CPF é opcional no cadastro
-
-Comportamento:
-
-Com CPF: dados preservados
-
-Sem CPF: dados descartados ao excluir perfil
-
-10. Relação com validação por localização
-
-O ranking sempre é calculado
-
-O nível de confiabilidade depende da configuração do restaurante
-
-Essa informação deve ser exibida no ranking
-
-11. Aba exclusiva – Realizar pagamento dos motoboys
-
-Deve existir uma aba exclusiva chamada:
-
-Realizar pagamento dos motoboys
-
-11.1 Função da aba
-
-Permitir que o dono do restaurante:
-
-Selecione um ou mais motoboys
-
-Realize o fechamento financeiro do período de trabalho
-
-11.2 Informações exibidas por motoboy
-
-Para cada motoboy selecionado, exibir:
-
-Valor total a ser pago
-
-Valores detalhados e descritivos:
-
-Entregas realizadas
-
-Taxas base
-
-Taxas extras por km
-
-Alimentação
-
-Total consolidado
-
-11.3 Lista de entregas
-
-Deve existir a opção de visualizar:
-
-Lista completa das entregas realizadas
-
-Para cada entrega:
-
-Data
-
-Distância percorrida
-
-Valor pago
-
-Tudo deve ser exibido de forma:
-
-Clara
-
-Íntegra
-
-Fácil de entender
-
-11.4 Impressão
-
-Deve existir opção de imprimir:
-
-Relatório individual por motoboy
-
-O relatório deve permitir que:
-
-O motoboy confira seus ganhos separadamente
-
-12. Interface administrativa
-
-Todas as configurações descritas devem:
-
-Ser configuráveis pelo restaurante
-
-Possuir ícone (?) de informação
-
-Ao passar o mouse, exibir:
-
-Descrição da configuração
-
-Explicação do impacto no cálculo
-
-13. Registro da regra de negócio
-
-Toda essa lógica deve ser:
-
-Implementada como regra central do sistema
-
-Persistida corretamente
-
-Documentada como parte oficial do funcionamento do SaaS
-
-O ranking de motoboys não possui validação antifraude por localização
-
-Esse aviso deve aparecer:
-
-Na área de configurações de motoboys
-
-Na visualização do ranking de motoboys
-
-7. Impacto no ranking
-
-O ranking nunca é desativado
-
-O ranking sempre existe
-
-O que muda é apenas o nível de confiabilidade baseado na validação por localização
-
-8. Registro e documentação
-
-Essa lógica deve ser:
-
-Implementada como regra de negócio
-
-Documentada no projeto
-
-Claramente identificada como parte do funcionamento oficial do ranking
-
+# bug ao imprimir dados relatorios em motoboys/pagamentos não imprime, quero que ao inves de imprimir tenha opção de importar para pdf/csv 
 _________________________________________________________________________________________
 Atenção faça as correções e alterações acima sem alterar outras partes do codigo, faça as correções/atualizações de forma cirurgica e pontual, com as melhores praticas em programação, faça tudo com maxima economia de tokens economizando recursos do claude code.
 
