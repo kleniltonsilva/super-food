@@ -1,6 +1,6 @@
 #!/bin/bash
 # Super Food - Script de inicialização de serviços
-# Uso: ./start_services.sh [--all|--api-only]
+# Uso: ./start_services.sh [--all|--api-only|--build-react]
 
 set -e
 
@@ -20,6 +20,24 @@ sleep 2
 echo "============================================================"
 echo "   SUPER FOOD - Iniciando Sistema"
 echo "============================================================"
+
+# Build do React (se solicitado ou se não existir)
+REACT_DIR="restaurante-pedido-online"
+if [ "$1" == "--build-react" ] || [ ! -d "$REACT_DIR/dist" ]; then
+    if [ -d "$REACT_DIR" ] && [ -f "$REACT_DIR/package.json" ]; then
+        echo "Fazendo build do Site Cliente React..."
+        cd "$REACT_DIR"
+        if command -v pnpm &> /dev/null; then
+            pnpm install 2>/dev/null || npm install
+            pnpm build 2>/dev/null || npm run build
+        else
+            npm install
+            npm run build
+        fi
+        cd ..
+        echo "   [OK] Build do React concluído"
+    fi
+fi
 
 # Inicia FastAPI
 echo "Iniciando FastAPI Backend (porta 8000)..."
@@ -41,6 +59,11 @@ if [ "$1" != "--api-only" ]; then
     echo "Iniciando App Motoboy (porta 8503)..."
     nohup streamlit run app_motoboy/motoboy_app.py --server.port=8503 --server.headless=true > /tmp/superfood_motoboy.log 2>&1 &
     sleep 2
+
+    # Inicia Site Cliente
+    echo "Iniciando Site Cliente (porta 8504)..."
+    nohup streamlit run streamlit_app/cliente_app.py --server.port=8504 --server.headless=true > /tmp/superfood_cliente.log 2>&1 &
+    sleep 2
 fi
 
 echo ""
@@ -58,6 +81,10 @@ if [ "$1" != "--api-only" ]; then
     echo "   - App Motoboy:      http://localhost:8503"
 fi
 
+echo ""
+echo "Site do Cliente:"
+echo "   - Direto:  http://localhost:8504/?restaurante={CODIGO}"
+echo "   - Via API: http://localhost:8000/cliente/{CODIGO}"
 echo ""
 echo "Logs em:"
 echo "   - API:         /tmp/superfood_api.log"
@@ -101,4 +128,11 @@ if [ "$1" != "--api-only" ]; then
     else
         echo "   [ERRO] App Motoboy"
     fi
+fi
+
+# Verifica build do React
+if [ -d "$REACT_DIR/dist" ]; then
+    echo "   [OK] Site Cliente React (build disponível)"
+else
+    echo "   [INFO] Site Cliente React não compilado. Execute: ./start_services.sh --build-react"
 fi

@@ -350,3 +350,263 @@ def autocomplete_endereco(
     sugestoes = autocomplete_address(query, proximity)
     
     return {"sugestoes": sugestoes}
+
+
+# ==================== BAIRROS DE ENTREGA ====================
+@router.get("/{codigo_acesso}/bairros", response_model=List[site_schemas.BairroEntregaPublic])
+def get_bairros(
+    codigo_acesso: str,
+    db: Session = Depends(database.get_db)
+):
+    """Retorna bairros atendidos pelo restaurante"""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    bairros = db.query(models.BairroEntrega).filter(
+        models.BairroEntrega.restaurante_id == restaurante.id,
+        models.BairroEntrega.ativo == True
+    ).order_by(models.BairroEntrega.nome).all()
+
+    return bairros
+
+
+@router.get("/{codigo_acesso}/bairro/{nome_bairro}")
+def get_bairro_por_nome(
+    codigo_acesso: str,
+    nome_bairro: str,
+    db: Session = Depends(database.get_db)
+):
+    """Busca bairro por nome para calcular taxa"""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    bairro = db.query(models.BairroEntrega).filter(
+        models.BairroEntrega.restaurante_id == restaurante.id,
+        models.BairroEntrega.nome.ilike(f"%{nome_bairro}%"),
+        models.BairroEntrega.ativo == True
+    ).first()
+
+    if not bairro:
+        return {"encontrado": False, "mensagem": "Bairro não atendido"}
+
+    return {
+        "encontrado": True,
+        "bairro": bairro.nome,
+        "taxa_entrega": bairro.taxa_entrega,
+        "tempo_estimado_min": bairro.tempo_estimado_min
+    }
+
+
+# ==================== FIDELIDADE ====================
+@router.get("/{codigo_acesso}/fidelidade/pontos/{cliente_id}", response_model=site_schemas.PontosFidelidadePublic)
+def get_pontos_fidelidade(
+    codigo_acesso: str,
+    cliente_id: int,
+    db: Session = Depends(database.get_db)
+):
+    """Retorna saldo de pontos de fidelidade do cliente"""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    pontos = db.query(models.PontosFidelidade).filter(
+        models.PontosFidelidade.cliente_id == cliente_id,
+        models.PontosFidelidade.restaurante_id == restaurante.id
+    ).first()
+
+    if not pontos:
+        # Cria registro se não existe
+        pontos = models.PontosFidelidade(
+            cliente_id=cliente_id,
+            restaurante_id=restaurante.id,
+            pontos_total=0,
+            pontos_disponiveis=0
+        )
+        db.add(pontos)
+        db.commit()
+        db.refresh(pontos)
+
+    return pontos
+
+
+@router.get("/{codigo_acesso}/fidelidade/premios", response_model=List[site_schemas.PremioFidelidadePublic])
+def get_premios_fidelidade(
+    codigo_acesso: str,
+    db: Session = Depends(database.get_db)
+):
+    """Retorna prêmios disponíveis para resgate"""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    premios = db.query(models.PremioFidelidade).filter(
+        models.PremioFidelidade.restaurante_id == restaurante.id,
+        models.PremioFidelidade.ativo == True
+    ).order_by(models.PremioFidelidade.ordem_exibicao).all()
+
+    return premios
+
+
+@router.post("/{codigo_acesso}/fidelidade/resgatar/{cliente_id}", response_model=site_schemas.ResgatePremioResponse)
+def resgatar_premio(
+    codigo_acesso: str,
+    cliente_id: int,
+    resgate: site_schemas.ResgatePremioRequest,
+    db: Session = Depends(database.get_db)
+):
+    """Resgata um prêmio usando pontos de fidelidade"""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    # Busca prêmio
+    premio = db.query(models.PremioFidelidade).filter(
+        models.PremioFidelidade.id == resgate.premio_id,
+        models.PremioFidelidade.restaurante_id == restaurante.id,
+        models.PremioFidelidade.ativo == True
+    ).first()
+
+    if not premio:
+        raise HTTPException(status_code=404, detail="Prêmio não encontrado")
+
+    # Busca pontos do cliente
+    pontos = db.query(models.PontosFidelidade).filter(
+        models.PontosFidelidade.cliente_id == cliente_id,
+        models.PontosFidelidade.restaurante_id == restaurante.id
+    ).first()
+
+    if not pontos or pontos.pontos_disponiveis < premio.custo_pontos:
+        return {
+            "sucesso": False,
+            "mensagem": "Pontos insuficientes",
+            "pontos_restantes": pontos.pontos_disponiveis if pontos else 0
+        }
+
+    # Deduz pontos
+    pontos.pontos_disponiveis -= premio.custo_pontos
+
+    # Registra transação
+    transacao = models.TransacaoFidelidade(
+        cliente_id=cliente_id,
+        restaurante_id=restaurante.id,
+        tipo="resgatado",
+        pontos=premio.custo_pontos,
+        descricao=f"Resgate do prêmio: {premio.nome}"
+    )
+    db.add(transacao)
+    db.commit()
+
+    return {
+        "sucesso": True,
+        "mensagem": f"Prêmio '{premio.nome}' resgatado com sucesso!",
+        "pontos_restantes": pontos.pontos_disponiveis
+    }
+
+
+# ==================== PROMOÇÕES ====================
+@router.get("/{codigo_acesso}/promocoes", response_model=List[site_schemas.PromocaoPublic])
+def get_promocoes(
+    codigo_acesso: str,
+    db: Session = Depends(database.get_db)
+):
+    """Retorna promoções ativas do restaurante"""
+    from datetime import datetime
+
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    agora = datetime.utcnow()
+
+    promocoes = db.query(models.Promocao).filter(
+        models.Promocao.restaurante_id == restaurante.id,
+        models.Promocao.ativo == True,
+        (models.Promocao.data_inicio == None) | (models.Promocao.data_inicio <= agora),
+        (models.Promocao.data_fim == None) | (models.Promocao.data_fim >= agora)
+    ).all()
+
+    return promocoes
+
+
+@router.post("/{codigo_acesso}/validar-cupom", response_model=site_schemas.ValidarCupomResponse)
+def validar_cupom(
+    codigo_acesso: str,
+    validacao: site_schemas.ValidarCupomRequest,
+    db: Session = Depends(database.get_db)
+):
+    """Valida um código de cupom e calcula desconto"""
+    from datetime import datetime
+
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    agora = datetime.utcnow()
+
+    promocao = db.query(models.Promocao).filter(
+        models.Promocao.restaurante_id == restaurante.id,
+        models.Promocao.codigo_cupom == validacao.codigo_cupom.upper(),
+        models.Promocao.ativo == True,
+        (models.Promocao.data_inicio == None) | (models.Promocao.data_inicio <= agora),
+        (models.Promocao.data_fim == None) | (models.Promocao.data_fim >= agora)
+    ).first()
+
+    if not promocao:
+        return {
+            "valido": False,
+            "desconto_aplicado": 0,
+            "mensagem": "Cupom inválido ou expirado"
+        }
+
+    # Verifica limite de usos
+    if promocao.uso_limitado and promocao.usos_realizados >= promocao.limite_usos:
+        return {
+            "valido": False,
+            "desconto_aplicado": 0,
+            "mensagem": "Cupom esgotado"
+        }
+
+    # Verifica valor mínimo
+    if validacao.valor_pedido < promocao.valor_pedido_minimo:
+        return {
+            "valido": False,
+            "desconto_aplicado": 0,
+            "mensagem": f"Valor mínimo do pedido: R$ {promocao.valor_pedido_minimo:.2f}"
+        }
+
+    # Calcula desconto
+    if promocao.tipo_desconto == "percentual":
+        desconto = validacao.valor_pedido * (promocao.valor_desconto / 100)
+        if promocao.desconto_maximo:
+            desconto = min(desconto, promocao.desconto_maximo)
+    else:
+        desconto = promocao.valor_desconto
+
+    return {
+        "valido": True,
+        "desconto_aplicado": round(desconto, 2),
+        "mensagem": f"Cupom '{promocao.nome}' aplicado! Desconto: R$ {desconto:.2f}"
+    }

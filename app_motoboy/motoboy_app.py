@@ -29,6 +29,7 @@ from database.models import Motoboy, Restaurante, GPSMotoboy, MotoboySolicitacao
 
 # Import para eager loading
 from sqlalchemy.orm import joinedload
+from sqlalchemy import func
 import sqlalchemy as sa
 
 # Import para cálculos de ganhos
@@ -815,6 +816,14 @@ def tela_entregas():
             Entrega.status.in_(['pendente', 'em_rota'])
         ).order_by(Entrega.posicao_rota_otimizada.asc()).all()
 
+        # Contar entregas já finalizadas hoje para calcular posição na rota
+        hoje = datetime.now().date()
+        entregas_finalizadas_hoje = session.query(Entrega).filter(
+            Entrega.motoboy_id == st.session_state.motoboy_id,
+            Entrega.status.in_(['entregue', 'cliente_ausente', 'cancelado_cliente']),
+            func.date(Entrega.entregue_em) == hoje
+        ).count()
+
         # Verificar se há novas entregas para tocar som
         entregas_ids = [e.id for e in entregas]
         if 'ultimas_entregas_ids' not in st.session_state:
@@ -833,23 +842,17 @@ def tela_entregas():
         entregas_pendentes = [e for e in entregas if e.status == 'pendente']
 
         # ==================== STATUS GERAL ====================
-        # Calcular posição correta: quantas entregas já foram completadas nesta rota
-        entregas_concluidas = session.query(Entrega).filter(
-            Entrega.motoboy_id == st.session_state.motoboy_id,
-            Entrega.status.in_(['entregue', 'cliente_ausente', 'cancelado_cliente']),
-            Entrega.entregue_em >= datetime.now().replace(hour=0, minute=0, second=0)
-        ).count()
-
-        # Total de entregas na rota atual (pendentes + em_rota + concluídas hoje)
-        total_rota_hoje = total_entregas + entregas_concluidas
-
+        # Para entregas isoladas (1 pedido), mostrar 1 de 1
+        # Para rotas múltiplas, mostrar posição correta na rota atual
         if entregas_em_rota:
             entrega_atual = entregas_em_rota[0]
-            # Posição atual = entregas concluídas + 1 (a atual em andamento)
-            posicao_atual = entregas_concluidas + 1
+            # Calcular posição correta: finalizadas + 1, total = finalizadas + ativas
+            pedido_atual = entregas_finalizadas_hoje + 1
+            total_rota = entregas_finalizadas_hoje + total_entregas
+            restantes = total_entregas - 1
             st.markdown(f"""
             <div class="status-ocupado">
-                🏍️ EM ENTREGA - Pedido {posicao_atual} de {total_rota_hoje} ({total_entregas} restante{'s' if total_entregas > 1 else ''})
+                🏍️ EM ENTREGA - Pedido {pedido_atual} de {total_rota} ({restantes} restante{'s' if restantes != 1 else ''})
             </div>
             """, unsafe_allow_html=True)
         elif entregas_pendentes:
@@ -886,6 +889,7 @@ def tela_entregas():
                     primeira = entregas_pendentes[0]
                     primeira.status = 'em_rota'
                     primeira.atribuido_em = datetime.now()
+                    primeira.delivery_started_at = datetime.now()
                     primeira.pedido.status = 'saiu_entrega'
                     session.commit()
                     st.success("✅ Rota iniciada! Siga para a primeira entrega.")
@@ -904,14 +908,34 @@ def tela_entregas():
             st.markdown(f"### 🎯 Entrega Atual ({posicao_atual}/{total_entregas})")
 
             # Card da entrega atual
+            valor_cobrar = entrega_atual.pedido.valor_total or 0
+            distancia_entrega = entrega_atual.distancia_km or entrega_atual.pedido.distancia_restaurante_km or 0
+
+            # Calcular ganho estimado do motoboy se ainda não definido
+            valor_ganho_motoboy = entrega_atual.valor_motoboy
+            if not valor_ganho_motoboy:
+                # Buscar config do restaurante para calcular
+                config = session.query(ConfigRestaurante).filter(
+                    ConfigRestaurante.restaurante_id == st.session_state.restaurante_id
+                ).first()
+                if config:
+                    base = config.valor_base_motoboy or 5.0
+                    km_extra = config.valor_km_extra_motoboy or 1.0
+                    dist_base = config.distancia_base_km or 3.0
+                    km_excedente = max(0, distancia_entrega - dist_base)
+                    valor_ganho_motoboy = base + (km_excedente * km_extra)
+                else:
+                    valor_ganho_motoboy = entrega_atual.valor_entrega or 5.0
+
             st.markdown(f"""
             <div class="pedido-card" style="border-color: #00AA00; border-width: 3px;">
                 <h3>📦 Comanda #{entrega_atual.pedido.comanda}</h3>
                 <p><strong>👤 Cliente:</strong> {entrega_atual.pedido.cliente_nome}</p>
                 <p><strong>📞 Telefone:</strong> {entrega_atual.pedido.cliente_telefone or 'Não informado'}</p>
                 <p><strong>📍 Endereço:</strong> {entrega_atual.pedido.endereco_entrega}</p>
-                <p><strong>📏 Distância:</strong> {entrega_atual.distancia_km or entrega_atual.pedido.distancia_restaurante_km or 0:.1f} km</p>
-                <p><strong>💰 Ganho Estimado:</strong> R$ {entrega_atual.valor_motoboy or entrega_atual.valor_entrega or 0:.2f}</p>
+                <p><strong>📏 Distância:</strong> {distancia_entrega:.1f} km</p>
+                <p style="font-size: 1.3em; color: #00AA00;"><strong>💵 VALOR A COBRAR DO CLIENTE: R$ {valor_cobrar:.2f}</strong></p>
+                <p><strong>💰 Seu Ganho:</strong> R$ {valor_ganho_motoboy:.2f}</p>
             </div>
             """, unsafe_allow_html=True)
 
@@ -986,41 +1010,132 @@ def tela_entregas():
 
             elif estado_entrega == 'no_destino':
                 st.success("📍 Você chegou ao destino!")
+                valor_total = entrega_atual.pedido.valor_total or 0
 
-                # Botão principal: Entrega Concluída - key estável
-                if st.button("✅ ENTREGA CONCLUÍDA", use_container_width=True, type="primary", key=f"concluir_{entrega_atual.id}"):
-                    try:
-                        distancia_km = entrega_atual.distancia_km or entrega_atual.pedido.distancia_restaurante_km or 0
+                st.markdown(f"### 💵 Receber Pagamento: R$ {valor_total:.2f}")
 
-                        resultado = finalizar_entrega_motoboy(
-                            entrega_atual.id,
-                            distancia_km if distancia_km else None,
-                            session
-                        )
+                # Estado do pagamento
+                pagamento_state = st.session_state.get(f'pagamento_{entrega_atual.id}', None)
 
-                        if resultado['sucesso']:
-                            valor_ganho = resultado.get('valor_ganho', 0)
-                            st.success(f"✅ Entrega concluída! Ganho: R$ {valor_ganho:.2f}")
+                if not pagamento_state:
+                    st.markdown("**Selecione a forma de pagamento:**")
+                    col_pag1, col_pag2, col_pag3 = st.columns(3)
 
-                            # Limpar estado
-                            if f'estado_entrega_{entrega_atual.id}' in st.session_state:
-                                del st.session_state[f'estado_entrega_{entrega_atual.id}']
-
-                            # Verificar se há mais entregas
-                            proximas = [e for e in entregas if e.id != entrega_atual.id and e.status == 'pendente']
-                            if proximas:
-                                st.info(f"📦 Ainda há {len(proximas)} entrega(s) restante(s)!")
-                            else:
-                                st.balloons()
-                                st.success("🎉 Todas as entregas concluídas!")
-
-                            time.sleep(2)
+                    with col_pag1:
+                        if st.button("💵 Dinheiro", use_container_width=True, key=f"pag_din_{entrega_atual.id}"):
+                            st.session_state[f'pagamento_{entrega_atual.id}'] = 'dinheiro'
                             st.rerun()
-                        else:
-                            st.error(f"Erro: {resultado.get('erro', 'Desconhecido')}")
-                    except Exception as e:
-                        session.rollback()
-                        st.error(f"Erro: {str(e)}")
+                    with col_pag2:
+                        if st.button("💳 Cartão/Pix", use_container_width=True, key=f"pag_cart_{entrega_atual.id}"):
+                            st.session_state[f'pagamento_{entrega_atual.id}'] = 'cartao'
+                            st.rerun()
+                    with col_pag3:
+                        if st.button("🔀 Misto", use_container_width=True, key=f"pag_misto_{entrega_atual.id}"):
+                            st.session_state[f'pagamento_{entrega_atual.id}'] = 'misto'
+                            st.rerun()
+
+                elif pagamento_state == 'dinheiro':
+                    st.info("💵 Pagamento em Dinheiro")
+                    valor_recebido = st.number_input("Valor recebido do cliente (R$):", min_value=valor_total, value=valor_total, step=5.0, key=f"val_rec_{entrega_atual.id}")
+                    troco = valor_recebido - valor_total
+                    if troco > 0:
+                        st.warning(f"💰 **TROCO A DAR: R$ {troco:.2f}**")
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Confirmar", use_container_width=True, type="primary", key=f"conf_din_{entrega_atual.id}"):
+                            st.session_state[f'pagamento_confirmado_{entrega_atual.id}'] = {
+                                'forma': 'Dinheiro', 'valor_dinheiro': valor_total, 'valor_cartao': 0
+                            }
+                            st.rerun()
+                    with col2:
+                        if st.button("↩️ Voltar", use_container_width=True, key=f"volt_din_{entrega_atual.id}"):
+                            del st.session_state[f'pagamento_{entrega_atual.id}']
+                            st.rerun()
+
+                elif pagamento_state == 'cartao':
+                    st.info("💳 Pagamento em Cartão/Pix")
+                    st.success(f"Valor: R$ {valor_total:.2f}")
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Pagamento Recebido", use_container_width=True, type="primary", key=f"conf_cart_{entrega_atual.id}"):
+                            st.session_state[f'pagamento_confirmado_{entrega_atual.id}'] = {
+                                'forma': 'Cartão/Pix', 'valor_dinheiro': 0, 'valor_cartao': valor_total
+                            }
+                            st.rerun()
+                    with col2:
+                        if st.button("↩️ Voltar", use_container_width=True, key=f"volt_cart_{entrega_atual.id}"):
+                            del st.session_state[f'pagamento_{entrega_atual.id}']
+                            st.rerun()
+
+                elif pagamento_state == 'misto':
+                    st.info("🔀 Pagamento Misto (Dinheiro + Cartão)")
+                    valor_cartao = st.number_input("Valor em Cartão/Pix (R$):", min_value=0.0, max_value=valor_total, value=0.0, step=5.0, key=f"val_cart_{entrega_atual.id}")
+                    valor_dinheiro = valor_total - valor_cartao
+                    st.markdown(f"**💵 Restante em Dinheiro: R$ {valor_dinheiro:.2f}**")
+
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Confirmar", use_container_width=True, type="primary", key=f"conf_misto_{entrega_atual.id}"):
+                            st.session_state[f'pagamento_confirmado_{entrega_atual.id}'] = {
+                                'forma': 'Misto', 'valor_dinheiro': valor_dinheiro, 'valor_cartao': valor_cartao
+                            }
+                            st.rerun()
+                    with col2:
+                        if st.button("↩️ Voltar", use_container_width=True, key=f"volt_misto_{entrega_atual.id}"):
+                            del st.session_state[f'pagamento_{entrega_atual.id}']
+                            st.rerun()
+
+                # Após confirmação do pagamento, mostrar botão de finalizar
+                pagamento_confirmado = st.session_state.get(f'pagamento_confirmado_{entrega_atual.id}')
+                if pagamento_confirmado:
+                    st.success(f"✅ Pagamento: {pagamento_confirmado['forma']}")
+                    if pagamento_confirmado['valor_dinheiro'] > 0:
+                        st.markdown(f"💵 Dinheiro: R$ {pagamento_confirmado['valor_dinheiro']:.2f}")
+                    if pagamento_confirmado['valor_cartao'] > 0:
+                        st.markdown(f"💳 Cartão/Pix: R$ {pagamento_confirmado['valor_cartao']:.2f}")
+
+                    st.markdown("---")
+                    if st.button("✅ FINALIZAR ENTREGA", use_container_width=True, type="primary", key=f"concluir_{entrega_atual.id}"):
+                        try:
+                            distancia_km = entrega_atual.distancia_km or entrega_atual.pedido.distancia_restaurante_km or 0
+
+                            # Salvar forma de pagamento real no pedido
+                            entrega_atual.pedido.forma_pagamento_real = pagamento_confirmado['forma']
+                            entrega_atual.pedido.valor_pago_dinheiro = pagamento_confirmado['valor_dinheiro']
+                            entrega_atual.pedido.valor_pago_cartao = pagamento_confirmado['valor_cartao']
+                            session.commit()
+
+                            resultado = finalizar_entrega_motoboy(
+                                entrega_atual.id,
+                                distancia_km if distancia_km else None,
+                                session
+                            )
+
+                            if resultado['sucesso']:
+                                valor_ganho = resultado.get('valor_ganho', 0)
+                                st.success(f"✅ Entrega concluída! Ganho: R$ {valor_ganho:.2f}")
+
+                                # Limpar estados
+                                for key in [f'estado_entrega_{entrega_atual.id}', f'pagamento_{entrega_atual.id}', f'pagamento_confirmado_{entrega_atual.id}']:
+                                    if key in st.session_state:
+                                        del st.session_state[key]
+
+                                proximas = [e for e in entregas if e.id != entrega_atual.id and e.status == 'pendente']
+                                if proximas:
+                                    st.info(f"📦 Ainda há {len(proximas)} entrega(s) restante(s)!")
+                                else:
+                                    st.balloons()
+                                    st.success("🎉 Todas as entregas concluídas!")
+
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                st.error(f"Erro: {resultado.get('erro', 'Desconhecido')}")
+                        except Exception as e:
+                            session.rollback()
+                            st.error(f"Erro: {str(e)}")
 
                 st.markdown("---")
 
@@ -1392,28 +1507,29 @@ def tela_perfil():
 
         st.markdown("---")
 
-        # Estatísticas
-        st.markdown("### 📊 Estatísticas")
+        # Alterar Senha
+        st.markdown("### 🔐 Alterar Senha")
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Entregas", motoboy.total_entregas or 0)
-        with col2:
-            st.metric("Total Ganho", f"R$ {motoboy.total_ganhos or 0:.2f}")
-        with col3:
-            st.metric("Total KM", f"{motoboy.total_km or 0:.1f}")
+        with st.expander("Clique para alterar sua senha"):
+            senha_atual = st.text_input("Senha Atual", type="password", key="senha_atual")
+            nova_senha = st.text_input("Nova Senha", type="password", key="nova_senha")
+            confirmar_senha = st.text_input("Confirmar Nova Senha", type="password", key="confirmar_senha")
 
-        # Estatísticas do dia
-        stats = obter_estatisticas_motoboy(motoboy.id, session)
-        if stats:
-            st.markdown("#### Hoje")
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Entregas Hoje", stats['entregas_hoje'])
-            with col2:
-                st.metric("Ganho Hoje", f"R$ {stats['ganhos_hoje']:.2f}")
-            with col3:
-                st.metric("KM Hoje", f"{stats['km_hoje']:.1f}")
+            if st.button("Salvar Nova Senha", type="primary"):
+                if not senha_atual or not nova_senha or not confirmar_senha:
+                    st.error("Preencha todos os campos")
+                elif not motoboy.verificar_senha(senha_atual):
+                    st.error("Senha atual incorreta")
+                elif nova_senha != confirmar_senha:
+                    st.error("As senhas não conferem")
+                elif len(nova_senha) < 4:
+                    st.error("A nova senha deve ter no mínimo 4 caracteres")
+                else:
+                    motoboy.set_senha(nova_senha)
+                    session.commit()
+                    st.success("Senha alterada com sucesso!")
+                    time.sleep(1)
+                    st.rerun()
 
         st.markdown("---")
 
@@ -1437,6 +1553,16 @@ def tela_perfil():
 def menu_inferior():
     st.markdown("---")
 
+    # Verificar se motoboy pode ver ganhos
+    session = get_db_session()
+    try:
+        config = session.query(ConfigRestaurante).filter(
+            ConfigRestaurante.restaurante_id == st.session_state.restaurante_id
+        ).first()
+        permitir_ver_saldo = config.permitir_ver_saldo_motoboy if config else True
+    finally:
+        session.close()
+
     # Menu simplificado com 3 opções (removido Mapa)
     col1, col2, col3 = st.columns(3)
 
@@ -1446,9 +1572,25 @@ def menu_inferior():
             st.rerun()
 
     with col2:
-        if st.button("💰\nGanhos", use_container_width=True, key="menu_ganhos"):
-            st.session_state.tela_atual = "ganhos"
-            st.rerun()
+        if permitir_ver_saldo:
+            if st.button("💰\nGanhos", use_container_width=True, key="menu_ganhos"):
+                st.session_state.tela_atual = "ganhos"
+                st.rerun()
+        else:
+            # Botão desabilitado com aparência apagada
+            st.markdown("""
+            <style>
+            .btn-disabled {
+                background-color: #ccc !important;
+                color: #888 !important;
+                cursor: not-allowed !important;
+                opacity: 0.6;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            if st.button("💰\nGanhos", use_container_width=True, key="menu_ganhos", disabled=True):
+                pass
+            st.caption("🔒 Desabilitado")
 
     with col3:
         if st.button("👤\nPerfil", use_container_width=True, key="menu_perfil"):

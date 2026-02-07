@@ -20,7 +20,7 @@ O Super Food e composto por **4 aplicacoes principais**:
 | **Dashboard Restaurante** | Streamlit | 8502 | Gestao completa do restaurante |
 | **App Motoboy (PWA)** | Streamlit | 8503 | App mobile para entregadores |
 
-**Destaques Tecnicos (v2.8.2 - 03/02/2026):**
+**Destaques Tecnicos (v2.8.3 - 07/02/2026):**
 - FastAPI como backend principal (API REST + WebSockets)
 - Banco de dados unificado em SQLAlchemy ORM
 - Sistema de selecao justa de motoboys com rotacao
@@ -352,6 +352,12 @@ alembic current
 # Criar nova migration (apos alterar models.py)
 alembic revision --autogenerate -m "descricao"
 ```
+
+## Changelog v2.8.3 (07/02/2026)
+
+### Melhorias
+- **Ranking Antifraude** - Configuracao para permitir/bloquear finalizacao de entrega fora do raio de 50m
+- **UI Configuracoes** - Checkbox e aviso visual para opcao de antifraude por localizacao
 
 ## Changelog v2.8.2 (03/02/2026)
 

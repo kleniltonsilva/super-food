@@ -388,61 +388,40 @@ def main():
             criar_site = st.checkbox("Criar Site do Cliente Automaticamente", value=True, help="Cria site público para pedidos online")
 
             if criar_site:
-                col1, col2 = st.columns(2)
-    
-                with col1:
-                    tipo_restaurante = st.selectbox(
-                        "Tipo de Restaurante *",
-                        ["pizzaria", "hamburgueria", "japones", "churrascaria", "la_carte", "acai", "marmitex", "geral"],
-                        format_func=lambda x: {
-                            "pizzaria": "🍕 Pizzaria",
-                            "hamburgueria": "🍔 Hamburgueria",
-                            "japones": "🍣 Culinária Japonesa",
-                            "churrascaria": "🥩 Churrascaria",
-                            "la_carte": "🍽️ À La Carte",
-                            "acai": "🍇 Açaí/Sorveteria",
-                            "marmitex": "🍱 Marmitex",
-                            "geral": "🍴 Geral"
-                        }.get(x, x),
-                        help="Define o tipo de cardápio e variações de produtos"
-                    )
-        
-                    cor_primaria = st.color_picker("Cor Primária do Site", "#FF6B35", help="Cor principal (botões, destaques)")
-        
-                    whatsapp = st.text_input(
-                         "WhatsApp (com DDD)",
-                          placeholder="11999999999",
-                          help="Aparecerá como botão flutuante na página inicial"
-                  )
-    
-                with col2:
-                    pedido_minimo = st.number_input(
-                        "Pedido Mínimo (R$)",
-                        min_value=0.0,
-                        value=15.0,
-                        step=5.0,
-                        help="Valor mínimo para aceitar pedidos"
-                    )
-        
-                    cor_secundaria = st.color_picker("Cor Secundária", "#004E89", help="Cor de apoio")
-        
-                    tempo_entrega = st.number_input(
-                       "Tempo Estimado de Entrega (min)",
-                        min_value=10,
-                        max_value=180,
-                        value=50,
-                        step=5
-                    )
-        
-                    tempo_retirada = st.number_input(
-                       "Tempo Estimado para Retirada (min)",
-                        min_value=5,
-                        max_value=120,
-                        value=20,
-                        step=5
-                    )
-    
-                st.info(f"💡 **Tipo selecionado: {tipo_restaurante.upper()}** - Categorias padrão serão criadas automaticamente")
+                tipo_restaurante = st.selectbox(
+                    "Tipo de Restaurante *",
+                    ["pizzaria", "hamburgueria", "japones", "churrascaria", "la_carte", "acai", "marmitex", "esfiharia", "salgados_doces", "fitness", "bebidas", "geral"],
+                    format_func=lambda x: {
+                        "pizzaria": "🍕 Pizzaria",
+                        "hamburgueria": "🍔 Hamburgueria",
+                        "japones": "🍣 Culinária Japonesa",
+                        "churrascaria": "🥩 Churrascaria",
+                        "la_carte": "🍽️ À La Carte",
+                        "acai": "🍇 Açaí/Sorveteria",
+                        "marmitex": "🍱 Marmitex",
+                        "esfiharia": "😋 Esfiharia",
+                        "salgados_doces": "🥟 Salgados e Doces",
+                        "fitness": "🥗 Fitness",
+                        "bebidas": "🍺 Bebidas",
+                        "geral": "🍴 Geral"
+                    }.get(x, x),
+                    help="Define o tipo de cardápio e categorias padrão"
+                )
+
+                whatsapp = st.text_input(
+                    "WhatsApp (com DDD)",
+                    placeholder="11999999999",
+                    help="Aparecerá como botão flutuante na página inicial"
+                )
+
+                # Valores padrão (configuráveis no painel do restaurante)
+                cor_primaria = "#FF6B35"
+                cor_secundaria = "#004E89"
+                pedido_minimo = 0.0
+                tempo_entrega = 50
+                tempo_retirada = 20
+
+                st.info(f"💡 **Tipo selecionado: {tipo_restaurante.upper()}** - Categorias padrão serão criadas. Configurações de tempo e valor mínimo podem ser ajustadas no painel do restaurante.")
 
 
             st.markdown("---")

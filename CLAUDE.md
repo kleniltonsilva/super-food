@@ -13,7 +13,7 @@ Stack:
 - SQLAlchemy 2.0 + Alembic
 - SQLite (dev) / PostgreSQL (prod)
 
-Versão atual: **2.8.2 (03/02/2026)**
+Versão atual: **2.8.3 (07/02/2026)**
 
 ---
 

@@ -754,7 +754,30 @@ def historico_pedidos():
             st.metric("Total no período", f"R$ {total:.2f}")
 
             for p in pedidos:
-                st.text(f"#{p.comanda} | {p.cliente_nome} | {p.status} | R$ {p.valor_total:.2f}")
+                # Status da entrega
+                status_entrega = p.status.upper()
+                if p.entrega:
+                    if p.entrega.motivo_finalizacao:
+                        status_entrega = p.entrega.motivo_finalizacao.upper().replace('_', ' ')
+
+                with st.expander(f"#{p.comanda} - {p.cliente_nome} - {status_entrega}"):
+                    st.markdown(f"**Tipo:** {p.tipo}")
+                    st.markdown(f"**Cliente:** {p.cliente_nome}")
+                    st.markdown(f"**Endereço:** {p.endereco_entrega or 'N/A'}")
+                    st.markdown(f"**Status:** {status_entrega}")
+                    st.markdown(f"**Valor:** R$ {p.valor_total:.2f}")
+
+                    # Forma de pagamento detalhada (registrada pelo motoboy)
+                    if p.forma_pagamento_real:
+                        st.markdown("---")
+                        st.markdown("**💳 Forma de Pagamento ao Motoboy:**")
+                        st.markdown(f"  • Método: {p.forma_pagamento_real}")
+                        if p.valor_pago_dinheiro and p.valor_pago_dinheiro > 0:
+                            st.markdown(f"  • 💵 Dinheiro: R$ {p.valor_pago_dinheiro:.2f}")
+                        if p.valor_pago_cartao and p.valor_pago_cartao > 0:
+                            st.markdown(f"  • 💳 Cartão/Pix: R$ {p.valor_pago_cartao:.2f}")
+                    elif p.forma_pagamento:
+                        st.markdown(f"**Pagamento previsto:** {p.forma_pagamento}")
         else:
             st.info("Nenhum pedido no período.")
     finally:
@@ -764,15 +787,19 @@ def historico_pedidos():
 # ==================== MOTOBOYS ====================
 def tela_motoboys():
     st.title("🏍️ Gerenciamento de Motoboys")
-    tabs = st.tabs(["📋 Motoboys Ativos", "🗺️ Mapa em Tempo Real", "🆕 Solicitações", "➕ Cadastrar Manual"])
+    tabs = st.tabs(["📋 Motoboys Ativos", "🏆 Ranking", "💸 Pagamentos", "🗺️ Mapa", "🆕 Solicitações", "➕ Cadastrar"])
 
     with tabs[0]:
         listar_motoboys_ativos()
     with tabs[1]:
-        mapa_motoboys_tempo_real()
+        ranking_motoboys()
     with tabs[2]:
-        listar_solicitacoes()
+        pagamento_motoboys()
     with tabs[3]:
+        mapa_motoboys_tempo_real()
+    with tabs[4]:
+        listar_solicitacoes()
+    with tabs[5]:
         cadastrar_motoboy_manual()
 
 
@@ -1250,6 +1277,246 @@ def cadastrar_motoboy_manual():
                     session.close()
 
 
+def ranking_motoboys():
+    """Ranking de motoboys com estatísticas e valores"""
+    st.subheader("🏆 Ranking de Motoboys")
+    rest_id = st.session_state.restaurante_id
+    session = get_db_session()
+
+    try:
+        config = session.query(ConfigRestaurante).filter(
+            ConfigRestaurante.restaurante_id == rest_id
+        ).first()
+
+        # Aviso de antifraude
+        if config and config.permitir_finalizar_fora_raio:
+            st.warning("⚠️ **Ranking sem validação antifraude por localização** - Motoboys podem finalizar entregas fora do raio de 50m do endereço.")
+        else:
+            st.success("✅ **Ranking com validação antifraude** - Motoboys só podem finalizar entregas dentro do raio de 50m do endereço.")
+
+        # Filtro de período
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col1:
+            data_inicio = st.date_input("De", value=datetime.now().replace(day=1))
+        with col2:
+            data_fim = st.date_input("Até", value=datetime.now())
+        with col3:
+            st.markdown("")
+            st.markdown("")
+            atualizar = st.button("🔄 Atualizar", use_container_width=True)
+
+        st.markdown("---")
+
+        # Buscar motoboys com estatísticas
+        from sqlalchemy import func
+        from sqlalchemy.orm import joinedload
+
+        motoboys = session.query(Motoboy).filter(
+            Motoboy.restaurante_id == rest_id,
+            Motoboy.status == 'ativo'
+        ).all()
+
+        if not motoboys:
+            st.info("Nenhum motoboy ativo.")
+            return
+
+        ranking_data = []
+        for motoboy in motoboys:
+            # Buscar entregas no período
+            entregas = session.query(Entrega).join(Pedido).filter(
+                Pedido.restaurante_id == rest_id,
+                Entrega.motoboy_id == motoboy.id,
+                Entrega.status == 'entregue',
+                Entrega.entregue_em >= datetime.combine(data_inicio, datetime.min.time()),
+                Entrega.entregue_em <= datetime.combine(data_fim, datetime.max.time())
+            ).all()
+
+            total_entregas = len(entregas)
+            valor_entregas = sum(e.valor_motoboy or 0 for e in entregas)
+            valor_extras = sum(e.valor_extra_motoboy or 0 for e in entregas)
+            valor_lanche = sum(e.valor_lanche or 0 for e in entregas)
+            valor_diaria = sum(e.valor_diaria or 0 for e in entregas)
+            valor_total = valor_entregas + valor_extras + valor_lanche + valor_diaria
+
+            # Tempo médio de entrega
+            tempos = []
+            for e in entregas:
+                if e.delivery_started_at and e.delivery_finished_at:
+                    delta = (e.delivery_finished_at - e.delivery_started_at).total_seconds() / 60
+                    if delta > 0:
+                        tempos.append(delta)
+
+            tempo_medio = sum(tempos) / len(tempos) if tempos else 0
+
+            # Entregas fora do raio
+            fora_raio = len([e for e in entregas if e.finalizado_fora_raio])
+
+            ranking_data.append({
+                'id': motoboy.id,
+                'nome': motoboy.nome,
+                'cpf': motoboy.cpf,
+                'total_entregas': total_entregas,
+                'tempo_medio': tempo_medio,
+                'valor_entregas': valor_entregas,
+                'valor_extras': valor_extras,
+                'valor_lanche': valor_lanche,
+                'valor_diaria': valor_diaria,
+                'valor_total': valor_total,
+                'fora_raio': fora_raio,
+                'disponivel': motoboy.disponivel,
+                'em_rota': motoboy.em_rota
+            })
+
+        # Ordenar por total de entregas (desc)
+        ranking_data.sort(key=lambda x: x['total_entregas'], reverse=True)
+
+        # Exibir ranking
+        for i, m in enumerate(ranking_data, 1):
+            medal = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else f"#{i}"))
+            status = "🟢" if m['disponivel'] else "⚫"
+
+            with st.expander(f"{medal} {m['nome']} - {m['total_entregas']} entregas | R$ {m['valor_total']:.2f}"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown("**📊 Estatísticas**")
+                    st.markdown(f"Entregas: **{m['total_entregas']}**")
+                    st.markdown(f"Tempo médio: **{m['tempo_medio']:.0f} min**")
+                    if m['fora_raio'] > 0:
+                        st.markdown(f"⚠️ Fora do raio: **{m['fora_raio']}**")
+                with col2:
+                    st.markdown("**💰 Valores**")
+                    st.markdown(f"Base entregas: R$ {m['valor_entregas']:.2f}")
+                    st.markdown(f"Extras km: R$ {m['valor_extras']:.2f}")
+                    st.markdown(f"Alimentação: R$ {m['valor_lanche']:.2f}")
+                    st.markdown(f"Diárias: R$ {m['valor_diaria']:.2f}")
+                with col3:
+                    st.markdown("**💵 Total**")
+                    st.metric("", f"R$ {m['valor_total']:.2f}")
+                    if m['cpf']:
+                        st.caption(f"CPF: {m['cpf'][:3]}.***.***-{m['cpf'][-2:]}")
+                    else:
+                        st.caption("⚠️ Sem CPF (dados não preservados)")
+
+    finally:
+        session.close()
+
+
+def pagamento_motoboys():
+    """Aba de pagamento dos motoboys"""
+    st.subheader("💸 Realizar Pagamento dos Motoboys")
+    rest_id = st.session_state.restaurante_id
+    session = get_db_session()
+
+    try:
+        config = session.query(ConfigRestaurante).filter(
+            ConfigRestaurante.restaurante_id == rest_id
+        ).first()
+
+        # Filtro de período
+        col1, col2 = st.columns(2)
+        with col1:
+            data_inicio = st.date_input("Período de", value=datetime.now().replace(day=1), key="pag_inicio")
+        with col2:
+            data_fim = st.date_input("Até", value=datetime.now(), key="pag_fim")
+
+        st.markdown("---")
+
+        # Buscar motoboys
+        motoboys = session.query(Motoboy).filter(
+            Motoboy.restaurante_id == rest_id,
+            Motoboy.status == 'ativo'
+        ).order_by(Motoboy.nome).all()
+
+        if not motoboys:
+            st.info("Nenhum motoboy ativo.")
+            return
+
+        # Seleção de motoboys
+        st.markdown("### Selecionar Motoboys")
+        motoboys_selecionados = st.multiselect(
+            "Escolha os motoboys para pagamento:",
+            options=[(m.id, m.nome) for m in motoboys],
+            format_func=lambda x: x[1]
+        )
+
+        if not motoboys_selecionados:
+            st.info("Selecione pelo menos um motoboy.")
+            return
+
+        st.markdown("---")
+
+        # Para cada motoboy selecionado, exibir detalhes
+        total_geral = 0
+        for motoboy_id, motoboy_nome in motoboys_selecionados:
+            entregas = session.query(Entrega).join(Pedido).filter(
+                Pedido.restaurante_id == rest_id,
+                Entrega.motoboy_id == motoboy_id,
+                Entrega.status == 'entregue',
+                Entrega.entregue_em >= datetime.combine(data_inicio, datetime.min.time()),
+                Entrega.entregue_em <= datetime.combine(data_fim, datetime.max.time())
+            ).all()
+
+            valor_base = sum(e.valor_base_motoboy or 0 for e in entregas)
+            valor_extras = sum(e.valor_extra_motoboy or 0 for e in entregas)
+            valor_lanche = sum(e.valor_lanche or 0 for e in entregas)
+            valor_diaria = sum(e.valor_diaria or 0 for e in entregas)
+            valor_total = valor_base + valor_extras + valor_lanche + valor_diaria
+            total_geral += valor_total
+
+            with st.expander(f"📋 {motoboy_nome} - {len(entregas)} entregas | R$ {valor_total:.2f}", expanded=True):
+                # Resumo de valores
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    st.metric("Taxa Base", f"R$ {valor_base:.2f}", help="Valor base por entrega")
+                with col2:
+                    st.metric("Extras km", f"R$ {valor_extras:.2f}", help="Adicional por km excedente")
+                with col3:
+                    st.metric("Alimentação", f"R$ {valor_lanche:.2f}", help="Valor para lanche")
+                with col4:
+                    st.metric("Diárias", f"R$ {valor_diaria:.2f}", help="Taxa diária fixa")
+
+                st.markdown(f"**💵 TOTAL A PAGAR: R$ {valor_total:.2f}**")
+
+                # Lista de entregas
+                with st.expander("📜 Ver lista de entregas"):
+                    if entregas:
+                        for e in entregas:
+                            pedido = e.pedido
+                            data_str = e.entregue_em.strftime('%d/%m %H:%M') if e.entregue_em else 'N/A'
+                            st.markdown(f"- **#{pedido.comanda}** | {data_str} | {e.distancia_km or 0:.1f}km | R$ {e.valor_motoboy or 0:.2f}")
+                    else:
+                        st.info("Nenhuma entrega no período.")
+
+                # Botão de imprimir relatório
+                if st.button(f"🖨️ Imprimir Relatório", key=f"print_{motoboy_id}"):
+                    st.markdown("---")
+                    st.markdown(f"## 📄 Relatório de Pagamento")
+                    st.markdown(f"**Motoboy:** {motoboy_nome}")
+                    st.markdown(f"**Período:** {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}")
+                    st.markdown(f"**Total de entregas:** {len(entregas)}")
+                    st.markdown("---")
+                    st.markdown(f"| Taxa Base | Extras km | Alimentação | Diárias | **TOTAL** |")
+                    st.markdown(f"|---|---|---|---|---|")
+                    st.markdown(f"| R$ {valor_base:.2f} | R$ {valor_extras:.2f} | R$ {valor_lanche:.2f} | R$ {valor_diaria:.2f} | **R$ {valor_total:.2f}** |")
+                    st.markdown("---")
+                    st.markdown("**Lista de Entregas:**")
+                    for e in entregas:
+                        pedido = e.pedido
+                        data_str = e.entregue_em.strftime('%d/%m/%Y %H:%M') if e.entregue_em else 'N/A'
+                        st.markdown(f"- {data_str} | Pedido #{pedido.comanda} | {e.distancia_km or 0:.1f}km | R$ {e.valor_motoboy or 0:.2f}")
+                    st.markdown("---")
+                    st.caption("Use Ctrl+P para imprimir esta página.")
+
+        # Total geral
+        st.markdown("---")
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            st.metric("💰 TOTAL GERAL", f"R$ {total_geral:.2f}")
+
+    finally:
+        session.close()
+
+
 # ==================== CAIXA ====================
 def tela_caixa():
     st.title("💰 Caixa")
@@ -1410,7 +1677,7 @@ def tela_configuracoes():
             st.error("Configuração não encontrada")
             return
 
-        tabs = st.tabs(["💰 Taxas", "🚀 Modo de Despacho", "🕐 Horários", "📍 Endereço"])
+        tabs = st.tabs(["💰 Taxas", "🏍️ Motoboys", "🚀 Modo de Despacho", "🕐 Horários", "📍 Endereço"])
 
         with tabs[0]:
             with st.form("form_taxas"):
@@ -1430,6 +1697,20 @@ def tela_configuracoes():
                 with col2:
                     moto_km = st.number_input("Valor/km Extra (R$)", value=config.valor_km_extra_motoboy or 1.0)
 
+                permitir_ver_saldo = st.checkbox(
+                    "Motoboys podem ver saldo acumulado",
+                    value=config.permitir_ver_saldo_motoboy if config.permitir_ver_saldo_motoboy is not None else True,
+                    help="Quando desmarcado, os motoboys não poderão visualizar seus ganhos e estatísticas no app"
+                )
+
+                permitir_fora_raio = st.checkbox(
+                    "Permitir finalizar entrega fora do raio de 50m",
+                    value=config.permitir_finalizar_fora_raio if config.permitir_finalizar_fora_raio is not None else False,
+                    help="Quando ativado, motoboys podem finalizar entregas mesmo fora do raio de 50m do endereço. ATENÇÃO: O ranking não será atestado como antifraude por localização."
+                )
+                if permitir_fora_raio:
+                    st.warning("⚠️ O ranking de motoboys não será atestado como antifraude por localização")
+
                 raio = st.number_input("Raio de Entrega (km)", value=config.raio_entrega_km or 10.0)
                 max_pedidos = st.number_input("Máx. Pedidos/Rota", value=config.max_pedidos_por_rota or 5, min_value=1, max_value=10)
 
@@ -1439,6 +1720,8 @@ def tela_configuracoes():
                     config.taxa_km_extra = taxa_km
                     config.valor_base_motoboy = moto_base
                     config.valor_km_extra_motoboy = moto_km
+                    config.permitir_ver_saldo_motoboy = permitir_ver_saldo
+                    config.permitir_finalizar_fora_raio = permitir_fora_raio
                     config.raio_entrega_km = raio
                     config.max_pedidos_por_rota = max_pedidos
                     session.commit()

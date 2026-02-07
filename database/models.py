@@ -360,6 +360,10 @@ class ConfigRestaurante(Base):
     # Configurações de rota
     max_pedidos_por_rota = Column(Integer, default=5)   # Máximo de pedidos por rota
     permitir_ver_saldo_motoboy = Column(Boolean, default=True)  # Motoboy pode ver seu saldo
+
+    # Validação antifraude por localização (raio de 50m)
+    permitir_finalizar_fora_raio = Column(Boolean, default=False)  # Se True, ranking não é antifraude
+    distancia_base_motoboy_km = Column(Float, default=3.0)  # Km incluídos no valor base do motoboy
     # Horários
     horario_abertura = Column(String(5), default='18:00')
     horario_fechamento = Column(String(5), default='23:00')
@@ -384,6 +388,9 @@ class Motoboy(Base):
     status = Column(String(20), default='pendente')  # pendente, ativo, inativo, excluido
     capacidade_entregas = Column(Integer, default=3)
     ultimo_status_online = Column(DateTime)
+
+    # Identificação (CPF preserva dados ao excluir)
+    cpf = Column(String(11))  # CPF opcional - preserva histórico financeiro
 
     # GPS
     latitude_atual = Column(Float)
@@ -479,6 +486,10 @@ class Pedido(Base):
     valor_total = Column(Float, nullable=False, default=0.0)
     forma_pagamento = Column(String(50))
     troco_para = Column(Float)
+    # Pagamento real (registrado pelo motoboy na entrega)
+    forma_pagamento_real = Column(String(50))  # Dinheiro, Cartão/Pix, Misto
+    valor_pago_dinheiro = Column(Float, default=0.0)
+    valor_pago_cartao = Column(Float, default=0.0)
     cupom_desconto = Column(String(50))
     valor_desconto = Column(Float, default=0.0)
     # Rotas
@@ -547,6 +558,13 @@ class Entrega(Base):
     valor_motoboy = Column(Float, default=0.0)          # Valor pago ao motoboy
     valor_base_motoboy = Column(Float, default=0.0)     # Parte base do pagamento
     valor_extra_motoboy = Column(Float, default=0.0)    # Parte extra do pagamento
+    valor_lanche = Column(Float, default=0.0)           # Valor alimentação
+    valor_diaria = Column(Float, default=0.0)           # Valor da taxa diária
+
+    # Timestamps de entrega (para ranking)
+    delivery_started_at = Column(DateTime)              # Início da entrega
+    delivery_finished_at = Column(DateTime)             # Fim da entrega
+    finalizado_fora_raio = Column(Boolean, default=False)  # Finalizou fora do raio de 50m
 
     status = Column(String(50), default='pendente')
     # Motivo de finalização (para entregas canceladas/cliente ausente)
@@ -664,4 +682,111 @@ class GPSMotoboy(Base):
     __table_args__ = (
         Index('idx_gps_motoboy_timestamp', 'motoboy_id', 'timestamp'),
         Index('idx_gps_restaurante', 'restaurante_id', 'timestamp'),
+    )
+
+
+# ==================== BAIRROS ENTREGA (SITE CLIENTE) ====================
+class BairroEntrega(Base):
+    """Bairros atendidos pelo restaurante com taxa e tempo de entrega"""
+    __tablename__ = "bairros_entrega"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    nome = Column(String(100), nullable=False)
+    taxa_entrega = Column(Float, nullable=False, default=0.0)
+    tempo_estimado_min = Column(Integer, nullable=False, default=30)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (
+        Index('idx_bairro_restaurante', 'restaurante_id', 'ativo'),
+        Index('idx_bairro_nome', 'restaurante_id', 'nome'),
+    )
+
+
+# ==================== PONTOS FIDELIDADE (SITE CLIENTE) ====================
+class PontosFidelidade(Base):
+    """Saldo de pontos de fidelidade por cliente"""
+    __tablename__ = "pontos_fidelidade"
+    id = Column(Integer, primary_key=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), unique=True, nullable=False)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    pontos_total = Column(Integer, default=0, nullable=False)
+    pontos_disponiveis = Column(Integer, default=0, nullable=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamentos
+    cliente = relationship("Cliente")
+    __table_args__ = (
+        Index('idx_pontos_cliente', 'cliente_id'),
+        Index('idx_pontos_restaurante', 'restaurante_id'),
+    )
+
+
+# ==================== TRANSACOES FIDELIDADE (SITE CLIENTE) ====================
+class TransacaoFidelidade(Base):
+    """Historico de transacoes de pontos (ganhos/resgatados)"""
+    __tablename__ = "transacoes_fidelidade"
+    id = Column(Integer, primary_key=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
+    tipo = Column(String(20), nullable=False)  # 'ganho' ou 'resgatado'
+    pontos = Column(Integer, nullable=False)
+    descricao = Column(Text)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamentos
+    cliente = relationship("Cliente")
+    pedido = relationship("Pedido")
+    __table_args__ = (
+        Index('idx_transacao_cliente', 'cliente_id'),
+        Index('idx_transacao_restaurante', 'restaurante_id'),
+        Index('idx_transacao_pedido', 'pedido_id'),
+    )
+
+
+# ==================== PREMIOS FIDELIDADE (SITE CLIENTE) ====================
+class PremioFidelidade(Base):
+    """Premios resgatáveis com pontos de fidelidade"""
+    __tablename__ = "premios_fidelidade"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    nome = Column(String(150), nullable=False)
+    descricao = Column(Text)
+    custo_pontos = Column(Integer, nullable=False)
+    tipo_premio = Column(String(50), nullable=False)  # 'desconto', 'item_gratis', 'brinde'
+    valor_premio = Column(String(200))  # Valor do desconto ou nome do item
+    ordem_exibicao = Column(Integer, default=0)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (
+        Index('idx_premio_restaurante', 'restaurante_id', 'ativo'),
+    )
+
+
+# ==================== PROMOCOES (SITE CLIENTE) ====================
+class Promocao(Base):
+    """Promocoes e cupons de desconto"""
+    __tablename__ = "promocoes"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    nome = Column(String(150), nullable=False)
+    descricao = Column(Text)
+    tipo_desconto = Column(String(20), nullable=False)  # 'percentual' ou 'fixo'
+    valor_desconto = Column(Float, nullable=False)
+    valor_pedido_minimo = Column(Float, default=0.0)
+    desconto_maximo = Column(Float)  # Para descontos percentuais
+    codigo_cupom = Column(String(50))  # Código para digitar
+    data_inicio = Column(DateTime)
+    data_fim = Column(DateTime)
+    uso_limitado = Column(Boolean, default=False)
+    limite_usos = Column(Integer)
+    usos_realizados = Column(Integer, default=0)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    __table_args__ = (
+        Index('idx_promocao_restaurante', 'restaurante_id', 'ativo'),
+        Index('idx_promocao_codigo', 'restaurante_id', 'codigo_cupom'),
+        Index('idx_promocao_datas', 'restaurante_id', 'data_inicio', 'data_fim'),
     )

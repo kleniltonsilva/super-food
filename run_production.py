@@ -163,7 +163,8 @@ def main():
     if "api" in services_to_start:
         print("   • API FastAPI:      http://localhost:8000")
         print("   • API Docs:         http://localhost:8000/docs")
-        print("   • Site Cliente:     http://localhost:8000/site/{codigo}")
+        print("   • Site Cliente:     http://localhost:8000/cliente/{codigo}")
+        print("   • Site Legado:      http://localhost:8000/site/{codigo}")
         print("   • WebSocket:        ws://localhost:8000/ws/{restaurante_id}")
 
     if "admin" in services_to_start:

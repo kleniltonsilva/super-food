@@ -1,55 +1,350 @@
-# Repare os bugs
+# Repare os bugs/ ou atualize 
 
-## 1️⃣ App Motoboy – Atualização de entregas
-- Status "EM ENTREGA – Pedido 1/3" não atualiza após cada entrega.
-- Deve mostrar "Pedido 2/3", "3/3" etc.
-- Testar app motoboy para garantir que todas as infos atualizam corretamente.
+ATENÇÃO VOCÊ JÁ ESTAVA REALIZANDO AS ATUALIZAÇÕES ABAIXO, MAS O COMPUTADOR FOI DESLIGADO NO MEIO DO PROCESSO, IDENTIFIQUE ONDE PARASTE E CONTINUE
+A ULTIMA PASTA QUE ESTAVAS ERA utils/motoboy_selector.py, não faça searching global economize tokens
 
-## 2️⃣ App Motoboy – Permissão localização e notificações
-- Navegador não solicita permissão de localização.
-- Notificações chegam sem som.
-- Solicitar permissão de localização para visualizar motoboy no mapa do restaurante e permitir testes.
+ESPECIFICAÇÃO – FINALIZAÇÃO DE ENTREGA FORA DO RAIO E IMPACTO NO RANKING
+1. Contexto
 
-## 3️⃣ Restaurante – Notificação de despacho
-- Após despachar pedidos, mensagem permanece mesmo com todos entregues:
-✅ 3 pedido(s) despachado(s) em 1 rota(s)!
-⏳ 1 pedido(s) aguardando próximo motoboy disponível.
+O sistema possui ranking de motoboys exclusivo por restaurante.
+Esse ranking pode ou não ser atestado como antifraude por localização, dependendo de uma configuração definida pelo administrador do restaurante.
 
-markdown
-Copiar código
-- Notificação deve sumir ao clicar, duração mínima 3s.
-- Confirmar atualização correta do app motoboy.
+2. Configuração por restaurante
 
-## 4️⃣ Restaurante – Status aberto/fechado
-- Menu lateral mostra sempre 🔴 FECHADO.
-- Deve refletir status real do restaurante.
+Na seção Configurações → Motoboys, deve existir uma opção:
 
-## 5️⃣ Caixa do restaurante
-- Retirada não funciona.
-- Caixa só abre com valor inicial se restaurante estiver aberto; pode fechar com restaurante aberto.
-- Todos os pedidos não cancelados devem ser contabilizados no caixa (site, iFood e integrações futuras).
+Permitir que o motoboy finalize a entrega fora da zona do endereço
 
-## 6️⃣ App Motoboy – Erro JS
-NotFoundError: Falha ao executar 'removeChild' em 'Node': O nó a ser removido não é filho deste nó.
+Tipo: booleano (ativado / desativado)
 
-markdown
-Copiar código
-- Corrigir para que não ocorra mais.
+Escopo: exclusivo do restaurante
 
-## 7️⃣ Teste modos de despacho
-- Cronológico e Inteligente Econômico devem respeitar intervalos:
-  - Intervalo ≤ 10 min → modo inteligente econômico.
-  - Intervalo > 10 min → modo cronológico escolhido.
-- Testar todos os modos, sequências e intervalos.
-- Confirmar funcionamento correto do despacho e cálculos de ganhos.
+3. Raio de referência
 
----
+Raio fixo de validação: 50 metros
 
-## ✅ Procedimentos pós-bug
-1. Testar exaustivamente todos os bugs listados.
-2. Garantir atualização correta de todas informações no app motoboy e restaurante.
-3. Atualizar documentação:
-   - `README.md`
-   - `ARQUITETURA.md`
-   - `CLAUDE.md`
-4. Commit + push atualizando o projeto.
+Usado para comparação entre:
+
+Localização atual do motoboy
+
+Localização do endereço da entrega
+
+4. Comportamento quando a opção estiver DESATIVADA
+
+O motoboy não pode finalizar a entrega se estiver fora do raio de 50 metros
+
+A finalização deve ser bloqueada
+
+O ranking do restaurante é considerado:
+
+Atestado como antifraude por localização
+
+5. Comportamento quando a opção estiver ATIVADA
+
+O motoboy pode finalizar a entrega mesmo estando fora do raio de 50 metros
+
+A finalização não deve ser bloqueada
+
+O ranking continua sendo calculado normalmente
+
+O ranking do restaurante não pode ser atestado como antifraude por localização
+
+6. Aviso obrigatório ao administrador
+
+Sempre que essa opção estiver ativada, deve existir um aviso visível ao administrador do restaurante informando que:
+
+Motoboys podem finalizar entregas fora da zona do endereço
+
+INSTRUÇÃO – CRIAÇÃO DO RANKING DE MOTOBOYS
+COM VALORES, TAXAS E PAGAMENTO DOS MOTOBOYS
+1. Escopo do ranking
+
+O ranking de motoboys é exclusivo por restaurante
+
+Não existe ranking global
+
+Cada restaurante visualiza apenas seus próprios motoboys
+
+2. Objetivo do ranking
+
+Avaliar a eficiência operacional dos motoboys considerando:
+
+Tempo real de entrega
+
+Quantidade de entregas concluídas
+
+Valores financeiros pagos ao motoboy
+
+Confiabilidade baseada na validação por localização
+
+3. Base de cálculo do tempo de entrega
+3.1 Início
+
+O tempo de entrega inicia quando o motoboy:
+
+Inicia a primeira entrega ativa
+
+Registrar:
+
+delivery_started_at
+
+motoboy_id
+
+restaurant_id
+
+3.2 Final
+
+O tempo de entrega finaliza quando o motoboy:
+
+Finaliza a entrega no aplicativo
+
+Registrar:
+
+delivery_finished_at
+
+3.3 Tempo real
+tempo_entrega = delivery_finished_at - delivery_started_at
+
+
+Esse tempo:
+
+É persistido
+
+Não pode ser alterado
+
+Alimenta diretamente o ranking
+
+4. Critérios do ranking
+
+O ranking deve ser calculado com base em:
+
+Tempo médio de entrega
+
+Total de entregas concluídas
+
+Total de valores pagos ao motoboy
+
+Período de análise configurável
+
+Sempre filtrado por:
+
+restaurant_id
+
+5. Valores exibidos no ranking
+
+No ranking deve ser exibido, para cada motoboy:
+
+Valor total recebido em entregas
+
+Valor total recebido em taxas extras
+
+Valor total recebido em alimentação (lanche)
+
+Valor total acumulado
+
+Todos os valores devem ser:
+
+Persistidos
+
+Somados corretamente
+
+Vinculados ao período selecionado
+
+6. Configurações de taxas (obrigatórias)
+
+Todas as taxas devem ser configuráveis por restaurante, em uma seção própria.
+
+6.1 Taxas relacionadas ao cliente
+
+Taxa de Entrega (cliente)
+
+Base de distância (km)
+
+Taxa extra por km acima da base
+
+7. Configurações de pagamento do motoboy
+
+A lógica existente deve ser mantida, com os seguintes conceitos e descrições:
+
+7.1 Taxa diária do motoboy
+
+Valor diário fixo pago ao motoboy
+
+Pode ser zero
+
+7.2 Taxa base do valor de entrega
+
+Valor fixo pago ao motoboy até um limite de distância
+
+Distância base configurável
+
+7.3 Taxa extra por km acima da taxa base
+
+Valor adicional por quilômetro excedente
+
+Aplicado somente acima do limite configurado
+
+7.4 Alimentação do motoboy
+
+Valor adicional referente ao lanche/alimentação
+
+Pode ser zero ou um valor definido
+
+8. Persistência financeira no ranking
+
+Para cada motoboy devem ser armazenados:
+
+Valores por entrega
+
+Valores por distância
+
+Valores de taxas extras
+
+Valores de alimentação
+
+Valor total acumulado
+
+Esses dados:
+
+Não são apagados automaticamente
+
+São preservados quando CPF existir
+
+9. Identificação única do motoboy (CPF)
+
+CPF é a chave lógica única do motoboy
+
+CPF é opcional no cadastro
+
+Comportamento:
+
+Com CPF: dados preservados
+
+Sem CPF: dados descartados ao excluir perfil
+
+10. Relação com validação por localização
+
+O ranking sempre é calculado
+
+O nível de confiabilidade depende da configuração do restaurante
+
+Essa informação deve ser exibida no ranking
+
+11. Aba exclusiva – Realizar pagamento dos motoboys
+
+Deve existir uma aba exclusiva chamada:
+
+Realizar pagamento dos motoboys
+
+11.1 Função da aba
+
+Permitir que o dono do restaurante:
+
+Selecione um ou mais motoboys
+
+Realize o fechamento financeiro do período de trabalho
+
+11.2 Informações exibidas por motoboy
+
+Para cada motoboy selecionado, exibir:
+
+Valor total a ser pago
+
+Valores detalhados e descritivos:
+
+Entregas realizadas
+
+Taxas base
+
+Taxas extras por km
+
+Alimentação
+
+Total consolidado
+
+11.3 Lista de entregas
+
+Deve existir a opção de visualizar:
+
+Lista completa das entregas realizadas
+
+Para cada entrega:
+
+Data
+
+Distância percorrida
+
+Valor pago
+
+Tudo deve ser exibido de forma:
+
+Clara
+
+Íntegra
+
+Fácil de entender
+
+11.4 Impressão
+
+Deve existir opção de imprimir:
+
+Relatório individual por motoboy
+
+O relatório deve permitir que:
+
+O motoboy confira seus ganhos separadamente
+
+12. Interface administrativa
+
+Todas as configurações descritas devem:
+
+Ser configuráveis pelo restaurante
+
+Possuir ícone (?) de informação
+
+Ao passar o mouse, exibir:
+
+Descrição da configuração
+
+Explicação do impacto no cálculo
+
+13. Registro da regra de negócio
+
+Toda essa lógica deve ser:
+
+Implementada como regra central do sistema
+
+Persistida corretamente
+
+Documentada como parte oficial do funcionamento do SaaS
+
+O ranking de motoboys não possui validação antifraude por localização
+
+Esse aviso deve aparecer:
+
+Na área de configurações de motoboys
+
+Na visualização do ranking de motoboys
+
+7. Impacto no ranking
+
+O ranking nunca é desativado
+
+O ranking sempre existe
+
+O que muda é apenas o nível de confiabilidade baseado na validação por localização
+
+8. Registro e documentação
+
+Essa lógica deve ser:
+
+Implementada como regra de negócio
+
+Documentada no projeto
+
+Claramente identificada como parte do funcionamento oficial do ranking
+
+_________________________________________________________________________________________
+Atenção faça as correções e alterações acima sem alterar outras partes do codigo, faça as correções/atualizações de forma cirurgica e pontual, com as melhores praticas em programação, faça tudo com maxima economia de tokens economizando recursos do claude code.
+
+

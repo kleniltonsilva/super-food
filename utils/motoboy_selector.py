@@ -286,7 +286,9 @@ def finalizar_entrega_motoboy(
     distancia_km: float = None,
     session=None,
     motivo_finalizacao: str = 'entregue',
-    observacao: str = None
+    observacao: str = None,
+    lat_atual: float = None,
+    lon_atual: float = None
 ) -> Dict:
     """
     Finaliza uma entrega e atualiza estatísticas do motoboy.
@@ -343,6 +345,30 @@ def finalizar_entrega_motoboy(
             Pedido.id == entrega.pedido_id
         ).first()
 
+        # Validar raio de 50m se coordenadas fornecidas
+        fora_do_raio = False
+        if lat_atual is not None and lon_atual is not None and pedido:
+            from utils.haversine import haversine
+            lat_destino = pedido.latitude
+            lon_destino = pedido.longitude
+
+            if lat_destino and lon_destino:
+                distancia_metros = haversine((lat_atual, lon_atual), (lat_destino, lon_destino)) * 1000
+                fora_do_raio = distancia_metros > 50
+
+                if fora_do_raio:
+                    # Verificar configuração do restaurante
+                    config = session.query(ConfigRestaurante).filter(
+                        ConfigRestaurante.restaurante_id == pedido.restaurante_id
+                    ).first()
+
+                    if config and not config.permitir_finalizar_fora_raio:
+                        return {
+                            'sucesso': False,
+                            'erro': 'Você está fora do raio de 50m do endereço de entrega. Aproxime-se do destino para finalizar.',
+                            'distancia_metros': distancia_metros
+                        }
+
         # Usar distância fornecida ou a salva na entrega
         dist = distancia_km if distancia_km is not None else (entrega.distancia_km or 0)
 
@@ -368,6 +394,8 @@ def finalizar_entrega_motoboy(
         entrega.status = status_entrega
         entrega.motivo_finalizacao = motivo_finalizacao
         entrega.entregue_em = datetime.utcnow()
+        entrega.delivery_finished_at = datetime.utcnow()
+        entrega.finalizado_fora_raio = fora_do_raio
         entrega.distancia_km = dist
         entrega.valor_motoboy = ganho['valor_total']
         entrega.valor_base_motoboy = ganho['valor_base']

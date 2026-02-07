@@ -48,6 +48,13 @@ from database.models import (
 
     # Sistema
     Notificacao,
+
+    # Site Cliente (Fidelidade, Bairros, Promoções)
+    BairroEntrega,
+    PontosFidelidade,
+    TransacaoFidelidade,
+    PremioFidelidade,
+    Promocao,
 )
 
 # Para compatibilidade com imports existentes
@@ -73,4 +80,9 @@ __all__ = [
     'Caixa',
     'MovimentacaoCaixa',
     'Notificacao',
+    'BairroEntrega',
+    'PontosFidelidade',
+    'TransacaoFidelidade',
+    'PremioFidelidade',
+    'Promocao',
 ]

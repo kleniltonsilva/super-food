@@ -85,3 +85,71 @@ class ValidacaoEntregaResponse(BaseModel):
     tempo_estimado_min: int
     taxa_entrega: float
     mensagem: str
+
+
+# ==================== BAIRROS ====================
+class BairroEntregaPublic(BaseModel):
+    id: int
+    nome: str
+    taxa_entrega: float
+    tempo_estimado_min: int
+
+    class Config:
+        from_attributes = True
+
+
+# ==================== FIDELIDADE ====================
+class PontosFidelidadePublic(BaseModel):
+    pontos_total: int
+    pontos_disponiveis: int
+
+    class Config:
+        from_attributes = True
+
+
+class PremioFidelidadePublic(BaseModel):
+    id: int
+    nome: str
+    descricao: Optional[str] = None
+    custo_pontos: int
+    tipo_premio: str
+    valor_premio: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ResgatePremioRequest(BaseModel):
+    premio_id: int
+
+
+class ResgatePremioResponse(BaseModel):
+    sucesso: bool
+    mensagem: str
+    pontos_restantes: int
+
+
+# ==================== PROMOCOES ====================
+class PromocaoPublic(BaseModel):
+    id: int
+    nome: str
+    descricao: Optional[str] = None
+    tipo_desconto: str
+    valor_desconto: float
+    valor_pedido_minimo: float
+    desconto_maximo: Optional[float] = None
+    codigo_cupom: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ValidarCupomRequest(BaseModel):
+    codigo_cupom: str
+    valor_pedido: float
+
+
+class ValidarCupomResponse(BaseModel):
+    valido: bool
+    desconto_aplicado: float
+    mensagem: str
