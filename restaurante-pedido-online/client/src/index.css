@@ -42,83 +42,79 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* ══════════════════════════════════════════
+   DARK THEME — Always active (no .dark class needed)
+   ══════════════════════════════════════════ */
 :root {
-  --primary: oklch(0.6 0.2 15);
-  --primary-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(0.6 0.2 15);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --chart-1: oklch(0.6 0.2 15);
-  --chart-2: oklch(0.5 0.15 15);
-  --chart-3: oklch(0.55 0.18 15);
-  --chart-4: oklch(0.65 0.22 15);
-  --chart-5: oklch(0.45 0.12 15);
-  --radius: 0.65rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.235 0.015 65);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.235 0.015 65);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.235 0.015 65);
-  --secondary: oklch(0.98 0.001 286.375);
-  --secondary-foreground: oklch(0.4 0.015 65);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.6 0.2 15);
-  --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.6 0.2 15);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.235 0.015 65);
-  --sidebar-accent: oklch(0.6 0.2 15);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.92 0.004 286.32);
-  --sidebar-ring: oklch(0.6 0.2 15);
+  --radius: 0.625rem;
+
+  /* Shadcn semantic colors — dark by default */
+  --primary: #E31A24;
+  --primary-foreground: #FFFFFF;
+  --background: #0D0D0D;
+  --foreground: #E8E8E8;
+  --card: #161616;
+  --card-foreground: #E0E0E0;
+  --popover: #1A1A1A;
+  --popover-foreground: #E0E0E0;
+  --secondary: #1A1A1A;
+  --secondary-foreground: #B0B0B0;
+  --muted: #222222;
+  --muted-foreground: #888888;
+  --accent: #E31A24;
+  --accent-foreground: #FFFFFF;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.10);
+  --ring: #E31A24;
+
+  /* Dark theme design tokens */
+  --bg-base: #0D0D0D;
+  --bg-surface: #131313;
+  --bg-card: #191919;
+  --bg-card-hover: #212121;
+  --text-primary: #FFFFFF;
+  --text-secondary: #B3B3B3;
+  --text-muted: #6B6B6B;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --radius-card: 12px;
+
+  /* Dynamic restaurant colors (set by RestauranteContext via JS) */
+  --cor-primaria: #E31A24;
+  --cor-secundaria: #FFD700;
+
+  /* Sidebar (shadcn compat) */
+  --sidebar: #131313;
+  --sidebar-foreground: #E8E8E8;
+  --sidebar-primary: #E31A24;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #222222;
+  --sidebar-accent-foreground: #FFFFFF;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #E31A24;
+
+  /* Charts */
+  --chart-1: #E31A24;
+  --chart-2: #FF6B35;
+  --chart-3: #FFD700;
+  --chart-4: #22C55E;
+  --chart-5: #3B82F6;
 }
 
-.dark {
-  --primary: var(--color-blue-700);
-  --primary-foreground: var(--color-blue-50);
-  --sidebar-primary: var(--color-blue-500);
-  --sidebar-primary-foreground: var(--color-blue-50);
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.85 0.005 65);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.85 0.005 65);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.85 0.005 65);
-  --secondary: oklch(0.24 0.006 286.033);
-  --secondary-foreground: oklch(0.7 0.005 65);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground:  oklch(0.92 0.005 65);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.488 0.243 264.376);
-  --chart-1: var(--color-blue-300);
-  --chart-2: var(--color-blue-500);
-  --chart-3: var(--color-blue-600);
-  --chart-4: var(--color-blue-700);
-  --chart-5: var(--color-blue-800);
-  --sidebar: oklch(0.21 0.006 285.885);
-  --sidebar-foreground: oklch(0.85 0.005 65);
-  --sidebar-accent: oklch(0.274 0.006 286.033);
-  --sidebar-accent-foreground:  oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.488 0.243 264.376);
-}
-
+/* ══════════════════════════════════════════
+   BASE LAYER
+   ══════════════════════════════════════════ */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-[var(--bg-base)] text-[var(--text-primary)];
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -133,25 +129,15 @@
   }
 }
 
+/* ══════════════════════════════════════════
+   CONTAINER
+   ══════════════════════════════════════════ */
 @layer components {
-  /**
-   * Custom container utility that centers content and adds responsive padding.
-   *
-   * This overrides Tailwind's default container behavior to:
-   * - Auto-center content (mx-auto)
-   * - Add responsive horizontal padding
-   * - Set max-width for large screens
-   *
-   * Usage: <div className="container">...</div>
-   *
-   * For custom widths, use max-w-* utilities directly:
-   * <div className="max-w-6xl mx-auto px-4">...</div>
-   */
   .container {
     width: 100%;
     margin-left: auto;
     margin-right: auto;
-    padding-left: 1rem; /* 16px - mobile padding */
+    padding-left: 1rem;
     padding-right: 1rem;
   }
 
@@ -162,30 +148,37 @@
 
   @media (min-width: 640px) {
     .container {
-      padding-left: 1.5rem; /* 24px - tablet padding */
+      padding-left: 1.5rem;
       padding-right: 1.5rem;
     }
   }
 
   @media (min-width: 1024px) {
     .container {
-      padding-left: 2rem; /* 32px - desktop padding */
+      padding-left: 2rem;
       padding-right: 2rem;
-      max-width: 1280px; /* Standard content width */
+      max-width: 1280px;
     }
   }
 }
 
-/* Pizza Delivery Specific Styles */
+/* ══════════════════════════════════════════
+   DARK THEME COMPONENT CLASSES
+   ══════════════════════════════════════════ */
 @layer components {
+
+  /* Header */
   .pizza-header {
-    @apply sticky top-0 z-50 bg-white shadow-md;
+    @apply sticky top-0 z-50 shadow-lg;
+    background: var(--bg-surface);
   }
 
   .pizza-logo {
-    @apply text-2xl font-bold text-accent;
+    @apply text-2xl font-bold;
+    color: var(--cor-primaria);
   }
 
+  /* Category Navigation */
   .category-nav {
     @apply flex gap-2 overflow-x-auto pb-2;
   }
@@ -196,19 +189,40 @@
 
   .category-btn {
     @apply whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all;
-    @apply bg-muted text-foreground hover:bg-accent hover:text-white;
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-subtle);
+  }
+
+  .category-btn:hover {
+    background: var(--bg-card-hover);
+    color: var(--text-primary);
   }
 
   .category-btn.active {
-    @apply bg-accent text-white;
+    color: #FFFFFF;
+    background: var(--cor-primaria);
+    border-color: var(--cor-primaria);
   }
 
+  /* Product Cards */
   .product-card {
-    @apply rounded-lg border border-border bg-card overflow-hidden transition-all hover:shadow-lg hover:scale-105;
+    @apply overflow-hidden transition-all duration-300;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .product-card:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-4px);
+    border-color: rgba(255, 255, 255, 0.12);
   }
 
   .product-image {
-    @apply w-full h-48 object-cover bg-muted;
+    @apply w-full h-48 object-cover;
+    background: var(--bg-card-hover);
   }
 
   .product-info {
@@ -217,26 +231,33 @@
 
   .product-name {
     @apply font-bold text-lg mb-1;
+    color: var(--text-primary);
   }
 
   .product-description {
-    @apply text-sm text-muted-foreground mb-3 line-clamp-2;
+    @apply text-sm mb-3 line-clamp-2;
+    color: var(--text-muted);
   }
 
   .product-price {
-    @apply text-accent font-bold text-xl;
+    @apply font-bold text-xl;
+    color: var(--cor-primaria);
   }
 
+  /* Cart */
   .cart-badge {
-    @apply absolute top-2 right-2 bg-accent text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold;
+    @apply absolute top-2 right-2 rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold text-white;
+    background: var(--cor-primaria);
   }
 
   .cart-item {
-    @apply flex items-center gap-4 p-4 border-b border-border;
+    @apply flex items-center gap-4 p-4;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .cart-item-image {
-    @apply w-20 h-20 object-cover rounded-lg bg-muted;
+    @apply w-20 h-20 object-cover rounded-lg;
+    background: var(--bg-card-hover);
   }
 
   .cart-item-info {
@@ -245,42 +266,77 @@
 
   .cart-item-name {
     @apply font-bold mb-1;
+    color: var(--text-primary);
   }
 
   .cart-item-price {
-    @apply text-accent font-bold;
+    @apply font-bold;
+    color: var(--cor-primaria);
   }
 
   .quantity-selector {
-    @apply flex items-center gap-2 border border-border rounded-lg;
+    @apply flex items-center gap-2 rounded-lg overflow-hidden;
+    border: 1px solid var(--border-subtle);
   }
 
   .quantity-btn {
-    @apply w-8 h-8 flex items-center justify-center hover:bg-muted;
+    @apply w-8 h-8 flex items-center justify-center transition-colors;
+    color: var(--text-secondary);
   }
 
+  .quantity-btn:hover {
+    background: var(--bg-card-hover);
+  }
+
+  /* Checkout */
   .checkout-section {
-    @apply bg-card rounded-lg border border-border p-6 mb-4;
+    @apply rounded-xl p-6 mb-4;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
   }
 
   .checkout-label {
     @apply block text-sm font-medium mb-2;
+    color: var(--text-secondary);
   }
 
   .checkout-input {
-    @apply w-full px-4 py-2 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent;
+    @apply w-full px-4 py-2.5 rounded-lg transition-all;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
   }
 
+  .checkout-input:focus {
+    outline: none;
+    border-color: var(--cor-primaria);
+    box-shadow: 0 0 0 2px rgba(227, 26, 36, 0.2);
+  }
+
+  .checkout-input::placeholder {
+    color: var(--text-muted);
+  }
+
+  /* Payment */
   .payment-option {
-    @apply flex items-center gap-3 p-4 border border-border rounded-lg cursor-pointer hover:bg-muted transition-colors;
+    @apply flex items-center gap-3 p-4 rounded-lg cursor-pointer transition-all;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-surface);
+  }
+
+  .payment-option:hover {
+    background: var(--bg-card-hover);
   }
 
   .payment-option.selected {
-    @apply border-accent bg-red-50;
+    border-color: var(--cor-primaria);
+    background: rgba(227, 26, 36, 0.08);
   }
 
+  /* Loyalty */
   .loyalty-card {
-    @apply bg-gradient-to-r from-accent to-red-600 text-white rounded-lg p-6 mb-4;
+    @apply text-white rounded-xl p-6 mb-4;
+    background: linear-gradient(135deg, var(--cor-primaria), var(--cor-secundaria));
   }
 
   .loyalty-points {
@@ -292,62 +348,106 @@
   }
 
   .reward-card {
-    @apply bg-card border border-border rounded-lg p-4 hover:shadow-lg transition-all;
+    @apply rounded-xl p-4 transition-all duration-300;
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-card);
+  }
+
+  .reward-card:hover {
+    box-shadow: var(--shadow-card-hover);
+    transform: translateY(-2px);
   }
 
   .reward-price {
-    @apply text-accent font-bold text-lg;
+    @apply font-bold text-lg;
+    color: var(--cor-primaria);
   }
 
+  /* Admin Table */
   .admin-table {
     @apply w-full border-collapse;
   }
 
   .admin-table th {
-    @apply bg-muted px-4 py-2 text-left font-bold;
+    @apply px-4 py-2 text-left font-bold;
+    background: var(--bg-card);
   }
 
   .admin-table td {
-    @apply border-b border-border px-4 py-2;
+    @apply px-4 py-2;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
+  /* Status Badges — Dark theme */
   .status-badge {
     @apply inline-block px-3 py-1 rounded-full text-xs font-bold;
   }
 
   .status-pending {
-    @apply bg-yellow-100 text-yellow-800;
+    background: rgba(234, 179, 8, 0.15);
+    color: #FACC15;
   }
 
   .status-confirmed {
-    @apply bg-blue-100 text-blue-800;
+    background: rgba(59, 130, 246, 0.15);
+    color: #60A5FA;
   }
 
   .status-preparing {
-    @apply bg-purple-100 text-purple-800;
+    background: rgba(168, 85, 247, 0.15);
+    color: #C084FC;
   }
 
   .status-ready {
-    @apply bg-green-100 text-green-800;
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ADE80;
   }
 
   .status-delivered {
-    @apply bg-gray-100 text-gray-800;
+    background: rgba(148, 163, 184, 0.15);
+    color: #94A3B8;
   }
 
+  /* Dark Input */
+  .dark-input {
+    @apply w-full px-4 py-2.5 rounded-lg transition-all;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+  }
 
+  .dark-input:focus {
+    outline: none;
+    border-color: var(--cor-primaria);
+    box-shadow: 0 0 0 2px rgba(227, 26, 36, 0.2);
+  }
+
+  .dark-input::placeholder {
+    color: var(--text-muted);
+  }
 }
 
-/* Scrollbar hide utility */
+/* ══════════════════════════════════════════
+   SCROLLBAR UTILITIES
+   ══════════════════════════════════════════ */
 .scrollbar-hide {
-  -ms-overflow-style: none;  /* IE/Edge */
-  scrollbar-width: none;     /* Firefox */
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 .scrollbar-hide::-webkit-scrollbar {
-  display: none;             /* Chrome/Safari/Opera */
+  display: none;
 }
 
-/* Animations */
+/* Category nav fade edges */
+.category-fade {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+}
+
+/* ══════════════════════════════════════════
+   ANIMATIONS
+   ══════════════════════════════════════════ */
 @layer utilities {
   @keyframes slideIn {
     from {
@@ -365,16 +465,71 @@
   }
 
   @keyframes pulse-subtle {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.8;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
   }
 
   .animate-pulse-subtle {
     animation: pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in-up {
+    animation: fadeInUp 0.4s ease-out;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+
+  .skeleton-dark {
+    background: linear-gradient(90deg, var(--bg-card) 25%, var(--bg-card-hover) 50%, var(--bg-card) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  /* Press effect for buttons */
+  .btn-press:active {
+    transform: scale(0.97);
+  }
+
+  /* Card hover lift */
+  .card-hover {
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .card-hover:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-card-hover);
+  }
+
+  /* Image zoom on hover */
+  .img-zoom {
+    transition: transform 0.4s ease;
+  }
+
+  .group:hover .img-zoom {
+    transform: scale(1.08);
+  }
+
+  /* FAB pulse */
+  @keyframes fabPulse {
+    0%, 100% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); }
+    50% { box-shadow: 0 4px 24px rgba(227, 26, 36, 0.4); }
+  }
+
+  .fab-pulse {
+    animation: fabPulse 2s ease-in-out infinite;
   }
 }

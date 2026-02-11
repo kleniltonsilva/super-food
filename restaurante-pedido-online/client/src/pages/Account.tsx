@@ -129,17 +129,17 @@ export default function Account() {
               <div>
                 <label className="text-sm font-bold mb-1 block">Nome</label>
                 <input type="text" value={nome} onChange={e => setNome(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg" />
+                  className="dark-input" />
               </div>
               <div>
                 <label className="text-sm font-bold mb-1 block">Telefone</label>
                 <input type="tel" value={telefone} onChange={e => setTelefone(e.target.value)}
-                  className="w-full px-4 py-2 border rounded-lg" />
+                  className="dark-input" />
               </div>
               <div>
                 <label className="text-sm font-bold mb-1 block">Email</label>
                 <input type="email" value={cliente?.email || ""} disabled
-                  className="w-full px-4 py-2 border rounded-lg bg-gray-50 text-muted-foreground" />
+                  className="dark-input opacity-60" />
               </div>
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleSalvarPerfil} disabled={salvando}
@@ -202,7 +202,7 @@ export default function Account() {
                       </Button>
                     )}
                     <Button size="sm" variant="ghost" onClick={() => handleRemoverEndereco(end.id)} title="Remover"
-                      className="text-red-500 hover:text-red-700">
+                      className="text-red-500 hover:text-red-400">
                       <Trash2 className="w-4 h-4" />
                     </Button>
                   </div>
@@ -219,7 +219,7 @@ export default function Account() {
           <Button variant="outline" className="w-full" onClick={() => navigate("/orders")}>
             Meus Pedidos
           </Button>
-          <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
+          <Button variant="outline" className="w-full text-red-600 hover:text-red-400 hover:bg-red-900/20"
             onClick={() => { logout(); navigate("/"); }}>
             Sair da Conta
           </Button>

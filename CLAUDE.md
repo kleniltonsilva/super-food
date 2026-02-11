@@ -22,30 +22,62 @@
 
 ## 🔨 PLANO DE EXECUÇÃO ATUAL
 
-- **Tarefa:** Documentação completa do projeto (CLAUDE.md, README.md, ESTRUTURA.md)
+- **Tarefa:** Redesign Visual Completo — Site Cliente React (Tema Escuro Profissional)
 - **Status:** ✅ Concluída
-- **Início:** 10/02/2026
+- **Início:** 11/02/2026
+- **Conclusão:** 11/02/2026
 
-Etapas:
-1. [x] Analisar todos os models, schemas, routers, pages e utils ✅
-   - Arquivos envolvidos: todo o projeto
-   - Resultado: 28 models, 50+ endpoints, 11 pages React, 4 apps Streamlit catalogados
-2. [x] Criar CLAUDE.md completo ✅
-3. [x] Criar README.md atualizado ✅
-4. [x] Criar ESTRUTURA.md com árvore e fluxos ✅
+### Fase 1: Sistema de Tema CSS + RestauranteContext
+1. [x] Atualizar `index.css` — variáveis de tema escuro + classes atualizadas ✅
+   - Arquivo: `restaurante-pedido-online/client/src/index.css`
+   - Ação: Novas CSS vars (--bg-base, --bg-surface, --bg-card, --text-primary, --border-subtle, etc), :root dark, classes componentes atualizadas
+2. [x] Expandir `RestauranteContext.tsx` — presets de cores por tipo_restaurante ✅
+   - Arquivo: `restaurante-pedido-online/client/src/contexts/RestauranteContext.tsx`
+   - Ação: Função getThemePreset(), useEffect expandido p/ setar todas as CSS vars
+
+### Fase 2: Redesign Home.tsx
+3. [x] Reescrever JSX do Home.tsx com tema escuro profissional ✅
+   - Arquivo: `restaurante-pedido-online/client/src/pages/Home.tsx`
+   - Ação: TopBar, Header, Nav categorias (IntersectionObserver), Banner, Cards produto, Combos, Footer, FAB — tudo dark
+   - **PRESERVOU:** toda lógica existente (hooks, funções, state, interfaces)
+
+### Fase 3: Páginas Secundárias — Consistência Visual
+4. [x] ProductDetail.tsx — fundo escuro, cards variação dark, preços accent ✅
+5. [x] Cart.tsx — itens carrinho dark, resumo dark ✅
+6. [x] Checkout.tsx — formulário dark, opções pagamento dark ✅
+7. [x] Login.tsx — formulário centralizado dark, tabs accent ✅
+8. [x] Orders.tsx — lista pedidos dark, badges status dark ✅
+9. [x] Account.tsx — perfil e endereços dark ✅
+10. [x] Loyalty.tsx — card fidelidade gradiente, prêmios dark ✅ (já estava aplicado)
+11. [x] OrderTracking.tsx — timeline dark ✅
+12. [x] OrderSuccess.tsx — confirmação dark ✅
+
+### Fase 4: Polish CSS e Animações
+13. [x] Hover effects (translateY + shadow), gradiente fade scroll categorias ✅
+14. [x] Skeleton loading dark, transições suaves, botões press effect ✅
+
+### Fase 5: Build e Verificação
+15. [x] `npm run build` sem erros ✅ (verificado 11/02/2026 — 1735 modules, built in 5.10s)
+16. [x] Atualizar CLAUDE.md final ✅
+
+### Plano anterior (concluído):
+- Documentação completa do projeto (CLAUDE.md, README.md, ESTRUTURA.md) ✅ 10/02/2026
 
 ---
 
 ## 🕐 ÚLTIMA SESSÃO
 
-- **Data:** 10/02/2026
-- **O que foi feito:** Documentação completa do projeto (3 arquivos)
-- **Arquivos criados:** `ESTRUTURA.md` (arvore completa + 7 fluxos de dados)
-- **Arquivos modificados:** `CLAUDE.md` (783 linhas), `README.md` (475 linhas)
+- **Data:** 11/02/2026
+- **O que foi feito:** Redesign visual completo do site cliente React (tema escuro profissional) — 13 arquivos, 739 linhas adicionadas
+- **Arquivos criados:** nenhum
+- **Arquivos modificados:** index.css, RestauranteContext.tsx, Home.tsx, ProductDetail.tsx, Cart.tsx, Checkout.tsx, Login.tsx, Orders.tsx, Account.tsx, OrderTracking.tsx, OrderSuccess.tsx, NotFound.tsx (12 arquivos)
 - **Arquivos deletados:** nenhum
 - **Migration criada:** não
-- **Plano concluído:** sim
-- **Problemas encontrados:** nenhum
+- **Plano concluído:** ✅ sim (sessão anterior completou código, build verificado nesta sessão)
+- **Problemas encontrados:** sessão anterior morreu antes de atualizar CLAUDE.md (build command tinha `&& &&` — erro de sintaxe bash)
+
+### Sessão anterior (10/02/2026)
+- Documentação completa do projeto (CLAUDE.md, README.md, ESTRUTURA.md)
 
 ### Sessão anterior (08/02/2026)
 - React SPA completo: todas as pages adaptadas para apiClient

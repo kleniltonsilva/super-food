@@ -390,7 +390,7 @@ export default function Checkout() {
                       value={nomeCliente}
                       onChange={e => setNomeCliente(e.target.value)}
                       placeholder="Seu nome completo"
-                      className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                      className="dark-input"
                       style={{ "--tw-ring-color": "var(--cor-primaria, #E31A24)" } as React.CSSProperties}
                     />
                   </div>
@@ -401,7 +401,7 @@ export default function Checkout() {
                       value={telefoneCliente}
                       onChange={e => setTelefoneCliente(e.target.value)}
                       placeholder="(11) 99999-9999"
-                      className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                      className="dark-input"
                       style={{ "--tw-ring-color": "var(--cor-primaria, #E31A24)" } as React.CSSProperties}
                     />
                   </div>
@@ -416,7 +416,7 @@ export default function Checkout() {
                 Tipo de Entrega
               </h2>
               <div className="space-y-3">
-                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-[var(--bg-card-hover)]">
                   <input
                     type="radio"
                     name="delivery"
@@ -435,7 +435,7 @@ export default function Checkout() {
                     </div>
                   </div>
                 </label>
-                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-[var(--bg-card-hover)]">
                   <input
                     type="radio"
                     name="delivery"
@@ -466,8 +466,8 @@ export default function Checkout() {
                     {enderecos.map(end => (
                       <label
                         key={end.id}
-                        className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${
-                          selectedEnderecoId === end.id ? "border-2 bg-red-50" : ""
+                        className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-[var(--bg-card-hover)] ${
+                          selectedEnderecoId === end.id ? "border-2 bg-[var(--bg-card-hover)]" : ""
                         }`}
                         style={selectedEnderecoId === end.id ? { borderColor: `var(--cor-primaria, #E31A24)` } : {}}
                       >
@@ -519,16 +519,16 @@ export default function Checkout() {
                         onBlur={() => setTimeout(() => setShowSugestoes(false), 200)}
                         onFocus={() => sugestoes.length > 0 && setShowSugestoes(true)}
                         placeholder="Digite seu endereço..."
-                        className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                        className="dark-input pl-10"
                         style={{ "--tw-ring-color": "var(--cor-primaria, #E31A24)" } as React.CSSProperties}
                       />
                     </div>
                     {showSugestoes && sugestoes.length > 0 && (
-                      <div className="absolute z-50 w-full bg-white border rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                      <div className="absolute z-50 w-full bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
                         {sugestoes.map((s, i) => (
                           <button
                             key={i}
-                            className="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm border-b last:border-b-0"
+                            className="w-full text-left px-4 py-3 hover:bg-[var(--bg-card-hover)] text-sm border-b last:border-b-0"
                             onMouseDown={() => selecionarSugestao(s)}
                           >
                             <MapPin className="w-3 h-3 inline mr-2 text-muted-foreground" />
@@ -543,14 +543,14 @@ export default function Checkout() {
                       </p>
                     )}
                     {selectedLat && deliveryFee === 0 && deliveryMsg && (
-                      <p className="text-sm mt-2 text-red-600 font-semibold">{deliveryMsg}</p>
+                      <p className="text-sm mt-2 text-red-400 font-semibold">{deliveryMsg}</p>
                     )}
                   </div>
                 )}
 
                 {/* Form novo endereço (logado) com autocomplete */}
                 {isLoggedIn && showNewAddress && (
-                  <div className="mt-4 p-4 border rounded-lg bg-gray-50 space-y-3">
+                  <div className="mt-4 p-4 border border-[var(--border-subtle)] rounded-lg bg-[var(--bg-surface)] space-y-3">
                     <h3 className="font-bold text-sm">Novo endereço</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="col-span-1 md:col-span-2 relative">
@@ -564,16 +564,16 @@ export default function Checkout() {
                             onBlur={() => setTimeout(() => setShowNewSugestoes(false), 200)}
                             onFocus={() => newSugestoes.length > 0 && setShowNewSugestoes(true)}
                             placeholder="Digite o endereço..."
-                            className="w-full pl-10 pr-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2"
+                            className="dark-input pl-10 text-sm"
                             style={{ "--tw-ring-color": "var(--cor-primaria, #E31A24)" } as React.CSSProperties}
                           />
                         </div>
                         {showNewSugestoes && newSugestoes.length > 0 && (
-                          <div className="absolute z-50 w-full bg-white border rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                          <div className="absolute z-50 w-full bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
                             {newSugestoes.map((s, i) => (
                               <button
                                 key={i}
-                                className="w-full text-left px-4 py-3 hover:bg-gray-50 text-sm border-b last:border-b-0"
+                                className="w-full text-left px-4 py-3 hover:bg-[var(--bg-card-hover)] text-sm border-b last:border-b-0"
                                 onMouseDown={() => selecionarNewSugestao(s)}
                               >
                                 <MapPin className="w-3 h-3 inline mr-2 text-muted-foreground" />
@@ -586,22 +586,22 @@ export default function Checkout() {
                       <div>
                         <label className="text-xs font-bold mb-1 block">Número</label>
                         <input type="text" value={newNumero} onChange={e => setNewNumero(e.target.value)}
-                          placeholder="123" className="w-full px-3 py-2 border rounded-lg text-sm" />
+                          placeholder="123" className="dark-input text-sm" />
                       </div>
                       <div>
                         <label className="text-xs font-bold mb-1 block">Complemento</label>
                         <input type="text" value={newComplemento} onChange={e => setNewComplemento(e.target.value)}
-                          placeholder="Apto 302" className="w-full px-3 py-2 border rounded-lg text-sm" />
+                          placeholder="Apto 302" className="dark-input text-sm" />
                       </div>
                       <div>
                         <label className="text-xs font-bold mb-1 block">Bairro</label>
                         <input type="text" value={newBairro} onChange={e => setNewBairro(e.target.value)}
-                          placeholder="Centro" className="w-full px-3 py-2 border rounded-lg text-sm" />
+                          placeholder="Centro" className="dark-input text-sm" />
                       </div>
                       <div>
                         <label className="text-xs font-bold mb-1 block">Apelido</label>
                         <input type="text" value={newApelido} onChange={e => setNewApelido(e.target.value)}
-                          placeholder="Casa, Trabalho..." className="w-full px-3 py-2 border rounded-lg text-sm" />
+                          placeholder="Casa, Trabalho..." className="dark-input text-sm" />
                       </div>
                     </div>
                     <div className="flex gap-2">
@@ -625,7 +625,7 @@ export default function Checkout() {
               </h2>
               <div className="space-y-3">
                 {paymentMethods.map(method => (
-                  <label key={method.value} className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+                  <label key={method.value} className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-[var(--bg-card-hover)]">
                     <input type="radio" name="payment" value={method.value}
                       checked={paymentMethod === method.value} onChange={() => setPaymentMethod(method.value)} />
                     <span className="font-semibold">{method.label}</span>
@@ -637,7 +637,7 @@ export default function Checkout() {
                 <div className="mt-4">
                   <label className="text-sm font-bold mb-1 block">Troco para (R$):</label>
                   <input type="number" value={troco} onChange={e => setTroco(e.target.value)}
-                    placeholder="Ex: 100" className="w-full px-4 py-2 border rounded-lg" />
+                    placeholder="Ex: 100" className="dark-input" />
                 </div>
               )}
             </Card>
@@ -648,12 +648,12 @@ export default function Checkout() {
                 <div>
                   <label className="text-sm font-bold mb-1 block">Cupom de desconto</label>
                   <input type="text" value={cupom} onChange={e => setCupom(e.target.value.toUpperCase())}
-                    placeholder="Digite o código do cupom" className="w-full px-4 py-2 border rounded-lg" />
+                    placeholder="Digite o código do cupom" className="dark-input" />
                 </div>
                 <div>
                   <label className="text-sm font-bold mb-1 block">Observações</label>
                   <textarea value={observacao} onChange={e => setObservacao(e.target.value)}
-                    placeholder="Ex: Campainha estragada, apto 302..." className="w-full px-4 py-2 border rounded-lg" rows={3} />
+                    placeholder="Ex: Campainha estragada, apto 302..." className="dark-input" rows={3} />
                 </div>
               </div>
             </Card>

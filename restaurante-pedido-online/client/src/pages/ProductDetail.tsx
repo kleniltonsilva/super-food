@@ -319,8 +319,8 @@ export default function ProductDetail() {
                   onClick={() => setSelectedTamanho(tam.id)}
                   className={`p-4 border rounded-lg transition-all text-left ${
                     selectedTamanho === tam.id
-                      ? "border-2 bg-red-50"
-                      : "border-gray-200 hover:border-gray-400"
+                      ? "border-2 bg-[var(--bg-card-hover)]"
+                      : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
                   }`}
                   style={selectedTamanho === tam.id ? { borderColor: `var(--cor-primaria, #E31A24)` } : {}}
                 >
@@ -354,14 +354,14 @@ export default function ProductDetail() {
                 disabled={!selectedSabores.includes(sabor.id) && selectedSabores.length >= maxSabores}
                 className={`p-3 border rounded-lg transition-all text-left flex items-center gap-3 ${
                   selectedSabores.includes(sabor.id)
-                    ? "border-2 bg-red-50"
+                    ? "border-2 bg-[var(--bg-card-hover)]"
                     : selectedSabores.length >= maxSabores
-                    ? "border-gray-100 opacity-50"
-                    : "border-gray-200 hover:border-gray-400"
+                    ? "border-[var(--border-subtle)] opacity-50"
+                    : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
                 }`}
                 style={selectedSabores.includes(sabor.id) ? { borderColor: `var(--cor-primaria, #E31A24)` } : {}}
               >
-                <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center text-2xl shrink-0">
+                <div className="w-12 h-12 bg-[var(--bg-card-hover)] rounded-lg flex items-center justify-center text-2xl shrink-0">
                   {sabor.imagem_url ? (
                     <img src={sabor.imagem_url} alt={sabor.nome} className="w-full h-full object-cover rounded-lg" />
                   ) : (
@@ -392,8 +392,8 @@ export default function ProductDetail() {
                 onClick={() => setSelectedBorda(borda.id)}
                 className={`w-full p-3 border rounded-lg text-left transition-all flex justify-between items-center ${
                   selectedBorda === borda.id
-                    ? "border-2 bg-red-50"
-                    : "border-gray-200 hover:border-gray-400"
+                    ? "border-2 bg-[var(--bg-card-hover)]"
+                    : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
                 }`}
                 style={selectedBorda === borda.id ? { borderColor: `var(--cor-primaria, #E31A24)` } : {}}
               >
@@ -421,8 +421,8 @@ export default function ProductDetail() {
                 onClick={() => handleToggleAdicional(adic.id)}
                 className={`w-full p-3 border rounded-lg text-left transition-all flex justify-between items-center ${
                   selectedAdicionais.includes(adic.id)
-                    ? "border-2 bg-green-50 border-green-500"
-                    : "border-gray-200 hover:border-gray-400"
+                    ? "border-2 bg-green-900/15 border-green-600"
+                    : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
                 }`}
               >
                 <span className="font-semibold text-sm">{adic.nome}</span>
@@ -445,7 +445,7 @@ export default function ProductDetail() {
       return (
         <div>
           <h3 className="text-lg font-bold mb-3">Resumo do Pedido</h3>
-          <div className="space-y-3 bg-gray-50 rounded-lg p-4">
+          <div className="space-y-3 bg-[var(--bg-surface)] rounded-lg p-4">
             <div className="flex justify-between">
               <span className="font-bold">{produto!.nome}</span>
             </div>
@@ -479,7 +479,7 @@ export default function ProductDetail() {
               value={observacoes}
               onChange={e => setObservacoes(e.target.value)}
               placeholder="Ex: Sem cebola, extra queijo..."
-              className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+              className="w-full px-4 py-2 dark-input"
               rows={2}
             />
           </div>
@@ -487,11 +487,11 @@ export default function ProductDetail() {
           <div className="mt-4 flex items-center gap-4">
             <span className="text-sm font-bold">Quantidade:</span>
             <div className="flex items-center border rounded-lg overflow-hidden">
-              <button className="px-3 py-2 hover:bg-gray-100" onClick={() => setQuantity(Math.max(1, quantity - 1))}>
+              <button className="px-3 py-2 hover:bg-[var(--bg-card-hover)]" onClick={() => setQuantity(Math.max(1, quantity - 1))}>
                 <Minus className="w-4 h-4" />
               </button>
               <span className="px-4 py-2 font-bold">{quantity}</span>
-              <button className="px-3 py-2 hover:bg-gray-100" onClick={() => setQuantity(quantity + 1)}>
+              <button className="px-3 py-2 hover:bg-[var(--bg-card-hover)]" onClick={() => setQuantity(quantity + 1)}>
                 <Plus className="w-4 h-4" />
               </button>
             </div>
@@ -515,7 +515,7 @@ export default function ProductDetail() {
           {/* Imagem */}
           <div>
             <Card className="overflow-hidden rounded-xl">
-              <div className="w-full aspect-square bg-gray-100 flex items-center justify-center text-8xl">
+              <div className="w-full aspect-square bg-[var(--bg-card-hover)] flex items-center justify-center text-8xl">
                 {produto.imagem_url ? (
                   <img src={produto.imagem_url} alt={produto.nome} className="w-full h-full object-cover" />
                 ) : (
@@ -537,7 +537,7 @@ export default function ProductDetail() {
                   <span className="text-lg text-muted-foreground line-through">
                     R$ {produto.preco.toFixed(2)}
                   </span>
-                  <span className="text-2xl font-bold text-red-600">
+                  <span className="text-2xl font-bold text-[var(--cor-primaria)]">
                     R$ {produto.preco_promocional.toFixed(2)}
                   </span>
                 </div>
@@ -557,7 +557,7 @@ export default function ProductDetail() {
                             ? "text-white"
                             : i < currentStep
                             ? "bg-green-500 text-white"
-                            : "bg-gray-200 text-gray-500"
+                            : "bg-[var(--bg-card-hover)] text-[var(--text-muted)]"
                         }`}
                         style={i === currentStep ? { background: `var(--cor-primaria, #E31A24)` } : {}}
                       >
@@ -566,7 +566,7 @@ export default function ProductDetail() {
                       <span className={`text-xs hidden sm:inline ${i === currentStep ? "font-bold" : "text-muted-foreground"}`}>
                         {step.label}
                       </span>
-                      {i < steps.length - 1 && <ChevronRight className="w-4 h-4 text-gray-300" />}
+                      {i < steps.length - 1 && <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />}
                     </div>
                   ))}
                 </div>
@@ -627,8 +627,8 @@ export default function ProductDetail() {
                             onClick={() => setSelectedTamanho(tam.id)}
                             className={`p-3 border rounded-lg transition-all text-left ${
                               selectedTamanho === tam.id
-                                ? "border-2 bg-red-50"
-                                : "border-gray-200 hover:border-gray-400"
+                                ? "border-2 bg-[var(--bg-card-hover)]"
+                                : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
                             }`}
                             style={selectedTamanho === tam.id ? { borderColor: `var(--cor-primaria, #E31A24)` } : {}}
                           >
@@ -652,8 +652,8 @@ export default function ProductDetail() {
                           onClick={() => setSelectedBorda(borda.id)}
                           className={`w-full p-3 border rounded-lg text-left transition-all flex justify-between items-center ${
                             selectedBorda === borda.id
-                              ? "border-2 bg-red-50"
-                              : "border-gray-200 hover:border-gray-400"
+                              ? "border-2 bg-[var(--bg-card-hover)]"
+                              : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
                           }`}
                           style={selectedBorda === borda.id ? { borderColor: `var(--cor-primaria, #E31A24)` } : {}}
                         >
@@ -680,8 +680,8 @@ export default function ProductDetail() {
                           onClick={() => setSelectedPontoCarne(pc.id)}
                           className={`p-2 border rounded-lg text-center text-sm font-semibold ${
                             selectedPontoCarne === pc.id
-                              ? "border-2 bg-red-50"
-                              : "border-gray-200 hover:border-gray-400"
+                              ? "border-2 bg-[var(--bg-card-hover)]"
+                              : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
                           }`}
                           style={selectedPontoCarne === pc.id ? { borderColor: `var(--cor-primaria, #E31A24)` } : {}}
                         >
@@ -703,8 +703,8 @@ export default function ProductDetail() {
                           onClick={() => handleToggleAdicional(adic.id)}
                           className={`w-full p-3 border rounded-lg text-left transition-all flex justify-between items-center ${
                             selectedAdicionais.includes(adic.id)
-                              ? "border-2 bg-green-50 border-green-500"
-                              : "border-gray-200 hover:border-gray-400"
+                              ? "border-2 bg-green-900/15 border-green-600"
+                              : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
                           }`}
                         >
                           <span className="font-semibold text-sm">{adic.nome}</span>
@@ -724,7 +724,7 @@ export default function ProductDetail() {
                     value={observacoes}
                     onChange={e => setObservacoes(e.target.value)}
                     placeholder="Ex: Sem cebola, extra queijo..."
-                    className="w-full px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+                    className="w-full px-4 py-2 dark-input"
                     rows={3}
                   />
                 </div>
@@ -734,11 +734,11 @@ export default function ProductDetail() {
                   <div className="flex items-center gap-4">
                     <span className="text-sm font-bold">Quantidade:</span>
                     <div className="flex items-center border rounded-lg overflow-hidden">
-                      <button className="px-3 py-2 hover:bg-gray-100" onClick={() => setQuantity(Math.max(1, quantity - 1))}>
+                      <button className="px-3 py-2 hover:bg-[var(--bg-card-hover)]" onClick={() => setQuantity(Math.max(1, quantity - 1))}>
                         <Minus className="w-4 h-4" />
                       </button>
                       <span className="px-4 py-2 font-bold">{quantity}</span>
-                      <button className="px-3 py-2 hover:bg-gray-100" onClick={() => setQuantity(quantity + 1)}>
+                      <button className="px-3 py-2 hover:bg-[var(--bg-card-hover)]" onClick={() => setQuantity(quantity + 1)}>
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>
@@ -771,9 +771,9 @@ export default function ProductDetail() {
       {/* Modal sugestão de bebidas */}
       {showBebidaModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 relative">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-xl max-w-md w-full p-6 relative">
             <button onClick={() => { setShowBebidaModal(false); navigate("/cart"); }} className="absolute top-3 right-3">
-              <X className="w-5 h-5 text-gray-400" />
+              <X className="w-5 h-5 text-[var(--text-muted)]" />
             </button>
             <h3 className="text-xl font-bold mb-1">Que tal uma bebida?</h3>
             <p className="text-sm text-muted-foreground mb-4">Aproveite para adicionar ao seu pedido</p>
@@ -782,7 +782,7 @@ export default function ProductDetail() {
                 <button
                   key={beb.id}
                   onClick={() => handleAddBebida(beb)}
-                  className="p-3 border rounded-lg text-left hover:border-gray-400 transition-all"
+                  className="p-3 border rounded-lg text-left hover:border-[rgba(255,255,255,0.15)] transition-all"
                 >
                   <div className="text-2xl mb-1">🥤</div>
                   <div className="font-bold text-sm">{beb.nome}</div>

@@ -3,7 +3,8 @@
  *
  * Provê siteInfo (nome, cores, horário, etc) para todos os componentes via useRestaurante().
  * Internamente usa React Query (useSiteInfo) para cache automático com staleTime de 60 min.
- * CSS variables --cor-primaria e --cor-secundaria são aplicadas ao :root via useEffect.
+ * CSS variables --cor-primaria, --cor-secundaria e tokens de tema são aplicadas ao :root via useEffect.
+ * Presets de cores por tipo_restaurante garantem visual adequado mesmo sem customização.
  */
 
 import React, { createContext, useContext, useEffect } from "react";
@@ -38,6 +39,32 @@ export interface SiteInfo {
   dias_semana_abertos: string[];
 }
 
+interface ThemePreset {
+  primary: string;
+  secondary: string;
+}
+
+/**
+ * Retorna cores padrão por tipo de restaurante.
+ * As cores da API (tema_cor_primaria/secundaria) sempre têm prioridade.
+ */
+function getThemePreset(tipo: string): ThemePreset {
+  const t = (tipo || "").toLowerCase();
+  if (t.includes("pizza")) return { primary: "#E31A24", secondary: "#FFD700" };
+  if (t.includes("hambur") || t.includes("lanch")) return { primary: "#FF6B00", secondary: "#FFD700" };
+  if (t.includes("sushi") || t.includes("japon")) return { primary: "#1A1A2E", secondary: "#E94560" };
+  if (t.includes("acai") || t.includes("sorvet")) return { primary: "#7B2D8E", secondary: "#FF69B4" };
+  if (t.includes("esfih")) return { primary: "#D4A017", secondary: "#8B4513" };
+  if (t.includes("bebid")) return { primary: "#1565C0", secondary: "#42A5F5" };
+  if (t.includes("salgad") || t.includes("doce")) return { primary: "#E65100", secondary: "#FFB74D" };
+  if (t.includes("churrasco") || t.includes("grill")) return { primary: "#B71C1C", secondary: "#FF8A65" };
+  if (t.includes("padaria") || t.includes("cafe")) return { primary: "#795548", secondary: "#D7CCC8" };
+  if (t.includes("fitness") || t.includes("sauda")) return { primary: "#2E7D32", secondary: "#81C784" };
+  if (t.includes("marmitex") || t.includes("marmita")) return { primary: "#E65100", secondary: "#FFA726" };
+  if (t.includes("restaurante") || t.includes("geral")) return { primary: "#2E7D32", secondary: "#FFD700" };
+  return { primary: "#E31A24", secondary: "#FFD700" };
+}
+
 interface RestauranteContextType {
   siteInfo: SiteInfo | null;
   loading: boolean;
@@ -55,12 +82,23 @@ export function RestauranteProvider({ children }: { children: React.ReactNode })
   const { data: siteInfo, isLoading, error: queryError } = useSiteInfo();
 
   // Aplica CSS variables do tema ao :root sempre que siteInfo muda.
-  // Isso permite que qualquer componente use var(--cor-primaria) sem prop drilling.
+  // Usa presets por tipo_restaurante como fallback. API colors têm prioridade.
   useEffect(() => {
     if (siteInfo) {
       const root = document.documentElement;
-      root.style.setProperty("--cor-primaria", siteInfo.tema_cor_primaria || "#E31A24");
-      root.style.setProperty("--cor-secundaria", siteInfo.tema_cor_secundaria || "#FFD700");
+      const preset = getThemePreset(siteInfo.tipo_restaurante);
+
+      // Cores do restaurante (API > preset > fallback)
+      const primary = siteInfo.tema_cor_primaria || preset.primary;
+      const secondary = siteInfo.tema_cor_secundaria || preset.secondary;
+
+      root.style.setProperty("--cor-primaria", primary);
+      root.style.setProperty("--cor-secundaria", secondary);
+
+      // Atualiza shadcn accent/primary/ring para match
+      root.style.setProperty("--primary", primary);
+      root.style.setProperty("--accent", primary);
+      root.style.setProperty("--ring", primary);
     }
   }, [siteInfo]);
 

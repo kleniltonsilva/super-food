@@ -115,7 +115,7 @@ export default function Login() {
             className={`flex-1 py-3 font-semibold text-sm transition-all ${
               tab === "login"
                 ? "text-white"
-                : "bg-white text-gray-600 hover:bg-gray-50"
+                : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
             }`}
             style={tab === "login" ? { background: `var(--cor-primaria, #E31A24)` } : {}}
           >
@@ -126,7 +126,7 @@ export default function Login() {
             className={`flex-1 py-3 font-semibold text-sm transition-all ${
               tab === "registro"
                 ? "text-white"
-                : "bg-white text-gray-600 hover:bg-gray-50"
+                : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
             }`}
             style={tab === "registro" ? { background: `var(--cor-primaria, #E31A24)` } : {}}
           >
@@ -145,7 +145,7 @@ export default function Login() {
                   value={loginEmail}
                   onChange={e => setLoginEmail(e.target.value)}
                   placeholder="seu@email.com"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+                  className="dark-input"
                   required
                 />
               </div>
@@ -156,7 +156,7 @@ export default function Login() {
                   value={loginSenha}
                   onChange={e => setLoginSenha(e.target.value)}
                   placeholder="Sua senha"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+                  className="dark-input"
                   required
                 />
               </div>
@@ -183,7 +183,7 @@ export default function Login() {
                   value={regNome}
                   onChange={e => setRegNome(e.target.value)}
                   placeholder="Seu nome"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+                  className="dark-input"
                   required
                 />
               </div>
@@ -194,7 +194,7 @@ export default function Login() {
                   value={regEmail}
                   onChange={e => setRegEmail(e.target.value)}
                   placeholder="seu@email.com"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+                  className="dark-input"
                   required
                 />
               </div>
@@ -205,7 +205,7 @@ export default function Login() {
                   value={regTelefone}
                   onChange={e => setRegTelefone(e.target.value)}
                   placeholder="(11) 99999-9999"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+                  className="dark-input"
                   required
                 />
               </div>
@@ -216,7 +216,7 @@ export default function Login() {
                   value={regSenha}
                   onChange={e => setRegSenha(e.target.value)}
                   placeholder="Mínimo 6 caracteres"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+                  className="dark-input"
                   required
                   minLength={6}
                 />
@@ -228,7 +228,7 @@ export default function Login() {
                   value={regSenhaConfirm}
                   onChange={e => setRegSenhaConfirm(e.target.value)}
                   placeholder="Repita a senha"
-                  className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-400"
+                  className="dark-input"
                   required
                 />
               </div>

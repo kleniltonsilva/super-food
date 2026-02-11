@@ -139,9 +139,9 @@ export default function OrderTracking() {
 
         {/* Status cancelado */}
         {isCancelled && (
-          <Card className="p-6 mb-6 bg-red-50 border-red-200">
-            <p className="text-red-700 font-bold text-lg">Pedido Cancelado</p>
-            <p className="text-red-600 text-sm">Este pedido foi cancelado.</p>
+          <Card className="p-6 mb-6 bg-red-900/20 border-red-800/30">
+            <p className="text-red-400 font-bold text-lg">Pedido Cancelado</p>
+            <p className="text-red-400/70 text-sm">Este pedido foi cancelado.</p>
           </Card>
         )}
 
@@ -165,8 +165,8 @@ export default function OrderTracking() {
                         className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
                           isCompleted
                             ? "text-white"
-                            : "bg-gray-200 text-gray-400"
-                        } ${isCurrent ? "ring-4 ring-offset-2" : ""}`}
+                            : "bg-[var(--bg-card-hover)] text-[var(--text-muted)]"
+                        } ${isCurrent ? "ring-4 ring-offset-2 ring-offset-background" : ""}`}
                         style={isCompleted ? { background: `var(--cor-primaria, #E31A24)` } : {}}
                       >
                         <IconComponent className="w-5 h-5" />
@@ -174,7 +174,7 @@ export default function OrderTracking() {
                       {idx < steps.length - 1 && (
                         <div
                           className={`w-0.5 h-8 ${
-                            idx < currentStep ? "" : "bg-gray-200"
+                            idx < currentStep ? "" : "bg-[var(--bg-card-hover)]"
                           }`}
                           style={idx < currentStep ? { background: `var(--cor-primaria, #E31A24)` } : {}}
                         />

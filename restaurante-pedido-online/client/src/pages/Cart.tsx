@@ -117,7 +117,7 @@ export default function Cart() {
                 {cartItems.map((item: CartItem, index: number) => (
                   <Card key={index} className="p-4">
                     <div className="flex items-start gap-4">
-                      <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center text-2xl flex-shrink-0">
+                      <div className="w-16 h-16 bg-[var(--bg-card-hover)] rounded-lg flex items-center justify-center text-2xl flex-shrink-0">
                         {item.imagem_url ? (
                           <img src={item.imagem_url} alt={item.nome} className="w-full h-full object-cover rounded-lg" />
                         ) : (
@@ -143,7 +143,7 @@ export default function Cart() {
                       <div className="flex items-center gap-3">
                         <div className="flex items-center border rounded-lg overflow-hidden">
                           <button
-                            className="px-2 py-1 hover:bg-gray-100"
+                            className="px-2 py-1 hover:bg-[var(--bg-card-hover)]"
                             onClick={() => handleUpdateQty(index, item.quantidade - 1)}
                             disabled={updating}
                           >
@@ -151,7 +151,7 @@ export default function Cart() {
                           </button>
                           <span className="px-3 py-1 font-bold text-sm">{item.quantidade}</span>
                           <button
-                            className="px-2 py-1 hover:bg-gray-100"
+                            className="px-2 py-1 hover:bg-[var(--bg-card-hover)]"
                             onClick={() => handleUpdateQty(index, item.quantidade + 1)}
                             disabled={updating}
                           >
@@ -163,7 +163,7 @@ export default function Cart() {
                           size="sm"
                           onClick={() => handleRemove(index)}
                           disabled={updating}
-                          className="text-red-600 hover:text-red-700"
+                          className="text-red-500 hover:text-red-400"
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -174,7 +174,7 @@ export default function Cart() {
 
                 <Button
                   variant="outline"
-                  className="w-full text-red-600 hover:text-red-700"
+                  className="w-full text-red-500 hover:text-red-400"
                   onClick={handleClear}
                   disabled={updating}
                 >
@@ -208,7 +208,7 @@ export default function Cart() {
               </div>
 
               {siteInfo && siteInfo.pedido_minimo > 0 && subtotal < siteInfo.pedido_minimo && (
-                <p className="text-sm text-yellow-600 mb-4">
+                <p className="text-sm text-yellow-400 mb-4">
                   Pedido mínimo: R$ {siteInfo.pedido_minimo.toFixed(2)}
                 </p>
               )}

@@ -25,13 +25,13 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  pendente: "bg-yellow-100 text-yellow-800",
-  confirmado: "bg-blue-100 text-blue-800",
-  preparando: "bg-orange-100 text-orange-800",
-  pronto: "bg-green-100 text-green-800",
-  em_rota: "bg-purple-100 text-purple-800",
-  entregue: "bg-gray-100 text-gray-800",
-  cancelado: "bg-red-100 text-red-800",
+  pendente: "bg-yellow-500/15 text-yellow-400",
+  confirmado: "bg-blue-500/15 text-blue-400",
+  preparando: "bg-orange-500/15 text-orange-400",
+  pronto: "bg-green-500/15 text-green-400",
+  em_rota: "bg-purple-500/15 text-purple-400",
+  entregue: "bg-slate-500/15 text-slate-400",
+  cancelado: "bg-red-500/15 text-red-400",
 };
 
 interface Pedido {
@@ -112,7 +112,7 @@ export default function Orders() {
 
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Status</p>
-                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${statusColors[pedido.status] || "bg-gray-100 text-gray-800"}`}>
+                    <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${statusColors[pedido.status] || "bg-slate-500/15 text-slate-400"}`}>
                       {statusLabels[pedido.status] || pedido.status}
                     </span>
                   </div>

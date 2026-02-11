@@ -124,7 +124,7 @@ export default function OrderSuccess() {
                 value={nome}
                 onChange={e => setNome(e.target.value)}
                 placeholder="Seu nome completo"
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                className="dark-input"
                 style={{ "--tw-ring-color": corPrimaria } as React.CSSProperties}
               />
             </div>
@@ -135,7 +135,7 @@ export default function OrderSuccess() {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="seu@email.com"
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                className="dark-input"
                 style={{ "--tw-ring-color": corPrimaria } as React.CSSProperties}
               />
             </div>
@@ -146,7 +146,7 @@ export default function OrderSuccess() {
                 value={telefone}
                 onChange={e => setTelefone(e.target.value)}
                 placeholder="(11) 99999-9999"
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                className="dark-input"
                 style={{ "--tw-ring-color": corPrimaria } as React.CSSProperties}
               />
             </div>
@@ -157,7 +157,7 @@ export default function OrderSuccess() {
                 value={senha}
                 onChange={e => setSenha(e.target.value)}
                 placeholder="Mínimo 6 caracteres"
-                className="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2"
+                className="dark-input"
                 style={{ "--tw-ring-color": corPrimaria } as React.CSSProperties}
               />
             </div>
