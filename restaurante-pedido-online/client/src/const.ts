@@ -1,2 +1,4 @@
-// Constantes do site cliente
-export const APP_NAME = "Super Food";
+// Placeholder temporário para rodar localmente
+// TODO: substituir pelos valores reais de produção
+
+export const getLoginUrl = () => "http://localhost:3000/login";

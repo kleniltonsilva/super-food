@@ -22,6 +22,7 @@ from database.seed import seed_002_planos
 from database.seed import seed_003_restaurante_teste
 from database.seed import seed_004_categorias_padrao
 from database.seed import seed_005_config_padrao
+from database.seed import seed_006_produtos_pizzaria
 
 # Re-exports úteis
 from database.seed.seed_002_planos import (
@@ -40,6 +41,9 @@ from database.seed.seed_005_config_padrao import (
     criar_config_para_restaurante,
     get_config_padrao
 )
+from database.seed.seed_006_produtos_pizzaria import (
+    criar_produtos_pizzaria,
+)
 
 
 def get_all_seeds() -> List[BaseSeed]:
@@ -55,6 +59,7 @@ def get_all_seeds() -> List[BaseSeed]:
         seed_003_restaurante_teste.seed,
         seed_004_categorias_padrao.seed,
         seed_005_config_padrao.seed,
+        seed_006_produtos_pizzaria.seed,
     ]
 
     return sorted(seeds, key=lambda s: s.order)
@@ -145,4 +150,7 @@ __all__ = [
     'CONFIG_PADRAO',
     'criar_config_para_restaurante',
     'get_config_padrao',
+
+    # Produtos pizzaria
+    'criar_produtos_pizzaria',
 ]

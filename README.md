@@ -7,63 +7,72 @@ Veja o arquivo LICENSE para os termos legais completos.
 
 ---
 
-Sistema multi-tenant completo para gestao de restaurantes com entregas inteligentes, rastreamento GPS em tempo real, otimizacao de rotas (TSP) e gestao financeira integrada.
+Sistema multi-tenant completo para gestao de restaurantes com entregas inteligentes, rastreamento GPS em tempo real, otimizacao de rotas (TSP), site do cliente React SPA e gestao financeira integrada.
 
 ## Visao Geral
 
-O Super Food e composto por **4 aplicacoes principais**:
+O Super Food e composto por **5 aplicacoes principais**:
 
 | Aplicacao | Tecnologia | Porta | Descricao |
 |-----------|------------|-------|-----------|
-| **API Backend** | FastAPI + Uvicorn | 8000 | API REST, Site Cliente, WebSockets |
+| **API Backend** | FastAPI + Uvicorn | 8000 | API REST, WebSockets, serve React SPA |
 | **Super Admin** | Streamlit | 8501 | Painel administrativo do SaaS |
 | **Dashboard Restaurante** | Streamlit | 8502 | Gestao completa do restaurante |
 | **App Motoboy (PWA)** | Streamlit | 8503 | App mobile para entregadores |
+| **Site Cliente (React SPA)** | React 19 + Vite 7 | 5173 (dev) / 8000 (prod) | Pedido online para clientes |
 
-**Destaques Tecnicos (v2.8.3 - 07/02/2026):**
-- FastAPI como backend principal (API REST + WebSockets)
-- Banco de dados unificado em SQLAlchemy ORM
-- Sistema de selecao justa de motoboys com rotacao
-- Despacho automatico respeitando capacidade do motoboy
-- Isolamento multi-tenant completo (motoboys por restaurante)
-- Login de motoboy com codigo do restaurante
-- Capacidade de entregas configuravel por motoboy
-- Calculo automatico de taxa de entrega e ganhos
-- Autocomplete de endereco com Mapbox
-- Site do cliente via FastAPI + Templates HTML
-- Alembic configurado para migrations
-- Script de inicializacao unificado (`start_services.sh`)
-- **NOVO:** Rastreamento GPS em tempo real de motoboys
-- **NOVO:** Mapa tempo real no painel do restaurante (Folium)
-- **NOVO:** 3 modos de despacho (rapido economico, cronologico, manual)
-- **NOVO:** API GPS completa (`/api/gps/*`)
+**Versao atual: 2.8.3+ (10/02/2026)**
 
-## Instalacao
+### Stack Tecnologica
 
-### Pre-requisitos
+| Camada | Tecnologia |
+|--------|-----------|
+| Backend API | Python 3.12+ / FastAPI / Uvicorn |
+| ORM | SQLAlchemy 2.0+ |
+| Migrations | Alembic |
+| Banco (dev) | SQLite |
+| Banco (prod) | PostgreSQL |
+| Dashboards | Streamlit 1.40+ |
+| Site Cliente | React 19 + Vite 7 + TanStack Query v5 + wouter + Tailwind CSS 4 + Radix UI |
+| Auth | JWT (HS256) + bcrypt (FastAPI) / SHA256 (Streamlit) |
+| Mapas | Mapbox API (geocoding, autocomplete, rotas) |
+| Imagens | Pillow (resize + WebP) |
+| Algoritmos | TSP (Nearest Neighbor), Haversine |
+
+---
+
+## Pre-requisitos
 
 - Python 3.12+
+- Node.js 18+ e npm (para o React SPA)
 - pip
 - Conta Mapbox (para API de geocodificacao)
 
-### Setup
+---
+
+## Instalacao
 
 ```bash
 # Clonar repositorio
 git clone https://github.com/kleniltonsilva/super-food.git
 cd super-food
 
-# Criar ambiente virtual
+# Criar ambiente virtual Python
 python3 -m venv venv
 source venv/bin/activate  # Linux/Mac
 # ou: venv\Scripts\activate  # Windows
 
-# Instalar dependencias
+# Instalar dependencias Python
 pip install -r requirements.txt
+
+# Instalar dependencias do React SPA
+cd restaurante-pedido-online
+npm install
+cd ..
 
 # Configurar variaveis de ambiente
 cp .env.example .env
-# Edite .env e adicione seu MAPBOX_TOKEN
+# Edite .env e adicione seu MAPBOX_TOKEN e SECRET_KEY
 
 # Inicializar banco de dados
 python init_database.py
@@ -72,12 +81,40 @@ python init_database.py
 alembic upgrade head
 ```
 
+---
+
+## Variaveis de Ambiente (.env)
+
+```env
+# Banco de dados
+DATABASE_URL=sqlite:///./super_food.db
+
+# Mapbox API (obrigatorio para geocodificacao e autocomplete)
+MAPBOX_TOKEN=seu_token_aqui
+
+# JWT Secret (obrigatorio)
+SECRET_KEY=sua_chave_secreta_aqui
+
+# API URL base
+API_URL=http://127.0.0.1:8000
+
+# Ambiente
+ENVIRONMENT=development
+DEBUG=True
+```
+
+Para producao, substituir `DATABASE_URL` por PostgreSQL:
+```env
+DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/super_food
+```
+
+---
+
 ## Executando o Sistema
 
 ### Metodo Recomendado: Script Unificado
 
 ```bash
-# Ativar ambiente virtual
 source venv/bin/activate
 
 # Iniciar TODOS os servicos (FastAPI + Streamlit)
@@ -85,18 +122,6 @@ source venv/bin/activate
 
 # Iniciar apenas a API FastAPI
 ./start_services.sh --api-only
-```
-
-### Metodo Alternativo: Python
-
-```bash
-source venv/bin/activate
-
-# Todos os servicos em foreground
-python run_production.py
-
-# Apenas API
-python run_production.py --api-only
 ```
 
 ### Executar Servicos Individualmente
@@ -115,6 +140,12 @@ streamlit run streamlit_app/restaurante_app.py --server.port=8502
 
 # App Motoboy PWA (porta 8503)
 streamlit run app_motoboy/motoboy_app.py --server.port=8503
+
+# React SPA - Desenvolvimento (porta 5173, com proxy para API)
+cd restaurante-pedido-online && npm run dev
+
+# React SPA - Build para producao (servido pelo FastAPI em /cliente/{codigo})
+cd restaurante-pedido-online && npm run build
 ```
 
 ### Parar Todos os Servicos
@@ -123,56 +154,21 @@ streamlit run app_motoboy/motoboy_app.py --server.port=8503
 pkill -f "uvicorn|streamlit"
 ```
 
-## Testando o Sistema
+---
 
-### Verificar se os Servicos Estao Rodando
+## Acessando o Sistema
 
-```bash
-# Verificar portas ativas
-lsof -i :8000,:8501,:8502,:8503 | grep LISTEN
+| Servico | URL |
+|---------|-----|
+| API Docs (Swagger) | http://localhost:8000/docs |
+| API Docs (ReDoc) | http://localhost:8000/redoc |
+| Super Admin | http://localhost:8501 |
+| Dashboard Restaurante | http://localhost:8502 |
+| App Motoboy | http://localhost:8503 |
+| Site Cliente (dev) | http://localhost:5173 |
+| Site Cliente (prod) | http://localhost:8000/cliente/{CODIGO_RESTAURANTE} |
 
-# Testar FastAPI
-curl http://localhost:8000/
-# Resposta esperada: {"mensagem":"Super Food API - Site do Cliente ativo!"}
-
-# Testar Swagger (documentacao da API)
-# Abrir no navegador: http://localhost:8000/docs
-
-# Testar site do cliente (substitua CODIGO pelo codigo do restaurante)
-curl http://localhost:8000/site/CODIGO
-```
-
-### Testar Endpoints HTTP
-
-```bash
-# FastAPI Backend
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/
-# Esperado: 200
-
-# Super Admin
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8501/
-# Esperado: 200
-
-# Dashboard Restaurante
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8502/
-# Esperado: 200
-
-# App Motoboy
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8503/
-# Esperado: 200
-```
-
-### Verificar Logs
-
-```bash
-# Logs dos servicos (quando iniciados via start_services.sh)
-tail -f /tmp/superfood_api.log         # FastAPI
-tail -f /tmp/superfood_admin.log       # Super Admin
-tail -f /tmp/superfood_restaurante.log # Dashboard Restaurante
-tail -f /tmp/superfood_motoboy.log     # App Motoboy
-```
-
-## Credenciais de Teste
+### Credenciais de Teste
 
 | Aplicacao | Usuario/Email | Senha |
 |-----------|---------------|-------|
@@ -180,99 +176,96 @@ tail -f /tmp/superfood_motoboy.log     # App Motoboy
 | Restaurante Teste | `teste@superfood.com` | `123456` |
 | Motoboy | Codigo do restaurante + usuario + senha | Configurado no cadastro |
 
-## Fluxo de Motoboys
+---
 
-### Cadastro e Login
-1. **Restaurante cadastra motoboy** -> motoboy fica OFFLINE
-2. **Motoboy faz login no App** (codigo restaurante + usuario + senha) -> fica ONLINE
-3. **Restaurante despacha pedidos** -> apenas para motoboys ONLINE
-4. **Motoboy finaliza entregas** -> recebe novos pedidos ou fica disponivel
-
-### Capacidade de Entregas
-- Cada motoboy tem capacidade configuravel (1-20 pedidos)
-- Padrao: 3 pedidos por motoboy
-- Pode ser ajustado por tipo de veiculo (moto=3, carro=8, bicicleta=2)
-- Configuravel no cadastro e na lista de motoboys
-
-### Despacho Automatico
-- Respeita capacidade do motoboy
-- Distribui pedidos de forma justa (rotacao)
-- Pedidos excedentes ficam aguardando proximo motoboy
-
-### Modos de Despacho (v2.8.1)
-| Modo | Descricao |
-|------|-----------|
-| **Rapido Economico** | TSP por proximidade - otimiza combustivel (padrao) |
-| **Cronologico Inteligente** | Agrupa pedidos por tempo (10 min), depois TSP |
-| **Manual** | Restaurante atribui manualmente cada pedido |
-
-### Rastreamento GPS em Tempo Real (v2.8.1)
-- Motoboy online envia GPS automaticamente a cada 10 segundos
-- Mapa em tempo real no painel do restaurante (aba "Mapa")
-- Historico de posicoes armazenado no banco
-- Indicador visual de status GPS no app do motoboy
-
-## Estrutura do Projeto
+## Estrutura Geral do Projeto
 
 ```
 super-food/
-├── start_services.sh           # Script para iniciar todos os servicos
-├── run_production.py           # Script Python alternativo
-├── alembic.ini                 # Configuracao Alembic
-├── .env                        # Variaveis de ambiente
-├── requirements.txt            # Dependencias Python
-├── init_database.py            # Inicializador do banco
-├── super_food.db               # Banco SQLite (dev)
-│
-├── backend/                    # FastAPI Backend
+├── backend/                    # FastAPI Backend (API REST + WebSockets)
 │   └── app/
-│       ├── main.py             # Aplicacao principal
-│       ├── routers/            # Rotas da API
-│       └── templates/          # Templates HTML
+│       ├── main.py             # App principal, CORS, routers, WebSocket, SPA serving
+│       ├── auth.py             # Auth JWT para restaurantes
+│       ├── database.py         # get_db() para FastAPI DI
+│       ├── models.py           # Re-exporta de database/models.py
+│       ├── routers/            # 8 arquivos de rotas (50+ endpoints)
+│       ├── schemas/            # Pydantic schemas (site, carrinho, cliente)
+│       ├── utils/              # Despacho, templates de menu
+│       ├── templates/          # HTML legado (Jinja2)
+│       └── static/             # CSS legado
 │
 ├── database/                   # SQLAlchemy ORM
-│   ├── __init__.py
+│   ├── models.py               # 28 modelos ORM (fonte de verdade)
+│   ├── session.py              # get_db_session() + helpers
 │   ├── base.py                 # Base declarativa
-│   ├── models.py               # 22+ modelos ORM
-│   ├── session.py              # Gerenciamento de sessao
 │   ├── init.py                 # Funcoes de inicializacao
-│   └── seed/                   # Dados iniciais
+│   └── seed/                   # 6 seeds (super admin, planos, restaurante, etc)
 │
-├── migrations/                 # Alembic migrations
+├── migrations/                 # Alembic (12 migrations)
 │   ├── env.py
-│   ├── script.py.mako
 │   └── versions/
-│       ├── 001_initial_schema.py
-│       ├── 002_add_gps_motoboys_table.py
-│       ├── 003_add_site_cliente_schema.py
-│       ├── 004_add_motoboy_selection_fields.py
-│       ├── 005_add_motoboy_usuario_unique_constraint.py
-│       └── 006_add_modo_prioridade_e_motivo_finalizacao.py
 │
-├── streamlit_app/              # Aplicacoes Streamlit
+├── restaurante-pedido-online/  # React SPA (Site do Cliente)
+│   └── client/
+│       └── src/
+│           ├── App.tsx         # 11 rotas (wouter)
+│           ├── main.tsx        # Entry point (QueryClient, contexts)
+│           ├── lib/apiClient.ts # 30+ funcoes API (axios)
+│           ├── hooks/useQueries.ts # React Query hooks centralizados
+│           ├── contexts/       # RestauranteContext, AuthContext, ThemeContext
+│           ├── pages/          # 11 paginas (Home, Cart, Checkout, etc)
+│           └── components/     # UI components (Radix)
+│
+├── streamlit_app/              # Dashboards Streamlit
 │   ├── super_admin.py          # Admin SaaS
-│   ├── restaurante_app.py      # Dashboard Restaurante
-│   └── cliente_app.py          # Site do Cliente (legado)
+│   ├── restaurante_app.py      # Dashboard Restaurante (~1900 linhas)
+│   └── cliente_app.py          # Site do Cliente (legado Streamlit)
 │
 ├── app_motoboy/                # PWA Motoboy
 │   └── motoboy_app.py          # App Entregadores
 │
-└── utils/                      # Utilitarios
-    ├── __init__.py
-    ├── mapbox_api.py           # Integracao Mapbox
-    ├── haversine.py            # Calculo de distancia offline
-    ├── calculos.py             # Taxas e ganhos
-    ├── motoboy_selector.py     # Selecao justa de motoboys
-    └── tsp_optimizer.py        # Otimizacao de rotas
+├── utils/                      # Utilitarios compartilhados
+│   ├── mapbox_api.py           # Integracao Mapbox (geocoding, rotas)
+│   ├── haversine.py            # Calculo de distancia offline (fallback)
+│   ├── calculos.py             # Taxas de entrega e ganhos de motoboy
+│   ├── motoboy_selector.py     # Selecao justa de motoboys (rotacao)
+│   └── tsp_optimizer.py        # Otimizacao de rotas (Nearest Neighbor)
+│
+├── alembic.ini                 # Config Alembic
+├── requirements.txt            # Dependencias Python
+├── init_database.py            # Inicializador do banco
+├── start_services.sh           # Script para iniciar todos os servicos
+├── run_production.py           # Script Python alternativo
+├── super_food.db               # Banco SQLite (dev)
+├── CLAUDE.md                   # Memoria tecnica completa (para IA)
+├── ESTRUTURA.md                # Arvore de pastas + fluxo de dados
+└── .env                        # Variaveis de ambiente
 ```
+
+Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
+
+---
 
 ## Funcionalidades Principais
 
 ### API FastAPI (Backend)
-- API REST completa com documentacao Swagger
-- Site do cliente via templates HTML
-- WebSockets para atualizacoes em tempo real
-- Escalavel com multiplos workers
+- API REST completa com 50+ endpoints documentados (Swagger/ReDoc)
+- WebSockets para notificacoes em tempo real por restaurante
+- Servindo React SPA em producao (`/cliente/{codigo}`)
+- Upload de imagens com resize automatico (WebP)
+- JWT auth para restaurantes (24h) e clientes (72h)
+
+### Site Cliente (React SPA)
+- Cardapio por categorias com busca
+- Carrinho de compras (anonimo ou logado)
+- Checkout com autocomplete de endereco (Mapbox) e calculo de taxa
+- Cadastro/login de clientes (JWT + bcrypt)
+- Historico de pedidos com acompanhamento em tempo real
+- Programa de fidelidade (pontos + premios)
+- Combos e promocoes com cupons
+- Gestao de enderecos (CRUD)
+- Pagina Minha Conta (perfil, enderecos, logout)
+- Cache inteligente com React Query (staleTime por tipo de dado)
 
 ### Super Admin
 - Criacao e gestao de restaurantes (tenants)
@@ -282,166 +275,193 @@ super-food/
 
 ### Dashboard Restaurante
 - Criacao e gestao de pedidos (Entrega, Retirada, Mesa)
-- Despacho automatico com selecao justa de motoboys
-- **Configuracao de capacidade por motoboy**
-- Configuracao de taxas de entrega
-- Configuracao de pagamento de motoboys
-- Ranking de motoboys por performance
-- Gestao de caixa
-- Visualizacao de ultimo login de cada motoboy
+- Despacho automatico com 3 modos (rapido economico, cronologico, manual)
+- Gestao de cardapio (categorias, produtos, variacoes, combos)
+- Gestao de motoboys (cadastro, capacidade, ranking)
+- Mapa GPS em tempo real dos motoboys (Folium)
+- Controle de caixa (abertura, movimentacoes, fechamento)
+- Configuracao de taxas de entrega e pagamento de motoboys
+- Antifraude por localizacao (raio 50m)
 
 ### App Motoboy (PWA)
-- **Login com codigo do restaurante + usuario + senha**
-- Cadastro com codigo de acesso do restaurante
+- Login com codigo do restaurante + usuario + senha
 - Recebimento de rotas otimizadas (TSP)
+- GPS em tempo real (envia a cada 10s)
 - Finalizacao de entregas com calculo automatico de ganhos
 - Visualizacao de estatisticas e ganhos do dia
 - Toggle online/offline para disponibilidade
 
-### Site do Cliente (via FastAPI)
-- Acesso via URL: `http://localhost:8000/site/{codigo_restaurante}`
-- Cardapio organizado por categorias
-- Carrinho de compras
-- Calculo de taxa de entrega em tempo real
-- Checkout com multiplas formas de pagamento
+---
 
-## Endpoints da API FastAPI
+## Fluxo de Motoboys
 
-| Endpoint | Metodo | Descricao |
-|----------|--------|-----------|
-| `/` | GET | Health check |
-| `/docs` | GET | Documentacao Swagger interativa |
-| `/redoc` | GET | Documentacao ReDoc |
-| `/site/{codigo}` | GET | Site do cliente (HTML) |
-| `/site/{codigo}/cardapio` | GET | Cardapio do restaurante |
-| `/ws/{restaurante_id}` | WebSocket | Atualizacoes em tempo real |
-| `/api/gps/update` | POST | Atualiza localizacao GPS do motoboy |
-| `/api/gps/motoboys/{restaurante_id}` | GET | Lista motoboys online com GPS |
-| `/api/gps/historico/{motoboy_id}` | GET | Historico de posicoes GPS |
+### Cadastro e Login
+1. **Restaurante cadastra motoboy** -> motoboy fica OFFLINE
+2. **Motoboy faz login no App** (codigo restaurante + usuario + senha) -> fica ONLINE
+3. **Restaurante despacha pedidos** -> apenas para motoboys ONLINE
+4. **Motoboy finaliza entregas** -> recebe novos pedidos ou fica disponivel
 
-## Configuracao
+### Modos de Despacho
+| Modo | Descricao |
+|------|-----------|
+| **Rapido Economico** | TSP por proximidade - otimiza combustivel (padrao) |
+| **Cronologico Inteligente** | Agrupa pedidos por tempo (10 min), depois TSP |
+| **Manual** | Restaurante atribui manualmente cada pedido |
 
-### Variaveis de Ambiente (.env)
+### Rastreamento GPS em Tempo Real
+- Motoboy online envia GPS automaticamente a cada 10 segundos
+- Mapa em tempo real no painel do restaurante (aba "Mapa")
+- Historico de posicoes armazenado no banco
+- Indicador visual de status GPS no app do motoboy
 
-```env
-# Mapbox API (obrigatorio para geocodificacao)
-MAPBOX_TOKEN=seu_token_aqui
+---
 
-# Banco de dados
-DATABASE_URL=sqlite:///./super_food.db
+## Endpoints da API (Resumo)
 
-# Para producao (PostgreSQL)
-# DATABASE_URL=postgresql+psycopg2://user:pass@host/db
-```
+| Prefixo | Router | Endpoints | Descricao |
+|---------|--------|-----------|-----------|
+| `/restaurantes` | restaurantes.py | 3 | Signup, listar, detalhe |
+| `/auth/cliente` | auth_cliente.py | 12 | Registro, login, perfil, enderecos, pedidos |
+| `/site/{codigo}` | site_cliente.py | 16 | Info publica, categorias, produtos, combos, fidelidade, promocoes |
+| `/carrinho` | carrinho.py | 7 | Adicionar, atualizar, remover, finalizar |
+| `/pedidos` | pedidos.py | 2 | Criar, listar (restaurante) |
+| `/api/gps` | gps.py | 3 | Update GPS, motoboys online, historico |
+| `/api/upload` | upload.py | 1 | Upload de imagem (resize + WebP) |
+| `/ws/{id}` | main.py | 1 | WebSocket por restaurante |
 
-### Comandos Alembic
+Documentacao completa: http://localhost:8000/docs
+
+---
+
+## Comandos Alembic
 
 ```bash
-# Aplicar todas as migrations
-alembic upgrade head
-
-# Reverter ultima migration
-alembic downgrade -1
-
-# Ver historico
-alembic history
-
-# Ver versao atual
-alembic current
-
-# Criar nova migration (apos alterar models.py)
-alembic revision --autogenerate -m "descricao"
+alembic upgrade head                          # Aplicar todas as migrations
+alembic downgrade -1                          # Reverter ultima migration
+alembic current                               # Ver versao atual
+alembic history                               # Ver historico
+alembic revision --autogenerate -m "descricao"  # Criar nova migration
 ```
 
-## Changelog v2.8.3 (07/02/2026)
+---
 
-### Melhorias
-- **Ranking Antifraude** - Configuracao para permitir/bloquear finalizacao de entrega fora do raio de 50m
-- **UI Configuracoes** - Checkbox e aviso visual para opcao de antifraude por localizacao
+## Cache e Performance (Site Cliente React)
 
-## Changelog v2.8.2 (03/02/2026)
+O site cliente usa **React Query (TanStack Query v5)** para cache profissional:
 
-### Correcoes
-- **App Motoboy - Status de entregas** - Contador "Pedido X de Y" agora atualiza corretamente apos cada entrega
-- **App Motoboy - Permissao GPS** - Solicitacao explicita de permissao com indicador clicavel e mensagem de ajuda
-- **App Motoboy - Notificacoes com som** - Som de notificacao mais alto e vibracao no dispositivo
-- **App Motoboy - Erro removeChild** - Keys estaveis nos formularios evitam erro de DOM
-- **Restaurante - Notificacoes temporarias** - Mensagens de despacho agora usam toast e desaparecem apos 3s
-- **Restaurante - Status ABERTO/FECHADO** - Menu lateral agora mostra status em tempo real do banco
-- **Caixa - Retirada funcional** - Formulario de retirada corrigido com validacoes e feedback
-- **Caixa - Historico** - Adicionada visualizacao de movimentacoes do caixa
-- **Modos de despacho** - Validados: rapido economico (TSP), cronologico inteligente, manual
+| Dado | staleTime | Descricao |
+|------|-----------|-----------|
+| Site Info | 60 min | Nome, cores, horario — raramente muda |
+| Categorias | 15 min | Categorias do cardapio |
+| Produtos | 5 min | Produtos por categoria (placeholderData entre trocas) |
+| Combos | 15 min | Combos e ofertas |
+| Carrinho | 30 seg | Dado em tempo real |
+| Pedidos | 1 min | Status pode mudar frequentemente |
+| Enderecos | 5 min | Muda quando cliente edita |
 
-### Melhorias
-- Solicitacao automatica de permissao de notificacao no login do motoboy
-- Vibracao do dispositivo ao receber novas entregas
-- Indicador GPS clicavel para reautorizar permissao negada
-- Caixa pode ser aberto independente do status do restaurante
+**Hooks centrais**: `hooks/useQueries.ts` — todos os hooks React Query.
+**Mutations**: invalidam cache automaticamente (ex: adicionar ao carrinho invalida `["carrinho"]`).
+
+### Sessao e Autenticacao (Cliente)
+- JWT token salvo em `localStorage` (sf_token) — sobrevive reload
+- Cache do cliente em `localStorage` (sf_cliente) — evita flash de UI deslogada
+- Interceptor 401 no axios — logout automatico quando token expira
+- Sync multi-aba via StorageEvent — login/logout reflete em todas as abas
 
 ---
 
-## Changelog v2.8.1 (02/02/2026)
+## Recomendacoes para Producao (1000+ restaurantes)
 
-### Novidades
-- **Rastreamento GPS em tempo real** - Motoboy envia localizacao a cada 10s
-- **Mapa tempo real no restaurante** - Visualiza motoboys online no mapa (Folium)
-- **3 modos de despacho** - Rapido economico, cronologico inteligente, manual
-- **API GPS completa** - Endpoints para update, listagem e historico
-- **Motivo de finalizacao** - Rastreia se entrega foi entregue, cliente ausente, etc.
-- **Motoboy recebe em cancelamentos** - Ganho registrado mesmo com cliente ausente
+### Banco de Dados
+- Migrar SQLite -> **PostgreSQL** antes de ir para cloud
+- Connection pooling com pgBouncer
 
-### Correcoes
-- Ganhos do motoboy em entregas canceladas (cliente ausente agora paga)
-- Inconsistencia entre ganho total vs ganho diario
-- Erro JavaScript "removeChild" no Streamlit (keys unicos)
-- Cache de coordenadas do restaurante atualizado automaticamente
+### Armazenamento de Imagens
+- **S3/MinIO** para fotos de produtos, logos e banners
+- CDN (CloudFront/Cloudflare) para servir imagens
 
-### Migration 006
-- Campo `modo_prioridade_entrega` em config_restaurante
-- Campo `motivo_finalizacao` em entregas
-- Campo `motivo_cancelamento` em entregas
+### Cache
+- **Redis** para cache de cardapios e sessoes de carrinho
+
+### Deploy
+- Docker Compose para desenvolvimento
+- Docker + Kubernetes (ou ECS) para producao
+- Nginx/Caddy como reverse proxy
+
+### Subdominios em Producao
+| Servico | URL |
+|---------|-----|
+| Site cliente | `superfood.com.br/cliente/CODIGO` |
+| API | `api.superfood.com.br` |
+| Dashboard | `painel.superfood.com.br` |
+| Motoboy | `entregador.superfood.com.br` |
+| Super Admin | `admin.superfood.com.br` |
 
 ---
 
-## Changelog v2.8.0
+## Changelog
 
-### Novidades
+### v2.8.3 (07/02/2026)
+- Ranking antifraude: config para permitir/bloquear finalizacao fora do raio de 50m
+- UI Configuracoes: checkbox e aviso visual para opcao de antifraude
+
+### v2.8.2 (03/02/2026)
+- Correcoes: status de entregas, permissao GPS, notificacoes com som, erro removeChild
+- Melhorias: toast temporario, status ABERTO/FECHADO, retirada de caixa, historico caixa
+
+### v2.8.1 (02/02/2026)
+- GPS em tempo real dos motoboys (a cada 10s)
+- Mapa Folium no painel do restaurante
+- 3 modos de despacho (rapido economico, cronologico, manual)
+- API GPS completa (`/api/gps/*`)
+
+### v2.8.0
 - Login de motoboy com codigo do restaurante (isolamento multi-tenant)
 - Capacidade de entregas configuravel por motoboy (1-20)
-- Despacho automatico respeita capacidade do motoboy
-- Pedidos excedentes ficam aguardando proximo motoboy
-- Visualizacao de ultimo login na lista de motoboys
-- Constraint unica (restaurante_id + usuario) no banco
+- Despacho automatico respeita capacidade
 
-### Correcoes
-- Bug SQLAlchemy ao finalizar entrega corrigido
-- Motoboys agora so ficam online ao fazer login no App
-- Menu do restaurante estavel (sem recarregamento em loop)
-- Erro JavaScript "removeChild" corrigido
+### v3.0+ (Site Cliente React SPA)
+- React SPA completo: Home, ProductDetail, Cart, Checkout, Orders, Loyalty, Login, Account
+- OrderTracking e OrderSuccess
+- AuthContext com JWT + sync multi-aba
+- RestauranteContext com CSS variables
+- Hooks centralizados (useQueries.ts) com React Query
+- apiClient.ts com 30+ funcoes e interceptors
+
+---
 
 ## Roadmap
 
-- [x] Fase 1: Sistema base com ORM SQLAlchemy
-- [x] Fase 2: Migracao completa para Alembic
-- [x] Fase 3: Site do Cliente (4a cabeca)
-- [x] Fase 4: Selecao justa de motoboys
-- [x] Fase 5: Calculo automatico de taxas e ganhos
-- [x] Fase 6: Backend FastAPI com Site Cliente
-- [x] Fase 7: Isolamento multi-tenant de motoboys
-- [x] Fase 8: GPS em tempo real + Mapa no restaurante (v2.8.1)
-- [ ] Fase 9: Integracao iFood
-- [ ] Fase 10: App nativo (WebView)
+- [x] Fase 1-8: Sistema base, Alembic, motoboys, GPS
+- [x] Fase 9: Site Cliente React SPA (v3.0)
+- [ ] Fase 10: Integracao iFood
+- [ ] Fase 11: App nativo (WebView)
+- [ ] Fase 12: Recuperacao de senha por SMS (Twilio/AWS SNS)
+- [ ] Fase 13: Push notifications para motoboy (PWA)
 
-## Tecnologias
+---
 
-- **Backend**: FastAPI + Uvicorn
-- **Dashboards**: Streamlit (PWA-ready)
-- **Linguagem**: Python 3.12+
-- **ORM**: SQLAlchemy 2.0+
-- **Migrations**: Alembic
-- **Banco**: SQLite (dev) / PostgreSQL (prod)
-- **APIs**: Mapbox (geocoding, rotas, directions)
-- **Algoritmos**: TSP (Nearest Neighbor), Haversine
+## Verificando se os Servicos Estao Rodando
+
+```bash
+# Verificar portas ativas
+lsof -i :8000,:8501,:8502,:8503 | grep LISTEN
+
+# Testar FastAPI
+curl http://localhost:8000/
+# Resposta: {"mensagem":"Super Food API - Site do Cliente ativo!"}
+
+# Testar Swagger
+# Abrir no navegador: http://localhost:8000/docs
+
+# Logs dos servicos
+tail -f /tmp/superfood_api.log
+tail -f /tmp/superfood_admin.log
+tail -f /tmp/superfood_restaurante.log
+tail -f /tmp/superfood_motoboy.log
+```
+
+---
 
 ## Licenca
 

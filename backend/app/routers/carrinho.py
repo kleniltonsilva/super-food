@@ -12,6 +12,7 @@ import uuid
 
 from .. import models, database
 from ..schemas import carrinho_schemas
+from .auth_cliente import get_cliente_opcional
 
 router = APIRouter(prefix="/carrinho", tags=["Carrinho"])
 
@@ -110,6 +111,90 @@ def adicionar_item(
     db.commit()
     db.refresh(carrinho)
     
+    return {
+        "id": carrinho.id,
+        "sessao_id": carrinho.sessao_id,
+        "itens": carrinho.itens_json,
+        "quantidade_itens": len(carrinho.itens_json),
+        "valor_subtotal": carrinho.valor_subtotal,
+        "valor_taxa_entrega": carrinho.valor_taxa_entrega,
+        "valor_desconto": carrinho.valor_desconto,
+        "valor_total": carrinho.valor_total
+    }
+
+
+@router.post("/adicionar-combo", response_model=carrinho_schemas.CarrinhoResponse)
+def adicionar_combo(
+    payload: dict,
+    sessao_id: str = Depends(get_or_create_sessao_id),
+    db: Session = Depends(database.get_db)
+):
+    """Adiciona todos os itens de um combo ao carrinho"""
+    combo_id = payload.get("combo_id")
+    if not combo_id:
+        raise HTTPException(status_code=400, detail="combo_id é obrigatório")
+
+    combo = db.query(models.Combo).filter(
+        models.Combo.id == combo_id,
+        models.Combo.ativo == True
+    ).first()
+
+    if not combo:
+        raise HTTPException(status_code=404, detail="Combo não encontrado")
+
+    combo_itens = db.query(models.ComboItem).filter(
+        models.ComboItem.combo_id == combo.id
+    ).all()
+
+    if not combo_itens:
+        raise HTTPException(status_code=400, detail="Combo sem itens")
+
+    # Busca carrinho existente
+    carrinho = db.query(models.Carrinho).filter(
+        models.Carrinho.restaurante_id == combo.restaurante_id,
+        models.Carrinho.sessao_id == sessao_id,
+        models.Carrinho.data_expiracao > datetime.utcnow()
+    ).first()
+
+    # Monta itens do combo como um único item no carrinho
+    nomes_itens = []
+    for ci in combo_itens:
+        produto = db.query(models.Produto).filter(models.Produto.id == ci.produto_id).first()
+        if produto:
+            nomes_itens.append(f"{ci.quantidade}x {produto.nome}")
+
+    novo_item = {
+        "produto_id": None,
+        "combo_id": combo.id,
+        "nome": f"COMBO: {combo.nome}",
+        "imagem_url": combo.imagem_url,
+        "variacoes": [],
+        "observacoes": " | ".join(nomes_itens),
+        "quantidade": 1,
+        "preco_unitario": combo.preco_combo,
+        "subtotal": combo.preco_combo
+    }
+
+    if not carrinho:
+        carrinho = models.Carrinho(
+            restaurante_id=combo.restaurante_id,
+            sessao_id=sessao_id,
+            itens_json=[novo_item],
+            data_expiracao=datetime.utcnow() + timedelta(hours=24)
+        )
+        db.add(carrinho)
+    else:
+        itens = carrinho.itens_json or []
+        itens.append(novo_item)
+        carrinho.itens_json = itens
+        carrinho.data_atualizacao = datetime.utcnow()
+
+    carrinho.valor_subtotal = sum(i['subtotal'] for i in carrinho.itens_json)
+    carrinho.valor_total = carrinho.valor_subtotal + carrinho.valor_taxa_entrega - carrinho.valor_desconto
+
+    db.commit()
+    db.refresh(carrinho)
+
     return {
         "id": carrinho.id,
         "sessao_id": carrinho.sessao_id,
@@ -274,6 +359,7 @@ def limpar_carrinho(
 def finalizar_carrinho(
     finalizacao: carrinho_schemas.FinalizarCarrinhoRequest,
     sessao_id: str = Depends(get_or_create_sessao_id),
+    cliente: Optional[models.Cliente] = Depends(get_cliente_opcional),
     db: Session = Depends(database.get_db)
 ):
     """
@@ -313,22 +399,61 @@ def finalizar_carrinho(
     
     proxima_comanda = str(int(ultimo_pedido.comanda) + 1) if ultimo_pedido and ultimo_pedido.comanda.isdigit() else "1"
     
+    # Geocodifica endereço se não veio com coordenadas
+    lat_entrega = finalizacao.latitude
+    lng_entrega = finalizacao.longitude
+
+    if finalizacao.endereco_entrega and not (lat_entrega and lng_entrega):
+        try:
+            from utils.mapbox_api import geocode_address
+            coords = geocode_address(finalizacao.endereco_entrega)
+            if coords:
+                lat_entrega, lng_entrega = coords
+        except Exception:
+            pass  # Segue sem coordenadas se geocoding falhar
+
+    # Calcula taxa de entrega real se tem coordenadas
+    taxa_entrega = 0.0
+    if lat_entrega and lng_entrega and finalizacao.tipo_entrega == "entrega":
+        restaurante = db.query(models.Restaurante).filter(
+            models.Restaurante.id == carrinho.restaurante_id
+        ).first()
+        config = db.query(models.ConfigRestaurante).filter(
+            models.ConfigRestaurante.restaurante_id == carrinho.restaurante_id
+        ).first()
+        if restaurante and restaurante.latitude and restaurante.longitude and config:
+            from utils.mapbox_api import check_coverage_zone
+            resultado = check_coverage_zone(
+                (restaurante.latitude, restaurante.longitude),
+                (lat_entrega, lng_entrega),
+                config.raio_entrega_km or 10.0
+            )
+            if resultado['dentro_zona']:
+                distancia = resultado['distancia_km']
+                if distancia <= config.distancia_base_km:
+                    taxa_entrega = config.taxa_entrega_base
+                else:
+                    taxa_entrega = config.taxa_entrega_base + (distancia - config.distancia_base_km) * config.taxa_km_extra
+
+    valor_total_final = carrinho.valor_subtotal + taxa_entrega - carrinho.valor_desconto
+
     # Cria pedido
     pedido = models.Pedido(
         restaurante_id=carrinho.restaurante_id,
+        cliente_id=cliente.id if cliente else None,
         comanda=proxima_comanda,
         tipo="Entrega" if finalizacao.tipo_entrega == "entrega" else "Retirada na loja",
         origem="site",
         tipo_entrega=finalizacao.tipo_entrega,
-        cliente_nome=finalizacao.cliente_nome,
-        cliente_telefone=finalizacao.cliente_telefone,
+        cliente_nome=finalizacao.cliente_nome if finalizacao.cliente_nome else (cliente.nome if cliente else ""),
+        cliente_telefone=finalizacao.cliente_telefone if finalizacao.cliente_telefone else (cliente.telefone if cliente else ""),
         endereco_entrega=finalizacao.endereco_entrega,
-        latitude_entrega=finalizacao.latitude,
-        longitude=finalizacao.longitude,
+        latitude_entrega=lat_entrega,
+        longitude=lng_entrega,
         itens="\n".join([f"{item['quantidade']}x {item['nome']}" for item in carrinho.itens_json]),
         carrinho_json=carrinho.itens_json,
         observacoes=finalizacao.observacoes,
-        valor_total=carrinho.valor_total,
+        valor_total=round(valor_total_final, 2),
         forma_pagamento=finalizacao.forma_pagamento,
         troco_para=finalizacao.troco_para,
         status='pendente',

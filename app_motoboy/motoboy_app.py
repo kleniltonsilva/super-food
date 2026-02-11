@@ -498,7 +498,8 @@ def fazer_login_motoboy(codigo_restaurante: str, usuario: str, senha: str) -> di
         if not restaurante:
             return {'sucesso': False, 'erro': 'Código do restaurante inválido'}
 
-        senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        # strip() na senha para ignorar espaços acidentais no login
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
 
         # Buscar motoboy filtrando por restaurante_id para isolamento
         motoboy = session.query(Motoboy).options(
@@ -1525,7 +1526,8 @@ def tela_perfil():
                 elif len(nova_senha) < 4:
                     st.error("A nova senha deve ter no mínimo 4 caracteres")
                 else:
-                    motoboy.set_senha(nova_senha)
+                    # strip() para consistência ao salvar nova senha
+                    motoboy.set_senha(nova_senha.strip())
                     session.commit()
                     st.success("Senha alterada com sucesso!")
                     time.sleep(1)

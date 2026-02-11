@@ -20,9 +20,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 try:
     from database.session import get_db_session
     from database.models import (
-        Restaurante, CategoriaMenu, Produto, Pedido, ItemPedido,
-        ConfigRestaurante, Entrega, SiteConfig
+        Restaurante, CategoriaMenu, Produto, VariacaoProduto,
+        Pedido, ItemPedido, ConfigRestaurante, Entrega, SiteConfig
     )
+    from sqlalchemy import String
     from utils.calculos import calcular_taxa_entrega
     from utils.mapbox_api import (
         autocomplete_endereco_restaurante,
@@ -299,7 +300,7 @@ def get_restaurant_data():
     session = get_db_session()
     try:
         rest = session.query(Restaurante).filter(
-            (Restaurante.codigo_acesso == slug) | (Restaurante.id.cast(st.String) == slug),
+            Restaurante.codigo_acesso == slug,
             Restaurante.ativo == True
         ).first()
         
@@ -313,21 +314,32 @@ def get_restaurant_data():
             }
             return True
         return False
-    except:
-        # Mock para quando não há DB
-        st.session_state.rest_id = 1
-        st.session_state.rest_info = {'nome': 'Pizzaria Modelo', 'endereco': 'Rua das Pizzas, 123', 'telefone': '(11) 99999-9999', 'cidade': 'São Paulo'}
-        return True
+    except Exception as e:
+        st.warning(f"Erro ao buscar restaurante: {e}")
+        return False
     finally:
         try: session.close()
         except: pass
 
-def add_item(p_id, name, price):
+def add_item_to_cart(produto_id, nome, preco_calculado, qty, tamanho="", borda="", adicionais_str="", obs=""):
+    """Adiciona item ao carrinho com variações"""
+    # Chave única: produto + tamanho + borda + adicionais
+    chave = f"{produto_id}_{tamanho}_{borda}_{adicionais_str}"
     for item in st.session_state.cart:
-        if item['id'] == p_id:
-            item['qty'] += 1
+        if item.get('chave') == chave and item.get('obs', '') == obs:
+            item['qty'] += qty
             return
-    st.session_state.cart.append({'id': p_id, 'name': name, 'price': price, 'qty': 1})
+    st.session_state.cart.append({
+        'id': produto_id,
+        'chave': chave,
+        'name': nome,
+        'price': preco_calculado,
+        'qty': qty,
+        'tamanho': tamanho,
+        'borda': borda,
+        'adicionais': adicionais_str,
+        'obs': obs,
+    })
 
 # ==========================================
 # COMPONENTES DE INTERFACE
@@ -363,9 +375,9 @@ def render_menu():
     inject_styles()
     render_navbar()
     render_hero()
-    
+
     col_content, col_cart = st.columns([2.6, 1])
-    
+
     with col_content:
         session = get_db_session()
         try:
@@ -373,70 +385,156 @@ def render_menu():
                 CategoriaMenu.restaurante_id == st.session_state.rest_id,
                 CategoriaMenu.ativo == True
             ).order_by(CategoriaMenu.ordem_exibicao).all()
-            
+
             if not categorias:
                 st.info("Cardápio em atualização...")
                 return
-                
-            # Tabs de Categorias (Réplica do Modelo)
+
             tabs = st.tabs([cat.nome.upper() for cat in categorias])
-            
+
             for i, cat in enumerate(categorias):
                 with tabs[i]:
                     st.markdown(f"<h2 style='margin: 20px 0; color: {PRIMARY_COLOR};'>{cat.nome}</h2>", unsafe_allow_html=True)
-                    produtos = session.query(Produto).filter(Produto.categoria_id == cat.id, Produto.ativo == True).all()
-                    
-                    # Grid 3 colunas
+                    produtos = session.query(Produto).filter(
+                        Produto.categoria_id == cat.id,
+                        Produto.disponivel == True
+                    ).order_by(Produto.ordem_exibicao).all()
+
+                    if not produtos:
+                        st.info("Nenhum produto disponível nesta categoria.")
+                        continue
+
                     p_cols = st.columns(3)
                     for idx, p in enumerate(produtos):
                         with p_cols[idx % 3]:
+                            # Carregar variações
+                            variacoes = session.query(VariacaoProduto).filter(
+                                VariacaoProduto.produto_id == p.id,
+                                VariacaoProduto.ativo == True
+                            ).order_by(VariacaoProduto.ordem).all()
+
+                            var_por_tipo = {}
+                            for v in variacoes:
+                                var_por_tipo.setdefault(v.tipo_variacao, []).append(v)
+
+                            # Mostrar faixa de preço se tem tamanhos
+                            if "tamanho" in var_por_tipo:
+                                precos = [float(p.preco) + float(v.preco_adicional) for v in var_por_tipo["tamanho"]]
+                                preco_min, preco_max = min(precos), max(precos)
+                                preco_display = f"R$ {preco_min:.2f} ~ R$ {preco_max:.2f}"
+                            else:
+                                preco_display = f"R$ {p.preco:.2f}"
+
+                            badge_html = '<div class="badge-new">Destaque</div>' if p.destaque else ""
+                            emoji_cat = "🍕" if "pizza" in cat.nome.lower() else ("🥤" if "bebid" in cat.nome.lower() else ("🍰" if "sobremes" in cat.nome.lower() or "doce" in cat.nome.lower() else "🍽️"))
+
                             st.markdown(f"""
                             <div class="product-card">
                                 <div class="product-img">
-                                    <div class="badge-new">Destaque</div>
-                                    🍕
+                                    {badge_html}
+                                    {emoji_cat}
                                 </div>
                                 <div class="product-info">
                                     <div class="product-name">{p.nome}</div>
-                                    <div class="product-desc">{p.descricao or "Ingredientes selecionados para o melhor sabor."}</div>
-                                    <div class="product-price">R$ {p.preco:.2f}</div>
+                                    <div class="product-desc">{p.descricao or "Ingredientes selecionados."}</div>
+                                    <div class="product-price">{preco_display}</div>
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
-                            if st.button("ADICIONAR AO PEDIDO", key=f"add_{p.id}", use_container_width=True):
-                                add_item(p.id, p.nome, float(p.preco))
-                                st.toast(f"✅ {p.nome} no carrinho!")
-                                st.rerun()
-        except:
-            st.warning("Erro ao carregar produtos. Verifique o banco de dados.")
+
+                            # Seletor de variações dentro de um expander
+                            if var_por_tipo:
+                                with st.expander(f"Personalizar {p.nome}", expanded=False):
+                                    preco_item = float(p.preco)
+                                    tamanho_nome = ""
+                                    borda_nome = ""
+                                    adicionais_lista = []
+
+                                    if "tamanho" in var_por_tipo:
+                                        tam_opts = [f"{v.nome} (R$ {float(p.preco)+float(v.preco_adicional):.2f})" for v in var_por_tipo["tamanho"]]
+                                        tam_idx = st.selectbox("Tamanho", range(len(tam_opts)), format_func=lambda x: tam_opts[x], key=f"tam_{p.id}")
+                                        tam_sel = var_por_tipo["tamanho"][tam_idx]
+                                        preco_item += float(tam_sel.preco_adicional)
+                                        tamanho_nome = tam_sel.nome
+
+                                    if "borda" in var_por_tipo:
+                                        borda_opts = [f"{v.nome}" + (f" (+R$ {v.preco_adicional:.2f})" if v.preco_adicional > 0 else "") for v in var_por_tipo["borda"]]
+                                        borda_idx = st.selectbox("Borda", range(len(borda_opts)), format_func=lambda x: borda_opts[x], key=f"borda_{p.id}")
+                                        borda_sel = var_por_tipo["borda"][borda_idx]
+                                        preco_item += float(borda_sel.preco_adicional)
+                                        borda_nome = borda_sel.nome
+
+                                    if "adicional" in var_por_tipo:
+                                        adic_opts = [f"{v.nome}" + (f" (+R$ {v.preco_adicional:.2f})" if v.preco_adicional > 0 else " (grátis)") for v in var_por_tipo["adicional"]]
+                                        adic_sels = st.multiselect("Adicionais", adic_opts, key=f"adic_{p.id}")
+                                        for adic_str in adic_sels:
+                                            # Encontrar a variação correspondente
+                                            adic_idx = adic_opts.index(adic_str)
+                                            v_ad = var_por_tipo["adicional"][adic_idx]
+                                            preco_item += float(v_ad.preco_adicional)
+                                            adicionais_lista.append(v_ad.nome)
+
+                                    qty = st.number_input("Quantidade", min_value=1, value=1, step=1, key=f"qty_{p.id}")
+                                    obs_item = st.text_input("Observação", key=f"obs_{p.id}", placeholder="Ex: Sem cebola")
+
+                                    st.markdown(f"**Preço: R$ {preco_item:.2f} | Total: R$ {preco_item * qty:.2f}**")
+
+                                    if st.button("ADICIONAR", key=f"add_{p.id}", use_container_width=True, type="primary"):
+                                        adic_str = ", ".join(adicionais_lista) if adicionais_lista else ""
+                                        add_item_to_cart(p.id, p.nome, preco_item, qty, tamanho_nome, borda_nome, adic_str, obs_item)
+                                        st.toast(f"✅ {p.nome} adicionado!")
+                                        st.rerun()
+                            else:
+                                # Produto simples (bebidas, sobremesas)
+                                if st.button("ADICIONAR", key=f"add_{p.id}", use_container_width=True):
+                                    add_item_to_cart(p.id, p.nome, float(p.preco), 1)
+                                    st.toast(f"✅ {p.nome} adicionado!")
+                                    st.rerun()
+
+        except Exception as e:
+            st.warning(f"Erro ao carregar produtos: {e}")
         finally:
-            try: session.close()
-            except: pass
+            try:
+                session.close()
+            except Exception:
+                pass
 
     with col_cart:
         render_sidebar_cart()
-    
+
     render_footer()
 
 def render_sidebar_cart():
     st.markdown(f"""
     <div class="cart-container">
         <div class="cart-header">
-            <span>🛒</span> MEU PEDIDO
+            <span>🛒</span> MEU PEDIDO ({len(st.session_state.cart)} itens)
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
+
     with st.container():
         if not st.session_state.cart:
             st.markdown("<div style='padding: 40px; text-align: center; color: #bbb;'>Seu carrinho está vazio.<br>Escolha uma delícia ao lado!</div>", unsafe_allow_html=True)
             return
-            
+
         total = 0
         for i, item in enumerate(st.session_state.cart):
             c1, c2 = st.columns([4, 1])
             with c1:
                 st.markdown(f"**{item['qty']}x {item['name']}**")
+                # Detalhes das variações
+                detalhes = []
+                if item.get('tamanho'):
+                    detalhes.append(item['tamanho'])
+                if item.get('borda') and item['borda'] != "Sem borda":
+                    detalhes.append(f"Borda {item['borda']}")
+                if item.get('adicionais'):
+                    detalhes.append(item['adicionais'])
+                if detalhes:
+                    st.caption(", ".join(detalhes))
+                if item.get('obs'):
+                    st.caption(f"Obs: {item['obs']}")
                 st.markdown(f"<span style='color: {PRIMARY_COLOR}; font-weight: 700;'>R$ {item['price']*item['qty']:.2f}</span>", unsafe_allow_html=True)
             with c2:
                 if st.button("❌", key=f"del_{i}"):
@@ -444,7 +542,7 @@ def render_sidebar_cart():
                     st.rerun()
             total += item['price'] * item['qty']
             st.markdown("<hr style='margin: 10px 0; border: 0; border-top: 1px dashed #eee;'>", unsafe_allow_html=True)
-            
+
         st.markdown(f"""
         <div style="background: #fdfdfd; padding: 15px; border-radius: 10px; margin-top: 15px;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
@@ -457,7 +555,7 @@ def render_sidebar_cart():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        
+
         if st.button("FECHAR PEDIDO AGORA", type="primary", use_container_width=True):
             st.session_state.page = 'checkout'
             st.rerun()
@@ -467,58 +565,164 @@ def render_checkout():
     render_navbar()
     st.markdown("<div style='padding: 40px 8%;'>", unsafe_allow_html=True)
     st.markdown(f"<h1 style='color: {PRIMARY_COLOR}; font-weight: 800;'>FINALIZAR SEU PEDIDO</h1>", unsafe_allow_html=True)
-    
+
+    if not st.session_state.cart:
+        st.warning("Seu carrinho está vazio. Volte ao cardápio para adicionar itens.")
+        if st.button("VOLTAR AO CARDÁPIO", use_container_width=True):
+            st.session_state.page = 'menu'
+            st.rerun()
+        return
+
     col_form, col_summary = st.columns([2, 1])
-    
+
     with col_form:
         with st.container():
             st.markdown("### 👤 Seus Dados")
-            nome = st.text_input("Nome Completo", placeholder="Como devemos te chamar?")
-            whatsapp = st.text_input("WhatsApp para contato", placeholder="(00) 00000-0000")
-            
+            nome = st.text_input("Nome Completo *", placeholder="Como devemos te chamar?")
+            whatsapp = st.text_input("WhatsApp para contato *", placeholder="(00) 00000-0000")
+
             st.markdown("### 📍 Entrega ou Retirada")
             tipo = st.radio("Como deseja receber?", ["Entrega em Casa", "Retirar no Balcão"], horizontal=True)
-            
+
+            endereco = ""
+            referencia = ""
+            taxa_entrega = 0.0
             if tipo == "Entrega em Casa":
-                endereco = st.text_input("Endereço (Rua, Número, Bairro)")
+                endereco = st.text_input("Endereço completo (Rua, Número, Bairro) *")
                 referencia = st.text_input("Ponto de Referência")
-            
+                taxa_entrega = 5.0  # Taxa padrão
+
             st.markdown("### 💳 Forma de Pagamento")
-            pagamento = st.selectbox("Escolha como pagar", ["PIX", "Cartão de Crédito (Entregador)", "Cartão de Débito (Entregador)", "Dinheiro"])
-            
+            pagamento = st.selectbox("Escolha como pagar", ["PIX", "Cartão de Crédito", "Cartão de Débito", "Dinheiro"])
+
+            troco_valor = None
             if pagamento == "Dinheiro":
-                troco = st.text_input("Troco para quanto?")
-                
-            obs = st.text_area("Alguma observação? (Ex: Tirar cebola, campainha estragada...)")
+                troco_valor = st.number_input("Troco para quanto? (R$)", min_value=0.0, step=10.0)
+
+            obs = st.text_area("Alguma observação?", placeholder="Ex: Campainha estragada, apartamento 302...")
 
     with col_summary:
         st.markdown(f"""
         <div style="background: white; padding: 25px; border-radius: 15px; border: 2px solid {PRIMARY_COLOR};">
             <h3 style="margin-top:0;">Resumo do Pedido</h3>
         """, unsafe_allow_html=True)
-        
-        total = sum(item['price'] * item['qty'] for item in st.session_state.cart)
+
+        subtotal = 0
         for item in st.session_state.cart:
-            st.write(f"• {item['qty']}x {item['name']} - R$ {item['price']*item['qty']:.2f}")
-            
+            detalhes = []
+            if item.get('tamanho'):
+                detalhes.append(item['tamanho'])
+            if item.get('borda') and item['borda'] != "Sem borda":
+                detalhes.append(f"Borda {item['borda']}")
+            det_str = f" ({', '.join(detalhes)})" if detalhes else ""
+            item_total = item['price'] * item['qty']
+            st.write(f"{item['qty']}x {item['name']}{det_str} — R$ {item_total:.2f}")
+            subtotal += item_total
+
         st.markdown("---")
-        st.write(f"Subtotal: R$ {total:.2f}")
-        st.write("Taxa de Entrega: R$ 5,00")
-        st.markdown(f"<h2 style='color: {PRIMARY_COLOR};'>TOTAL: R$ {total+5:.2f}</h2>", unsafe_allow_html=True)
-        
+        st.write(f"Subtotal: R$ {subtotal:.2f}")
+        if tipo == "Entrega em Casa":
+            st.write(f"Taxa de Entrega: R$ {taxa_entrega:.2f}")
+        else:
+            st.write("Retirada: Grátis")
+            taxa_entrega = 0.0
+
+        valor_total = subtotal + taxa_entrega
+        st.markdown(f"<h2 style='color: {PRIMARY_COLOR};'>TOTAL: R$ {valor_total:.2f}</h2>", unsafe_allow_html=True)
+
         if st.button("ENVIAR PEDIDO AGORA", type="primary", use_container_width=True):
-            st.balloons()
-            st.success("🎉 Pedido enviado com sucesso! Você receberá uma confirmação no WhatsApp.")
-            st.session_state.cart = []
-            st.session_state.page = 'menu'
-            # Aqui entraria a lógica de criar_pedido no banco
-            st.rerun()
-            
+            # Validações
+            if not nome or not whatsapp:
+                st.error("Preencha nome e WhatsApp.")
+            elif tipo == "Entrega em Casa" and not endereco:
+                st.error("Preencha o endereço de entrega.")
+            else:
+                # Criar pedido no banco
+                session = get_db_session()
+                try:
+                    rest_id = st.session_state.rest_id
+
+                    # Próxima comanda
+                    ultimo = session.query(Pedido).filter(
+                        Pedido.restaurante_id == rest_id
+                    ).order_by(Pedido.id.desc()).first()
+                    proxima_comanda = str(int(ultimo.comanda) + 1) if ultimo and ultimo.comanda and ultimo.comanda.isdigit() else "1"
+
+                    # Texto dos itens
+                    itens_texto = "\n".join(
+                        f"{item['qty']}x {item['name']}"
+                        + (f" ({item.get('tamanho', '')})" if item.get('tamanho') else "")
+                        + (f" - Borda {item['borda']}" if item.get('borda') and item['borda'] != "Sem borda" else "")
+                        + (f" + {item['adicionais']}" if item.get('adicionais') else "")
+                        + (f" [Obs: {item['obs']}]" if item.get('obs') else "")
+                        for item in st.session_state.cart
+                    )
+
+                    tipo_pedido = "Entrega" if tipo == "Entrega em Casa" else "Retirada na loja"
+                    endereco_completo = f"{endereco}" + (f" (Ref: {referencia})" if referencia else "") if endereco else ""
+
+                    pedido = Pedido(
+                        restaurante_id=rest_id,
+                        comanda=proxima_comanda,
+                        tipo=tipo_pedido,
+                        origem='site',
+                        tipo_entrega='entrega' if tipo == "Entrega em Casa" else 'retirada',
+                        cliente_nome=nome,
+                        cliente_telefone=whatsapp,
+                        endereco_entrega=endereco_completo,
+                        itens=itens_texto,
+                        valor_total=valor_total,
+                        observacoes=obs,
+                        forma_pagamento=pagamento,
+                        troco_para=troco_valor,
+                        status='pendente',
+                        data_criacao=datetime.now()
+                    )
+                    session.add(pedido)
+                    session.flush()
+
+                    # Criar ItemPedido para cada item do carrinho
+                    for item in st.session_state.cart:
+                        obs_item = ""
+                        partes_obs = []
+                        if item.get('tamanho'):
+                            partes_obs.append(item['tamanho'])
+                        if item.get('borda') and item['borda'] != "Sem borda":
+                            partes_obs.append(f"Borda {item['borda']}")
+                        if item.get('adicionais'):
+                            partes_obs.append(item['adicionais'])
+                        if item.get('obs'):
+                            partes_obs.append(item['obs'])
+                        obs_item = " | ".join(partes_obs) if partes_obs else None
+
+                        item_pedido = ItemPedido(
+                            pedido_id=pedido.id,
+                            produto_id=item['id'],
+                            quantidade=item['qty'],
+                            preco_unitario=item['price'],
+                            observacoes=obs_item,
+                        )
+                        session.add(item_pedido)
+
+                    session.commit()
+
+                    st.balloons()
+                    st.success(f"Pedido #{proxima_comanda} enviado com sucesso! Aguarde a confirmação.")
+                    st.session_state.cart = []
+                    st.session_state.page = 'menu'
+                    st.rerun()
+
+                except Exception as e:
+                    session.rollback()
+                    st.error(f"Erro ao criar pedido: {e}")
+                finally:
+                    session.close()
+
         if st.button("VOLTAR AO CARDÁPIO", use_container_width=True):
             st.session_state.page = 'menu'
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-    
+
     st.markdown("</div>", unsafe_allow_html=True)
     render_footer()
 

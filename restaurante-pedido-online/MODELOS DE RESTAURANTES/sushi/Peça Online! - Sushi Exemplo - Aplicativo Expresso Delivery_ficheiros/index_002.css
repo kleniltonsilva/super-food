@@ -1,106 +1,150 @@
-.headModalCombo{
-  height: 8%;
-  border-bottom: 1px solid #dee2e6;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.footerModalCombo{
-  border-top: 1px solid #dee2e6;
-  height: 11%;
-  display: flex;
-  justify-content: end;
-  align-items: center;
-}
-
-.contentModalCombo{
-  display: flex;
-  height: 81%;
-  padding: 10px 0px;
-}
-
-.component_modal_combo_div_infos, .component_modal_combo_items{
-  width: 50%;
-}
-
-.component_modal_combo_div_infos{
-  padding: 0 14px;
-  overflow-y: auto;
-}
-
-.component_modal_combo_items{
-  height: 100%;
-  overflow-x: auto;
-}
-
-.component_modal_combo_img{
-  width: 100%;
-  margin: 0 auto;
+.component_editor_generic_session_name{
+  font-weight: 700;
+  font-family: Lato;
+  color: #444;
+  font-size: 24px;
   text-align: center;
+  margin-bottom: 10px;
 }
 
-.component_modal_combo_img img{
-  border-radius: 0.5rem;
-}
-
-.component_modal_combo_title{
-  font-family: oswald, sans-serif !important;
-  text-transform: uppercase !important;
-  font-weight: 500;
-  text-align: center;
-  line-height: normal;
-  font-size: 1.3rem;
-  margin: 14px 0;
-}
-
-.component_modal_combo_description{
-  font-size: 0.9rem;
-  white-space: pre-line;
-}
-
-#btn_finalizar_combo{
-  width: 100%;
-  margin-bottom: 30px;
-  color: #fff;
-  height: 48px;
-  font-size: 16px;
-  margin-top: 25px;
-  background-color: #00b400 !important;
-  border-bottom: 3px solid #009a00 !important;
+.component_editor_generic_img{
+  width: 65%;
+  max-width: 200px;
+  border: 1px solid #d4d4d4;
+  padding: 4px;
   border-radius: 7px;
 }
 
-.component_modal_combo_modal_title{
-  font-size: 1.25rem;
-  font-weight: normal;
+.component_editor_generic_price_img, .component_editor_generic_options, .component_editor_generic_div_flavors{
+  flex-direction: column;
+  align-items: center;
 }
 
-.hideModal{
+.component_editor_generic_label_sizes, .component_editor_generic_label_quantity_flavors{
+  color: #444;
+  float: left;
+  font-weight: 700;
+  font-size: 16px;
+  font-family: lato;
+}
+
+.component_editor_generic_settings{
+  justify-content: space-between;
+}
+
+.component_editor_generic_price_img, .component_editor_generic_settings, .component_editor_generic_options{
+  display: flex;
+  width: 100%;
+  max-width: 400px;
+  margin-bottom: 10px;
+}
+
+.component_editor_generic_div_select_sizes{
+  width: 57%;
+  display: flex;
+  flex-direction: column;
+}
+
+.component_editor_generic_div_select_quantity_flavors{
+  width: 40%;
+}
+
+.component_editor_generic_div_select_quantity_flavors .select2-container{
+  width: 100%!important;
+}
+
+#component_editor_generic_container{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: auto;
+  height: 90%;
+}
+
+#component_editor_generic_container .select2-container--default .select2-selection--single{
+  border-radius: 5px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,0.5);
+  height: 40px;
+}
+
+#component_editor_generic_container .select2-container--default .select2-selection--single .select2-selection__rendered, 
+#component_editor_generic_container .select2-container--default .select2-selection--single
+{
+  color: #797979!important;
+}
+
+#component_editor_generic_container .select2-container--default .select2-selection--single .select2-selection__arrow b
+{
+  border-color: #797979 transparent transparent transparent;
+}
+
+#component_editor_generic_container .select2-selection__rendered{
+  font-size: 18px;
+  padding: 5px;
+}
+
+.component_editor_generic_flavor, .component_editor_generic_flavor_empty, .component_editor_generic_edges, .component_editor_generic_dough, .component_editor_generic_observations{
+  padding: 15px 10px;
+  font-size: 20px;
+  color: #fff;
+  text-decoration: none;
+  float: left;
+  width: 96%;
+  border-radius: 5px;
+  margin-bottom: 15px;
+  text-align: center;
   cursor: pointer;
 }
 
-#btn_finalizar_combo.btninativo{
-  background: #d4d4d4 !important;
-  border-bottom: 3px solid #b8b8b8 !important;
-  color: #616161 !important
+.component_editor_generic_div_flavors{
+  display: flex;
+  width: 100%;
 }
 
-@media (min-width: 768px) {
-  .modalEddy.modalCombo{
-    width: 80%;
-    height: 95%;
-    padding: 10px;
-    top: 3vh;
-  }
+.component_editor_generic_flavor{
+  background: #087607;
+  border-bottom: 3px solid #014d00;
+}
 
-  #btn_finalizar_combo{
-    width: 240px;
-    margin: 14px 0px;
-    height: 40px;
-  }
+.component_editor_generic_flavor_empty{
+  background: #0062ab;
+  border-bottom: 3px solid #00345b;
+}
 
-  .modalCombo{
-    max-width: 1080px;
-  }
+.component_editor_generic_edges, .component_editor_generic_dough, .component_editor_generic_observations{
+  background: #e67e22;
+  border-bottom: 3px solid #d35400;
+}
+
+.component_editor_generic_compositions{
+  width: 100%;
+}
+
+
+.component_editor_generic_btn_finish{
+  width: 100%;
+  color: #fff;
+  font-size: 1.4rem;
+  text-align: center;
+  background: #00b400;
+  border-top: 3px solid #008a00;
+  padding: 10px;
+  height: 100%;
+  cursor: pointer;
+}
+
+.component_editor_generic_div_btn_finish{
+  height: 50px;
+}
+
+.component_editor_generic_btn_finish p {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.component_editor_generic_remove_flavor{
+  float: right;
+  color: red;
 }

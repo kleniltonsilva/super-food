@@ -55,6 +55,10 @@ from database.models import (
     TransacaoFidelidade,
     PremioFidelidade,
     Promocao,
+
+    # Combos
+    Combo,
+    ComboItem,
 )
 
 # Para compatibilidade com imports existentes
@@ -85,4 +89,6 @@ __all__ = [
     'TransacaoFidelidade',
     'PremioFidelidade',
     'Promocao',
+    'Combo',
+    'ComboItem',
 ]

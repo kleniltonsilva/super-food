@@ -18,10 +18,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="restaurantes/login")
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    """Verifica senha bcrypt. Aplica strip() para ignorar espaços acidentais."""
+    return pwd_context.verify(plain_password.strip(), hashed_password)
 
 def get_password_hash(password):
-    return pwd_context.hash(password)
+    """Hash bcrypt da senha. Aplica strip() para ignorar espaços acidentais."""
+    return pwd_context.hash(password.strip())
 
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()

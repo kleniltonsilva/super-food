@@ -25,12 +25,12 @@ class SuperAdmin(Base):
     criado_em = Column(DateTime, default=datetime.utcnow)
 
     def set_senha(self, senha: str):
-        """Gera hash SHA256 da senha"""
-        self.senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        """Gera hash SHA256 da senha. Aplica strip() para ignorar espaços acidentais."""
+        self.senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
 
     def verificar_senha(self, senha: str) -> bool:
-        """Verifica se a senha está correta"""
-        senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        """Verifica se a senha está correta. Aplica strip() para consistência com set_senha."""
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
         return self.senha_hash == senha_hash
 
 # ==================== RESTAURANTES (TENANTS) ====================
@@ -77,6 +77,7 @@ class Restaurante(Base):
     notificacoes = relationship("Notificacao", back_populates="restaurante", cascade="all, delete-orphan")
     solicitacoes_motoboy = relationship("MotoboySolicitacao", back_populates="restaurante", cascade="all, delete-orphan")
     rotas_otimizadas = relationship("RotaOtimizada", back_populates="restaurante", cascade="all, delete-orphan")
+    combos = relationship("Combo", back_populates="restaurante", cascade="all, delete-orphan")
     __table_args__ = (
         Index('idx_restaurante_email', 'email'),
         Index('idx_restaurante_status', 'status', 'ativo'),
@@ -87,12 +88,12 @@ class Restaurante(Base):
         self.codigo_acesso = secrets.token_hex(4).upper()
 
     def set_senha(self, senha: str):
-        """Gera hash SHA256 da senha"""
-        self.senha = hashlib.sha256(senha.encode()).hexdigest()
+        """Gera hash SHA256 da senha. Aplica strip() para ignorar espaços acidentais."""
+        self.senha = hashlib.sha256(senha.strip().encode()).hexdigest()
 
     def verificar_senha(self, senha: str) -> bool:
-        """Verifica se a senha está correta"""
-        senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        """Verifica se a senha está correta. Aplica strip() para consistência com set_senha."""
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
         return self.senha == senha_hash
 
 # ==================== SITE CONFIG (NOVO) ====================
@@ -222,6 +223,7 @@ class VariacaoProduto(Base):
     ordem = Column(Integer, default=0)
     ativo = Column(Boolean, default=True)
     estoque_disponivel = Column(Boolean, default=True)
+    max_sabores = Column(Integer, default=1)  # Máximo de sabores (para tipo=tamanho)
     # Relacionamento
     produto = relationship("Produto", back_populates="variacoes")
     __table_args__ = (
@@ -261,12 +263,12 @@ class Cliente(Base):
     )
 
     def set_senha(self, senha: str):
-        """Gera hash SHA256 da senha"""
-        self.senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        """Gera hash SHA256 da senha. Aplica strip() para ignorar espaços acidentais."""
+        self.senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
 
     def verificar_senha(self, senha: str) -> bool:
-        """Verifica se a senha está correta"""
-        senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        """Verifica se a senha está correta. Aplica strip() para consistência com set_senha."""
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
         return self.senha_hash == senha_hash
 
 # ==================== ENDERECOS CLIENTE (NOVO) ====================
@@ -428,14 +430,14 @@ class Motoboy(Base):
     )
 
     def set_senha(self, senha: str):
-        """Gera hash SHA256 da senha"""
-        self.senha = hashlib.sha256(senha.encode()).hexdigest()
+        """Gera hash SHA256 da senha. Aplica strip() para ignorar espaços acidentais."""
+        self.senha = hashlib.sha256(senha.strip().encode()).hexdigest()
 
     def verificar_senha(self, senha: str) -> bool:
-        """Verifica senha"""
+        """Verifica senha. Aplica strip() para consistência com set_senha."""
         if not self.senha:
             return False
-        senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
         return self.senha == senha_hash
 
 # ==================== SOLICITAÇÕES MOTOBOY ====================
@@ -789,4 +791,45 @@ class Promocao(Base):
         Index('idx_promocao_restaurante', 'restaurante_id', 'ativo'),
         Index('idx_promocao_codigo', 'restaurante_id', 'codigo_cupom'),
         Index('idx_promocao_datas', 'restaurante_id', 'data_inicio', 'data_fim'),
+    )
+
+
+# ==================== COMBOS (NOVO) ====================
+class Combo(Base):
+    """Combos promocionais do restaurante"""
+    __tablename__ = "combos"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    nome = Column(String(200), nullable=False)
+    descricao = Column(Text)
+    preco_combo = Column(Float, nullable=False)
+    preco_original = Column(Float, nullable=False)
+    imagem_url = Column(String(500))
+    ativo = Column(Boolean, default=True)
+    ordem_exibicao = Column(Integer, default=0)
+    data_inicio = Column(DateTime)
+    data_fim = Column(DateTime)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante", back_populates="combos")
+    itens = relationship("ComboItem", back_populates="combo", cascade="all, delete-orphan")
+    __table_args__ = (
+        Index('idx_combo_restaurante', 'restaurante_id', 'ativo'),
+        Index('idx_combo_datas', 'restaurante_id', 'data_inicio', 'data_fim'),
+    )
+
+
+class ComboItem(Base):
+    """Itens que compõem um combo"""
+    __tablename__ = "combo_itens"
+    id = Column(Integer, primary_key=True, index=True)
+    combo_id = Column(Integer, ForeignKey("combos.id", ondelete="CASCADE"), nullable=False)
+    produto_id = Column(Integer, ForeignKey("produtos.id", ondelete="CASCADE"), nullable=False)
+    quantidade = Column(Integer, nullable=False, default=1)
+    # Relacionamentos
+    combo = relationship("Combo", back_populates="itens")
+    produto = relationship("Produto")
+    __table_args__ = (
+        Index('idx_combo_item_combo', 'combo_id'),
     )

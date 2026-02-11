@@ -20,6 +20,18 @@ export default defineConfig({
     host: true,
     port: 5173,
     proxy: {
+      "/site": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/carrinho": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/auth": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,

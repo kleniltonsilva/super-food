@@ -44,6 +44,9 @@ pydantic[email]>=2.10.3
 # Upload de arquivos
 python-multipart>=0.0.20
 
+# Processamento de imagens (resize, crop, WebP)
+Pillow>=10.0.0
+
 # WebSockets (realtime)
 websockets>=14.1
 

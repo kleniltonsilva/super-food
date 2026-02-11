@@ -39,10 +39,13 @@ sys.path.insert(0, PROJECT_ROOT)
 from database.session import get_db_session
 from database.models import (
     Restaurante, ConfigRestaurante, Motoboy, MotoboySolicitacao,
-    Pedido, Produto, Entrega, Caixa, MovimentacaoCaixa, Notificacao,
+    Pedido, Produto, ItemPedido, Entrega, Caixa, MovimentacaoCaixa, Notificacao,
     CategoriaMenu, SiteConfig, GPSMotoboy, VariacaoProduto,
-    BairroEntrega, PremioFidelidade, Promocao, TipoProduto
+    BairroEntrega, PremioFidelidade, Promocao, TipoProduto,
+    Combo, ComboItem
 )
+
+import requests as http_requests
 
 from utils.mapbox_api import autocomplete_endereco_restaurante
 from utils.calculos import calcular_taxa_entrega, atualizar_coordenadas_restaurante
@@ -238,6 +241,24 @@ def to_dict(obj):
     return {c.name: getattr(obj, c.name) for c in obj.__table__.columns}
 
 
+API_BASE_URL = "http://localhost:8000"
+
+def upload_imagem(arquivo_uploaded, tipo: str, restaurante_id: int) -> str | None:
+    """Faz upload de imagem via API e retorna a URL ou None."""
+    try:
+        files = {"arquivo": (arquivo_uploaded.name, arquivo_uploaded.getvalue(), arquivo_uploaded.type)}
+        data = {"tipo": tipo, "restaurante_id": str(restaurante_id)}
+        resp = http_requests.post(f"{API_BASE_URL}/api/upload/imagem", files=files, data=data, timeout=15)
+        if resp.status_code == 200:
+            return resp.json()["url"]
+        else:
+            st.error(f"Erro no upload: {resp.json().get('detail', 'Erro desconhecido')}")
+            return None
+    except Exception as e:
+        st.error(f"Erro ao conectar com API de upload: {e}")
+        return None
+
+
 # ==================== INICIALIZAÇÃO DE SESSÃO ====================
 def inicializar_sessao():
     """Inicializa variáveis de sessão de forma segura"""
@@ -255,7 +276,8 @@ def fazer_login(email: str, senha: str) -> bool:
     """Login do restaurante"""
     session = get_db_session()
     try:
-        senha_hash = hashlib.sha256(senha.encode()).hexdigest()
+        # strip() na senha para ignorar espaços acidentais no login
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
 
         restaurante = session.query(Restaurante).filter(
             Restaurante.email == email,
@@ -514,6 +536,17 @@ def tela_pedidos():
 def criar_pedido_manual():
     st.subheader("➕ Criar Novo Pedido")
     rest_id = st.session_state.restaurante_id
+
+    # Inicializar lista de itens no session_state
+    if 'pedido_itens' not in st.session_state:
+        st.session_state.pedido_itens = []
+
+    # Botão limpar itens (fora do form)
+    if st.session_state.pedido_itens:
+        if st.button("🗑️ Limpar todos os itens", key="btn_limpar_itens"):
+            st.session_state.pedido_itens = []
+            st.rerun()
+
     session = get_db_session()
 
     try:
@@ -522,6 +555,12 @@ def criar_pedido_manual():
         ).order_by(Pedido.id.desc()).first()
 
         proxima_comanda = str(int(ultimo_pedido.comanda) + 1) if ultimo_pedido and ultimo_pedido.comanda.isdigit() else "1"
+
+        # Carregar categorias e produtos do catálogo
+        categorias = session.query(CategoriaMenu).filter(
+            CategoriaMenu.restaurante_id == rest_id,
+            CategoriaMenu.ativo == True
+        ).order_by(CategoriaMenu.ordem_exibicao).all()
 
         with st.form("form_criar_pedido"):
             col1, col2 = st.columns(2)
@@ -562,10 +601,6 @@ def criar_pedido_manual():
                         validado_mapbox = True
                         distancia_km_calculada = sug.get('distancia_km', 0)
 
-                        config = session.query(ConfigRestaurante).filter(
-                            ConfigRestaurante.restaurante_id == rest_id
-                        ).first()
-
                         if sug.get('dentro_zona', True):
                             resultado_taxa = calcular_taxa_entrega(rest_id, distancia_km_calculada, session)
                             taxa_entrega_calculada = resultado_taxa['taxa_total']
@@ -579,28 +614,149 @@ def criar_pedido_manual():
             elif tipo_pedido == "Para mesa":
                 numero_mesa = st.text_input("Número da Mesa *")
 
-            st.markdown("### 🍕 Itens")
-            itens = st.text_area("Descreva os itens *", placeholder="1x Pizza Calabresa\n2x Refrigerante")
+            # ==================== SELETOR DE PRODUTOS DO CATÁLOGO ====================
+            st.markdown("### 🍕 Itens do Pedido")
 
+            if categorias:
+                cat_nomes = [c.nome for c in categorias]
+                cat_sel = st.selectbox("Categoria", cat_nomes, key="cat_pedido")
+                cat_obj = next((c for c in categorias if c.nome == cat_sel), None)
+
+                if cat_obj:
+                    produtos_cat = session.query(Produto).filter(
+                        Produto.restaurante_id == rest_id,
+                        Produto.categoria_id == cat_obj.id,
+                        Produto.disponivel == True
+                    ).order_by(Produto.ordem_exibicao).all()
+
+                    if produtos_cat:
+                        prod_opcoes = {p.nome: p for p in produtos_cat}
+                        prod_sel_nome = st.selectbox("Produto", list(prod_opcoes.keys()), key="prod_pedido")
+                        prod_sel = prod_opcoes[prod_sel_nome]
+
+                        # Carregar variações do produto selecionado
+                        variacoes = session.query(VariacaoProduto).filter(
+                            VariacaoProduto.produto_id == prod_sel.id,
+                            VariacaoProduto.ativo == True
+                        ).order_by(VariacaoProduto.ordem).all()
+
+                        # Agrupar variações por tipo
+                        var_por_tipo = {}
+                        for v in variacoes:
+                            var_por_tipo.setdefault(v.tipo_variacao, []).append(v)
+
+                        preco_item = float(prod_sel.preco)
+                        descricao_variacoes = []
+
+                        # Tamanho
+                        tamanho_sel = None
+                        if "tamanho" in var_por_tipo:
+                            tam_opcoes = {v.nome: v for v in var_por_tipo["tamanho"]}
+                            tam_nome = st.selectbox("Tamanho", list(tam_opcoes.keys()), key="tam_pedido")
+                            tamanho_sel = tam_opcoes[tam_nome]
+                            preco_item += float(tamanho_sel.preco_adicional)
+                            descricao_variacoes.append(tam_nome)
+
+                        # Borda
+                        borda_sel = None
+                        if "borda" in var_por_tipo:
+                            borda_opcoes = {v.nome: v for v in var_por_tipo["borda"]}
+                            borda_nome = st.selectbox("Borda", list(borda_opcoes.keys()), key="borda_pedido")
+                            borda_sel = borda_opcoes[borda_nome]
+                            preco_item += float(borda_sel.preco_adicional)
+                            if borda_sel.preco_adicional > 0:
+                                descricao_variacoes.append(f"Borda {borda_nome}")
+
+                        # Adicionais
+                        adicionais_sel = []
+                        if "adicional" in var_por_tipo:
+                            adic_opcoes = [v.nome for v in var_por_tipo["adicional"]]
+                            adic_nomes = st.multiselect("Adicionais", adic_opcoes, key="adic_pedido")
+                            for nome_ad in adic_nomes:
+                                v_ad = next(v for v in var_por_tipo["adicional"] if v.nome == nome_ad)
+                                preco_item += float(v_ad.preco_adicional)
+                                adicionais_sel.append(v_ad)
+                                if v_ad.preco_adicional > 0:
+                                    descricao_variacoes.append(nome_ad)
+
+                        col_q, col_p = st.columns(2)
+                        with col_q:
+                            quantidade = st.number_input("Qtd", min_value=1, value=1, step=1, key="qty_pedido")
+                        with col_p:
+                            st.markdown(f"**Preço unitário: R$ {preco_item:.2f}**")
+                            st.markdown(f"**Subtotal: R$ {preco_item * quantidade:.2f}**")
+
+                        obs_item = st.text_input("Observação do item", key="obs_item_pedido", placeholder="Ex: Sem cebola")
+                    else:
+                        st.info("Nenhum produto disponível nesta categoria.")
+                        prod_sel = None
+                        preco_item = 0
+                        quantidade = 1
+                        obs_item = ""
+                        descricao_variacoes = []
+            else:
+                st.warning("Nenhuma categoria cadastrada. Cadastre no Cardápio primeiro.")
+                prod_sel = None
+                preco_item = 0
+                quantidade = 1
+                obs_item = ""
+                descricao_variacoes = []
+
+            # Itens já adicionados (exibir resumo)
+            if st.session_state.pedido_itens:
+                st.markdown("---")
+                st.markdown("**Itens no pedido:**")
+                valor_itens_total = 0
+                for idx_item, item in enumerate(st.session_state.pedido_itens):
+                    det = item.get('variacoes_desc', '')
+                    det_str = f" ({det})" if det else ""
+                    st.markdown(
+                        f"• {item['qty']}x {item['nome']}{det_str} — "
+                        f"R$ {item['preco_unit']:.2f} = **R$ {item['subtotal']:.2f}**"
+                    )
+                    valor_itens_total += item['subtotal']
+                st.markdown(f"**Subtotal itens: R$ {valor_itens_total:.2f}**")
+
+            st.markdown("---")
             col1, col2 = st.columns(2)
             with col1:
-                valor_total = st.number_input("Valor (R$)", min_value=0.0, step=1.0)
-            with col2:
                 tempo_estimado = st.number_input("Tempo (min)", min_value=5, value=45, step=5)
+            with col2:
+                observacoes = st.text_input("Observações gerais")
 
-            observacoes = st.text_area("Observações")
             forma_pagamento = st.selectbox("Pagamento", ["Dinheiro", "Cartão", "Pix", "Online"])
-
             troco_para = None
             if forma_pagamento == "Dinheiro":
                 troco_para = st.number_input("Troco para", min_value=0.0, step=5.0)
 
-            submit = st.form_submit_button("✅ Criar Pedido", use_container_width=True, type="primary")
+            col_add, col_submit = st.columns(2)
+            with col_add:
+                btn_add = st.form_submit_button("➕ Adicionar Item", use_container_width=True)
+            with col_submit:
+                btn_submit = st.form_submit_button("✅ Criar Pedido", use_container_width=True, type="primary")
 
-            if submit:
+            if btn_add:
+                if prod_sel and preco_item > 0:
+                    var_desc = ", ".join(descricao_variacoes) if descricao_variacoes else ""
+                    st.session_state.pedido_itens.append({
+                        'produto_id': prod_sel.id,
+                        'nome': prod_sel.nome,
+                        'preco_unit': preco_item,
+                        'qty': quantidade,
+                        'subtotal': preco_item * quantidade,
+                        'obs': obs_item,
+                        'variacoes_desc': var_desc,
+                    })
+                    st.rerun()
+                else:
+                    st.warning("Selecione um produto válido.")
+
+            if btn_submit:
                 erros = []
-                if not cliente_nome or not itens:
-                    erros.append("Nome e itens são obrigatórios")
+                if not cliente_nome:
+                    erros.append("Nome do cliente é obrigatório")
+                if not st.session_state.pedido_itens:
+                    erros.append("Adicione pelo menos um item ao pedido")
                 if tipo_pedido == "Entrega" and not validado_mapbox:
                     erros.append("Selecione um endereço válido")
                 if tipo_pedido == "Para mesa" and not numero_mesa:
@@ -610,7 +766,17 @@ def criar_pedido_manual():
                     for e in erros:
                         st.error(f"❌ {e}")
                 else:
-                    valor_final = valor_total + taxa_entrega_calculada if tipo_pedido == "Entrega" else valor_total
+                    # Calcular valor total dos itens
+                    valor_itens = sum(item['subtotal'] for item in st.session_state.pedido_itens)
+                    valor_final = valor_itens + (taxa_entrega_calculada if tipo_pedido == "Entrega" else 0)
+
+                    # Gerar descrição textual dos itens
+                    itens_texto = "\n".join(
+                        f"{item['qty']}x {item['nome']}"
+                        + (f" ({item['variacoes_desc']})" if item['variacoes_desc'] else "")
+                        + (f" - {item['obs']}" if item['obs'] else "")
+                        for item in st.session_state.pedido_itens
+                    )
 
                     pedido = Pedido(
                         restaurante_id=rest_id,
@@ -622,7 +788,7 @@ def criar_pedido_manual():
                         latitude_entrega=lat_cliente,
                         longitude_entrega=lon_cliente,
                         numero_mesa=numero_mesa,
-                        itens=itens,
+                        itens=itens_texto,
                         valor_total=valor_final,
                         observacoes=observacoes,
                         tempo_estimado=tempo_estimado,
@@ -635,8 +801,23 @@ def criar_pedido_manual():
                         data_criacao=datetime.now()
                     )
                     session.add(pedido)
+                    session.flush()
+
+                    # Criar ItemPedido para cada item
+                    for item in st.session_state.pedido_itens:
+                        item_pedido = ItemPedido(
+                            pedido_id=pedido.id,
+                            produto_id=item['produto_id'],
+                            quantidade=item['qty'],
+                            preco_unitario=item['preco_unit'],
+                            observacoes=item.get('obs', '') + (f" | {item['variacoes_desc']}" if item['variacoes_desc'] else ""),
+                        )
+                        session.add(item_pedido)
+
                     session.commit()
-                    st.success(f"✅ Pedido #{proxima_comanda} criado!")
+                    qtd_itens = len(st.session_state.pedido_itens)
+                    st.session_state.pedido_itens = []
+                    st.success(f"✅ Pedido #{proxima_comanda} criado com {qtd_itens} item(ns)!")
                     st.balloons()
     finally:
         session.close()
@@ -693,11 +874,14 @@ def listar_pedidos_ativos():
             return
 
         for pedido in pedidos:
-            with st.expander(f"#{pedido.comanda} - {pedido.cliente_nome} - {pedido.status.upper()}"):
+            badge_origem = "🌐 " if getattr(pedido, 'origem', '') == 'site' else ""
+            with st.expander(f"{badge_origem}#{pedido.comanda} - {pedido.cliente_nome} - {pedido.status.upper()}"):
                 col1, col2 = st.columns(2)
                 with col1:
                     st.markdown(f"**Tipo:** {pedido.tipo}")
                     st.markdown(f"**Cliente:** {pedido.cliente_nome}")
+                    if getattr(pedido, 'origem', '') == 'site':
+                        st.markdown("**Origem:** 🌐 Site do Cliente")
                     if pedido.tipo == "Entrega":
                         st.markdown(f"**Endereço:** {pedido.endereco_entrega}")
                 with col2:
@@ -1895,8 +2079,8 @@ def tela_gerenciar_cardapio():
     st.title("🍕 Gerenciamento de Cardápio")
     rest_id = st.session_state.restaurante_id
 
-    tab_cat, tab_prod, tab_var, tab_bairro, tab_promo, tab_fidel, tab_config = st.tabs([
-        "📂 Categorias", "🍽️ Produtos", "🔧 Variações",
+    tab_cat, tab_prod, tab_var, tab_combo, tab_bairro, tab_promo, tab_fidel, tab_config = st.tabs([
+        "📂 Categorias", "🍽️ Produtos", "🔧 Variações", "🎁 Combos",
         "📍 Bairros", "🎫 Promoções", "⭐ Fidelidade", "⚙️ Config Site"
     ])
 
@@ -1911,6 +2095,10 @@ def tela_gerenciar_cardapio():
     # ==================== TAB VARIAÇÕES ====================
     with tab_var:
         _tab_variacoes(rest_id)
+
+    # ==================== TAB COMBOS ====================
+    with tab_combo:
+        _tab_combos(rest_id)
 
     # ==================== TAB BAIRROS ====================
     with tab_bairro:
@@ -1960,7 +2148,7 @@ def _tab_categorias(rest_id):
                 nome = c1.text_input("Nome", placeholder="Ex: 🍕 Pizzas Salgadas")
                 icone = c2.text_input("Ícone (emoji)", placeholder="🍕")
                 descricao = st.text_input("Descrição (opcional)")
-                ordem = st.number_input("Ordem de exibição", min_value=0, value=len(categorias) + 1)
+                ordem = st.number_input("Ordem de exibição", min_value=0, value=len(categorias) + 1, key="ordem_cat")
                 if st.form_submit_button("Salvar Categoria"):
                     if nome:
                         nova = CategoriaMenu(
@@ -2047,6 +2235,17 @@ def _tab_produtos(rest_id):
         cat_selecionada = st.selectbox("Filtrar por categoria", list(cat_opcoes.keys()), key="filtro_cat_prod")
         cat_id = cat_opcoes[cat_selecionada]
 
+        # Botão carregar produtos modelo
+        total_produtos = session.query(Produto).filter(Produto.restaurante_id == rest_id).count()
+        if total_produtos == 0:
+            st.info("Nenhum produto cadastrado ainda.")
+            if st.button("📦 Carregar Produtos Modelo (Pizzaria)", key="btn_seed_produtos"):
+                from database.seed.seed_006_produtos_pizzaria import criar_produtos_pizzaria
+                criados = criar_produtos_pizzaria(session, rest_id)
+                session.commit()
+                st.success(f"✅ {criados} registros criados (produtos + variações)!")
+                st.rerun()
+
         produtos = session.query(Produto).filter(
             Produto.restaurante_id == rest_id,
             Produto.categoria_id == cat_id
@@ -2054,12 +2253,28 @@ def _tab_produtos(rest_id):
 
         # Formulário novo produto
         with st.expander("➕ Novo Produto", expanded=False):
+            # Upload de imagem fora do form
+            prod_img_file = st.file_uploader("Imagem do produto (600x600)", type=["jpg", "jpeg", "png", "webp"], key="upload_novo_prod")
+            if prod_img_file:
+                url = upload_imagem(prod_img_file, "produto", rest_id)
+                if url:
+                    st.session_state["novo_prod_img_url"] = url
+                    st.success("Imagem enviada!")
+                    st.image(url, width=120)
+
             with st.form("form_novo_prod", clear_on_submit=True):
+                # Categoria como selectbox
+                cat_nomes_novo = [c.nome for c in categorias]
+                cat_ids_novo = [c.id for c in categorias]
+                cat_idx_default = cat_ids_novo.index(cat_id) if cat_id in cat_ids_novo else 0
+                cat_novo_sel = st.selectbox("Categoria", cat_nomes_novo, index=cat_idx_default, key="cat_novo_prod")
+                cat_id_novo = cat_ids_novo[cat_nomes_novo.index(cat_novo_sel)]
+
                 p1, p2 = st.columns(2)
                 nome = p1.text_input("Nome do produto")
                 preco = p2.number_input("Preço (R$)", min_value=0.0, step=0.5, format="%.2f")
-                descricao = st.text_area("Descrição", height=80)
-                imagem_url = st.text_input("URL da imagem (opcional)")
+                descricao = st.text_area("Descrição", height=80, key="desc_prod")
+                imagem_url = st.text_input("URL da imagem (ou use upload acima)", value=st.session_state.get("novo_prod_img_url", ""))
                 pc1, pc2, pc3 = st.columns(3)
                 destaque = pc1.checkbox("Destaque")
                 promo = pc2.checkbox("Em promoção")
@@ -2067,12 +2282,12 @@ def _tab_produtos(rest_id):
                 ec1, ec2 = st.columns(2)
                 estoque_ilim = ec1.checkbox("Estoque ilimitado", value=True)
                 estoque_qtd = ec2.number_input("Quantidade em estoque", min_value=0, value=0) if not estoque_ilim else 0
-                ordem = st.number_input("Ordem de exibição", min_value=0, value=len(produtos) + 1)
+                ordem = st.number_input("Ordem de exibição", min_value=0, value=len(produtos) + 1, key="ordem_prod")
 
                 if st.form_submit_button("Salvar Produto"):
                     if nome and preco > 0:
                         novo = Produto(
-                            restaurante_id=rest_id, categoria_id=cat_id,
+                            restaurante_id=rest_id, categoria_id=cat_id_novo,
                             nome=nome, descricao=descricao, preco=preco,
                             imagem_url=imagem_url or None, destaque=destaque,
                             promocao=promo, preco_promocional=preco_promo if promo else None,
@@ -2081,7 +2296,7 @@ def _tab_produtos(rest_id):
                         )
                         session.add(novo)
                         session.commit()
-                        st.success(f"Produto '{nome}' criado!")
+                        st.success(f"Produto '{nome}' criado na categoria '{cat_novo_sel}'!")
                         st.rerun()
                     else:
                         st.warning("Nome e preço são obrigatórios.")
@@ -2119,12 +2334,23 @@ def _tab_produtos(rest_id):
 
                 # Formulário editar
                 if st.session_state.get(f"edit_prod_{prod.id}", False):
+                    # Upload de imagem fora do form
+                    edit_img_file = st.file_uploader("Nova imagem", type=["jpg", "jpeg", "png", "webp"], key=f"upload_edit_{prod.id}")
+                    if edit_img_file:
+                        url = upload_imagem(edit_img_file, "produto", rest_id)
+                        if url:
+                            st.session_state[f"edit_prod_img_{prod.id}"] = url
+                            st.success("Imagem enviada!")
+                            st.image(url, width=120)
+                    elif prod.imagem_url:
+                        st.image(prod.imagem_url, width=80, caption="Imagem atual")
+
                     with st.form(f"form_edit_prod_{prod.id}"):
                         ep1, ep2 = st.columns(2)
                         novo_nome = ep1.text_input("Nome", value=prod.nome, key=f"epn_{prod.id}")
                         novo_preco = ep2.number_input("Preço", value=prod.preco, step=0.5, format="%.2f", key=f"epp_{prod.id}")
                         nova_desc = st.text_area("Descrição", value=prod.descricao or "", key=f"epd_{prod.id}")
-                        nova_img = st.text_input("URL imagem", value=prod.imagem_url or "", key=f"epi_{prod.id}")
+                        nova_img = st.text_input("URL imagem", value=st.session_state.get(f"edit_prod_img_{prod.id}", prod.imagem_url or ""), key=f"epi_{prod.id}")
                         epc1, epc2 = st.columns(2)
                         novo_dest = epc1.checkbox("Destaque", value=prod.destaque, key=f"epdt_{prod.id}")
                         nova_promo = epc2.checkbox("Promoção", value=prod.promocao, key=f"eppr_{prod.id}")
@@ -2186,13 +2412,18 @@ def _tab_variacoes(rest_id):
                         nome = v1.text_input("Nome", key=f"vn_{tipo}_{prod_id}")
                         preco_ad = v2.number_input("Preço adicional (R$)", min_value=0.0, step=0.5, format="%.2f", key=f"vp_{tipo}_{prod_id}")
                         desc = st.text_input("Descrição (opcional)", key=f"vd_{tipo}_{prod_id}")
-                        ordem = st.number_input("Ordem", min_value=0, value=len(variacoes) + 1, key=f"vo_{tipo}_{prod_id}")
+                        v3, v4 = st.columns(2)
+                        ordem = v3.number_input("Ordem", min_value=0, value=len(variacoes) + 1, key=f"vo_{tipo}_{prod_id}")
+                        max_sab = 1
+                        if tipo == "tamanho":
+                            max_sab = v4.number_input("Max sabores", min_value=1, max_value=4, value=1, key=f"vms_{tipo}_{prod_id}")
                         if st.form_submit_button("Salvar"):
                             if nome:
                                 nova = VariacaoProduto(
                                     produto_id=prod_id, tipo_variacao=tipo,
                                     nome=nome, descricao=desc, preco_adicional=preco_ad,
-                                    ordem=ordem, ativo=True
+                                    ordem=ordem, ativo=True,
+                                    max_sabores=max_sab if tipo == "tamanho" else 1
                                 )
                                 session.add(nova)
                                 session.commit()
@@ -2205,18 +2436,33 @@ def _tab_variacoes(rest_id):
                     continue
 
                 for v in variacoes:
-                    vc = st.columns([3, 1, 1, 1])
-                    vc[0].write(f"**{v.nome}** — +R$ {v.preco_adicional:.2f}")
+                    if tipo == "tamanho":
+                        vc = st.columns([3, 1, 1, 1, 1])
+                        vc[0].write(f"**{v.nome}** — +R$ {v.preco_adicional:.2f} (max {v.max_sabores or 1} sabor{'es' if (v.max_sabores or 1) > 1 else ''})")
+                    else:
+                        vc = st.columns([3, 1, 1, 1, 1])
+                        vc[0].write(f"**{v.nome}** — +R$ {v.preco_adicional:.2f}")
                     vc[1].write("✅" if v.ativo else "❌")
                     tog_label = "Desativar" if v.ativo else "Ativar"
                     if vc[2].button(tog_label, key=f"vtog_{v.id}"):
                         v.ativo = not v.ativo
                         session.commit()
                         st.rerun()
-                    if vc[3].button("🗑️", key=f"vdel_{v.id}"):
-                        session.delete(v)
-                        session.commit()
-                        st.rerun()
+                    if tipo == "tamanho":
+                        new_ms = vc[3].number_input("Sabores", min_value=1, max_value=4, value=v.max_sabores or 1, key=f"vms_edit_{v.id}", label_visibility="collapsed")
+                        if new_ms != (v.max_sabores or 1):
+                            v.max_sabores = new_ms
+                            session.commit()
+                            st.rerun()
+                        if vc[4].button("🗑️", key=f"vdel_{v.id}"):
+                            session.delete(v)
+                            session.commit()
+                            st.rerun()
+                    else:
+                        if vc[3].button("🗑️", key=f"vdel_{v.id}"):
+                            session.delete(v)
+                            session.commit()
+                            st.rerun()
 
         # Botão carregar variações padrão
         st.divider()
@@ -2258,6 +2504,111 @@ def _tab_variacoes(rest_id):
             session.commit()
             st.success(f"{count} variações padrão carregadas para '{prod_selecionado}'!")
             st.rerun()
+    finally:
+        session.close()
+
+
+def _tab_combos(rest_id):
+    """Gestão de combos promocionais"""
+    st.subheader("🎁 Combos Promocionais")
+    session = get_db_session()
+    try:
+        combos = session.query(Combo).filter(
+            Combo.restaurante_id == rest_id
+        ).order_by(Combo.ordem_exibicao).all()
+
+        produtos = session.query(Produto).filter(
+            Produto.restaurante_id == rest_id,
+            Produto.disponivel == True
+        ).order_by(Produto.nome).all()
+
+        # Formulário novo combo
+        with st.expander("➕ Novo Combo", expanded=False):
+            with st.form("form_novo_combo", clear_on_submit=True):
+                nome = st.text_input("Nome do combo", placeholder="Ex: Combo Família")
+                descricao = st.text_area("Descrição", placeholder="Ex: 2 pizzas + refrigerante 2L")
+
+                c1, c2 = st.columns(2)
+                preco_original = c1.number_input("Preço original (R$)", min_value=0.0, format="%.2f", key="combo_preco_orig")
+                preco_combo = c2.number_input("Preço do combo (R$)", min_value=0.0, format="%.2f", key="combo_preco")
+
+                c3, c4 = st.columns(2)
+                data_inicio = c3.date_input("Data início (opcional)", value=None, key="combo_dt_ini")
+                data_fim = c4.date_input("Data fim (opcional)", value=None, key="combo_dt_fim")
+
+                ordem = st.number_input("Ordem de exibição", min_value=0, value=len(combos) + 1, key="combo_ordem")
+
+                # Seleção de produtos
+                st.markdown("**Itens do Combo:**")
+                opcoes_prod = {f"{p.nome} (R$ {p.preco:.2f})": p.id for p in produtos}
+                produtos_selecionados = st.multiselect("Selecione os produtos", list(opcoes_prod.keys()), key="combo_prods")
+                quantidades_str = st.text_input("Quantidades (separadas por vírgula)", value=",".join(["1"] * len(produtos_selecionados)), key="combo_qtds")
+
+                if st.form_submit_button("Salvar Combo"):
+                    if nome and preco_combo > 0 and produtos_selecionados:
+                        novo_combo = Combo(
+                            restaurante_id=rest_id,
+                            nome=nome,
+                            descricao=descricao,
+                            preco_combo=preco_combo,
+                            preco_original=preco_original,
+                            ordem_exibicao=ordem,
+                            ativo=True,
+                            data_inicio=datetime.combine(data_inicio, datetime.min.time()) if data_inicio else None,
+                            data_fim=datetime.combine(data_fim, datetime.max.time()) if data_fim else None,
+                        )
+                        session.add(novo_combo)
+                        session.flush()
+
+                        qtds = [int(q.strip()) for q in quantidades_str.split(",") if q.strip().isdigit()]
+                        for i, prod_label in enumerate(produtos_selecionados):
+                            prod_id = opcoes_prod[prod_label]
+                            qtd = qtds[i] if i < len(qtds) else 1
+                            item = ComboItem(combo_id=novo_combo.id, produto_id=prod_id, quantidade=qtd)
+                            session.add(item)
+
+                        session.commit()
+                        st.success(f"Combo '{nome}' criado com {len(produtos_selecionados)} itens!")
+                        st.rerun()
+                    else:
+                        st.warning("Preencha nome, preço e selecione pelo menos um produto.")
+
+        # Listar combos
+        if not combos:
+            st.info("Nenhum combo cadastrado.")
+            return
+
+        for combo in combos:
+            itens = session.query(ComboItem).filter(ComboItem.combo_id == combo.id).all()
+            economia = combo.preco_original - combo.preco_combo
+            pct = (economia / combo.preco_original * 100) if combo.preco_original > 0 else 0
+
+            with st.container():
+                cols = st.columns([4, 2, 2, 1, 1])
+                cols[0].markdown(f"**{combo.nome}** {'✅' if combo.ativo else '❌'}")
+                cols[1].write(f"~~R$ {combo.preco_original:.2f}~~ → **R$ {combo.preco_combo:.2f}**")
+                cols[2].write(f"Economia: R$ {economia:.2f} ({pct:.0f}%)")
+
+                if cols[3].button("✅" if not combo.ativo else "❌", key=f"toggle_combo_{combo.id}"):
+                    combo.ativo = not combo.ativo
+                    session.commit()
+                    st.rerun()
+
+                if cols[4].button("🗑️", key=f"del_combo_{combo.id}"):
+                    session.delete(combo)
+                    session.commit()
+                    st.rerun()
+
+                # Mostrar itens
+                if itens:
+                    itens_txt = []
+                    for it in itens:
+                        prod = session.query(Produto).filter(Produto.id == it.produto_id).first()
+                        nome_prod = prod.nome if prod else "Produto removido"
+                        itens_txt.append(f"{it.quantidade}x {nome_prod}")
+                    st.caption("Itens: " + " | ".join(itens_txt))
+
+                st.divider()
     finally:
         session.close()
 
@@ -2321,7 +2672,7 @@ def _tab_promocoes(rest_id):
         with st.expander("➕ Nova Promoção", expanded=False):
             with st.form("form_nova_promo", clear_on_submit=True):
                 nome = st.text_input("Nome da promoção")
-                descricao = st.text_area("Descrição", height=60)
+                descricao = st.text_area("Descrição", height=68, key="desc_promo")
                 pr1, pr2 = st.columns(2)
                 tipo = pr1.selectbox("Tipo de desconto", ["percentual", "fixo"])
                 valor = pr2.number_input("Valor do desconto", min_value=0.0, step=0.5, format="%.2f")
@@ -2389,7 +2740,7 @@ def _tab_fidelidade(rest_id):
         with st.expander("➕ Novo Prêmio", expanded=False):
             with st.form("form_novo_premio", clear_on_submit=True):
                 nome = st.text_input("Nome do prêmio")
-                descricao = st.text_area("Descrição", height=60)
+                descricao = st.text_area("Descrição", height=68, key="desc_premio")
                 fp1, fp2, fp3 = st.columns(3)
                 tipo = fp1.selectbox("Tipo", ["desconto", "item_gratis", "brinde"])
                 custo = fp2.number_input("Custo em pontos", min_value=1, value=100)
@@ -2444,17 +2795,40 @@ def _tab_config_site(rest_id):
                 st.rerun()
             return
 
+        # Upload de imagens (fora do form por limitação do Streamlit)
+        st.markdown("**Upload de Imagens**")
+        ucol1, ucol2 = st.columns(2)
+        with ucol1:
+            logo_file = st.file_uploader("Upload Logo (200x200)", type=["jpg", "jpeg", "png", "webp"], key="upload_logo_site")
+            if logo_file:
+                url = upload_imagem(logo_file, "logo", rest_id)
+                if url:
+                    st.session_state["logo_url_uploaded"] = url
+                    st.success("Logo enviado!")
+            if st.session_state.get("logo_url_uploaded") or config.logo_url:
+                preview_url = st.session_state.get("logo_url_uploaded", config.logo_url)
+                if preview_url:
+                    st.image(preview_url, width=100, caption="Logo atual")
+        with ucol2:
+            banner_file = st.file_uploader("Upload Banner (1200x400)", type=["jpg", "jpeg", "png", "webp"], key="upload_banner_site")
+            if banner_file:
+                url = upload_imagem(banner_file, "banner", rest_id)
+                if url:
+                    st.session_state["banner_url_uploaded"] = url
+                    st.success("Banner enviado!")
+            if st.session_state.get("banner_url_uploaded") or config.banner_principal_url:
+                preview_url = st.session_state.get("banner_url_uploaded", config.banner_principal_url)
+                if preview_url:
+                    st.image(preview_url, width=300, caption="Banner atual")
+
         with st.form("form_config_site"):
             TIPOS = ["pizzaria", "hamburgueria", "japones", "churrascaria", "la_carte", "acai", "marmitex", "geral"]
             tipo_idx = TIPOS.index(config.tipo_restaurante) if config.tipo_restaurante in TIPOS else len(TIPOS) - 1
             tipo = st.selectbox("Tipo de restaurante", TIPOS, index=tipo_idx)
 
-            st.markdown("**Visual**")
-            vc1, vc2 = st.columns(2)
-            cor_pri = vc1.color_picker("Cor primária", value=config.tema_cor_primaria or "#FF6B35")
-            cor_sec = vc2.color_picker("Cor secundária", value=config.tema_cor_secundaria or "#004E89")
-            logo = st.text_input("URL do logo", value=config.logo_url or "")
-            banner = st.text_input("URL do banner", value=config.banner_principal_url or "")
+            st.markdown("**URLs de Imagens** (ou use o upload acima)")
+            logo = st.text_input("URL do logotipo", value=st.session_state.get("logo_url_uploaded", config.logo_url or ""))
+            banner = st.text_input("URL do banner principal", value=st.session_state.get("banner_url_uploaded", config.banner_principal_url or ""))
 
             st.markdown("**WhatsApp**")
             wc1, wc2 = st.columns(2)
@@ -2477,8 +2851,6 @@ def _tab_config_site(rest_id):
 
             if st.form_submit_button("💾 Salvar Configuração"):
                 config.tipo_restaurante = tipo
-                config.tema_cor_primaria = cor_pri
-                config.tema_cor_secundaria = cor_sec
                 config.logo_url = logo or None
                 config.banner_principal_url = banner or None
                 config.whatsapp_numero = whats_num or None

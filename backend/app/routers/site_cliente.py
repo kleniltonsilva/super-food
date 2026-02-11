@@ -185,7 +185,8 @@ def get_produtos(
                     "nome": v.nome,
                     "descricao": v.descricao,
                     "preco_adicional": v.preco_adicional,
-                    "estoque_disponivel": v.estoque_disponivel
+                    "estoque_disponivel": v.estoque_disponivel,
+                    "max_sabores": v.max_sabores or 1
                 }
                 for v in variacoes
             ]
@@ -233,7 +234,8 @@ def get_produto_detalhado(
             "nome": v.nome,
             "descricao": v.descricao,
             "preco_adicional": v.preco_adicional,
-            "estoque_disponivel": v.estoque_disponivel
+            "estoque_disponivel": v.estoque_disponivel,
+            "max_sabores": v.max_sabores or 1
         })
     
     return {
@@ -402,6 +404,164 @@ def get_bairro_por_nome(
         "bairro": bairro.nome,
         "taxa_entrega": bairro.taxa_entrega,
         "tempo_estimado_min": bairro.tempo_estimado_min
+    }
+
+
+# ==================== SABORES (PIZZA) ====================
+@router.get("/{codigo_acesso}/produto/{produto_id}/sabores")
+def get_sabores_disponiveis(
+    codigo_acesso: str,
+    produto_id: int,
+    db: Session = Depends(database.get_db)
+):
+    """Retorna produtos da mesma categoria como opções de sabor"""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    produto = db.query(models.Produto).filter(
+        models.Produto.id == produto_id,
+        models.Produto.restaurante_id == restaurante.id
+    ).first()
+
+    if not produto or not produto.categoria_id:
+        return {"sabores": []}
+
+    # Busca todos os produtos da mesma categoria (exceto o próprio)
+    sabores = db.query(models.Produto).filter(
+        models.Produto.restaurante_id == restaurante.id,
+        models.Produto.categoria_id == produto.categoria_id,
+        models.Produto.disponivel == True
+    ).order_by(models.Produto.nome).all()
+
+    return {
+        "sabores": [
+            {
+                "id": s.id,
+                "nome": s.nome,
+                "descricao": s.descricao,
+                "preco": s.preco,
+                "imagem_url": s.imagem_url
+            }
+            for s in sabores
+        ]
+    }
+
+
+# ==================== COMBOS ====================
+@router.get("/{codigo_acesso}/combos", response_model=List[site_schemas.ComboPublic])
+def get_combos(
+    codigo_acesso: str,
+    db: Session = Depends(database.get_db)
+):
+    """Retorna combos ativos do restaurante"""
+    from datetime import datetime as dt
+
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper(),
+        models.Restaurante.ativo == True
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    agora = dt.utcnow()
+
+    combos = db.query(models.Combo).filter(
+        models.Combo.restaurante_id == restaurante.id,
+        models.Combo.ativo == True,
+        (models.Combo.data_inicio == None) | (models.Combo.data_inicio <= agora),
+        (models.Combo.data_fim == None) | (models.Combo.data_fim >= agora)
+    ).order_by(models.Combo.ordem_exibicao).all()
+
+    resultado = []
+    for combo in combos:
+        itens = db.query(models.ComboItem).filter(
+            models.ComboItem.combo_id == combo.id
+        ).all()
+
+        itens_publicos = []
+        for item in itens:
+            produto = db.query(models.Produto).filter(
+                models.Produto.id == item.produto_id
+            ).first()
+            if produto:
+                itens_publicos.append({
+                    "produto_id": produto.id,
+                    "produto_nome": produto.nome,
+                    "quantidade": item.quantidade,
+                    "produto_imagem_url": produto.imagem_url
+                })
+
+        resultado.append({
+            "id": combo.id,
+            "nome": combo.nome,
+            "descricao": combo.descricao,
+            "preco_combo": combo.preco_combo,
+            "preco_original": combo.preco_original,
+            "imagem_url": combo.imagem_url,
+            "ordem_exibicao": combo.ordem_exibicao or 0,
+            "itens": itens_publicos
+        })
+
+    return resultado
+
+
+# ==================== TRACKING DE PEDIDO ====================
+@router.get("/{codigo_acesso}/pedido/{pedido_id}/tracking")
+def get_pedido_tracking(
+    codigo_acesso: str,
+    pedido_id: int,
+    db: Session = Depends(database.get_db)
+):
+    """Retorna status do pedido para acompanhamento pelo cliente"""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    pedido = db.query(models.Pedido).filter(
+        models.Pedido.id == pedido_id,
+        models.Pedido.restaurante_id == restaurante.id
+    ).first()
+
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+
+    # Busca motoboy se despachado
+    motoboy_info = None
+    if pedido.motoboy_id:
+        motoboy = db.query(models.Motoboy).filter(
+            models.Motoboy.id == pedido.motoboy_id
+        ).first()
+        if motoboy:
+            gps = db.query(models.GPSMotoboy).filter(
+                models.GPSMotoboy.motoboy_id == motoboy.id
+            ).order_by(models.GPSMotoboy.data_hora.desc()).first()
+            motoboy_info = {
+                "nome": motoboy.nome,
+                "latitude": gps.latitude if gps else None,
+                "longitude": gps.longitude if gps else None,
+            }
+
+    return {
+        "id": pedido.id,
+        "comanda": pedido.comanda,
+        "status": pedido.status,
+        "tipo_entrega": pedido.tipo_entrega,
+        "endereco_entrega": pedido.endereco_entrega,
+        "latitude_entrega": pedido.latitude_entrega,
+        "longitude_entrega": pedido.longitude_entrega,
+        "valor_total": pedido.valor_total,
+        "data_criacao": pedido.data_criacao.isoformat() if pedido.data_criacao else None,
+        "tempo_estimado": pedido.tempo_estimado,
+        "motoboy": motoboy_info,
+        "carrinho_json": pedido.carrinho_json,
     }
 
 

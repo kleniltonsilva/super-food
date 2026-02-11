@@ -84,8 +84,8 @@ class CarrinhoResponse(BaseModel):
 class FinalizarCarrinhoRequest(BaseModel):
     """Request para finalizar carrinho e criar pedido"""
 
-    cliente_nome: str = Field(..., min_length=3, max_length=200)
-    cliente_telefone: str = Field(..., min_length=10, max_length=20)
+    cliente_nome: Optional[str] = Field(None, min_length=3, max_length=200)
+    cliente_telefone: Optional[str] = Field(None, min_length=10, max_length=20)
 
     tipo_entrega: str = Field(
         ...,

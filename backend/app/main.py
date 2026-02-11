@@ -9,7 +9,7 @@ from pathlib import Path
 import os, json
 from typing import List, Dict
 
-from .routers import restaurantes, pedidos, site_cliente, carrinho, gps
+from .routers import restaurantes, pedidos, site_cliente, carrinho, gps, auth_cliente, upload
 from .database import engine, Base, get_db
 from . import models
 
@@ -32,26 +32,23 @@ app.add_middleware(
 )
 
 # Diretório do React build
-REACT_BUILD_DIR = Path(__file__).parent.parent.parent / "restaurante-pedido-online" / "dist"
+REACT_BUILD_DIR = Path(__file__).parent.parent.parent / "restaurante-pedido-online" / "dist" / "public"
 
 # ==================== Static files ====================
 # Static do backend
 app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 
-# Assets e SPA React
-if REACT_BUILD_DIR.exists():
-    # Monta toda a pasta do build como raiz
-    app.mount("/", StaticFiles(directory=str(REACT_BUILD_DIR), html=True), name="react_spa")
-
 # Templates Jinja2
 templates = Jinja2Templates(directory="backend/templates")
 
-# ==================== Routers API ====================
+# ==================== Routers API (ANTES do SPA mount) ====================
 app.include_router(restaurantes.router)
 app.include_router(pedidos.router)
 app.include_router(site_cliente.router)
 app.include_router(carrinho.router)
 app.include_router(gps.router)
+app.include_router(auth_cliente.router)
+app.include_router(upload.router)
 
 # ==================== WebSocket ====================
 class ConnectionManager:
@@ -85,17 +82,6 @@ async def websocket_endpoint(websocket: WebSocket, restaurante_id: int):
     except WebSocketDisconnect:
         manager.disconnect(websocket, restaurante_id)
 
-# ==================== Rotas HTML existentes ====================
-@app.get("/site/{codigo_acesso}", response_class=HTMLResponse)
-async def site_home(request: Request, codigo_acesso: str, db: Session = Depends(get_db)):
-    # mantém todo o código original do site Jinja2
-    ...
-
-@app.get("/site/{codigo_acesso}/cardapio", response_class=HTMLResponse)
-async def site_cardapio(request: Request, codigo_acesso: str, db: Session = Depends(get_db)):
-    # mantém todo o código original do cardápio
-    ...
-
 # ==================== SPA React (cliente) ====================
 @app.get("/cliente/{codigo_acesso}", response_class=HTMLResponse)
 async def serve_react_app(codigo_acesso: str):
@@ -106,5 +92,26 @@ async def serve_react_app(codigo_acesso: str):
         script = f'<script>window.RESTAURANTE_CODIGO="{codigo_acesso}";</script>'
         content = content.replace('</head>', f'{script}</head>')
         return HTMLResponse(content=content)
-    return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)
+    return HTMLResponse("<h1>Build do React não encontrado. Execute: cd restaurante-pedido-online && npm run build</h1>", status_code=500)
 
+
+@app.get("/cliente/{codigo_acesso}/{path:path}", response_class=HTMLResponse)
+async def serve_react_app_catchall(codigo_acesso: str, path: str):
+    """Catch-all para SPA routing — redireciona tudo para index.html"""
+    # Verifica se é um asset (js, css, imagens)
+    if path.startswith("assets/") or "." in path.split("/")[-1]:
+        asset_file = REACT_BUILD_DIR / path
+        if asset_file.exists():
+            import mimetypes
+            content_type = mimetypes.guess_type(str(asset_file))[0] or "application/octet-stream"
+            from fastapi.responses import Response
+            return Response(content=asset_file.read_bytes(), media_type=content_type)
+
+    # Para rotas do SPA, serve o index.html
+    index_file = REACT_BUILD_DIR / "index.html"
+    if index_file.exists():
+        content = index_file.read_text()
+        script = f'<script>window.RESTAURANTE_CODIGO="{codigo_acesso}";</script>'
+        content = content.replace('</head>', f'{script}</head>')
+        return HTMLResponse(content=content)
+    return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)

@@ -240,6 +240,26 @@ def criar_categorias_padrao(restaurante_id: int, tipo_restaurante: str, db_sessi
     return categorias_criadas
 
 
+def criar_produtos_modelo(restaurante_id: int, tipo_restaurante: str, db_session) -> int:
+    """
+    Cria produtos modelo para um restaurante baseado no tipo.
+    Atualmente suporta pizzaria. Outros tipos retornam 0.
+
+    Args:
+        restaurante_id: ID do restaurante
+        tipo_restaurante: Tipo (pizzaria, hamburgueria, etc)
+        db_session: Sessão do banco SQLAlchemy
+
+    Returns:
+        Número de registros criados
+    """
+    tipo = tipo_restaurante.lower()
+    if tipo == "pizzaria":
+        from database.seed.seed_006_produtos_pizzaria import criar_produtos_pizzaria
+        return criar_produtos_pizzaria(db_session, restaurante_id)
+    return 0
+
+
 def criar_site_config_padrao(restaurante_id: int, tipo_restaurante: str, dados_personalizados: dict, db_session):
     """
     Cria configuração padrão do site para um restaurante

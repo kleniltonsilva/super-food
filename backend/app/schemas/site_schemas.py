@@ -48,6 +48,7 @@ class VariacaoSimples(BaseModel):
     nome: str
     preco_adicional: float
     estoque_disponivel: bool
+    max_sabores: int = 1
 
 class ProdutoPublic(BaseModel):
     id: int
@@ -153,3 +154,28 @@ class ValidarCupomResponse(BaseModel):
     valido: bool
     desconto_aplicado: float
     mensagem: str
+
+
+# ==================== COMBOS ====================
+class ComboItemPublic(BaseModel):
+    produto_id: int
+    produto_nome: str
+    quantidade: int
+    produto_imagem_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ComboPublic(BaseModel):
+    id: int
+    nome: str
+    descricao: Optional[str] = None
+    preco_combo: float
+    preco_original: float
+    imagem_url: Optional[str] = None
+    ordem_exibicao: int = 0
+    itens: List[ComboItemPublic] = []
+
+    class Config:
+        from_attributes = True

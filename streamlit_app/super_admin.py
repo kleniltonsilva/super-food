@@ -9,13 +9,32 @@ import re
 from datetime import datetime, timedelta
 import sys
 import os
+import requests as http_requests
 
 # Adicionar path do projeto
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 # Importar database SQLAlchemy
 from database.session import get_db_session, init_db, criar_config_padrao_restaurante
-from database.models import Restaurante, SuperAdmin, ConfigRestaurante
+from database.models import Restaurante, SuperAdmin, ConfigRestaurante, SiteConfig
+
+
+API_BASE_URL = "http://localhost:8000"
+
+def upload_imagem_admin(arquivo_uploaded, tipo: str, restaurante_id: int) -> str | None:
+    """Faz upload de imagem via API e retorna a URL ou None."""
+    try:
+        files = {"arquivo": (arquivo_uploaded.name, arquivo_uploaded.getvalue(), arquivo_uploaded.type)}
+        data = {"tipo": tipo, "restaurante_id": str(restaurante_id)}
+        resp = http_requests.post(f"{API_BASE_URL}/api/upload/imagem", files=files, data=data, timeout=15)
+        if resp.status_code == 200:
+            return resp.json()["url"]
+        else:
+            st.error(f"Erro no upload: {resp.json().get('detail', 'Erro desconhecido')}")
+            return None
+    except Exception as e:
+        st.error(f"Erro ao conectar com API: {e}")
+        return None
 
 # Configuração da página
 st.set_page_config(
@@ -643,10 +662,48 @@ def main():
                             else:
                                 st.markdown(f"**⚠️ VENCIDO há {abs(dias_restantes)} dias**")
                     
+                    # Upload de Logo/Banner
+                    st.markdown("**Imagens do Site**")
+                    img_col1, img_col2 = st.columns(2)
+                    with img_col1:
+                        logo_file = st.file_uploader("Logo", type=["jpg", "jpeg", "png", "webp"], key=f"logo_{restaurante['id']}")
+                        if logo_file:
+                            url = upload_imagem_admin(logo_file, "logo", restaurante['id'])
+                            if url:
+                                session = get_db_session()
+                                try:
+                                    sc = session.query(SiteConfig).filter(SiteConfig.restaurante_id == restaurante['id']).first()
+                                    if sc:
+                                        sc.logo_url = url
+                                        session.commit()
+                                        st.success("Logo atualizado!")
+                                        st.image(url, width=100)
+                                    else:
+                                        st.warning("SiteConfig não encontrado. Crie o site primeiro.")
+                                finally:
+                                    session.close()
+                    with img_col2:
+                        banner_file = st.file_uploader("Banner", type=["jpg", "jpeg", "png", "webp"], key=f"banner_{restaurante['id']}")
+                        if banner_file:
+                            url = upload_imagem_admin(banner_file, "banner", restaurante['id'])
+                            if url:
+                                session = get_db_session()
+                                try:
+                                    sc = session.query(SiteConfig).filter(SiteConfig.restaurante_id == restaurante['id']).first()
+                                    if sc:
+                                        sc.banner_principal_url = url
+                                        session.commit()
+                                        st.success("Banner atualizado!")
+                                        st.image(url, width=300)
+                                    else:
+                                        st.warning("SiteConfig não encontrado. Crie o site primeiro.")
+                                finally:
+                                    session.close()
+
                     st.markdown("---")
-                    
+
                     col_btn1, col_btn2, col_btn3 = st.columns(3)
-                    
+
                     with col_btn1:
                         if st.button(f"🔄 Renovar", key=f"renovar_{restaurante['id']}"):
                             if renovar_assinatura(
