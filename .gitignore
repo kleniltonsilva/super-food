@@ -1,55 +1,55 @@
-# Python
+# Ambiente Python
+.venv/
+venv/
+env/
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
 *.egg-info/
+dist/
+build/
 *.egg
 
-# Virtual Environment
-env/
-venv/
-.venv/
-
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-
-# Banco de dados (dev)
-*.db
-motoboy.db
-motoboys.db
-super_food.db
-
-# Environment
+# Variáveis de ambiente (NUNCA commitar)
 .env
 .env.local
-.env.*.local
+.env.production
+
+# Banco de dados local
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / Frontend
+node_modules/
+restaurante-pedido-online/node_modules/
+restaurante-pedido-online/dist/
+
+# Build output (gerado pelo npm run build)
+dist/
+.vite/
 
 # Logs
 *.log
+logs/
 
-# OS
+# Sistema operacional
 .DS_Store
 Thumbs.db
 
-# Docker
-docker_data/
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Firebase/Keys
-firebase_admin_key.json
-*.pem
-*.key
+# Cache
+.cache/
+.pytest_cache/
+.mypy_cache/
 
-# Backup/Temp
-_backup/
-tmp/
-temp/
-
-# Arquivos de contexto Claude (opcionais)
-ondeparei.txt
-continuar.txt
-INSTRUCTIONS.txt
+# Uploads locais (imagens enviadas em dev)
+backend/uploads/
+uploads/

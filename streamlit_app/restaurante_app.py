@@ -2260,7 +2260,8 @@ def _tab_produtos(rest_id):
                 if url:
                     st.session_state["novo_prod_img_url"] = url
                     st.success("Imagem enviada!")
-                    st.image(url, width=120)
+                    img_url = f"{API_BASE_URL}{url}" if url.startswith("/") else url
+                    st.image(img_url, width=120)
 
             with st.form("form_novo_prod", clear_on_submit=True):
                 # Categoria como selectbox
@@ -2341,9 +2342,11 @@ def _tab_produtos(rest_id):
                         if url:
                             st.session_state[f"edit_prod_img_{prod.id}"] = url
                             st.success("Imagem enviada!")
-                            st.image(url, width=120)
+                            img_url = f"{API_BASE_URL}{url}" if url.startswith("/") else url
+                            st.image(img_url, width=120)
                     elif prod.imagem_url:
-                        st.image(prod.imagem_url, width=80, caption="Imagem atual")
+                        img_url = f"{API_BASE_URL}{prod.imagem_url}" if prod.imagem_url.startswith("/") else prod.imagem_url
+                        st.image(img_url, width=80, caption="Imagem atual")
 
                     with st.form(f"form_edit_prod_{prod.id}"):
                         ep1, ep2 = st.columns(2)
@@ -2808,7 +2811,9 @@ def _tab_config_site(rest_id):
             if st.session_state.get("logo_url_uploaded") or config.logo_url:
                 preview_url = st.session_state.get("logo_url_uploaded", config.logo_url)
                 if preview_url:
-                    st.image(preview_url, width=100, caption="Logo atual")
+                    # URL relativa (/static/...) precisa virar URL completa para o st.image
+                    img_url = f"{API_BASE_URL}{preview_url}" if preview_url.startswith("/") else preview_url
+                    st.image(img_url, width=100, caption="Logo atual")
         with ucol2:
             banner_file = st.file_uploader("Upload Banner (1200x400)", type=["jpg", "jpeg", "png", "webp"], key="upload_banner_site")
             if banner_file:
@@ -2819,7 +2824,8 @@ def _tab_config_site(rest_id):
             if st.session_state.get("banner_url_uploaded") or config.banner_principal_url:
                 preview_url = st.session_state.get("banner_url_uploaded", config.banner_principal_url)
                 if preview_url:
-                    st.image(preview_url, width=300, caption="Banner atual")
+                    img_url = f"{API_BASE_URL}{preview_url}" if preview_url.startswith("/") else preview_url
+                    st.image(img_url, width=300, caption="Banner atual")
 
         with st.form("form_config_site"):
             TIPOS = ["pizzaria", "hamburgueria", "japones", "churrascaria", "la_carte", "acai", "marmitex", "geral"]

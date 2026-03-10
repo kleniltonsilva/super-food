@@ -58,9 +58,9 @@ def get_cliente_atual(
     token = authorization.replace("Bearer ", "")
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_sub": False})
         cliente_id = int(payload.get("sub", 0))
-    except JWTError:
+    except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Token inválido ou expirado")
 
     cliente = db.query(models.Cliente).filter(
@@ -85,9 +85,9 @@ def get_cliente_opcional(
     token = authorization.replace("Bearer ", "")
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_sub": False})
         cliente_id = int(payload.get("sub", 0))
-    except JWTError:
+    except (JWTError, ValueError, TypeError):
         return None
 
     return db.query(models.Cliente).filter(

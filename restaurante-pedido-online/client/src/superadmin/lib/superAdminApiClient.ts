@@ -1,0 +1,119 @@
+import axios from "axios";
+
+const superAdminApi = axios.create({
+  baseURL: "/",
+  headers: { "Content-Type": "application/json" },
+});
+
+// Request interceptor — adiciona JWT do super admin
+superAdminApi.interceptors.request.use((config) => {
+  const token = localStorage.getItem("sf_superadmin_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Response interceptor — 401 remove token e dispara StorageEvent
+superAdminApi.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      const url = err.config?.url || "";
+      if (!url.includes("/auth/admin/login")) {
+        localStorage.removeItem("sf_superadmin_token");
+        localStorage.removeItem("sf_superadmin_data");
+        window.dispatchEvent(
+          new StorageEvent("storage", { key: "sf_superadmin_token", newValue: null })
+        );
+      }
+    }
+    return Promise.reject(err);
+  }
+);
+
+// ─── Auth ──────────────────────────────────────────────
+export async function loginAdmin(usuario: string, senha: string) {
+  const { data } = await superAdminApi.post("/auth/admin/login", { usuario, senha });
+  return data;
+}
+
+export async function getMe() {
+  const { data } = await superAdminApi.get("/auth/admin/me");
+  return data;
+}
+
+// ─── Restaurantes ──────────────────────────────────────
+export async function getRestaurantes(params?: {
+  status?: string;
+  plano?: string;
+  busca?: string;
+}) {
+  const { data } = await superAdminApi.get("/api/admin/restaurantes", { params });
+  return data;
+}
+
+export async function criarRestaurante(payload: {
+  nome_fantasia: string;
+  email: string;
+  telefone: string;
+  endereco_completo: string;
+  razao_social?: string;
+  cnpj?: string;
+  cidade?: string;
+  estado?: string;
+  cep?: string;
+  plano?: string;
+  valor_plano?: number;
+  limite_motoboys?: number;
+  criar_site?: boolean;
+  tipo_restaurante?: string;
+  whatsapp?: string;
+}) {
+  const { data } = await superAdminApi.post("/api/admin/restaurantes", payload);
+  return data;
+}
+
+export async function atualizarRestaurante(
+  id: number,
+  payload: Record<string, unknown>
+) {
+  const { data } = await superAdminApi.put(`/api/admin/restaurantes/${id}`, payload);
+  return data;
+}
+
+export async function atualizarStatusRestaurante(
+  id: number,
+  status: string
+) {
+  const { data } = await superAdminApi.put(`/api/admin/restaurantes/${id}/status`, { status });
+  return data;
+}
+
+// ─── Planos ────────────────────────────────────────────
+export async function getPlanos() {
+  const { data } = await superAdminApi.get("/api/admin/planos");
+  return data;
+}
+
+export async function atualizarPlano(
+  nome: string,
+  payload: { valor?: number; motoboys?: number; descricao?: string }
+) {
+  const { data } = await superAdminApi.put(`/api/admin/planos/${encodeURIComponent(nome)}`, payload);
+  return data;
+}
+
+// ─── Métricas ──────────────────────────────────────────
+export async function getMetricas() {
+  const { data } = await superAdminApi.get("/api/admin/metricas");
+  return data;
+}
+
+// ─── Inadimplentes ─────────────────────────────────────
+export async function getInadimplentes(dias_tolerancia?: number) {
+  const { data } = await superAdminApi.get("/api/admin/inadimplentes", {
+    params: dias_tolerancia !== undefined ? { dias_tolerancia } : undefined,
+  });
+  return data;
+}

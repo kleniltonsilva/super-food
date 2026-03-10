@@ -6,6 +6,7 @@ Router Carrinho - Gerenciamento do carrinho de compras
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
 from datetime import datetime, timedelta
 import uuid
@@ -103,22 +104,25 @@ def adicionar_item(
         itens.append(novo_item)
         carrinho.itens_json = itens
         carrinho.data_atualizacao = datetime.utcnow()
-    
+        flag_modified(carrinho, "itens_json")
+
     # Recalcula totais
     carrinho.valor_subtotal = sum(item['subtotal'] for item in carrinho.itens_json)
-    carrinho.valor_total = carrinho.valor_subtotal + carrinho.valor_taxa_entrega - carrinho.valor_desconto
-    
+    taxa = carrinho.valor_taxa_entrega or 0.0
+    desconto = carrinho.valor_desconto or 0.0
+    carrinho.valor_total = carrinho.valor_subtotal + taxa - desconto
+
     db.commit()
     db.refresh(carrinho)
-    
+
     return {
         "id": carrinho.id,
         "sessao_id": carrinho.sessao_id,
         "itens": carrinho.itens_json,
         "quantidade_itens": len(carrinho.itens_json),
         "valor_subtotal": carrinho.valor_subtotal,
-        "valor_taxa_entrega": carrinho.valor_taxa_entrega,
-        "valor_desconto": carrinho.valor_desconto,
+        "valor_taxa_entrega": carrinho.valor_taxa_entrega or 0.0,
+        "valor_desconto": carrinho.valor_desconto or 0.0,
         "valor_total": carrinho.valor_total
     }
 
@@ -188,9 +192,12 @@ def adicionar_combo(
         itens.append(novo_item)
         carrinho.itens_json = itens
         carrinho.data_atualizacao = datetime.utcnow()
+        flag_modified(carrinho, "itens_json")
 
     carrinho.valor_subtotal = sum(i['subtotal'] for i in carrinho.itens_json)
-    carrinho.valor_total = carrinho.valor_subtotal + carrinho.valor_taxa_entrega - carrinho.valor_desconto
+    taxa = carrinho.valor_taxa_entrega or 0.0
+    desconto = carrinho.valor_desconto or 0.0
+    carrinho.valor_total = carrinho.valor_subtotal + taxa - desconto
 
     db.commit()
     db.refresh(carrinho)
@@ -201,8 +208,8 @@ def adicionar_combo(
         "itens": carrinho.itens_json,
         "quantidade_itens": len(carrinho.itens_json),
         "valor_subtotal": carrinho.valor_subtotal,
-        "valor_taxa_entrega": carrinho.valor_taxa_entrega,
-        "valor_desconto": carrinho.valor_desconto,
+        "valor_taxa_entrega": carrinho.valor_taxa_entrega or 0.0,
+        "valor_desconto": carrinho.valor_desconto or 0.0,
         "valor_total": carrinho.valor_total
     }
 
@@ -258,14 +265,22 @@ def get_carrinho(
 def atualizar_quantidade(
     item_index: int,
     nova_quantidade: int,
+    codigo_acesso: str = "",
     sessao_id: str = Depends(get_or_create_sessao_id),
     db: Session = Depends(database.get_db)
 ):
     """Atualiza quantidade de um item no carrinho"""
-    carrinho = db.query(models.Carrinho).filter(
+    filtros = [
         models.Carrinho.sessao_id == sessao_id,
         models.Carrinho.data_expiracao > datetime.utcnow()
-    ).first()
+    ]
+    if codigo_acesso:
+        restaurante = db.query(models.Restaurante).filter(
+            models.Restaurante.codigo_acesso == codigo_acesso.upper()
+        ).first()
+        if restaurante:
+            filtros.append(models.Carrinho.restaurante_id == restaurante.id)
+    carrinho = db.query(models.Carrinho).filter(*filtros).first()
     
     if not carrinho:
         raise HTTPException(status_code=404, detail="Carrinho não encontrado")
@@ -276,23 +291,24 @@ def atualizar_quantidade(
     # Atualiza quantidade
     carrinho.itens_json[item_index]['quantidade'] = nova_quantidade
     carrinho.itens_json[item_index]['subtotal'] = carrinho.itens_json[item_index]['preco_unitario'] * nova_quantidade
-    
+    flag_modified(carrinho, "itens_json")
+
     # Recalcula totais
     carrinho.valor_subtotal = sum(item['subtotal'] for item in carrinho.itens_json)
-    carrinho.valor_total = carrinho.valor_subtotal + carrinho.valor_taxa_entrega - carrinho.valor_desconto
+    carrinho.valor_total = carrinho.valor_subtotal + (carrinho.valor_taxa_entrega or 0.0) - (carrinho.valor_desconto or 0.0)
     carrinho.data_atualizacao = datetime.utcnow()
-    
+
     db.commit()
     db.refresh(carrinho)
-    
+
     return {
         "id": carrinho.id,
         "sessao_id": carrinho.sessao_id,
         "itens": carrinho.itens_json,
         "quantidade_itens": len(carrinho.itens_json),
         "valor_subtotal": carrinho.valor_subtotal,
-        "valor_taxa_entrega": carrinho.valor_taxa_entrega,
-        "valor_desconto": carrinho.valor_desconto,
+        "valor_taxa_entrega": carrinho.valor_taxa_entrega or 0.0,
+        "valor_desconto": carrinho.valor_desconto or 0.0,
         "valor_total": carrinho.valor_total
     }
 
@@ -300,14 +316,22 @@ def atualizar_quantidade(
 @router.delete("/remover/{item_index}", response_model=carrinho_schemas.CarrinhoResponse)
 def remover_item(
     item_index: int,
+    codigo_acesso: str = "",
     sessao_id: str = Depends(get_or_create_sessao_id),
     db: Session = Depends(database.get_db)
 ):
     """Remove item do carrinho"""
-    carrinho = db.query(models.Carrinho).filter(
+    filtros = [
         models.Carrinho.sessao_id == sessao_id,
         models.Carrinho.data_expiracao > datetime.utcnow()
-    ).first()
+    ]
+    if codigo_acesso:
+        restaurante = db.query(models.Restaurante).filter(
+            models.Restaurante.codigo_acesso == codigo_acesso.upper()
+        ).first()
+        if restaurante:
+            filtros.append(models.Carrinho.restaurante_id == restaurante.id)
+    carrinho = db.query(models.Carrinho).filter(*filtros).first()
     
     if not carrinho:
         raise HTTPException(status_code=404, detail="Carrinho não encontrado")
@@ -317,36 +341,43 @@ def remover_item(
     
     # Remove item
     carrinho.itens_json.pop(item_index)
-    
+    flag_modified(carrinho, "itens_json")
+
     # Recalcula totais
     carrinho.valor_subtotal = sum(item['subtotal'] for item in carrinho.itens_json)
-    carrinho.valor_total = carrinho.valor_subtotal + carrinho.valor_taxa_entrega - carrinho.valor_desconto
+    carrinho.valor_total = carrinho.valor_subtotal + (carrinho.valor_taxa_entrega or 0.0) - (carrinho.valor_desconto or 0.0)
     carrinho.data_atualizacao = datetime.utcnow()
-    
+
     db.commit()
     db.refresh(carrinho)
-    
+
     return {
         "id": carrinho.id,
         "sessao_id": carrinho.sessao_id,
         "itens": carrinho.itens_json,
         "quantidade_itens": len(carrinho.itens_json),
         "valor_subtotal": carrinho.valor_subtotal,
-        "valor_taxa_entrega": carrinho.valor_taxa_entrega,
-        "valor_desconto": carrinho.valor_desconto,
+        "valor_taxa_entrega": carrinho.valor_taxa_entrega or 0.0,
+        "valor_desconto": carrinho.valor_desconto or 0.0,
         "valor_total": carrinho.valor_total
     }
 
 
 @router.delete("/limpar")
 def limpar_carrinho(
+    codigo_acesso: str = "",
     sessao_id: str = Depends(get_or_create_sessao_id),
     db: Session = Depends(database.get_db)
 ):
     """Limpa carrinho completamente"""
-    carrinho = db.query(models.Carrinho).filter(
-        models.Carrinho.sessao_id == sessao_id
-    ).first()
+    filtros = [models.Carrinho.sessao_id == sessao_id]
+    if codigo_acesso:
+        restaurante = db.query(models.Restaurante).filter(
+            models.Restaurante.codigo_acesso == codigo_acesso.upper()
+        ).first()
+        if restaurante:
+            filtros.append(models.Carrinho.restaurante_id == restaurante.id)
+    carrinho = db.query(models.Carrinho).filter(*filtros).first()
     
     if carrinho:
         db.delete(carrinho)
@@ -372,15 +403,27 @@ def finalizar_carrinho(
     Returns:
         ID do pedido criado
     """
+    # Busca restaurante pelo codigo_acesso se informado
+    restaurante_id_filtro = None
+    if finalizacao.codigo_acesso:
+        rest = db.query(models.Restaurante).filter(
+            models.Restaurante.codigo_acesso == finalizacao.codigo_acesso.upper()
+        ).first()
+        if rest:
+            restaurante_id_filtro = rest.id
+
     # Busca carrinho
-    carrinho = db.query(models.Carrinho).filter(
+    filtros_carrinho = [
         models.Carrinho.sessao_id == sessao_id,
         models.Carrinho.data_expiracao > datetime.utcnow()
-    ).first()
-    
+    ]
+    if restaurante_id_filtro:
+        filtros_carrinho.append(models.Carrinho.restaurante_id == restaurante_id_filtro)
+    carrinho = db.query(models.Carrinho).filter(*filtros_carrinho).first()
+
     if not carrinho or not carrinho.itens_json:
         raise HTTPException(status_code=400, detail="Carrinho vazio")
-    
+
     # Busca site config para validar pedido mínimo
     site_config = db.query(models.SiteConfig).filter(
         models.SiteConfig.restaurante_id == carrinho.restaurante_id
@@ -449,7 +492,7 @@ def finalizar_carrinho(
         cliente_telefone=finalizacao.cliente_telefone if finalizacao.cliente_telefone else (cliente.telefone if cliente else ""),
         endereco_entrega=finalizacao.endereco_entrega,
         latitude_entrega=lat_entrega,
-        longitude=lng_entrega,
+        longitude_entrega=lng_entrega,
         itens="\n".join([f"{item['quantidade']}x {item['nome']}" for item in carrinho.itens_json]),
         carrinho_json=carrinho.itens_json,
         observacoes=finalizacao.observacoes,

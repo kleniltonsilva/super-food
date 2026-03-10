@@ -11,6 +11,7 @@ export default defineConfig({
     },
   },
   root: path.resolve(import.meta.dirname, "client"),
+  envDir: path.resolve(import.meta.dirname),
   publicDir: path.resolve(import.meta.dirname, "client", "public"),
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
@@ -33,6 +34,18 @@ export default defineConfig({
         changeOrigin: true,
       },
       "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/painel": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/api/admin": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/motoboy": {
         target: "http://localhost:8000",
         changeOrigin: true,
       },

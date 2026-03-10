@@ -1,0 +1,47 @@
+# =============================================================================
+# Caddy - Super Food Reverse Proxy + Auto SSL
+# =============================================================================
+
+# Subdominios dos restaurantes: *.superfood.com.br
+*.superfood.com.br {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+
+    encode gzip zstd
+
+    # Headers de seguranca
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    reverse_proxy api:8000
+}
+
+# Dominios personalizados dos restaurantes (on-demand TLS)
+:443 {
+    tls {
+        on_demand
+    }
+
+    encode gzip zstd
+
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    reverse_proxy api:8000
+}
+
+# HTTP -> HTTPS redirect
+:80 {
+    redir https://{host}{uri} permanent
+}

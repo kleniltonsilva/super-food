@@ -1,0 +1,81 @@
+# =============================================================================
+# Super Food - Docker Compose (Desenvolvimento)
+# Uso: docker compose up
+# =============================================================================
+
+services:
+  # -------------------- PostgreSQL --------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: superfood-postgres
+    environment:
+      POSTGRES_DB: superfood
+      POSTGRES_USER: superfood
+      POSTGRES_PASSWORD: superfood_dev_2025
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U superfood"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # -------------------- Redis --------------------
+  redis:
+    image: redis:7-alpine
+    container_name: superfood-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # -------------------- API (dev com hot-reload) --------------------
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: superfood-api
+    command: >
+      uvicorn backend.app.main:app
+      --host 0.0.0.0 --port 8000
+      --reload --reload-dir backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app/backend
+      - ./database:/app/database
+      - ./utils:/app/utils
+      - ./migrations:/app/migrations
+      - ./alembic.ini:/app/alembic.ini
+      - ./backend/static/uploads:/app/backend/static/uploads
+    environment:
+      DATABASE_URL: postgresql://superfood:superfood_dev_2025@postgres:5432/superfood
+      REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: development
+      DEBUG: "true"
+      SECRET_KEY: dev-secret-key-change-in-production-minimum-32-chars
+      SUPER_ADMIN_USER: superadmin
+      SUPER_ADMIN_PASS: SuperFood2025!
+      STORAGE_BACKEND: local
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  redis_data:

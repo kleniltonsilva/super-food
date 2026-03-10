@@ -271,6 +271,8 @@ export function useFinalizarPedido() {
       longitude?: number;
       troco_para?: number;
       observacoes?: string;
+      cupom_desconto?: string;
+      valor_desconto?: number;
     }) => finalizarPedido(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.carrinho });

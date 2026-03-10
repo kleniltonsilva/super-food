@@ -84,6 +84,7 @@ class CarrinhoResponse(BaseModel):
 class FinalizarCarrinhoRequest(BaseModel):
     """Request para finalizar carrinho e criar pedido"""
 
+    codigo_acesso: Optional[str] = Field(None, description="Código do restaurante para validação multi-tenant")
     cliente_nome: Optional[str] = Field(None, min_length=3, max_length=200)
     cliente_telefone: Optional[str] = Field(None, min_length=10, max_length=20)
 

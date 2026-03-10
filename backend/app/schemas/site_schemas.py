@@ -175,6 +175,9 @@ class ComboPublic(BaseModel):
     preco_original: float
     imagem_url: Optional[str] = None
     ordem_exibicao: int = 0
+    tipo_combo: str = "padrao"
+    dia_semana: Optional[int] = None
+    quantidade_pessoas: Optional[int] = None
     itens: List[ComboItemPublic] = []
 
     class Config:

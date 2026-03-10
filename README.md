@@ -21,7 +21,7 @@ O Super Food e composto por **5 aplicacoes principais**:
 | **App Motoboy (PWA)** | Streamlit | 8503 | App mobile para entregadores |
 | **Site Cliente (React SPA)** | React 19 + Vite 7 | 5173 (dev) / 8000 (prod) | Pedido online para clientes |
 
-**Versao atual: 2.8.3+ (10/02/2026)**
+**Versao atual: 3.1.0 (14/02/2026) — Migracao v4.0 em andamento**
 
 ### Stack Tecnologica
 
@@ -370,32 +370,245 @@ O site cliente usa **React Query (TanStack Query v5)** para cache profissional:
 
 ---
 
-## Recomendacoes para Producao (1000+ restaurantes)
+## Arquitetura Cloud — Escala para 1000+ Restaurantes
 
-### Banco de Dados
-- Migrar SQLite -> **PostgreSQL** antes de ir para cloud
-- Connection pooling com pgBouncer
+O Super Food esta sendo preparado para funcionar como SaaS completo na nuvem, suportando **1000+ restaurantes simultaneos** com seus respectivos sites, paineis e apps de motoboy.
 
-### Armazenamento de Imagens
-- **S3/MinIO** para fotos de produtos, logos e banners
-- CDN (CloudFront/Cloudflare) para servir imagens
+### Visao Geral da Arquitetura de Producao
 
-### Cache
-- **Redis** para cache de cardapios e sessoes de carrinho
+```
+                        ┌──────────────────────────────┐
+                        │     Cloudflare (CDN + WAF)    │
+                        │   DNS, SSL, cache, protecao   │
+                        └──────────────┬───────────────┘
+                                       │
+                        ┌──────────────▼───────────────┐
+                        │      Caddy (Reverse Proxy)    │
+                        │   SSL automatico, dominios     │
+                        │   personalizados, wildcard     │
+                        └──────────────┬───────────────┘
+                                       │
+              ┌────────────────────────┼────────────────────────┐
+              │                        │                        │
+     ┌────────▼────────┐    ┌─────────▼─────────┐    ┌────────▼────────┐
+     │   FastAPI x N    │    │   React Static     │    │   Celery Workers │
+     │   (Gunicorn)     │    │   (via CDN)        │    │   (tarefas bg)   │
+     │   API + WebSocket│    │   3 SPAs:           │    │   - notificacoes │
+     │                  │    │   - Site Cliente    │    │   - relatorios   │
+     │                  │    │   - Painel Rest.    │    │   - cleanup      │
+     │                  │    │   - App Motoboy     │    │                  │
+     └────────┬────────┘    └───────────────────┘    └────────┬────────┘
+              │                                                │
+     ┌────────▼────────────────────────────────────────────────▼────┐
+     │                    PostgreSQL (Principal)                     │
+     │              PgBouncer (connection pooling)                   │
+     │         Indices compostos em restaurante_id + ...             │
+     └──────────────────────────────────────────────────────────────┘
+              │                        │
+     ┌────────▼────────┐    ┌─────────▼─────────┐
+     │   Redis          │    │   S3 / R2          │
+     │   - Cache menus  │    │   (Cloudflare R2)  │
+     │   - Sessoes      │    │   - logos           │
+     │   - Rate limit   │    │   - banners         │
+     │   - Pub/Sub WS   │    │   - fotos produtos  │
+     └─────────────────┘    └───────────────────┘
+```
 
-### Deploy
-- Docker Compose para desenvolvimento
-- Docker + Kubernetes (ou ECS) para producao
-- Nginx/Caddy como reverse proxy
+### Por que migrar de Streamlit para React
 
-### Subdominios em Producao
-| Servico | URL |
-|---------|-----|
-| Site cliente | `superfood.com.br/cliente/CODIGO` |
-| API | `api.superfood.com.br` |
-| Dashboard | `painel.superfood.com.br` |
-| Motoboy | `entregador.superfood.com.br` |
-| Super Admin | `admin.superfood.com.br` |
+O Streamlit funciona por processo Python por sessao de usuario. Para 1000 restaurantes:
+
+| Componente | Streamlit (atual) | React (planejado) |
+|------------|-------------------|-------------------|
+| RAM por usuario | ~50-100 MB (processo Python) | ~0 MB (static files via CDN) |
+| 1000 restaurantes (3 usuarios cada) | 150-300 GB RAM | ~2 GB (apenas FastAPI) |
+| Motoboys (5 por restaurante x 1000) | +250-500 GB RAM | ~0 MB (PWA statico) |
+| CDN cache | Impossivel | Sim (React = arquivos estaticos) |
+| PWA/Offline | Nao suportado | Suporte nativo |
+| Push notifications | Nao suportado | Web Push API |
+| GPS em background | Limitado (precisa aba aberta) | Service Worker |
+| Load balancing | Complexo (estado local) | Trivial (API stateless) |
+
+**Conclusao:** Streamlit e inviavel para mais de ~50 restaurantes simultaneos. React + FastAPI escala horizontalmente.
+
+### Banco de Dados — PostgreSQL Multi-Tenant
+
+O sistema usa **banco unico** com isolamento por `restaurante_id` em todas as 28 tabelas. Isso e a abordagem correta para ate ~5000 restaurantes.
+
+**Requisitos para producao:**
+- **PostgreSQL 16+** (substituir SQLite)
+- **PgBouncer** para connection pooling (max ~200 conexoes reais, ~10000 virtuais)
+- **Indices compostos** nas tabelas mais consultadas:
+  - `pedidos(restaurante_id, status, data_criacao)`
+  - `produtos(restaurante_id, categoria_id, disponivel)`
+  - `motoboys(restaurante_id, disponivel, em_rota)`
+  - `gps_motoboys(motoboy_id, timestamp)`
+- **Read replicas** se necessario (leitura de cardapios em replica, escrita no primary)
+- **Backups automaticos** (pg_dump diario + WAL archiving)
+
+```env
+# .env producao
+DATABASE_URL=postgresql+psycopg2://superfood:senha@db.internal:5432/superfood
+PGBOUNCER_URL=postgresql+psycopg2://superfood:senha@pgbouncer.internal:6432/superfood
+```
+
+### Armazenamento de Imagens — S3/R2 + CDN
+
+Em producao, imagens NAO ficam no filesystem local. Cada restaurante pode ter:
+- 1 logo + 1 banner + ~50 fotos de produtos = ~52 imagens
+- 1000 restaurantes = ~52.000 imagens
+
+**Stack recomendada:**
+- **Cloudflare R2** (compativel S3, sem egress fee — mais barato que AWS S3)
+- **CDN Cloudflare** para servir imagens (cache global)
+- Estrutura: `r2://superfood-uploads/{restaurante_id}/{tipo}_{uuid}.webp`
+
+**Fluxo:**
+```
+Upload via API → Pillow redimensiona → Salva no R2 → Retorna URL CDN
+URL: https://cdn.superfood.com.br/uploads/123/logo_abc123.webp
+```
+
+### Dominios Personalizados
+
+Cada restaurante pode ter:
+
+**Nivel 1 — Subdominio automatico (incluso em todos os planos):**
+```
+pizzaria-do-ze.superfood.com.br     → Site do cliente
+```
+- Wildcard DNS: `*.superfood.com.br → IP do servidor`
+- Wildcard SSL via Caddy ou Cloudflare
+- FastAPI resolve subdominio → codigo_acesso do restaurante
+
+**Nivel 2 — Dominio proprio do cliente (planos avancados):**
+```
+www.pizzariadoze.com.br → CNAME para custom.superfood.com.br
+```
+**Fluxo de configuracao:**
+1. Restaurante digita seu dominio no painel (`www.pizzariadoze.com.br`)
+2. Sistema gera instrucao: "Configure um CNAME apontando para `custom.superfood.com.br`"
+3. Restaurante configura no registrador de dominio
+4. Sistema verifica DNS (polling a cada 5 min por 48h)
+5. Caddy emite SSL automaticamente via Let's Encrypt
+6. Dominio ativo
+
+**Tabela no banco:**
+```
+dominios_personalizados:
+  id, restaurante_id, dominio, verificado, ssl_ativo, criado_em
+```
+
+**Middleware FastAPI:**
+```python
+# Resolve o Host header para identificar o restaurante
+# 1. pizza.superfood.com.br → busca por subdominio
+# 2. www.pizzariadoze.com.br → busca na tabela dominios_personalizados
+# 3. superfood.com.br/cliente/CODIGO → busca por codigo_acesso (fallback atual)
+```
+
+### Docker Compose (Deploy)
+
+```yaml
+# docker-compose.prod.yml (simplificado)
+services:
+  api:
+    build: .
+    ports: ["8000:8000"]
+    environment:
+      DATABASE_URL: postgresql+psycopg2://...
+      REDIS_URL: redis://redis:6379
+      S3_BUCKET: superfood-uploads
+    depends_on: [db, redis]
+    deploy:
+      replicas: 3  # escala horizontal
+
+  db:
+    image: postgres:16
+    volumes: [pgdata:/var/lib/postgresql/data]
+
+  pgbouncer:
+    image: edoburu/pgbouncer
+    depends_on: [db]
+
+  redis:
+    image: redis:7-alpine
+
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443"]
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile]
+```
+
+### Onboarding de Novo Restaurante (Fluxo SaaS)
+
+Quando o super admin cria um restaurante, TUDO e automatico:
+
+| Passo | Acao | Automatico? |
+|-------|------|-------------|
+| 1 | Criar registro no banco (restaurantes + config + site_config) | Sim |
+| 2 | Gerar codigo_acesso unico | Sim |
+| 3 | Site do cliente disponivel em `/{codigo}` ou subdominio | Sim |
+| 4 | Painel do restaurante disponivel (login com email/senha) | Sim |
+| 5 | App motoboy disponivel (login com codigo + usuario) | Sim |
+| 6 | Pasta no S3 para uploads criada | Sim |
+| 7 | Subdominio automatico ativo | Sim |
+| 8 | Dominio personalizado (opcional) | Restaurante configura |
+
+**Zero comandos manuais do dono do SaaS.** Tudo via painel super admin.
+
+### Performance Estimada (1000 restaurantes)
+
+| Recurso | Estimativa |
+|---------|-----------|
+| FastAPI (3 replicas, 4 workers cada) | ~12.000 req/s |
+| PostgreSQL + PgBouncer | ~5.000 queries/s |
+| Redis cache | ~100.000 ops/s |
+| RAM total servidor | ~4-8 GB (API) + 2 GB (PostgreSQL) + 512 MB (Redis) |
+| Armazenamento S3 | ~5 GB (imagens) |
+| Bandwidth CDN | Cloudflare Free/Pro tier |
+
+### Custos Estimados de Infraestrutura (USD)
+
+| Restaurantes | VPS/Cloud | DB Managed | S3/R2 + CDN | Redis | Total USD | Total BRL (~R$6/USD) |
+|-------------|-----------|------------|-------------|-------|-----------|----------------------|
+| 100 | $40 (8GB) | $25 | $5 | $10 | **~$80/mes** | **~R$480/mes** |
+| 500 | $120 (16GB) | $50 | $15 | $20 | **~$205/mes** | **~R$1.230/mes** |
+| 1000 | $250 (32GB ou multi) | $80 | $25 | $30 | **~$385/mes** | **~R$2.310/mes** |
+
+**Providers recomendados:** Hetzner (melhor custo), DigitalOcean, ou AWS Lightsail para VPS. Supabase ou Neon para PostgreSQL managed. Cloudflare R2 + CDN (sem taxa de egress). Upstash para Redis serverless.
+
+> Com 1000 restaurantes pagando R$99/mes cada = R$99.000/mes de receita. Custo de infra ~R$2.310 = **~2.3% da receita**.
+
+### Variaveis de Ambiente — Producao
+
+```env
+# Banco
+DATABASE_URL=postgresql+psycopg2://superfood:SENHA_FORTE@db.internal:5432/superfood
+
+# Auth
+SECRET_KEY=chave_secreta_256_bits_gerada_com_openssl
+JWT_ALGORITHM=HS256
+
+# Mapbox
+MAPBOX_TOKEN=pk.live_token_aqui
+
+# Storage (S3/R2)
+S3_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
+S3_ACCESS_KEY=chave_acesso
+S3_SECRET_KEY=chave_secreta
+S3_BUCKET=superfood-uploads
+CDN_BASE_URL=https://cdn.superfood.com.br
+
+# Redis
+REDIS_URL=redis://redis.internal:6379/0
+
+# App
+ENVIRONMENT=production
+DEBUG=False
+ALLOWED_ORIGINS=https://superfood.com.br,https://*.superfood.com.br
+BASE_DOMAIN=superfood.com.br
+```
 
 ---
 
@@ -420,9 +633,15 @@ O site cliente usa **React Query (TanStack Query v5)** para cache profissional:
 - Capacidade de entregas configuravel por motoboy (1-20)
 - Despacho automatico respeita capacidade
 
+### v3.1.0 (14/02/2026)
+- Fix bug upload logo/banner no painel restaurante (st.image com URL relativa)
+- Plano de migracao v4.0 documentado (185 etapas, 8 sprints)
+- Arquitetura cloud documentada (PostgreSQL, S3, Redis, Docker, dominios custom)
+
 ### v3.0+ (Site Cliente React SPA)
 - React SPA completo: Home, ProductDetail, Cart, Checkout, Orders, Loyalty, Login, Account
 - OrderTracking e OrderSuccess
+- Redesign tema escuro profissional (11/02/2026)
 - AuthContext com JWT + sync multi-aba
 - RestauranteContext com CSS variables
 - Hooks centralizados (useQueries.ts) com React Query
@@ -432,12 +651,23 @@ O site cliente usa **React Query (TanStack Query v5)** para cache profissional:
 
 ## Roadmap
 
-- [x] Fase 1-8: Sistema base, Alembic, motoboys, GPS
-- [x] Fase 9: Site Cliente React SPA (v3.0)
-- [ ] Fase 10: Integracao iFood
-- [ ] Fase 11: App nativo (WebView)
-- [ ] Fase 12: Recuperacao de senha por SMS (Twilio/AWS SNS)
-- [ ] Fase 13: Push notifications para motoboy (PWA)
+- [x] Fase 1-8: Sistema base, ORM, Alembic, motoboys, GPS, multi-tenant
+- [x] Fase 9: Site Cliente React SPA (v3.0) — cardapio, carrinho, checkout, fidelidade
+- [x] Fase 10: Redesign tema escuro profissional
+- [ ] **Fase 11: MEGA MIGRACAO v4.0** — Streamlit → React + Cloud-Ready (em andamento)
+  - Sprint 0: Correcoes pre-migracao (bugs, seguranca, limpeza)
+  - Sprint 1: API endpoints para painel restaurante (64 endpoints)
+  - Sprint 2: React SPA painel restaurante (32 telas)
+  - Sprint 3: API endpoints para app motoboy (11 endpoints)
+  - Sprint 4: React PWA app motoboy (14 telas + Service Worker + Push)
+  - Sprint 5: API endpoints para super admin (10 endpoints)
+  - Sprint 6: React SPA super admin (10 telas)
+  - Sprint 7: Infraestrutura cloud (PostgreSQL, S3, Redis, Docker, dominios custom)
+  - Sprint 8: Aposentar Streamlit (remover dependencia, release v4.0.0)
+- [ ] Fase 12: Integracao iFood
+- [ ] Fase 13: Recuperacao de senha por SMS (Twilio/AWS SNS)
+- [ ] Fase 14: Push notifications para motoboy (Web Push API)
+- [ ] Fase 15: App nativo (React Native ou Capacitor)
 
 ---
 

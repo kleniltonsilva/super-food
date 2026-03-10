@@ -12,6 +12,7 @@ import os
 
 from .. import models, database
 from ..schemas import site_schemas
+from ..cache import cache_get, cache_set
 from utils.mapbox_api import autocomplete_address, check_coverage_zone
 
 router = APIRouter(prefix="/site", tags=["Site do Cliente"])
@@ -22,15 +23,13 @@ def get_site_info(
     codigo_acesso: str,
     db: Session = Depends(database.get_db)
 ):
-    """
-    Retorna informações públicas do site do restaurante
-    
-    Args:
-        codigo_acesso: Código único do restaurante (8 caracteres)
-    
-    Returns:
-        Dados do restaurante, site config, horários, etc
-    """
+    """Retorna informacoes publicas do site do restaurante"""
+    # Cache: site info (5 min)
+    cache_key = f"site:{codigo_acesso}:info"
+    cached = cache_get(cache_key)
+    if cached:
+        return cached
+
     # Busca restaurante
     restaurante = db.query(models.Restaurante).filter(
         models.Restaurante.codigo_acesso == codigo_acesso.upper(),
@@ -53,7 +52,7 @@ def get_site_info(
         models.ConfigRestaurante.restaurante_id == restaurante.id
     ).first()
     
-    return {
+    result = {
         "restaurante_id": restaurante.id,
         "codigo_acesso": restaurante.codigo_acesso,
         "nome_fantasia": restaurante.nome_fantasia,
@@ -80,6 +79,8 @@ def get_site_info(
         "horario_fechamento": config_rest.horario_fechamento if config_rest else "23:00",
         "dias_semana_abertos": config_rest.dias_semana_abertos.split(',') if config_rest else []
     }
+    cache_set(cache_key, result, ttl_seconds=300)  # 5 min
+    return result
 
 
 @router.get("/{codigo_acesso}/categorias", response_model=List[site_schemas.CategoriaPublic])
@@ -88,19 +89,31 @@ def get_categorias(
     db: Session = Depends(database.get_db)
 ):
     """Retorna categorias do menu"""
+    # Cache: categorias (5 min)
+    cache_key = f"cardapio:{codigo_acesso}:categorias"
+    cached = cache_get(cache_key)
+    if cached:
+        return cached
+
     restaurante = db.query(models.Restaurante).filter(
         models.Restaurante.codigo_acesso == codigo_acesso.upper()
     ).first()
-    
+
     if not restaurante:
-        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
-    
+        raise HTTPException(status_code=404, detail="Restaurante nao encontrado")
+
     categorias = db.query(models.CategoriaMenu).filter(
         models.CategoriaMenu.restaurante_id == restaurante.id,
         models.CategoriaMenu.ativo == True
     ).order_by(models.CategoriaMenu.ordem_exibicao).all()
-    
-    return categorias
+
+    result = [
+        {"id": c.id, "nome": c.nome, "descricao": getattr(c, 'descricao', None),
+         "icone": getattr(c, 'icone', None), "ordem_exibicao": c.ordem_exibicao, "ativo": c.ativo}
+        for c in categorias
+    ]
+    cache_set(cache_key, result, ttl_seconds=300)
+    return result
 
 
 @router.get("/{codigo_acesso}/produtos", response_model=List[site_schemas.ProdutoPublic])
@@ -477,8 +490,15 @@ def get_combos(
         (models.Combo.data_fim == None) | (models.Combo.data_fim >= agora)
     ).order_by(models.Combo.ordem_exibicao).all()
 
+    dia_atual = agora.weekday()  # 0=Monday...6=Sunday
+
     resultado = []
     for combo in combos:
+        # Combos do dia só aparecem no dia correto
+        if (combo.tipo_combo or "padrao") == "do_dia" and combo.dia_semana is not None:
+            if combo.dia_semana != dia_atual:
+                continue
+
         itens = db.query(models.ComboItem).filter(
             models.ComboItem.combo_id == combo.id
         ).all()
@@ -504,6 +524,9 @@ def get_combos(
             "preco_original": combo.preco_original,
             "imagem_url": combo.imagem_url,
             "ordem_exibicao": combo.ordem_exibicao or 0,
+            "tipo_combo": combo.tipo_combo or "padrao",
+            "dia_semana": combo.dia_semana,
+            "quantidade_pessoas": combo.quantidade_pessoas,
             "itens": itens_publicos
         })
 

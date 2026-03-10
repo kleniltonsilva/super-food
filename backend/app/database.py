@@ -1,6 +1,6 @@
 """
 Database Configuration - Super Food API
-Compartilha o mesmo banco de dados com o Streamlit (super_food.db)
+Suporta SQLite (dev) e PostgreSQL (producao)
 """
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -16,11 +16,13 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-# URL do banco - MESMO banco usado pelo Streamlit
-# IMPORTANTE: O banco fica na RAIZ do projeto (super_food.db)
+# URL do banco
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{PROJECT_ROOT}/super_food.db")
 
-# Configurações do engine
+# Detecta se esta usando PgBouncer (porta 6432 ou env var)
+PGBOUNCER_ACTIVE = os.getenv("PGBOUNCER_ACTIVE", "").lower() == "true" or ":6432/" in DATABASE_URL
+
+# Configuracoes do engine
 if "sqlite" in DATABASE_URL:
     # SQLite: usar StaticPool e check_same_thread=False
     engine = create_engine(
@@ -29,13 +31,24 @@ if "sqlite" in DATABASE_URL:
         poolclass=StaticPool,
         echo=False
     )
+elif PGBOUNCER_ACTIVE:
+    # PostgreSQL via PgBouncer: pool pequeno (PgBouncer gerencia conexoes)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=5,
+        max_overflow=5,
+        pool_recycle=1800,
+        echo=False
+    )
 else:
-    # PostgreSQL: configuração padrão para produção
+    # PostgreSQL direto: pool padrao para producao
     engine = create_engine(
         DATABASE_URL,
         pool_pre_ping=True,
         pool_size=10,
         max_overflow=20,
+        pool_recycle=1800,
         echo=False
     )
 
@@ -46,7 +59,7 @@ from database.base import Base
 
 
 def get_db():
-    """Dependency para injeção em routers FastAPI"""
+    """Dependency para injecao em routers FastAPI"""
     db = SessionLocal()
     try:
         yield db

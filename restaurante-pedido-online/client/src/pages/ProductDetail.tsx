@@ -1,10 +1,12 @@
 import { useParams, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Plus, Minus, ChevronRight, ChevronLeft, X } from "lucide-react";
+import { ArrowLeft, Plus, Minus, ChevronRight, ChevronLeft, X, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { getProdutoDetalhe, adicionarAoCarrinho, getSaboresDisponiveis, getProdutos } from "@/lib/apiClient";
-import { useRestaurante, type SiteInfo } from "@/contexts/RestauranteContext";
+import { useRestaurante, useRestauranteTheme, type SiteInfo } from "@/contexts/RestauranteContext";
+import { useQueryClient } from "@tanstack/react-query";
+import { QUERY_KEYS } from "@/hooks/useQueries";
 import { toast } from "sonner";
 
 function getEmojiByTipo(siteInfo: SiteInfo | null): string {
@@ -61,6 +63,8 @@ export default function ProductDetail() {
   const params = useParams();
   const [, navigate] = useLocation();
   const { siteInfo } = useRestaurante();
+  const theme = useRestauranteTheme();
+  const qc = useQueryClient();
   const productId = parseInt(params?.id || "0");
 
   const [produto, setProduto] = useState<ProdutoDetalhado | null>(null);
@@ -71,6 +75,7 @@ export default function ProductDetail() {
   const [selectedTamanho, setSelectedTamanho] = useState<number | null>(null);
   const [selectedBorda, setSelectedBorda] = useState<number | null>(null);
   const [selectedAdicionais, setSelectedAdicionais] = useState<number[]>([]);
+  const [adicionaisQtd, setAdicionaisQtd] = useState<Map<number, number>>(new Map());
   const [selectedPontoCarne, setSelectedPontoCarne] = useState<number | null>(null);
   const [selectedSabores, setSelectedSabores] = useState<number[]>([]);
   const [observacoes, setObservacoes] = useState("");
@@ -153,10 +158,32 @@ export default function ProductDetail() {
     }
   }, [selectedTamanho, produto, useStepper]);
 
+  const isAcai = (siteInfo?.tipo_restaurante || "").toLowerCase().includes("acai") ||
+    (siteInfo?.tipo_restaurante || "").toLowerCase().includes("açaí") ||
+    (siteInfo?.tipo_restaurante || "").toLowerCase().includes("sorvet");
+
   const handleToggleAdicional = (id: number) => {
     setSelectedAdicionais(prev =>
       prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
     );
+  };
+
+  const handleAdicionalQtd = (id: number, delta: number) => {
+    setAdicionaisQtd(prev => {
+      const next = new Map(prev);
+      const current = next.get(id) || 0;
+      const newQty = Math.max(0, current + delta);
+      if (newQty === 0) {
+        next.delete(id);
+        setSelectedAdicionais(sa => sa.filter(x => x !== id));
+      } else {
+        next.set(id, newQty);
+        if (!selectedAdicionais.includes(id)) {
+          setSelectedAdicionais(sa => [...sa, id]);
+        }
+      }
+      return next;
+    });
   };
 
   const handleToggleSabor = (id: number) => {
@@ -184,7 +211,10 @@ export default function ProductDetail() {
     const adicionais = produto.variacoes_agrupadas?.adicional || [];
     for (const id of selectedAdicionais) {
       const ad = adicionais.find(a => a.id === id);
-      if (ad) preco += ad.preco_adicional;
+      if (ad) {
+        const qty = adicionaisQtd.get(id) || 1;
+        preco += ad.preco_adicional * qty;
+      }
     }
 
     return preco;
@@ -200,7 +230,10 @@ export default function ProductDetail() {
       if (selectedBorda) variacoesIds.push({ variacao_id: selectedBorda });
       if (selectedPontoCarne) variacoesIds.push({ variacao_id: selectedPontoCarne });
       for (const id of selectedAdicionais) {
-        variacoesIds.push({ variacao_id: id });
+        const qty = adicionaisQtd.get(id) || 1;
+        for (let i = 0; i < qty; i++) {
+          variacoesIds.push({ variacao_id: id });
+        }
       }
 
       // Monta observação com sabores selecionados
@@ -220,6 +253,7 @@ export default function ProductDetail() {
         variacoes: variacoesIds.length > 0 ? variacoesIds : undefined,
       });
 
+      qc.invalidateQueries({ queryKey: QUERY_KEYS.carrinho });
       toast.success(`${produto.nome} adicionado ao carrinho!`);
 
       // Mostra sugestão de bebida se disponível
@@ -504,9 +538,11 @@ export default function ProductDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen" style={{ background: theme.colors.bodyBg }}>
       <div className="container py-8 px-4">
-        <Button variant="ghost" onClick={() => navigate("/")} className="mb-4">
+        <Button variant="ghost" onClick={() => navigate("/")} className="mb-4"
+          style={{ color: theme.colors.textSecondary }}
+        >
           <ArrowLeft className="w-4 h-4 mr-2" />
           Voltar ao Cardápio
         </Button>
@@ -695,24 +731,79 @@ export default function ProductDetail() {
                 {/* Adicionais */}
                 {adicionais.length > 0 && (
                   <div>
-                    <h3 className="text-lg font-bold mb-3">Adicionais</h3>
+                    <h3 className="text-lg font-bold mb-3"
+                      style={{ color: theme.colors.textPrimary, fontFamily: theme.fonts.special || theme.fonts.heading }}
+                    >
+                      {isAcai ? "Monte seu Açaí" : "Adicionais"}
+                    </h3>
                     <div className="space-y-2">
-                      {adicionais.map(adic => (
-                        <button
-                          key={adic.id}
-                          onClick={() => handleToggleAdicional(adic.id)}
-                          className={`w-full p-3 border rounded-lg text-left transition-all flex justify-between items-center ${
-                            selectedAdicionais.includes(adic.id)
-                              ? "border-2 bg-green-900/15 border-green-600"
-                              : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
-                          }`}
-                        >
-                          <span className="font-semibold text-sm">{adic.nome}</span>
-                          <span className="text-sm">
-                            {adic.preco_adicional > 0 ? `+R$ ${adic.preco_adicional.toFixed(2)}` : "Grátis"}
-                          </span>
-                        </button>
-                      ))}
+                      {adicionais.map(adic => {
+                        const qty = adicionaisQtd.get(adic.id) || 0;
+                        const isSelected = selectedAdicionais.includes(adic.id);
+
+                        return isAcai ? (
+                          /* Modo Açaí: +/- quantidade por addon */
+                          <div
+                            key={adic.id}
+                            className="w-full p-3 rounded-lg flex items-center justify-between"
+                            style={{
+                              background: qty > 0
+                                ? (theme.isDark ? "rgba(0,180,0,0.08)" : "rgba(0,180,0,0.05)")
+                                : (theme.isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)"),
+                              border: `1px solid ${qty > 0 ? theme.colors.quantityIncrease : theme.colors.borderSubtle}`,
+                              borderRadius: theme.cardRadius,
+                            }}
+                          >
+                            <div>
+                              <span className="font-semibold text-sm" style={{ color: theme.colors.textPrimary }}>
+                                {adic.nome}
+                              </span>
+                              <span className="text-xs ml-2" style={{ color: theme.colors.priceColor }}>
+                                {adic.preco_adicional > 0 ? `+R$ ${adic.preco_adicional.toFixed(2)}` : "Grátis"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              {qty > 0 && (
+                                <button
+                                  className="w-7 h-7 rounded flex items-center justify-center text-white"
+                                  style={{ background: theme.colors.quantityDecrease }}
+                                  onClick={() => handleAdicionalQtd(adic.id, -1)}
+                                >
+                                  {qty === 1 ? <Trash2 className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+                                </button>
+                              )}
+                              {qty > 0 && (
+                                <span className="w-6 text-center text-sm font-bold" style={{ color: theme.colors.textPrimary }}>
+                                  {qty}
+                                </span>
+                              )}
+                              <button
+                                className="w-7 h-7 rounded flex items-center justify-center text-white"
+                                style={{ background: theme.colors.quantityIncrease }}
+                                onClick={() => handleAdicionalQtd(adic.id, 1)}
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          /* Modo padrão: toggle on/off */
+                          <button
+                            key={adic.id}
+                            onClick={() => handleToggleAdicional(adic.id)}
+                            className={`w-full p-3 border rounded-lg text-left transition-all flex justify-between items-center ${
+                              isSelected
+                                ? "border-2 bg-green-900/15 border-green-600"
+                                : "border-[var(--border-subtle)] hover:border-[rgba(255,255,255,0.15)]"
+                            }`}
+                          >
+                            <span className="font-semibold text-sm">{adic.nome}</span>
+                            <span className="text-sm">
+                              {adic.preco_adicional > 0 ? `+R$ ${adic.preco_adicional.toFixed(2)}` : "Grátis"}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -732,34 +823,49 @@ export default function ProductDetail() {
                 {/* Quantidade + Preço + Botão */}
                 <div className="space-y-4">
                   <div className="flex items-center gap-4">
-                    <span className="text-sm font-bold">Quantidade:</span>
-                    <div className="flex items-center border rounded-lg overflow-hidden">
-                      <button className="px-3 py-2 hover:bg-[var(--bg-card-hover)]" onClick={() => setQuantity(Math.max(1, quantity - 1))}>
+                    <span className="text-sm font-bold" style={{ color: theme.colors.textPrimary }}>Quantidade:</span>
+                    <div className="flex items-center rounded-lg overflow-hidden" style={{ border: `1px solid ${theme.colors.borderSubtle}` }}>
+                      <button
+                        className="w-9 h-9 flex items-center justify-center text-white"
+                        style={{ background: theme.colors.quantityDecrease }}
+                        onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                      >
                         <Minus className="w-4 h-4" />
                       </button>
-                      <span className="px-4 py-2 font-bold">{quantity}</span>
-                      <button className="px-3 py-2 hover:bg-[var(--bg-card-hover)]" onClick={() => setQuantity(quantity + 1)}>
+                      <span className="px-4 py-2 font-bold" style={{ color: theme.colors.textPrimary }}>{quantity}</span>
+                      <button
+                        className="w-9 h-9 flex items-center justify-center text-white"
+                        style={{ background: theme.colors.quantityIncrease }}
+                        onClick={() => setQuantity(quantity + 1)}
+                      >
                         <Plus className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
 
-                  <div className="border-t pt-4">
+                  <div className="pt-4" style={{ borderTop: `1px solid ${theme.colors.borderSubtle}` }}>
                     <div className="flex items-center justify-between mb-4">
-                      <span className="text-lg font-bold">Total:</span>
-                      <span className="text-2xl font-extrabold" style={{ color: `var(--cor-primaria, #E31A24)` }}>
+                      <span className="text-lg font-bold" style={{ color: theme.colors.textPrimary }}>Total:</span>
+                      <span
+                        className="text-2xl font-extrabold"
+                        style={{ color: theme.colors.priceColor, fontFamily: theme.fonts.special || theme.fonts.heading }}
+                      >
                         R$ {(precoUnit * quantity).toFixed(2)}
                       </span>
                     </div>
 
-                    <Button
+                    <button
                       onClick={handleAddToCart}
                       disabled={adding}
-                      className="w-full py-6 text-lg font-bold text-white"
-                      style={{ background: `var(--cor-primaria, #E31A24)` }}
+                      className="w-full font-bold text-white text-lg rounded-lg transition-opacity disabled:opacity-50"
+                      style={{
+                        background: "#00b400",
+                        borderBottom: "3px solid #009a00",
+                        height: "52px",
+                      }}
                     >
                       {adding ? "Adicionando..." : "Adicionar ao Carrinho"}
-                    </Button>
+                    </button>
                   </div>
                 </div>
               </>

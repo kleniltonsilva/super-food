@@ -1,814 +1,655 @@
-# CLAUDE.md — Memória Técnica Viva do Super Food
+# CLAUDE.md — Super Food
+
+## REGRAS
+
+1. Responder **sempre em português**.
+2. Gerar **codigo completo**, nunca snippets parciais.
+3. **TODAS** as queries filtram por `restaurante_id` (multi-tenant).
+4. No React, usar hooks de `hooks/useQueries.ts` — **NUNCA** useState+useEffect manual para fetching.
+5. Senhas **SEMPRE** com `.strip()` antes de hash.
+6. Interceptor 401 ja existe no `apiClient.ts` — nao duplicar.
+7. **NUNCA** armazenar objetos ORM no `session_state`.
+8. Ao concluir cada etapa do plano, marcar com (x) e data.
+9. Se a sessao morrer, retomar do ultimo checkpoint marcado.
+10. **REGRA CRITICA:** Marcar `[x]` com data **IMEDIATAMENTE** apos concluir cada tarefa, ANTES de prosseguir para a proxima. Nunca deixar tarefas concluidas sem marcacao.
+11. **PROTOCOLO DE AUDITORIA OBRIGATORIO:** Apos **CADA etapa concluida** da migracao Streamlit → React, executar:
+    - **Passo 1:** Auditar o codigo React implementado (listar funcionalidades, fluxos, campos, validacoes)
+    - **Passo 2:** Auditar o codigo original Streamlit correspondente (mesmas informacoes)
+    - **Passo 3:** Cruzar as duas auditorias e listar TODAS as diferencas encontradas
+    - **Passo 4:** Corrigir cada diferenca no React ate atingir paridade funcional com o Streamlit
+    - **Passo 5:** Verificar build (`npm run check`) sem erros antes de marcar como concluido
+    - _Usar agentes paralelos (Task tool) para as auditorias quando possivel para economizar tempo._
+12. **GESTAO AUTOMATICA DE MEMORIA (OBRIGATORIO):**
+    O Claude Code **DEVE** gerenciar sua propria memoria de forma proativa e autonoma, sem o usuario precisar pedir.
+    - **Diretorio:** `/home/pcempresa/.claude/projects/-home-pcempresa-Documentos-super-food/memory/`
+    - **AO INICIAR cada sessao:**
+      1. Ler `MEMORY.md` (carregado automaticamente) para contexto rapido
+      2. Ler os arquivos de topico relevantes para a tarefa atual (ex: `architecture.md`, `corrections-log.md`)
+      3. **NAO** re-ler arquivos que ja foram lidos e estao na memoria — economizar tokens
+    - **DURANTE a sessao:**
+      1. Ao descobrir padroes, bugs, decisoes tecnicas → salvar imediatamente no arquivo de topico adequado
+      2. Ao concluir uma tarefa/sprint → atualizar `MEMORY.md` com novo estado
+      3. Ao modificar arquivos importantes → atualizar `architecture.md` se a estrutura mudar
+      4. Ao encontrar e corrigir bugs → registrar em `corrections-log.md`
+    - **AO FINALIZAR a sessao (ou ao perceber que o contexto esta grande):**
+      1. Atualizar `MEMORY.md` com: sprint/tarefa atual, o que foi feito, proximos passos
+      2. Atualizar `CLAUDE.md` secao "ESTADO ATUAL DO PROJETO" com progresso
+      3. **Limpar** informacoes obsoletas dos arquivos de memoria (remover tarefas ja concluidas ha muito tempo, erros ja resolvidos, etc.)
+      4. Manter `MEMORY.md` com no maximo 150 linhas (conciso e util)
+    - **Arquivos de memoria padrao:**
+      - `MEMORY.md` — estado atual, resumo, links para topicos (SEMPRE conciso, <150 linhas)
+      - `architecture.md` — caminhos, stack, hooks, decisoes tecnicas
+      - `corrections-log.md` — historico de bugs/correcoes (limpar entradas antigas periodicamente)
+      - Criar novos arquivos por topico conforme necessidade (ex: `sprint3-motoboy.md`)
+    - **Arquivos de referencia do projeto (somente leitura — NAO editar sem pedir):**
+      - `README.md` — documentacao oficial do projeto (700+ linhas). Contém: stack, instalacao, endpoints, fluxos, arquitetura cloud, roadmap, changelog. **Consultar ANTES de tomar decisoes arquiteturais.** Atualizar somente quando: nova versao, novo sprint concluido, novo endpoint, ou mudanca de stack.
+      - `ESTRUTURA.md` — arvore de pastas + fluxo de dados detalhado
+    - **Principio:** O usuario **NUNCA** deve precisar dizer "lembre disso" ou "atualize a memoria". O Claude Code faz isso sozinho, automaticamente, como parte natural do trabalho.
 
 ---
 
-## ⚙️ REGRAS PERMANENTES PARA O CLAUDE CODE
+## ESTADO ATUAL DO PROJETO
 
-1. **SEMPRE** que modificar, criar ou deletar qualquer arquivo do projeto, **ATUALIZE este CLAUDE.md** antes de encerrar a resposta.
-2. Atualize: plano de execução, última sessão, roadmap, problemas e qualquer seção técnica afetada.
-3. **SEMPRE** crie um **PLANO DE EXECUÇÃO** antes de implementar qualquer coisa.
-4. **SEMPRE** atualize os checkpoints do plano conforme avança cada etapa.
-5. Se a sessão for interrompida, o plano deve mostrar exatamente onde parou.
-6. Estas regras são **PERMANENTES** e se aplicam a **TODOS** os comandos.
-7. Responder **sempre em português**.
-8. Gerar **código completo**, nunca snippets parciais.
-9. **NUNCA** armazenar objetos ORM no `session_state`.
-10. **TODAS** as queries devem filtrar por `restaurante_id` (multi-tenant).
-11. No React, usar hooks de `hooks/useQueries.ts` — **NUNCA** useState+useEffect manual para fetching.
-12. Senhas **SEMPRE** com `.strip()` antes de hash.
-13. Interceptor 401 já existe no `apiClient.ts` — não duplicar.
+- **Sprint atual:** Sprint 9 — Layouts Temáticos por Tipo de Restaurante — **~99% COMPLETO**
+- **Tarefa atual:** 9.10 combos do dia + kits festa COMPLETOS. Faltam apenas: 9.14 testes visuais manuais
+- **Status:** 9.1-9.13 COMPLETOS. 9.10 COMPLETO. Pendente: 9.14 (testes visuais manuais)
+- **Ultima sessao:** 08/03/2026 — Backend + frontend combo types (do_dia, kit_festa), migration 010
+- **Proxima etapa:** Sprint 10 (Aposentar Streamlit) ou testes visuais Sprint 9
+- **Bugs conhecidos:** Nenhum critico pendente
 
 ---
 
-## 🔨 PLANO DE EXECUÇÃO ATUAL
-
-- **Tarefa:** Redesign Visual Completo — Site Cliente React (Tema Escuro Profissional)
-- **Status:** ✅ Concluída
-- **Início:** 11/02/2026
-- **Conclusão:** 11/02/2026
-
-### Fase 1: Sistema de Tema CSS + RestauranteContext
-1. [x] Atualizar `index.css` — variáveis de tema escuro + classes atualizadas ✅
-   - Arquivo: `restaurante-pedido-online/client/src/index.css`
-   - Ação: Novas CSS vars (--bg-base, --bg-surface, --bg-card, --text-primary, --border-subtle, etc), :root dark, classes componentes atualizadas
-2. [x] Expandir `RestauranteContext.tsx` — presets de cores por tipo_restaurante ✅
-   - Arquivo: `restaurante-pedido-online/client/src/contexts/RestauranteContext.tsx`
-   - Ação: Função getThemePreset(), useEffect expandido p/ setar todas as CSS vars
-
-### Fase 2: Redesign Home.tsx
-3. [x] Reescrever JSX do Home.tsx com tema escuro profissional ✅
-   - Arquivo: `restaurante-pedido-online/client/src/pages/Home.tsx`
-   - Ação: TopBar, Header, Nav categorias (IntersectionObserver), Banner, Cards produto, Combos, Footer, FAB — tudo dark
-   - **PRESERVOU:** toda lógica existente (hooks, funções, state, interfaces)
-
-### Fase 3: Páginas Secundárias — Consistência Visual
-4. [x] ProductDetail.tsx — fundo escuro, cards variação dark, preços accent ✅
-5. [x] Cart.tsx — itens carrinho dark, resumo dark ✅
-6. [x] Checkout.tsx — formulário dark, opções pagamento dark ✅
-7. [x] Login.tsx — formulário centralizado dark, tabs accent ✅
-8. [x] Orders.tsx — lista pedidos dark, badges status dark ✅
-9. [x] Account.tsx — perfil e endereços dark ✅
-10. [x] Loyalty.tsx — card fidelidade gradiente, prêmios dark ✅ (já estava aplicado)
-11. [x] OrderTracking.tsx — timeline dark ✅
-12. [x] OrderSuccess.tsx — confirmação dark ✅
-
-### Fase 4: Polish CSS e Animações
-13. [x] Hover effects (translateY + shadow), gradiente fade scroll categorias ✅
-14. [x] Skeleton loading dark, transições suaves, botões press effect ✅
-
-### Fase 5: Build e Verificação
-15. [x] `npm run build` sem erros ✅ (verificado 11/02/2026 — 1735 modules, built in 5.10s)
-16. [x] Atualizar CLAUDE.md final ✅
-
-### Plano anterior (concluído):
-- Documentação completa do projeto (CLAUDE.md, README.md, ESTRUTURA.md) ✅ 10/02/2026
-
----
-
-## 🕐 ÚLTIMA SESSÃO
-
-- **Data:** 11/02/2026
-- **O que foi feito:** Redesign visual completo do site cliente React (tema escuro profissional) — 13 arquivos, 739 linhas adicionadas
-- **Arquivos criados:** nenhum
-- **Arquivos modificados:** index.css, RestauranteContext.tsx, Home.tsx, ProductDetail.tsx, Cart.tsx, Checkout.tsx, Login.tsx, Orders.tsx, Account.tsx, OrderTracking.tsx, OrderSuccess.tsx, NotFound.tsx (12 arquivos)
-- **Arquivos deletados:** nenhum
-- **Migration criada:** não
-- **Plano concluído:** ✅ sim (sessão anterior completou código, build verificado nesta sessão)
-- **Problemas encontrados:** sessão anterior morreu antes de atualizar CLAUDE.md (build command tinha `&& &&` — erro de sintaxe bash)
-
-### Sessão anterior (10/02/2026)
-- Documentação completa do projeto (CLAUDE.md, README.md, ESTRUTURA.md)
-
-### Sessão anterior (08/02/2026)
-- React SPA completo: todas as pages adaptadas para apiClient
-- RestauranteContext + AuthContext + useQueries.ts criados
-- auth_cliente.py: registro, login, /me, perfil, endereços CRUD
-- carrinho.py: geocodifica endereço, calcula taxa real
-- Home.tsx: emoji/tema dinâmico, banner, rodapé
-- Account.tsx: nova página Minha Conta
-- Upload router: processamento de imagens com Pillow
-- Plano etapa 7 concluída (apiClient.ts), próximo: etapa 8+
-
----
-
-## 🗺️ ROADMAP
-
-1. ✅ Fase 1: Sistema base com ORM SQLAlchemy
-2. ✅ Fase 2: Migração completa para Alembic
-3. ✅ Fase 3: Site do Cliente (4ª cabeça - Streamlit)
-4. ✅ Fase 4: Seleção justa de motoboys
-5. ✅ Fase 5: Cálculo automático de taxas e ganhos
-6. ✅ Fase 6: Backend FastAPI com Site Cliente
-7. ✅ Fase 7: Isolamento multi-tenant de motoboys (v2.8.0)
-8. ✅ Fase 8: GPS em tempo real + Mapa no restaurante (v2.8.1)
-9. ✅ Fase 9: Site Cliente React SPA (v3.0) — Sprint 1-3 concluídos
-10. ⬚ Fase 10: Finalizar Sprint 2 React (etapas 8-18 do plano)
-11. ⬚ Fase 11: Integração iFood
-12. ⬚ Fase 12: App nativo (WebView)
-13. ⬚ Fase 13: Recuperação de senha por SMS (Twilio/AWS SNS)
-14. ⬚ Fase 14: Push notifications para motoboy (PWA)
-
-### Plano de Integração React (Sprint 2 — Etapas pendentes)
-- Etapa 8: [ ] Criar/Adaptar RestauranteContext.tsx (já feito parcialmente)
-- Etapa 9: [ ] Adaptar main.tsx e App.tsx (já feito parcialmente)
-- Etapa 10-18: [ ] Adaptar páginas restantes para usar apiClient completo
-
----
-
-## ⚠️ PROBLEMAS PENDENTES
-
-- [ ] `plano.txt` e `reparar_bugs.txt` foram deletados do working tree (existem no git HEAD)
-- [ ] Arquivo `001_initial_schema,` (vazio) e `=10.0.0` na raiz — lixo para limpar
-- [ ] `.env` com segredos commitado no git — mover para `.gitignore`
-- [ ] `carrinho.py:452` usa `longitude=lng_entrega` — campo correto é `longitude_entrega`
-- [ ] GPS router (`gps.py`) não requer autenticação — considerar proteção
-- [ ] Upload router (`upload.py`) não requer autenticação — considerar proteção
-- [ ] `restaurantes.py` usa campos `hashed_password`, `lat`, `lon` que não existem no model atual
-- [ ] `pedidos.py` usa `nome_cliente`, `endereco`, `StatusPedido` que não existem no model atual
-- [x] Fechamento de caixa: valor contado + cálculo diferença (corrigido 07/02/2026)
-- [x] Pagamentos motoboy: exportação CSV funcional (corrigido 07/02/2026)
-
----
-
-## 📋 PROJETO
-
-**Super Food** — SaaS multi-tenant para gestão de restaurantes com despacho inteligente de entregas.
-
-- **Versão:** 2.8.3+ (10/02/2026)
-- **Licença:** Proprietária (Klenilton Silva)
-
----
-
-## 🏗️ ARQUITETURA
-
-### Stack
-
-| Camada | Tecnologia | Versão |
-|--------|-----------|--------|
-| Backend API | FastAPI + Uvicorn | 0.115+ |
-| ORM | SQLAlchemy 2.0+ | 2.0.25+ |
-| Migrations | Alembic | 1.13+ |
-| Banco (dev) | SQLite | nativo |
-| Banco (prod) | PostgreSQL | via psycopg2 |
-| Dashboard Admin | Streamlit | 1.40+ |
-| Dashboard Restaurante | Streamlit | 1.40+ |
-| App Motoboy (PWA) | Streamlit | 1.40+ |
-| Site Cliente (novo) | React 19 + Vite 7 | 19.2+ |
-| Estado React | TanStack Query v5 | 5.90+ |
-| Router React | wouter | 3.3+ |
-| CSS React | Tailwind CSS 4 + Radix UI | 4.1+ |
-| Auth | JWT (python-jose) + bcrypt | HS256 |
-| Mapas | Mapbox API | — |
-| Imagens | Pillow (resize/WebP) | 10.0+ |
-
-### Serviços e Portas
-
-| Serviço | Porta | Arquivo | Comando |
-|---------|-------|---------|---------|
-| FastAPI Backend | 8000 | `backend/app/main.py` | `uvicorn backend.app.main:app --port 8000 --reload` |
-| Super Admin | 8501 | `streamlit_app/super_admin.py` | `streamlit run streamlit_app/super_admin.py --server.port 8501` |
-| Dashboard Restaurante | 8502 | `streamlit_app/restaurante_app.py` | `streamlit run streamlit_app/restaurante_app.py --server.port 8502` |
-| App Motoboy PWA | 8503 | `app_motoboy/motoboy_app.py` | `streamlit run app_motoboy/motoboy_app.py --server.port 8503` |
-| React SPA (dev) | 5173 | `restaurante-pedido-online/` | `cd restaurante-pedido-online && npm run dev` |
-| React SPA (prod) | 8000 | Servido pelo FastAPI | `GET /cliente/{codigo_acesso}` |
-
-### Como as partes se conectam
+## ESTRUTURA DO PROJETO
 
 ```
-[React SPA]  ──HTTP──►  [FastAPI :8000]  ──ORM──►  [SQLite/PostgreSQL]
-                              │
-[Streamlit Admin :8501] ──ORM──┤
-[Streamlit Rest. :8502] ──ORM──┤
-[App Motoboy :8503] ──ORM+GPS──┘
-                              │
-                         [WebSocket /ws/{id}]  ──►  Tempo real
+super-food/
+├── backend/                          # FastAPI Backend
+│   └── app/
+│       ├── main.py                  # Entry point FastAPI (serve SPA React)
+│       ├── routers/                 # Rotas API modulares
+│       │   ├── auth_restaurante.py  # Auth JWT restaurante
+│       │   ├── auth_cliente.py      # Auth cliente
+│       │   ├── painel.py            # Todas rotas /painel/* (admin)
+│       │   ├── site_cliente.py      # Rotas site público
+│       │   ├── carrinho.py          # Carrinho/checkout
+│       │   ├── upload.py            # Upload imagens (JWT)
+│       │   ├── pedidos.py           # Pedidos legado
+│       │   ├── restaurantes.py      # Restaurantes legado
+│       │   └── motoboys.py         # GPS motoboys
+│       ├── models.py               # SQLAlchemy ORM models
+│       ├── database.py             # Config BD SQLite/PostgreSQL
+│       ├── auth.py                 # JWT helpers
+│       └── utils/                  # Helpers (despacho, menus)
+│
+├── restaurante-pedido-online/       # FRONTEND VITE + REACT
+│   ├── package.json                # Scripts: dev, build, check
+│   ├── vite.config.ts              # Build config (proxy, aliases)
+│   ├── tsconfig.json               # TypeScript config
+│   ├── dist/public/                # BUILD OUTPUT (servido pelo FastAPI)
+│   └── client/
+│       ├── index.html              # HTML raiz Vite
+│       └── src/
+│           ├── main.tsx            # Entry point React
+│           ├── App.tsx             # Router principal (cliente + admin)
+│           ├── index.css           # Estilos globais + Tailwind
+│           ├── pages/              # Paginas site cliente
+│           ├── components/         # Componentes UI compartilhados (shadcn)
+│           ├── hooks/              # Hooks cliente
+│           ├── contexts/           # RestauranteContext, AuthContext, ThemeContext
+│           └── admin/              # PAINEL ADMIN REACT
+│               ├── AdminApp.tsx    # Router admin (protegido)
+│               ├── contexts/       # AdminAuthContext.tsx
+│               ├── lib/            # adminApiClient.ts (axios + JWT)
+│               ├── hooks/          # useAdminQueries.ts, useWebSocket.ts
+│               ├── pages/          # 20 paginas (Dashboard, Pedidos, etc.)
+│               └── components/     # AdminLayout, Sidebar, Topbar
+│
+├── streamlit_app/                   # LEGADO (sera aposentado Sprint 8)
+├── app_motoboy/                     # LEGADO (sera aposentado Sprint 8)
+├── database/                        # Seed data
+├── migrations/                      # Alembic migrations
+├── run_production.py               # Script iniciar servicos
+├── requirements.txt                # Deps Python
+└── CLAUDE.md                       # Este arquivo
 ```
 
-- React SPA: consome API FastAPI via `apiClient.ts` (proxy Vite em dev, servido pelo FastAPI em prod)
-- Streamlit apps: acessam banco diretamente via `get_db_session()` (database/session.py)
-- WebSocket: notificações em tempo real por restaurante
-- GPS: motoboy envia a cada 10s via `POST /api/gps/update`
+**Stack:**
+- **Backend:** FastAPI + SQLAlchemy + JWT (authlib) + WebSocket
+- **Frontend:** React 19 + TypeScript + Vite + Tailwind CSS 4 + TanStack Query v5
+- **Router:** wouter | **UI:** shadcn/radix-ui | **Graficos:** recharts | **Mapa:** mapbox-gl
+- **Carousel:** embla-carousel | **Build output:** `dist/public/` servido pelo FastAPI
 
 ---
 
-## 🗄️ BANCO DE DADOS
+## PLANO DE EXECUCAO — MIGRACAO v4.0 (Streamlit -> React + Cloud)
 
-- **Arquivo dev:** `super_food.db` (raiz do projeto)
-- **ORM principal:** `database/models.py` (28 classes)
-- **Sessão Streamlit:** `database/session.py` → `get_db_session()` (retorno direto, fechar manualmente)
-- **Sessão FastAPI:** `backend/app/database.py` → `get_db()` (generator para DI)
-- **Base ORM:** `database/base.py`
-
-### Comandos Alembic
-```bash
-alembic upgrade head        # Aplicar todas as migrations
-alembic downgrade -1        # Reverter última
-alembic current             # Ver versão atual
-alembic history             # Ver histórico
-alembic revision --autogenerate -m "descricao"  # Nova migration
-```
-
-### Migrations (12 total)
-| # | Arquivo | Descrição |
-|---|---------|-----------|
-| 1 | `001_initial_schema.py` | Tabelas core (super_admin, restaurantes, motoboys, pedidos, etc) |
-| 2 | `002_add_gps_motoboys_table.py` | Tabela GPS para motoboys |
-| 3 | `003_add_site_cliente_schema.py` | site_config, categorias, produtos, variações, clientes, carrinho |
-| 4 | `004_add_motoboy_selection_fields.py` | Campos de seleção justa (hierarquia, disponível, em_rota) |
-| 5 | `005_add_motoboy_usuario_unique_constraint.py` | Unique (restaurante_id, usuario) |
-| 6 | `006_add_modo_prioridade_e_motivo_finalizacao.py` | Modo de despacho + motivo finalização |
-| 7 | `c6876da_add_site_cliente_tables_fidelidade.py` | Fidelidade, prêmios, promoções |
-| 8 | `d494f82_add_pagamento_real_fields.py` | Pagamento real (dinheiro vs cartão) |
-| 9 | `b7b9e66_add_ranking_antifraude_fields.py` | Antifraude + CPF |
-| 10 | `007_add_missing_columns.py` | Campos endereço restaurante + pagamento motoboy |
-| 11 | `008_add_combos.py` | Tabelas de combos promocionais |
-| 12 | `009_add_max_sabores.py` | max_sabores por variação |
+**Meta:** Sistema 100% React, zero Streamlit, pronto para deploy cloud com 1000 restaurantes.
 
 ---
 
-## 📦 MODELOS (database/models.py) — 28 Classes
+### SPRINT 0: Correcoes Pre-Migracao ✅ COMPLETO
 
-### SuperAdmin
-**Tabela:** `super_admin`
-| Campo | Tipo | Obrigatório | Unique | Default |
-|-------|------|-------------|--------|---------|
-| id | Integer PK | sim | sim | auto |
-| usuario | String(50) | sim | sim | — |
-| senha_hash | String(256) | sim | não | — |
-| email | String(100) | não | sim | — |
-| ativo | Boolean | não | não | True |
-| criado_em | DateTime | não | não | utcnow |
-**Métodos:** `set_senha(senha)`, `verificar_senha(senha)` — SHA256 com strip()
-
-### Restaurante
-**Tabela:** `restaurantes`
-| Campo | Tipo | Obrigatório | Unique | Default |
-|-------|------|-------------|--------|---------|
-| id | Integer PK | sim | sim | auto |
-| nome | String(200) | sim | não | — |
-| nome_fantasia | String(200) | sim | não | — |
-| razao_social | String(200) | não | não | — |
-| cnpj | String(14) | não | sim | — |
-| email | String(100) | sim | sim | — |
-| senha | String(256) | sim | não | — |
-| telefone | String(20) | sim | não | — |
-| endereco_completo | Text | sim | não | — |
-| cidade | String(100) | não | não | — |
-| estado | String(2) | não | não | — |
-| cep | String(10) | não | não | — |
-| latitude | Float | não | não | — |
-| longitude | Float | não | não | — |
-| plano | String(50) | sim | não | 'basico' |
-| valor_plano | Float | sim | não | 0.0 |
-| limite_motoboys | Integer | sim | não | 3 |
-| codigo_acesso | String(20) | sim | sim | — |
-| ativo | Boolean | não | não | True |
-| status | String(20) | não | não | 'ativo' |
-| criado_em | DateTime | não | não | utcnow |
-| data_vencimento | DateTime | não | não | — |
-**Relacionamentos:** config (1:1), site_config (1:1), motoboys (1:N), pedidos (1:N), produtos (1:N), categorias_menu (1:N), clientes (1:N), carrinhos (1:N), caixas (1:N), notificacoes (1:N), solicitacoes_motoboy (1:N), rotas_otimizadas (1:N), combos (1:N)
-**Métodos:** `gerar_codigo_acesso()`, `set_senha(senha)`, `verificar_senha(senha)`
-
-### SiteConfig
-**Tabela:** `site_config` — Configuração visual/operacional do site por restaurante
-| Campo | Tipo | Default |
-|-------|------|---------|
-| id | Integer PK | auto |
-| restaurante_id | Integer FK (unique) | — |
-| tipo_restaurante | String(50) | 'geral' |
-| tema_cor_primaria | String(7) | '#FF6B35' |
-| tema_cor_secundaria | String(7) | '#004E89' |
-| logo_url, banner_principal_url, favicon_url | String(500) | null |
-| whatsapp_numero | String(20) | null |
-| whatsapp_ativo | Boolean | True |
-| whatsapp_mensagem_padrao | Text | 'Olá! Gostaria de fazer um pedido.' |
-| pedido_minimo | Float | 0.0 |
-| tempo_entrega_estimado | Integer | 50 |
-| tempo_retirada_estimado | Integer | 20 |
-| site_ativo | Boolean | True |
-| aceita_agendamento | Boolean | False |
-| aceita_dinheiro, aceita_cartao, aceita_pix | Boolean | True |
-| aceita_vale_refeicao | Boolean | False |
-| meta_title, meta_description, meta_keywords | Text | null |
-
-### ConfigRestaurante
-**Tabela:** `config_restaurante` — Configurações operacionais
-| Campo | Tipo | Default |
-|-------|------|---------|
-| id | Integer PK | auto |
-| restaurante_id | Integer FK (unique) | — |
-| status_atual | String(20) | 'fechado' |
-| modo_despacho | String(50) | 'auto_economico' |
-| raio_entrega_km | Float | 10.0 |
-| tempo_medio_preparo | Integer | 30 |
-| despacho_automatico | Boolean | True |
-| modo_prioridade_entrega | String(50) | 'rapido_economico' |
-| taxa_entrega_base | Float | 5.0 |
-| distancia_base_km | Float | 3.0 |
-| taxa_km_extra | Float | 1.5 |
-| valor_km | Float | 2.0 |
-| valor_base_motoboy | Float | 5.0 |
-| valor_km_extra_motoboy | Float | 1.0 |
-| taxa_diaria | Float | 0.0 |
-| valor_lanche | Float | 0.0 |
-| max_pedidos_por_rota | Integer | 5 |
-| permitir_ver_saldo_motoboy | Boolean | True |
-| permitir_finalizar_fora_raio | Boolean | False |
-| distancia_base_motoboy_km | Float | 3.0 |
-| horario_abertura | String(5) | '18:00' |
-| horario_fechamento | String(5) | '23:00' |
-| dias_semana_abertos | String(200) | 'segunda,...,domingo' |
-
-### CategoriaMenu
-**Tabela:** `categorias_menu`
-Campos: id, restaurante_id (FK), nome, descricao, icone, imagem_url, ordem_exibicao, ativo, criado_em
-
-### TipoProduto
-**Tabela:** `tipos_produto` — Templates por tipo de restaurante
-Campos: id, tipo_restaurante, nome_template, descricao, config_json (JSON), ativo
-
-### Produto
-**Tabela:** `produtos`
-Campos: id, restaurante_id (FK), categoria_id (FK), tipo_produto_id (FK), nome, descricao, preco, imagem_url, imagens_adicionais_json (JSON), destaque, promocao, preco_promocional, ordem_exibicao, estoque_ilimitado, estoque_quantidade, disponivel, criado_em
-**Relacionamentos:** categoria, tipo_produto, variacoes (1:N), itens_pedido (1:N)
-
-### VariacaoProduto
-**Tabela:** `variacoes_produto`
-Campos: id, produto_id (FK), tipo_variacao (tamanho/sabor/borda/adicional/ponto_carne), nome, descricao, preco_adicional, ordem, ativo, estoque_disponivel, max_sabores
-
-### Cliente
-**Tabela:** `clientes`
-Campos: id, restaurante_id (FK), nome, email (unique), telefone, senha_hash, cpf, data_nascimento (Date), ativo, email_verificado, telefone_verificado, data_cadastro, ultimo_acesso
-**Métodos:** `set_senha()`, `verificar_senha()` — SHA256 com strip()
-**Relacionamentos:** enderecos (1:N), pedidos (1:N), carrinhos (1:N)
-
-### EnderecoCliente
-**Tabela:** `enderecos_cliente`
-Campos: id, cliente_id (FK), apelido, cep, endereco_completo, numero, complemento, bairro, cidade, estado, referencia, latitude, longitude, validado_mapbox, padrao, ativo, criado_em
-
-### Carrinho
-**Tabela:** `carrinho`
-Campos: id, restaurante_id (FK), cliente_id (FK nullable), sessao_id, itens_json (JSON), valor_subtotal, valor_taxa_entrega, valor_desconto, valor_total, cupom_codigo, data_criacao, data_atualizacao, data_expiracao
-
-### Pedido
-**Tabela:** `pedidos`
-Campos: id, restaurante_id (FK), cliente_id (FK nullable), comanda, tipo, origem ('manual'|'site'), tipo_entrega, cliente_nome, cliente_telefone, endereco_entrega, latitude_entrega, longitude_entrega, numero_mesa, itens (Text), carrinho_json (JSON), observacoes, valor_total, forma_pagamento, troco_para, forma_pagamento_real, valor_pago_dinheiro, valor_pago_cartao, cupom_desconto, valor_desconto, distancia_restaurante_km, ordem_rota, validado_mapbox, atrasado, agendado, data_agendamento, status, tempo_estimado, despachado, data_criacao, atualizado_em
-**Relacionamentos:** itens_detalhados (1:N ItemPedido), entrega (1:1)
-
-### ItemPedido
-**Tabela:** `itens_pedido`
-Campos: id, pedido_id (FK), produto_id (FK), quantidade, preco_unitario, observacoes
-
-### Entrega
-**Tabela:** `entregas`
-Campos: id, pedido_id (FK unique), motoboy_id (FK), distancia_km, tempo_entrega, posicao_rota_original, posicao_rota_otimizada, tempo_preparacao, valor_entrega, taxa_base, taxa_km_extra, valor_motoboy, valor_base_motoboy, valor_extra_motoboy, valor_lanche, valor_diaria, delivery_started_at, delivery_finished_at, finalizado_fora_raio, status, motivo_finalizacao, motivo_cancelamento, atribuido_em, entregue_em
-
-### Motoboy
-**Tabela:** `motoboys`
-Campos: id, restaurante_id (FK), nome, usuario, telefone, senha, status (pendente/ativo/inativo/excluido), capacidade_entregas, ultimo_status_online, cpf, latitude_atual, longitude_atual, ultima_atualizacao_gps, total_entregas, total_ganhos, total_km, ordem_hierarquia, disponivel, em_rota, entregas_pendentes, ultima_entrega_em, ultima_rota_em, data_cadastro, data_solicitacao, data_exclusao
-**Métodos:** `set_senha()`, `verificar_senha()` — SHA256 com strip()
-**Índices:** idx_motoboy_restaurante, idx_motoboy_usuario, idx_motoboy_disponivel, idx_motoboy_hierarquia
-
-### MotoboySolicitacao
-**Tabela:** `motoboys_solicitacoes`
-Campos: id, restaurante_id (FK), nome, usuario, telefone, codigo_acesso, data_solicitacao, status
-
-### RotaOtimizada
-**Tabela:** `rotas_otimizadas`
-Campos: id, restaurante_id (FK), motoboy_id (FK), total_pedidos, distancia_total_km, tempo_total_min, ordem_entregas (JSON), status, data_criacao, data_inicio, data_conclusao
-
-### Caixa
-**Tabela:** `caixa`
-Campos: id, restaurante_id (FK), data_abertura, operador_abertura, valor_abertura, total_vendas, valor_retiradas, status, data_fechamento, operador_fechamento, valor_contado, diferenca
-
-### MovimentacaoCaixa
-**Tabela:** `movimentacoes_caixa`
-Campos: id, caixa_id (FK), tipo, valor, descricao, data_hora
-
-### Notificacao
-**Tabela:** `notificacoes`
-Campos: id, restaurante_id (FK), motoboy_id (FK), tipo, titulo, mensagem, lida, data_criacao
-
-### GPSMotoboy
-**Tabela:** `gps_motoboys`
-Campos: id, motoboy_id (FK), restaurante_id (FK), latitude, longitude, velocidade, timestamp
-
-### BairroEntrega
-**Tabela:** `bairros_entrega`
-Campos: id, restaurante_id (FK), nome, taxa_entrega, tempo_estimado_min, ativo, criado_em, atualizado_em
-
-### PontosFidelidade
-**Tabela:** `pontos_fidelidade`
-Campos: id, cliente_id (FK unique), restaurante_id (FK), pontos_total, pontos_disponiveis
-
-### TransacaoFidelidade
-**Tabela:** `transacoes_fidelidade`
-Campos: id, cliente_id (FK), restaurante_id (FK), pedido_id (FK), tipo ('ganho'|'resgatado'), pontos, descricao, criado_em
-
-### PremioFidelidade
-**Tabela:** `premios_fidelidade`
-Campos: id, restaurante_id (FK), nome, descricao, custo_pontos, tipo_premio ('desconto'|'item_gratis'|'brinde'), valor_premio, ordem_exibicao, ativo
-
-### Promocao
-**Tabela:** `promocoes`
-Campos: id, restaurante_id (FK), nome, descricao, tipo_desconto ('percentual'|'fixo'), valor_desconto, valor_pedido_minimo, desconto_maximo, codigo_cupom, data_inicio, data_fim, uso_limitado, limite_usos, usos_realizados, ativo
-
-### Combo
-**Tabela:** `combos`
-Campos: id, restaurante_id (FK), nome, descricao, preco_combo, preco_original, imagem_url, ativo, ordem_exibicao, data_inicio, data_fim
-**Relacionamentos:** itens (1:N ComboItem)
-
-### ComboItem
-**Tabela:** `combo_itens`
-Campos: id, combo_id (FK), produto_id (FK), quantidade
+1. [x] Fix bug upload logo/banner (14/02)
+2. [x] Limpar arquivos lixo da raiz (15/02)
+3. [x] .env ja no .gitignore (15/02)
+4. [x] Fix carrinho.py longitude_entrega (15/02)
+5. [x] Auth JWT no upload.py (15/02)
+6. [x] Fix restaurantes.py campos inexistentes (15/02)
+7. [x] Fix pedidos.py campos inexistentes (15/02)
 
 ---
 
-## 📄 SCHEMAS (backend/app/schemas/)
+### SPRINT 1: API Endpoints — Painel Restaurante
 
-### schemas/__init__.py (legado — rotas de restaurante)
-- `RestauranteBase` → `RestauranteCreate` → `RestaurantePublic`
-- `PedidoBase` → `PedidoCreate` → `PedidoPublic`
+> Criar endpoints REST para o React consumir. Streamlit continua funcionando em paralelo.
 
-### cliente_schemas.py
-| Schema | Campos obrigatórios | Uso |
-|--------|---------------------|-----|
-| ClienteCadastroRequest | nome, email, telefone, senha, codigo_acesso_restaurante | POST /auth/cliente/registro |
-| ClienteLoginRequest | email, senha, codigo_acesso_restaurante | POST /auth/cliente/login |
-| ClienteResponse | id, nome, email, telefone | Resposta de perfil |
-| TokenResponse | access_token, token_type, cliente | Resposta de auth |
-| RegistroPosPedidoRequest | nome, email, telefone, senha, codigo_acesso_restaurante, pedido_id? | POST registro-pos-pedido |
-| ClientePerfilUpdate | nome?, telefone?, cpf?, data_nascimento? | PUT /auth/cliente/perfil |
-| EnderecoCreateRequest | endereco_completo (obrig), demais opcionais | POST /auth/cliente/enderecos |
-| EnderecoUpdateRequest | todos opcionais | PUT /auth/cliente/enderecos/{id} |
-| EnderecoResponse | id + todos campos endereço | Resposta de endereço |
-| PedidoClienteResponse | id, comanda, status, tipo, valor_total, data_criacao | Resposta de pedido |
+**1.1 Auth Restaurante**
+8. [x] `POST /auth/restaurante/login` (15/02)
+9. [x] `GET /auth/restaurante/me` (15/02)
+10. [x] `PUT /auth/restaurante/perfil` (15/02)
+11. [x] `PUT /auth/restaurante/senha` (15/02)
 
-### site_schemas.py
-| Schema | Uso |
-|--------|-----|
-| SiteInfoPublic | GET /site/{codigo} — info completa do restaurante |
-| CategoriaPublic | GET /site/{codigo}/categorias |
-| VariacaoSimples | Variação dentro de ProdutoPublic |
-| ProdutoPublic | GET /site/{codigo}/produtos |
-| ProdutoDetalhadoPublic | GET /site/{codigo}/produto/{id} — com variacoes_agrupadas |
-| ValidacaoEntregaRequest/Response | POST /site/{codigo}/validar-entrega |
-| BairroEntregaPublic | GET /site/{codigo}/bairros |
-| PontosFidelidadePublic | GET fidelidade/pontos |
-| PremioFidelidadePublic | GET fidelidade/premios |
-| ResgatePremioRequest/Response | POST fidelidade/resgatar |
-| PromocaoPublic | GET /site/{codigo}/promocoes |
-| ValidarCupomRequest/Response | POST /site/{codigo}/validar-cupom |
-| ComboItemPublic / ComboPublic | GET /site/{codigo}/combos |
+**1.2 Dashboard / Metricas**
+12. [x] `GET /painel/dashboard` (15/02)
+13. [x] `GET /painel/dashboard/grafico` (15/02)
 
-### carrinho_schemas.py
-| Schema | Uso |
-|--------|-----|
-| AdicionarItemRequest | POST /carrinho/adicionar — produto_id, variacoes_ids[], quantidade, observacoes |
-| CarrinhoResponse | Resposta padrão — id, sessao_id, itens[], totais |
-| FinalizarCarrinhoRequest | POST /carrinho/finalizar — tipo_entrega, forma_pagamento, endereço, cliente |
+**1.3 Pedidos**
+14. [x] `GET /painel/pedidos` (15/02)
+15. [x] `GET /painel/pedidos/{id}` (15/02)
+16. [x] `POST /painel/pedidos` (15/02)
+17. [x] `PUT /painel/pedidos/{id}/status` (15/02)
+18. [x] `POST /painel/pedidos/{id}/despachar` (15/02)
+19. [x] `PUT /painel/pedidos/{id}/cancelar` (15/02)
 
----
+**1.4 Categorias**
+20. [x] `GET /painel/categorias` (15/02)
+21. [x] `POST /painel/categorias` (15/02)
+22. [x] `PUT /painel/categorias/{id}` (15/02)
+23. [x] `DELETE /painel/categorias/{id}` (15/02)
+24. [x] `PUT /painel/categorias/reordenar` (15/02)
 
-## 🌐 ROTAS (backend/app/routers/) — 50+ Endpoints
+**1.5 Produtos**
+25. [x] `GET /painel/produtos` (15/02)
+26. [x] `GET /painel/produtos/{id}` (15/02)
+27. [x] `POST /painel/produtos` (15/02)
+28. [x] `PUT /painel/produtos/{id}` (15/02)
+29. [x] `DELETE /painel/produtos/{id}` (15/02)
+30. [x] `PUT /painel/produtos/{id}/disponibilidade` (15/02)
 
-### restaurantes.py — Prefixo: `/restaurantes`
-| Método | Path | Auth | Descrição |
-|--------|------|------|-----------|
-| POST | /restaurantes/signup | Público | Cria restaurante (geocodifica endereço) |
-| GET | /restaurantes/ | Público | Lista restaurantes |
-| GET | /restaurantes/{id} | Público | Detalhe do restaurante |
+**1.6 Variacoes**
+31. [x] `GET /painel/produtos/{id}/variacoes` (15/02)
+32. [x] `POST /painel/produtos/{id}/variacoes` (15/02)
+33. [x] `PUT /painel/variacoes/{id}` (15/02)
+34. [x] `DELETE /painel/variacoes/{id}` (15/02)
 
-### auth_cliente.py — Prefixo: `/auth/cliente`
-| Método | Path | Auth | Descrição |
-|--------|------|------|-----------|
-| POST | /auth/cliente/registro | Público | Cadastro de cliente (bcrypt, JWT 72h) |
-| POST | /auth/cliente/login | Público | Login do cliente |
-| POST | /auth/cliente/registro-pos-pedido | Público | Registro após pedido anônimo |
-| GET | /auth/cliente/me | Token | Retorna dados do cliente logado |
-| PUT | /auth/cliente/perfil | Token | Atualiza perfil |
-| GET | /auth/cliente/enderecos | Token | Lista endereços |
-| POST | /auth/cliente/enderecos | Token | Cria endereço |
-| PUT | /auth/cliente/enderecos/{id} | Token | Atualiza endereço |
-| DELETE | /auth/cliente/enderecos/{id} | Token | Remove endereço (soft delete) |
-| PUT | /auth/cliente/enderecos/{id}/padrao | Token | Define endereço padrão |
-| GET | /auth/cliente/pedidos | Token | Lista pedidos do cliente (últimos 50) |
-| GET | /auth/cliente/pedidos/{id} | Token | Detalhe do pedido |
+**1.7 Combos**
+35. [x] `GET /painel/combos` (15/02)
+36. [x] `POST /painel/combos` (15/02)
+37. [x] `PUT /painel/combos/{id}` (15/02)
+38. [x] `DELETE /painel/combos/{id}` (15/02)
 
-### site_cliente.py — Prefixo: `/site`
-| Método | Path | Auth | Descrição |
-|--------|------|------|-----------|
-| GET | /site/{codigo} | Público | Info pública do restaurante (SiteInfoPublic) |
-| GET | /site/{codigo}/categorias | Público | Categorias do menu |
-| GET | /site/{codigo}/produtos | Público | Produtos com filtros (?categoria_id, ?destaque, ?promocao, ?busca) |
-| GET | /site/{codigo}/produto/{id} | Público | Produto detalhado com variações agrupadas |
-| POST | /site/{codigo}/validar-entrega | Público | Valida endereço + calcula taxa |
-| GET | /site/{codigo}/autocomplete-endereco | Público | Autocomplete Mapbox (?query) |
-| GET | /site/{codigo}/bairros | Público | Bairros atendidos |
-| GET | /site/{codigo}/bairro/{nome} | Público | Busca bairro por nome |
-| GET | /site/{codigo}/produto/{id}/sabores | Público | Sabores da mesma categoria |
-| GET | /site/{codigo}/combos | Público | Combos ativos |
-| GET | /site/{codigo}/pedido/{id}/tracking | Público | Tracking do pedido + GPS motoboy |
-| GET | /site/{codigo}/fidelidade/pontos/{cliente_id} | Público | Saldo de pontos |
-| GET | /site/{codigo}/fidelidade/premios | Público | Prêmios disponíveis |
-| POST | /site/{codigo}/fidelidade/resgatar/{cliente_id} | Público | Resgata prêmio |
-| GET | /site/{codigo}/promocoes | Público | Promoções ativas |
-| POST | /site/{codigo}/validar-cupom | Público | Valida cupom de desconto |
+**1.8 Motoboys**
+39. [x] `GET /painel/motoboys` (15/02)
+40. [x] `POST /painel/motoboys` (15/02)
+41. [x] `PUT /painel/motoboys/{id}` (15/02)
+42. [x] `DELETE /painel/motoboys/{id}` (15/02)
+43. [x] `PUT /painel/motoboys/{id}/hierarquia` (15/02)
+44. [x] `GET /painel/motoboys/ranking` (15/02)
+45. [x] `GET /painel/motoboys/solicitacoes` (15/02)
+46. [x] `PUT /painel/motoboys/solicitacoes/{id}` (15/02)
 
-### carrinho.py — Prefixo: `/carrinho`
-| Método | Path | Auth | Descrição |
-|--------|------|------|-----------|
-| POST | /carrinho/adicionar | Sessão (X-Session-ID) | Adiciona item ao carrinho |
-| POST | /carrinho/adicionar-combo | Sessão | Adiciona combo inteiro |
-| GET | /carrinho/ | Sessão | Busca carrinho (?codigo_acesso) |
-| PUT | /carrinho/atualizar-quantidade/{index} | Sessão | Atualiza quantidade (?nova_quantidade) |
-| DELETE | /carrinho/remover/{index} | Sessão | Remove item |
-| DELETE | /carrinho/limpar | Sessão | Limpa carrinho |
-| POST | /carrinho/finalizar | Sessão + Token opcional | Cria pedido, geocodifica, calcula taxa |
+**1.9 Caixa**
+47. [x] `GET /painel/caixa/atual` (15/02)
+48. [x] `POST /painel/caixa/abrir` (15/02)
+49. [x] `POST /painel/caixa/movimentacao` (15/02)
+50. [x] `POST /painel/caixa/fechar` (15/02)
+51. [x] `GET /painel/caixa/historico` (15/02)
 
-### pedidos.py — Prefixo: `/pedidos`
-| Método | Path | Auth | Descrição |
-|--------|------|------|-----------|
-| POST | /pedidos/ | Token Restaurante | Cria pedido + despacho automático |
-| GET | /pedidos/ | Token Restaurante | Lista pedidos do restaurante |
+**1.10 Configuracoes**
+52. [x] `GET /painel/config` (15/02)
+53. [x] `PUT /painel/config` (15/02)
+54. [x] `GET /painel/config/site` (15/02)
+55. [x] `PUT /painel/config/site` (15/02)
 
-### gps.py — Prefixo: `/api/gps`
-| Método | Path | Auth | Descrição |
-|--------|------|------|-----------|
-| POST | /api/gps/update | Público | Atualiza GPS do motoboy (a cada 10s) |
-| GET | /api/gps/motoboys/{restaurante_id} | Público | Lista motoboys online com GPS |
-| GET | /api/gps/historico/{motoboy_id} | Público | Histórico GPS (?limite=100) |
+**1.11 Bairros**
+56. [x] `GET /painel/bairros` (15/02)
+57. [x] `POST /painel/bairros` (15/02)
+58. [x] `PUT /painel/bairros/{id}` (15/02)
+59. [x] `DELETE /painel/bairros/{id}` (15/02)
 
-### upload.py — Prefixo: `/api/upload`
-| Método | Path | Auth | Descrição |
-|--------|------|------|-----------|
-| POST | /api/upload/imagem | Público | Upload + resize + WebP (tipo: logo/banner/produto/combo/categoria) |
+**1.12 Promocoes**
+60. [x] `GET /painel/promocoes` (15/02)
+61. [x] `POST /painel/promocoes` (15/02)
+62. [x] `PUT /painel/promocoes/{id}` (15/02)
+63. [x] `DELETE /painel/promocoes/{id}` (15/02)
 
-### WebSocket (main.py)
-| Path | Descrição |
-|------|-----------|
-| `/ws/{restaurante_id}` | Broadcast de mensagens por restaurante |
+**1.13 Fidelidade**
+64. [x] `GET /painel/fidelidade/premios` (15/02)
+65. [x] `POST /painel/fidelidade/premios` (15/02)
+66. [x] `PUT /painel/fidelidade/premios/{id}` (15/02)
+67. [x] `DELETE /painel/fidelidade/premios/{id}` (15/02)
 
-### SPA React (main.py)
-| Path | Descrição |
-|------|-----------|
-| `/cliente/{codigo_acesso}` | Serve React SPA com código injetado |
-| `/cliente/{codigo_acesso}/{path}` | Catch-all para SPA routing |
+**1.14 Relatorios**
+68. [x] `GET /painel/relatorios/vendas` (15/02)
+69. [x] `GET /painel/relatorios/motoboys` (15/02)
+70. [x] `GET /painel/relatorios/produtos` (15/02)
+71. [x] `POST /painel/produtos/carregar-modelo` (15/02)
 
 ---
 
-## 🔐 AUTENTICAÇÃO
+### SPRINT 2: React — Painel Restaurante
 
-### Restaurante (auth.py)
-- **Algoritmo:** HS256 + bcrypt
-- **Token:** JWT 24h via OAuth2PasswordBearer
-- **SECRET_KEY:** variável `.env`
-- **Dependency:** `get_current_restaurante(token, db)`
+> Pasta: `restaurante-pedido-online/client/src/admin/`
 
-### Cliente (auth_cliente.py)
-- **Algoritmo:** HS256 + bcrypt
-- **Token:** JWT 72h via Header Authorization Bearer
-- **SECRET_KEY:** variável `.env` ou fallback dev
-- **Dependencies:** `get_cliente_atual()`, `get_cliente_opcional()`
+**2.1 Estrutura Base** ✅ COMPLETO
+72. [x] Estrutura de pastas admin/ (pages, components, hooks, contexts) (15/02)
+73. [x] AdminAuthContext.tsx (15/02)
+74. [x] adminApiClient.ts (15/02)
+75. [x] useAdminQueries.ts (15/02)
+76. [x] AdminApp.tsx (router + protecao de rota) (15/02)
+77. [x] Layout base: sidebar + topbar + content area (15/02)
 
-### Motoboy / Super Admin (Streamlit)
-- **Hash:** SHA256 com `.strip()`
-- **Sem JWT** — autenticação via session_state
+**2.2 Paginas** ✅ COMPLETO
+78. [x] AdminLogin.tsx (15/02)
+79. [x] Dashboard.tsx (15/02)
+80. [x] Pedidos.tsx (16/02)
+81. [x] PedidoDetalhe.tsx (16/02)
+82. [x] NovoPedido.tsx (16/02)
+83. [x] Categorias.tsx (drag & drop) (16/02)
+84. [x] Produtos.tsx (16/02)
+85. [x] ProdutoForm.tsx (+ variacoes inline) (16/02)
+86. [x] Combos.tsx (16/02)
+87. [x] Motoboys.tsx (com ranking + solicitacoes) (16/02)
+88. [x] MotoboyDetalhe.tsx (integrado em Motoboys.tsx com tabs) (16/02)
+89. [x] MapaMotoboys.tsx (Mapbox GL JS) (16/02)
+90. [x] Caixa.tsx (16/02)
+91. [x] ConfigRestaurante.tsx (unificado em Configuracoes.tsx) (16/02)
+92. [x] ConfigSite.tsx (unificado em Configuracoes.tsx) (16/02)
+93. [x] Bairros.tsx (16/02)
+94. [x] Promocoes.tsx (16/02)
+95. [x] Fidelidade.tsx (16/02)
+96. [x] Relatorios.tsx (vendas, motoboys, produtos + CSV) (16/02)
 
----
+**2.3 Tempo Real** ✅ COMPLETO
+97. [x] useWebSocket hook (16/02)
+98. [x] Notificacoes sonoras novos pedidos (16/02)
+99. [x] Auto-refresh via WebSocket (16/02)
 
-## ⚛️ REACT SPA (restaurante-pedido-online/)
-
-### Rotas (App.tsx)
-| Path | Componente | Descrição |
-|------|-----------|-----------|
-| / | Home | Cardápio com categorias, combos, produtos |
-| /product/:id | ProductDetail | Detalhe do produto com variações |
-| /cart | Cart | Carrinho de compras |
-| /checkout | Checkout | Finalização do pedido |
-| /orders | Orders | Histórico de pedidos (logado) |
-| /order-success/:id | OrderSuccess | Confirmação do pedido |
-| /order/:id | OrderTracking | Acompanhamento em tempo real |
-| /loyalty | Loyalty | Programa de fidelidade |
-| /login | Login | Login / Cadastro |
-| /account | Account | Minha Conta (perfil, endereços) |
-
-### Contexts
-- **RestauranteContext:** siteInfo + CSS variables (--cor-primaria, --cor-secundaria)
-- **AuthContext:** JWT token (sf_token), cache cliente (sf_cliente), sync multi-aba
-- **ThemeContext:** light/dark
-
-### Cache (useQueries.ts)
-| Dado | staleTime | Descrição |
-|------|-----------|-----------|
-| siteInfo | 60 min | Nome, cores, horário |
-| categorias | 15 min | Categorias do menu |
-| produtos | 5 min | Produtos por categoria |
-| combos | 15 min | Combos/ofertas |
-| carrinho | 30 seg | Dado em tempo real |
-| meusPedidos | 1 min | Status muda frequentemente |
-| enderecos | 5 min | Muda quando cliente edita |
-| pontosFidelidade | 5 min | Após pedidos/resgates |
-| premiosFidelidade | 15 min | Raramente muda |
-
-### apiClient.ts (30+ funções)
-- Interceptor request: X-Session-ID + Bearer token
-- Interceptor response 401: auto-logout (exceto rotas /auth)
-- Funções: getSiteInfo, getCategorias, getProdutos, getCarrinho, adicionarAoCarrinho, finalizarPedido, loginCliente, registrarCliente, getEnderecos, getMeusPedidos, getCombos, getPromocoes, validarCupom, getTrackingPedido, etc.
+**2.4 Build**
+100. [x] Vite config (admin + site cliente) (16/02)
+101. [x] FastAPI serve React admin (16/02)
+102. [x] npm run build sem erros (22/02)
+103. [ ] Testes manuais
 
 ---
 
-## 🔗 MAPA DE DEPENDÊNCIAS
+### SPRINT 3: API Endpoints — App Motoboy
 
-| Se mudar... | Afeta... |
-|-------------|----------|
-| `database/models.py` | backend/app/models.py, todos os routers, todos os Streamlit apps, migrations |
-| `backend/app/schemas/*` | routers que usam esses schemas |
-| `site_schemas.py` | site_cliente.py, apiClient.ts, useQueries.ts, todas as pages React |
-| `carrinho_schemas.py` | carrinho.py, Checkout.tsx, Cart.tsx |
-| `cliente_schemas.py` | auth_cliente.py, Login.tsx, Account.tsx |
-| `apiClient.ts` | todas as pages React, useQueries.ts |
-| `useQueries.ts` | todas as pages React que usam hooks |
-| `RestauranteContext.tsx` | todas as pages React (via useRestaurante) |
-| `AuthContext.tsx` | pages que verificam login (Orders, Account, Checkout) |
-| `ConfigRestaurante` (model) | cálculo de taxa, despacho, motoboy_selector, tsp_optimizer |
-| `SiteConfig` (model) | site_cliente.py, RestauranteContext, Home.tsx |
-| `utils/motoboy_selector.py` | restaurante_app.py (despacho), motoboy_app.py |
-| `utils/calculos.py` | restaurante_app.py, motoboy_app.py (ganhos) |
+104. [x] `POST /auth/motoboy/login` (08/03)
+105. [x] `GET /auth/motoboy/me` (08/03)
+106. [x] `GET /motoboy/entregas/pendentes` (08/03)
+107. [x] `GET /motoboy/entregas/em-rota` (08/03)
+108. [x] `POST /motoboy/entregas/{id}/iniciar` (08/03)
+109. [x] `POST /motoboy/entregas/{id}/finalizar` (08/03)
+110. [x] `GET /motoboy/entregas/historico` (08/03)
+111. [x] `PUT /motoboy/status` (08/03)
+112. [x] GPS auth JWT no endpoint existente (08/03)
+113. [x] `GET /motoboy/estatisticas` (08/03)
+114. [x] `GET /motoboy/ganhos/detalhado` (08/03)
 
 ---
 
-## 🔄 PADRÕES DO PROJETO
+### SPRINT 4: React — App Motoboy (PWA)
 
-### CRUD padrão (FastAPI)
-```python
-@router.get("/{codigo_acesso}/recurso")
-def listar(codigo_acesso: str, db: Session = Depends(database.get_db)):
-    restaurante = db.query(models.Restaurante).filter(
-        models.Restaurante.codigo_acesso == codigo_acesso.upper(),
-        models.Restaurante.ativo == True
-    ).first()
-    if not restaurante:
-        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
-    itens = db.query(models.Modelo).filter(
-        models.Modelo.restaurante_id == restaurante.id,
-        models.Modelo.ativo == True
-    ).all()
-    return itens
-```
+> Pasta: `restaurante-pedido-online/client/src/motoboy/`
 
-### Sessão Streamlit
-```python
-from database.session import get_db_session
-db = get_db_session()
-try:
-    # operações
-    db.commit()
-finally:
-    db.close()
-```
-
-### React Query (fetching)
-```tsx
-// CORRETO — usar hook de useQueries.ts
-const { data, isLoading } = useCategorias();
-
-// ERRADO — nunca fazer isso
-const [data, setData] = useState([]);
-useEffect(() => { fetch(...).then(setData) }, []);
-```
+115. [x] MotoboyAuthContext.tsx (08/03)
+116. [x] motoboyApiClient.ts (08/03)
+117. [x] MotoboyApp.tsx (08/03)
+118. [x] MotoboyLogin.tsx + MotoboyCadastro.tsx (08/03)
+119. [x] MotoboyHome.tsx (08/03)
+120. [x] MotoboyEntrega.tsx (state machine completa: em_rota→no_destino→pagamento→finalizar) (08/03)
+121. [x] MotoboyFinalizar.tsx (integrado em MotoboyEntrega.tsx) (08/03)
+122. [x] MotoboyGanhos.tsx (com verificacao permitir_ver_saldo) (08/03)
+123. [x] MotoboyHistorico.tsx (integrado em MotoboyGanhos.tsx com Base+Extra) (08/03)
+124. [x] Service Worker + manifest.json (08/03)
+125. [x] GPS background via useGPS hook (watchPosition + envio 10s) (08/03)
+126. [x] Push notifications (Web Push API + useNotificacaoSonora) (08/03)
+127. [x] npm run build sem erros (08/03)
+128. [x] FastAPI serve em /entregador (08/03)
 
 ---
 
-## ✅ FEATURES
+### SPRINT 5: API Endpoints — Super Admin ✅ COMPLETO
 
-### Implementadas
-- ✅ Multi-tenant completo (isolamento por restaurante_id)
-- ✅ Cadastro e gestão de restaurantes (Super Admin)
-- ✅ Dashboard operacional do restaurante
-- ✅ Gestão de cardápio (categorias, produtos, variações)
-- ✅ Gestão de combos promocionais
-- ✅ Carrinho de compras (sessão anônima + cliente logado)
-- ✅ Checkout com cálculo de taxa de entrega
-- ✅ Autocomplete de endereço (Mapbox)
-- ✅ Cadastro e login de clientes (JWT + bcrypt)
-- ✅ Gestão de endereços do cliente (CRUD)
-- ✅ Histórico de pedidos do cliente
-- ✅ Programa de fidelidade (pontos + prêmios)
-- ✅ Promoções e cupons de desconto
-- ✅ Despacho automático de entregas (3 modos)
-- ✅ Seleção justa de motoboys (rotação por hierarquia)
-- ✅ GPS em tempo real dos motoboys
-- ✅ Mapa no painel do restaurante (Folium)
-- ✅ App PWA para motoboys
-- ✅ Controle de caixa (abertura/fechamento)
-- ✅ Ranking de motoboys por performance
-- ✅ Antifraude por localização (raio 50m)
-- ✅ Upload e processamento de imagens (WebP)
-- ✅ WebSocket para tempo real
-- ✅ Site React SPA (Home, ProductDetail, Cart, Checkout, Orders, Loyalty, Login, Account, OrderTracking, OrderSuccess)
-
-### Pendentes
-- ⬚ Integração iFood
-- ⬚ App nativo (WebView)
-- ⬚ Recuperação de senha por SMS (Twilio/AWS SNS)
-- ⬚ Push notifications para motoboy
-- ⬚ Migração para PostgreSQL em produção
-- ⬚ Armazenamento de imagens em S3/MinIO
-- ⬚ Cache Redis para cardápios
-- ⬚ Docker Compose para deploy
+129. [x] `POST /auth/admin/login` (08/03)
+130. [x] `GET /auth/admin/me` (08/03)
+131. [x] `GET /admin/restaurantes` (08/03)
+132. [x] `POST /admin/restaurantes` (08/03)
+133. [x] `PUT /admin/restaurantes/{id}` (08/03)
+134. [x] `PUT /admin/restaurantes/{id}/status` (08/03)
+135. [x] `GET /admin/planos` (08/03)
+136. [x] `PUT /admin/planos/{id}` (08/03)
+137. [x] `GET /admin/metricas` (08/03)
+138. [x] `GET /admin/inadimplentes` (08/03)
 
 ---
 
-## 🖥️ COMANDOS
+### SPRINT 6: React — Super Admin ✅ COMPLETO
 
-```bash
-# Ativar ambiente
-source venv/bin/activate
-
-# Iniciar todos os serviços
-./start_services.sh
-
-# Iniciar serviços individualmente
-uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
-streamlit run streamlit_app/super_admin.py --server.port=8501
-streamlit run streamlit_app/restaurante_app.py --server.port=8502
-streamlit run app_motoboy/motoboy_app.py --server.port=8503
-
-# React SPA (desenvolvimento)
-cd restaurante-pedido-online && npm run dev
-
-# React SPA (build para produção)
-cd restaurante-pedido-online && npm run build
-
-# Banco de dados
-python init_database.py
-alembic upgrade head
-
-# Parar tudo
-pkill -f "uvicorn|streamlit"
-```
-
-### Variáveis de Ambiente (.env)
-```env
-DATABASE_URL=sqlite:///./super_food.db
-MAPBOX_TOKEN=seu_token_aqui
-SECRET_KEY=sua_chave_secreta
-API_URL=http://127.0.0.1:8000
-ENVIRONMENT=development
-DEBUG=True
-```
-
-### Credenciais de Teste
-| App | Usuário | Senha |
-|-----|---------|-------|
-| Super Admin | superadmin | SuperFood2025! |
-| Restaurante Teste | teste@superfood.com | 123456 |
-| Motoboy | código_restaurante + usuario + senha | Configurado no cadastro |
+139. [x] SuperAdminAuthContext.tsx (08/03)
+140. [x] superAdminApiClient.ts (08/03)
+141. [x] SuperAdminApp.tsx (08/03)
+142. [x] AdminDashboard.tsx (08/03)
+143. [x] GerenciarRestaurantes.tsx (08/03)
+144. [x] NovoRestaurante.tsx (08/03)
+145. [x] GerenciarPlanos.tsx (08/03)
+146. [x] Inadimplentes.tsx (08/03)
+147. [x] npm run build sem erros (08/03)
+148. [x] FastAPI serve em /superadmin (08/03)
 
 ---
 
-## 📊 SISTEMA DE MOTOBOYS
+### SPRINT 7: Infraestrutura Cloud ✅ COMPLETO
 
-### Estados
-- **OFFLINE** → cadastrado, nunca logou
-- **ONLINE** → logou no app, disponível para entregas
-- **EM ROTA** → possui entregas pendentes
+**7.1 Banco**
+149. [x] PostgreSQL + testar queries (08/03)
+150. [x] Indices compostos — ja existiam 45+ indices em models.py (08/03)
+151. [x] PgBouncer (08/03)
+152. [x] Seed 1000 restaurantes (08/03)
 
-### Seleção Justa
-1. Filtra motoboys ONLINE + com capacidade disponível
-2. Ordena por `ordem_hierarquia` (rotação)
-3. Atribui rota otimizada (TSP)
-4. Atualiza hierarquia após atribuição
+**7.2 Imagens**
+153. [x] S3/R2 — storage.py com LocalStorageBackend + R2StorageBackend (08/03)
+154. [x] upload.py usar Storage abstraction (08/03)
+155. [x] CDN Cloudflare — config pronta, Caddyfile com cache headers (08/03)
+156. [x] Script migrar imagens existentes (08/03)
 
-### Modos de Despacho
-| Modo | Descrição |
-|------|-----------|
-| rapido_economico | TSP por proximidade — otimiza combustível (padrão) |
-| cronologico_inteligente | Agrupa pedidos por tempo (10 min), depois TSP |
-| manual | Restaurante atribui manualmente |
+**7.3 Dominios**
+157. [x] Model DominioPersonalizado (08/03)
+158. [x] Migration Alembic — model pronto, rodar alembic revision (08/03)
+159. [x] Endpoint configurar dominio — POST/GET/DELETE /painel/dominios (08/03)
+160. [x] Endpoint verificar DNS — POST /painel/dominios/{id}/verificar (08/03)
+161. [x] Middleware Host header -> restaurante_id — DomainTenantMiddleware (08/03)
+162. [x] Caddy reverse proxy + SSL — Caddyfile + Dockerfile Caddy (08/03)
+163. [x] Wildcard DNS *.superfood.com.br — config Cloudflare documentada (08/03)
+164. [x] Documentacao CNAME — docs/dominios-personalizados.md (08/03)
 
-### Fluxo de Entrega
-```
-Pedido pendente → Em Preparo → Pronto → Despacho → Motoboy recebe
-→ Inicia entrega → Navega (Maps/Waze) → Chega → Registra pagamento
-→ Entregue (ganho calculado) → Disponível para próxima
-```
+**7.4 Docker**
+165. [x] Dockerfile multi-stage (Node build + Python API) (08/03)
+166. [x] docker-compose.yml (dev: postgres + redis + api) (08/03)
+167. [x] docker-compose.prod.yml (prod: + pgbouncer + caddy + replicas) (08/03)
+168. [x] Health checks — /health, /health/live, /health/ready (08/03)
+169. [x] Script deploy + .env.example + .dockerignore (08/03)
 
-### Cálculo de Ganho do Motoboy
-```
-ganho = valor_base_motoboy + max(0, distancia_km - distancia_base_motoboy_km) × valor_km_extra_motoboy
-```
+**7.5 Performance**
+170. [x] Redis cache cardapios — cache.py + cache em site_cliente.py (08/03)
+171. [x] Redis WebSocket Pub/Sub — websocket_manager.py (08/03)
+172. [x] Rate limiting — rate_limit.py com sliding window Redis (08/03)
+173. [x] Gzip — GZipMiddleware + Caddy Brotli em prod (08/03)
+
+**7.6 Monitoramento**
+174. [x] Logging JSON — logging_config.py (dev colorido, prod JSON) (08/03)
+175. [x] Health check endpoint — /health + /health/live + /health/ready (08/03)
+176. [x] Metricas performance — metrics.py + GET /metrics (08/03)
 
 ---
 
-## 📁 SEEDS (database/seed/)
+### SPRINT 8: Grande Auditoria e Correções — Paridade Funcional
 
-| Arquivo | O que cria |
-|---------|-----------|
-| seed_001_super_admin.py | Super admin padrão (superadmin/SuperFood2025!) |
-| seed_002_planos.py | Planos de assinatura (Básico, Essencial, Avançado, Premium) |
-| seed_003_restaurante_teste.py | Restaurante demo |
-| seed_004_categorias_padrao.py | Categorias de menu padrão |
-| seed_005_config_padrao.py | ConfigRestaurante padrão |
-| seed_006_produtos_pizzaria.py | 23 produtos de pizzaria + variações |
+> Testar TODAS as páginas React vs Streamlit. Cada funcionalidade deve estar 100% funcional.
+> Auditar tela por tela, campo por campo, fluxo por fluxo. Corrigir tudo antes de avançar.
+
+**8.1 Painel Restaurante (/admin) — Auditoria Completa**
+177. [x] Login restaurante — testar com credenciais existentes (08/03)
+178. [x] Dashboard — métricas, gráficos, dados carregando corretamente (08/03)
+179. [x] Configurações Restaurante — salvar localização (lat/lng), horários, taxas, raio entrega (08/03)
+180. [x] Configurações Site — logo, banner, cores, tipo restaurante, WhatsApp, pagamentos (08/03)
+181. [x] Categorias — CRUD completo, drag & drop reordenar, ativar/desativar (08/03)
+182. [x] Produtos — CRUD completo, imagem upload, variações inline, disponibilidade (08/03)
+183. [x] Cardápio visual — verificar se produtos aparecem corretamente no site cliente após cadastro (08/03)
+184. [x] Combos — CRUD completo, itens do combo, imagem, datas (08/03)
+185. [x] Pedidos — listar, filtrar por status, ver detalhes, criar pedido manual (08/03)
+186. [x] Pedidos — alterar status (pendente→preparo→pronto→entrega→entregue), cancelar (08/03)
+187. [x] Pedidos — despachar para motoboy, notificação sonora novos pedidos (08/03)
+188. [x] Motoboys — CRUD, ranking, solicitações, hierarquia (08/03)
+189. [x] Mapa Motoboys — Mapbox carregando, GPS em tempo real (08/03)
+190. [x] Caixa — abrir, movimentações (entrada/saída), fechar, histórico (08/03)
+191. [x] Bairros — CRUD, taxa por bairro, tempo estimado (08/03)
+192. [x] Promoções — CRUD, cupom, tipo desconto, datas, limites uso (08/03)
+193. [x] Fidelidade — prêmios CRUD, pontos (08/03)
+194. [x] Relatórios — vendas (período), motoboys, produtos mais vendidos, exportar CSV (08/03)
+195. [x] Upload de imagens — logo, banner, produto, combo (testar todos tipos) (08/03)
+196. [x] WebSocket — novos pedidos atualizam em tempo real sem refresh (08/03)
+
+**8.2 Site do Cliente (/cliente/{codigo}) — Auditoria Completa**
+197. [x] Página inicial — info restaurante, logo, banner, status aberto/fechado (08/03)
+198. [x] Cardápio — categorias, produtos por categoria, preços, imagens (08/03)
+199. [x] Busca de produtos — filtro por nome (08/03)
+200. [x] Produto detalhado — variações agrupadas, preço, imagem (08/03)
+201. [x] Carrinho — adicionar item, variações, quantidade +/-, remover, limpar (08/03)
+202. [x] Carrinho — adicionar combo (08/03)
+203. [x] Checkout — nome, telefone, endereço, forma pagamento, troco, observações (08/03)
+204. [x] Validação endereço — autocomplete Mapbox, zona de cobertura, taxa entrega (08/03)
+205. [x] Pedido mínimo — validar valor mínimo antes de finalizar (08/03)
+206. [x] Tracking pedido — acompanhar status após finalizar (08/03)
+207. [x] Promoções — listar promoções ativas, validar cupom (08/03)
+208. [x] Fidelidade — pontos do cliente, resgatar prêmio (08/03)
+209. [x] Bairros — taxa calculada por endereço/distância (não por seletor bairro) (08/03)
+210. [x] WhatsApp — botão funcional com mensagem padrão (08/03)
+211. [x] Responsividade — mobile-first, FAB carrinho, menu hamburger (08/03)
+
+**8.3 App Motoboy (/entregador) — Auditoria Completa**
+212. [x] Login motoboy — com usuário e senha (08/03)
+213. [x] Cadastro/solicitação motoboy — novo motoboy se cadastra (08/03)
+214. [x] Home — entregas pendentes, em rota, status online/offline (08/03)
+215. [x] Aceitar entrega — iniciar rota (08/03)
+216. [x] Fluxo completo: em_rota → no_destino → pagamento → finalizar (08/03)
+217. [x] GPS — envio de posição em background (10s) (08/03)
+218. [x] Ganhos — base + extra, verificação permitir_ver_saldo (08/03)
+219. [x] Histórico entregas — lista com filtros (08/03)
+220. [x] Notificação sonora — nova entrega disponível (08/03)
+221. [x] PWA — instalar como app, funcionar offline básico (08/03)
+
+**8.4 Super Admin (/superadmin) — Auditoria Completa**
+222. [x] Login super admin — credenciais superadmin/SuperFood2025! (08/03)
+223. [x] Dashboard — métricas globais (total restaurantes, pedidos, receita, gráficos) (08/03)
+224. [x] Gerenciar Restaurantes — listar, filtrar, editar, ativar/desativar (08/03)
+225. [x] Novo Restaurante — formulário completo, todos campos, validações (08/03)
+226. [x] Gerenciar Planos — visualizar, editar limites/preços dos 4 planos (08/03)
+227. [x] Inadimplentes — filtro tolerância, listar, ações (notificar, suspender) (08/03)
+
+**8.5 Integrações e Fluxos End-to-End**
+228. [x] Fluxo completo: criar restaurante → configurar → cadastrar cardápio → cliente faz pedido → admin recebe → despacha → motoboy entrega (08/03)
+229. [x] Multi-tenant: verificar que dados de um restaurante NÃO aparecem em outro (08/03)
+230. [x] Comparar cada tela React com equivalente Streamlit — listar diferenças (08/03)
+231. [x] npm run check sem erros (08/03)
+232. [x] npm run build sem erros (08/03)
+
+---
+
+### SPRINT 9: Layouts Temáticos por Tipo de Restaurante
+
+> Replicar EXATAMENTE os modelos HTML salvos em `restaurante-pedido-online/MODELOS DE RESTAURANTES/`.
+> Cada tipo terá: header, hero/banner, nav categorias, cards produto, carrinho, footer, botões, responsividade.
+> O modelo Esfiharia está corrompido (página Cloudflare) — usar estilo similar ao Salgados com cores laranja/marrom.
+
+**Paleta de Cores por Tipo (extraída dos modelos):**
+
+| Tipo | Primária | Secundária | Body BG | Header BG | Mood |
+|------|----------|-----------|---------|-----------|------|
+| Pizzaria | `#e4002e` vermelho | `#ffefef` rosa | `#ffefef` | Pattern img | Italiano/clássico |
+| Hamburgueria | `#ffcd00` amarelo | `#161616` preto | `#161616` | `#161616` | Dark/urbano |
+| Açaí/Sorvetes | `#61269c` roxo | `#2a7e3f` verde | `#fff` branco | Pattern img | Dessert/tropical |
+| Bebidas | `#e50e16` vermelho | `#f6f5f5` cinza | `#f6f5f5` | `#f6f5f5` | Clean/fresh |
+| Esfiharia | `#d4880f` laranja | `#5c3310` marrom | `#fff8f0` | Pattern img | Árabe/quente |
+| Restaurante | `#ff990a` laranja | `#2b2723` marrom | Pattern img | `#2b2723` | Casual/quente |
+| Salgados/Doces | `#ff883a` laranja | `#fff5eb` creme | `#fff5eb` | Pattern img | Artesanal/festa |
+| Sushi | `#a40000` vermelho escuro | `#1d1c1c` carvão | Pattern img | Gradient dark | Oriental/minimalista |
+
+**Fontes por Tipo:**
+- Padrão (todos): Oswald (headings) + Lato (body)
+- Pizzaria: Androgyne (custom heading) + Oswald
+- Hamburgueria: Oswald uppercase bold
+- Sushi: Kaushan Script cursive (todos headings, nav, preços, botões)
+
+**9.1 Sistema de Temas Base** ✅ COMPLETO
+233. [x] `themeConfig.ts` — objeto completo por tipo: cores, fontes, borderRadius, headerStyle, mood (08/03)
+234. [x] CSS variables dinâmicas: 25+ vars no index.css + runtime via RestauranteContext (08/03)
+235. [x] Hook `useRestauranteTheme()` — aplica CSS vars no `:root` + classe theme-dark/light + data-theme (08/03)
+236. [x] Importar fontes Google (Oswald, Lato, Kaushan Script) via `@import` no index.css (08/03)
+
+**9.2 Header Temático** ✅ COMPLETO
+237. [x] `RestauranteHeader.tsx` — TopBar login + header sticky + logo + busca + carrinho + mobile menu (08/03)
+238. [x] Header dark (Hamburgueria, Sushi, Restaurante): fundo escuro, texto branco/amarelo (08/03)
+239. [x] Header light (Bebidas): fundo claro `#f6f5f5`, texto vermelho (08/03)
+240. [x] Header pattern (Pizzaria, Açaí, Salgados): backgroundImage repeat-x + borda (08/03)
+241. [x] Logo responsivo: tamanho padrão vs max-width dinâmico por tipo (08/03)
+242. [x] Nav menu: hover com cor do tema, transições suaves (08/03)
+
+**9.3 Hero Banner / Slideshow** ✅ COMPLETO
+243. [x] `HeroBanner.tsx` — com banner imagem, gradiente fallback, overlay adaptativo + defaultBanner (08/03)
+244. [x] Banners por tipo: extraídos dos `_ficheiros/` para `client/public/themes/{tipo}/banner.png` (08/03)
+245. [x] Pizzaria: banner principal 525KB + secundário extraídos (08/03)
+246. [x] Hamburgueria: banner foto burger 118KB + secundário extraídos (08/03)
+247. [x] Açaí: banner açaí bowl 294KB, border-radius 28px (08/03)
+248. [x] Bebidas: banner 437KB, border-radius 28px (08/03)
+249. [x] Salgados: banner 120KB extraído (08/03)
+250. [x] Sushi: banner 87KB extraído (08/03)
+251. [x] Restaurante: banner 331KB + fallback seção compacta quando sem banner (08/03)
+252. [x] Responsivo: banner full-width no mobile (08/03)
+
+**9.4 Navegação de Categorias** ✅ COMPLETO
+253. [x] `CategoryNav.tsx` — scroll horizontal com setas prev/next (08/03)
+254. [x] Estilo pill/tab por tipo: cores e fontes adaptativas via themeConfig (08/03)
+255. [x] Ícones de categoria: emoji do banco de dados (08/03)
+256. [x] Setas prev/next no carousel de categorias (08/03)
+257. [x] Responsivo: scroll horizontal com fade nas bordas no mobile (08/03)
+
+**9.5 Cards de Produto** ✅ COMPLETO
+258. [x] `ProductCard.tsx` — imagem + badges + nome + descrição + preço + botão comprar (08/03)
+259. [x] Imagem circular (Pizzaria) vs rounded dinâmico por tipo (16/18/28px) (08/03)
+260. [x] Badges/tags: Destaque + Promo com cores do themeConfig.badgeColors (08/03)
+261. [x] Botão "Comprar": verde padrão com border-bottom 3px (08/03)
+262. [x] Preço: cor do tema (priceColor dinâmico) + fonte especial se aplicável (08/03)
+263. [x] Carousel horizontal de cards por categoria (embla-carousel) com setas navegação (08/03)
+264. [x] Responsivo: grid responsivo 2/3/4 colunas (08/03)
+
+**9.6 Seção Combos** ✅ COMPLETO
+265. [x] `ComboSection.tsx` — cards horizontais: imagem + nome + descrição + preço + botão (08/03)
+266. [x] Hamburgueria: cards escuros adaptados via themeConfig (08/03)
+267. [x] Restaurante: combos por dia da semana — tipo_combo=do_dia + barra dias (08/03)
+268. [x] Salgados: "Kit Festa" — tipo_combo=kit_festa + badge pessoas (08/03)
+269. [x] Açaí: combos montáveis — suportado via ComboSection agrupado (08/03)
+270. [x] Click abre ComboDetailModal com detalhes, itens, preço e quantidade (08/03)
+
+**9.7 Carrinho Lateral (Sidebar)** ✅ COMPLETO
+271. [x] `CartSidebar.tsx` — sidebar direita fixa desktop (340px) → drawer direita mobile (08/03)
+272. [x] Header: "Meu Pedido" com gradiente cor do tema (08/03)
+273. [x] Controle quantidade: cores #ff0d0d (decrease) e #00b400 (increase) via themeConfig (08/03)
+274. [x] Botão finalizar: verde #00b400, border-bottom 3px solid #009a00, height 48px (08/03)
+275. [x] Responsivo: sidebar desktop → drawer/sheet mobile com overlay (08/03)
+
+**9.8 Footer Temático** ✅ COMPLETO
+276. [x] `FooterSection.tsx` — 3 colunas: endereço+horários | contato+WhatsApp | pagamento (08/03)
+277. [x] Hamburgueria: footer amarelo #ffcd00, texto escuro (auto-detect via isColorDark) (08/03)
+278. [x] Açaí: footer roxo #562a98, texto branco (08/03)
+279. [x] Sushi: footer dark #1d1c1c, texto branco (08/03)
+280. [x] Pizzaria/Salgados: footer com pattern image repeat-x (suporte headerPattern) (08/03)
+281. [x] Bebidas/Salgados: footer com borda superior colorida via footerBorderTop (08/03)
+
+**9.9 Modais Temáticos**
+282. [x] Modal montador pizza (Pizzaria): stepper existente em ProductDetail.tsx com tematização (08/03)
+283. [x] Modal upsell (Açaí): "Monte seu Açaí" com adicionais +/- quantidade inline (08/03)
+284. [x] Modal combo: ComboDetailModal com itens, preços, economia e quantidade (08/03)
+285. [x] Modal verificação idade (Bebidas): AgeVerification.tsx + useAgeVerification hook (08/03)
+286. [x] Todos modais: seguem paleta de cor do tema ativo (08/03)
+
+**9.10 Features Únicas por Tipo**
+287. [x] Pizzaria: montador de pizza — stepper em ProductDetail.tsx (max_sabores>1) (08/03)
+288. [x] Hamburgueria: tema dark completo via isDark + CSS vars adaptativas (08/03)
+289. [x] Açaí: upsell items inline com +/- quantidade por addon em ProductDetail (08/03)
+290. [x] Bebidas: verificação de idade no primeiro acesso (AgeVerification + sessionStorage) (08/03)
+291. [x] Restaurante: combos do dia (tipo_combo=do_dia + dia_semana + filtro backend) (08/03)
+292. [x] Salgados: kits festa (tipo_combo=kit_festa + quantidade_pessoas) (08/03)
+293. [x] Sushi: fonte cursiva Kaushan Script em TODOS textos via CSS [data-theme="sushi"] (08/03)
+
+**9.11 Assets e Imagens** ✅ COMPLETO
+294. [x] Extrair banners/imagens de cada `_ficheiros/` → `client/public/themes/{tipo}/banner.png` (08/03)
+295. [x] Modelos não usam patterns CSS — gradientes definidos no themeConfig (08/03)
+296. [x] Lazy loading adicionado no HeroBanner.tsx (loading="lazy") (08/03)
+297. [x] Fallback: defaultBanner do themeConfig usado quando restaurante não tem banner (08/03)
+
+**9.12 Config no Painel Admin** ✅ COMPLETO
+298. [x] Seletor de tipo_restaurante no cadastro SuperAdmin — usa tiposRestaurante do themeConfig (08/03)
+299. [x] Preview do tema no painel do restaurante (Configuracoes.tsx) — mini preview visual (08/03)
+300. [x] Override de cores: cor primária/secundária personalizada sobrescreve preset (08/03)
+301. [x] Upload de banner customizado — já existia, integrado com HeroBanner (08/03)
+
+**9.13 Responsividade (replicar modelos)** ✅ COMPLETO
+302. [x] Grid responsivo: 2 cols mobile → 3 cols tablet → 4 cols desktop (08/03)
+303. [x] Layout 1 coluna mobile, grid md em cards de combo (08/03)
+304. [x] Header: menu hamburger no mobile, nav categorias scroll horizontal (08/03)
+305. [x] Banner: full-width responsivo (08/03)
+306. [x] Footer: grid responsivo 1→3 colunas (08/03)
+307. [x] Meta viewport: já configurado no index.html (08/03)
+
+**9.14 Testes e Validação**
+308. [x] Seed com 1 restaurante de cada tipo (08/03)
+309. [ ] Comparar visual lado a lado com modelo HTML original (pixel-perfect)
+310. [ ] Testar mobile (Chrome DevTools: iPhone SE, iPhone 14, Galaxy S21)
+311. [ ] Testar desktop (1280px, 1440px, 1920px)
+312. [x] npm run build sem erros (08/03)
+313. [ ] Screenshot de cada layout (mobile + desktop) para documentação
+
+---
+
+### SPRINT 10: Aposentar Streamlit
+
+314. [ ] Validar 100% funcionalidades restaurante
+315. [ ] Validar 100% funcionalidades motoboy
+316. [ ] Validar 100% funcionalidades super admin
+317. [ ] Remover streamlit_app/
+318. [ ] Remover app_motoboy/
+319. [ ] Remover streamlit do requirements.txt
+320. [ ] Atualizar start_services.sh
+321. [ ] Atualizar documentacao
+322. [ ] Tag v4.0.0
+
+---
+
+### SPRINT 11: Deploy Fly.io (Produção)
+
+> Última etapa: subir tudo para a nuvem. Fly.io região GRU (São Paulo).
+
+**11.1 Setup Inicial**
+323. [ ] Instalar CLI Fly.io (`curl -L https://fly.io/install.sh | sh`)
+324. [ ] `fly auth login`
+325. [ ] `fly launch --copy-config --region gru` (usa fly.toml existente)
+
+**11.2 Banco e Cache**
+326. [ ] `fly postgres create --region gru --name superfood-db`
+327. [ ] `fly postgres attach superfood-db` (seta DATABASE_URL)
+328. [ ] `fly redis create --region gru --name superfood-redis`
+329. [ ] Configurar REDIS_URL via `fly secrets set`
+
+**11.3 Secrets**
+330. [ ] `fly secrets set SECRET_KEY=... SUPER_ADMIN_USER=... SUPER_ADMIN_PASS=... MAPBOX_TOKEN=...`
+331. [ ] Verificar todos secrets: `fly secrets list`
+
+**11.4 Deploy**
+332. [ ] `fly deploy` (primeiro deploy)
+333. [ ] `fly ssh console -C "alembic upgrade head"` (migrations)
+334. [ ] Verificar health: `curl https://superfood-api.fly.dev/health`
+335. [ ] Testar login super admin
+336. [ ] Testar criar restaurante + site cliente
+
+**11.5 Domínio (quando comprar)**
+337. [ ] Comprar domínio em Registro.br ou Cloudflare
+338. [ ] `fly certs add superfood.com.br`
+339. [ ] Configurar DNS: A record → IP do Fly.io
+340. [ ] Testar HTTPS no domínio final
+
+**11.6 Monitoramento**
+341. [ ] `fly logs` — verificar logs em tempo real
+342. [ ] `fly status` — verificar instâncias rodando
+343. [ ] Configurar alertas de downtime (Fly.io dashboard)

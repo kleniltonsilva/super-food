@@ -809,6 +809,9 @@ class Combo(Base):
     ordem_exibicao = Column(Integer, default=0)
     data_inicio = Column(DateTime)
     data_fim = Column(DateTime)
+    tipo_combo = Column(String(20), default='padrao')  # padrao | do_dia | kit_festa
+    dia_semana = Column(Integer, nullable=True)         # 0=Seg...6=Dom (para do_dia)
+    quantidade_pessoas = Column(Integer, nullable=True)  # Para kit_festa (ex: 10, 20, 50)
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     # Relacionamentos
@@ -817,6 +820,7 @@ class Combo(Base):
     __table_args__ = (
         Index('idx_combo_restaurante', 'restaurante_id', 'ativo'),
         Index('idx_combo_datas', 'restaurante_id', 'data_inicio', 'data_fim'),
+        Index('idx_combo_tipo', 'restaurante_id', 'tipo_combo', 'ativo'),
     )
 
 
@@ -832,4 +836,26 @@ class ComboItem(Base):
     produto = relationship("Produto")
     __table_args__ = (
         Index('idx_combo_item_combo', 'combo_id'),
+    )
+
+
+# ==================== DOMINIOS PERSONALIZADOS ====================
+class DominioPersonalizado(Base):
+    """Dominio personalizado para restaurante (ex: pedidos.minhapizzaria.com.br)"""
+    __tablename__ = "dominios_personalizados"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    dominio = Column(String(255), unique=True, nullable=False)
+    tipo = Column(String(20), nullable=False, default='cname')  # cname ou subdomain
+    verificado = Column(Boolean, default=False)
+    dns_verificado_em = Column(DateTime)
+    ssl_ativo = Column(Boolean, default=False)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante", backref="dominios_personalizados")
+    __table_args__ = (
+        Index('idx_dominio_restaurante', 'restaurante_id'),
+        Index('idx_dominio_dominio', 'dominio', unique=True),
     )

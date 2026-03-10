@@ -12,27 +12,46 @@ import OrderTracking from "@/pages/OrderTracking";
 import Account from "@/pages/Account";
 import OrderSuccess from "@/pages/OrderSuccess";
 import { Route, Switch } from "wouter";
+import AdminApp from "@/admin/AdminApp";
+import MotoboyApp from "@/motoboy/MotoboyApp";
+import SuperAdminApp from "@/superadmin/SuperAdminApp";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { RestauranteProvider } from "./contexts/RestauranteContext";
 import { AuthProvider } from "./contexts/AuthContext";
 
+function ClienteRouter() {
+  return (
+    <RestauranteProvider>
+      <AuthProvider>
+        <Switch>
+          <Route path={"/"} component={Home} />
+          <Route path={"/product/:id"} component={ProductDetail} />
+          <Route path={"/cart"} component={Cart} />
+          <Route path={"/checkout"} component={Checkout} />
+          <Route path={"/orders"} component={Orders} />
+          <Route path={"/order-success/:id"} component={OrderSuccess} />
+          <Route path={"/order/:id"} component={OrderTracking} />
+          <Route path={"/loyalty"} component={Loyalty} />
+          <Route path={"/login"} component={Login} />
+          <Route path={"/account"} component={Account} />
+          <Route path={"/404"} component={NotFound} />
+          {/* Final fallback route */}
+          <Route component={NotFound} />
+        </Switch>
+      </AuthProvider>
+    </RestauranteProvider>
+  );
+}
+
 function Router() {
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
-      <Route path={"/product/:id"} component={ProductDetail} />
-      <Route path={"/cart"} component={Cart} />
-      <Route path={"/checkout"} component={Checkout} />
-      <Route path={"/orders"} component={Orders} />
-      <Route path={"/order-success/:id"} component={OrderSuccess} />
-      <Route path={"/order/:id"} component={OrderTracking} />
-      <Route path={"/loyalty"} component={Loyalty} />
-      <Route path={"/login"} component={Login} />
-      <Route path={"/account"} component={Account} />
-      <Route path={"/404"} component={NotFound} />
-      {/* Final fallback route */}
-      <Route component={NotFound} />
+      <Route path="/superadmin" nest component={SuperAdminApp} />
+      <Route path="/admin" nest component={AdminApp} />
+      <Route path="/entregador" nest component={MotoboyApp} />
+      <Route path="/cliente/:codigo" nest component={ClienteRouter} />
+      <Route component={ClienteRouter} />
     </Switch>
   );
 }
@@ -41,14 +60,10 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
-        <RestauranteProvider>
-          <AuthProvider>
-            <TooltipProvider>
-              <Toaster />
-              <Router />
-            </TooltipProvider>
-          </AuthProvider>
-        </RestauranteProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Router />
+        </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

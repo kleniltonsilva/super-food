@@ -1,3 +1,6 @@
+/* Google Fonts — Oswald (headings), Lato (body), Kaushan Script (Sushi) */
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@300;400;500;600;700&family=Lato:wght@300;400;700;900&family=Kaushan+Script&display=swap');
+
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -85,6 +88,33 @@
   /* Dynamic restaurant colors (set by RestauranteContext via JS) */
   --cor-primaria: #E31A24;
   --cor-secundaria: #FFD700;
+
+  /* Theme variables — overridden by RestauranteContext at runtime */
+  --theme-primary: #E31A24;
+  --theme-secondary: #FFD700;
+  --theme-body-bg: #0D0D0D;
+  --theme-header-bg: #131313;
+  --theme-footer-bg: #131313;
+  --theme-price-color: #E31A24;
+  --theme-text-primary: #FFFFFF;
+  --theme-text-secondary: #B3B3B3;
+  --theme-text-muted: #6B6B6B;
+  --theme-card-bg: #191919;
+  --theme-card-border: rgba(255, 255, 255, 0.08);
+  --theme-border-subtle: rgba(255, 255, 255, 0.06);
+  --theme-shadow-card: 0 2px 8px rgba(0,0,0,0.3);
+  --theme-shadow-card-hover: 0 8px 24px rgba(0,0,0,0.5);
+  --theme-hero-gradient: linear-gradient(135deg, #E31A24, #a40000);
+  --theme-card-radius: 12px;
+  --theme-heading-font: 'Oswald', sans-serif;
+  --theme-body-font: 'Lato', sans-serif;
+  --theme-btn-comprar: #087607;
+  --theme-btn-comprar-border: #014f00;
+  --theme-qty-decrease: #ff0d0d;
+  --theme-qty-increase: #00b400;
+  --theme-topbar-bg: #333;
+  --theme-topbar-text: #fff;
+  --theme-logo-max-width: 380px;
 
   /* Sidebar (shadcn compat) */
   --sidebar: #131313;
@@ -426,6 +456,157 @@
   .dark-input::placeholder {
     color: var(--text-muted);
   }
+}
+
+/* ══════════════════════════════════════════
+   THEME-AWARE OVERRIDES
+   Aplicados quando RestauranteContext seta theme-light/theme-dark
+   ══════════════════════════════════════════ */
+
+/* Sobrescreve variáveis shadcn para temas LIGHT —
+   sem isso o texto fica branco (#E0E0E0) sobre fundo branco */
+:root.theme-light {
+  --background: var(--theme-body-bg, #f5f5f5);
+  --foreground: var(--theme-text-primary, #333333);
+  --card: var(--bg-card, #ffffff);
+  --card-foreground: var(--theme-text-primary, #333333);
+  --popover: var(--bg-card, #ffffff);
+  --popover-foreground: var(--theme-text-primary, #333333);
+  --muted: #f0f0f0;
+  --muted-foreground: var(--theme-text-secondary, #666666);
+  --border: var(--theme-card-border, #e0e0e0);
+  --input: #fafafa;
+  --secondary: #f0f0f0;
+  --secondary-foreground: var(--theme-text-primary, #333333);
+  --accent: #f0f0f0;
+  --accent-foreground: var(--theme-text-primary, #333333);
+}
+
+:root.theme-light body {
+  background: var(--theme-body-bg, #ffffff);
+  color: var(--theme-text-primary, #333333);
+}
+
+:root.theme-light .product-card {
+  background: var(--theme-card-bg, #ffffff);
+  border-color: var(--theme-card-border, #d4d4d4);
+  box-shadow: var(--theme-shadow-card);
+}
+
+:root.theme-light .product-card:hover {
+  box-shadow: var(--theme-shadow-card-hover);
+}
+
+:root.theme-light .product-name {
+  color: var(--theme-text-primary, #333333);
+}
+
+:root.theme-light .product-description {
+  color: var(--theme-text-muted, #999999);
+}
+
+:root.theme-light .category-btn {
+  background: var(--theme-card-bg, #ffffff);
+  color: var(--theme-text-secondary, #666666);
+  border-color: var(--theme-card-border, #d4d4d4);
+}
+
+:root.theme-light .category-btn:hover {
+  background: #f0f0f0;
+  color: var(--theme-text-primary, #333333);
+}
+
+:root.theme-light .checkout-section {
+  background: var(--theme-card-bg, #ffffff);
+  border-color: var(--theme-card-border, #d4d4d4);
+}
+
+:root.theme-light .checkout-input {
+  background: #fafafa;
+  border-color: var(--theme-card-border, #d4d4d4);
+  color: var(--theme-text-primary, #333333);
+}
+
+:root.theme-light .checkout-input::placeholder {
+  color: var(--theme-text-muted, #999999);
+}
+
+:root.theme-light .dark-input {
+  background: #fafafa;
+  border-color: var(--theme-card-border, #d4d4d4);
+  color: var(--theme-text-primary, #333333);
+}
+
+:root.theme-light .dark-input::placeholder {
+  color: var(--theme-text-muted, #999999);
+}
+
+:root.theme-light .payment-option {
+  border-color: var(--theme-card-border, #d4d4d4);
+  background: #fafafa;
+}
+
+:root.theme-light .payment-option:hover {
+  background: #f0f0f0;
+}
+
+:root.theme-light .cart-item {
+  border-bottom-color: var(--theme-border-subtle, #e8e8e8);
+}
+
+:root.theme-light .cart-item-name {
+  color: var(--theme-text-primary, #333333);
+}
+
+:root.theme-light .quantity-selector {
+  border-color: var(--theme-card-border, #d4d4d4);
+}
+
+:root.theme-light .quantity-btn:hover {
+  background: #f0f0f0;
+}
+
+/* Checkout: labels de tipo-entrega, pagamento e endereço em temas light */
+:root.theme-light label {
+  color: var(--theme-text-primary, #333333);
+}
+
+/* Dropdown de autocomplete em temas light */
+:root.theme-light [data-autocomplete-dropdown] button,
+:root.theme-light [data-autocomplete-dropdown] {
+  color: var(--theme-text-primary, #333333);
+  background: #ffffff;
+}
+:root.theme-light [data-autocomplete-dropdown] button:hover {
+  background: var(--bg-card-hover);
+  color: var(--theme-text-primary, #333333);
+}
+
+/* Heading font temática */
+:root h1, :root h2, :root h3, :root h4, :root h5, :root h6 {
+  font-family: var(--theme-heading-font, 'Oswald', sans-serif);
+}
+
+/* Sushi — fonte cursiva especial em TUDO */
+:root[data-theme="sushi"] .product-name,
+:root[data-theme="sushi"] .product-price,
+:root[data-theme="sushi"] .category-btn,
+:root[data-theme="sushi"] h1,
+:root[data-theme="sushi"] h2,
+:root[data-theme="sushi"] h3,
+:root[data-theme="sushi"] h4,
+:root[data-theme="sushi"] nav a,
+:root[data-theme="sushi"] button {
+  font-family: 'Kaushan Script', cursive !important;
+}
+
+/* Pizzaria — imagens de produto circulares */
+:root[data-theme="pizzaria"] .product-image {
+  border-radius: 50%;
+  width: 160px;
+  height: 160px;
+  margin: 16px auto 0;
+  object-fit: cover;
 }
 
 /* ══════════════════════════════════════════

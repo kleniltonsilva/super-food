@@ -2,7 +2,7 @@
 
 """
 Router Pedidos - Gerenciamento de pedidos do restaurante
-CORRIGIDO: Import correto de despacho.py
+Corrigido: campos alinhados com models.py (cliente_nome, endereco_entrega, etc)
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,14 +14,11 @@ import os
 
 from .. import models, schemas, database, auth
 
-# ========== CORREÇÃO: Import correto ==========
 try:
     from backend.app.utils.despacho import despachar_pedidos_automatico
     DESPACHO_DISPONIVEL = True
 except ImportError:
     DESPACHO_DISPONIVEL = False
-    print("⚠️ Módulo despacho não disponível")
-# =============================================
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
@@ -45,32 +42,41 @@ def criar_pedido(
     current_restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
     db: Session = Depends(database.get_db)
 ):
-    lat, lon = geocode_address(pedido.endereco)
+    lat, lon = geocode_address(pedido.endereco_entrega)
     if lat is None:
         raise HTTPException(status_code=400, detail="Endereço cliente inválido")
 
+    # Gerar comanda sequencial
+    ultimo_pedido = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == current_restaurante.id
+    ).order_by(models.Pedido.id.desc()).first()
+    proxima_comanda = (ultimo_pedido.comanda + 1) if ultimo_pedido and ultimo_pedido.comanda else 1
+
     novo_pedido = models.Pedido(
         restaurante_id=current_restaurante.id,
-        nome_cliente=pedido.nome_cliente,
-        telefone_cliente=pedido.telefone_cliente,
-        endereco=pedido.endereco,
-        lat_cliente=lat,
-        lon_cliente=lon,
+        comanda=proxima_comanda,
+        cliente_nome=pedido.cliente_nome,
+        cliente_telefone=pedido.cliente_telefone,
+        endereco_entrega=pedido.endereco_entrega,
+        latitude_entrega=lat,
+        longitude_entrega=lon,
         itens=pedido.itens,
         valor_total=pedido.valor_total,
-        status=models.StatusPedido.pendente
+        tipo="Entrega",
+        origem="manual",
+        tipo_entrega="entrega",
+        status='pendente',
+        data_criacao=datetime.utcnow()
     )
     db.add(novo_pedido)
     db.commit()
     db.refresh(novo_pedido)
 
-    # ========== CORREÇÃO: Usa função correta ==========
     if DESPACHO_DISPONIVEL:
         try:
             despachar_pedidos_automatico(db, current_restaurante.id)
         except Exception as e:
             print(f"Erro no despacho automático: {e}")
-    # ==================================================
 
     return novo_pedido
 
@@ -82,5 +88,5 @@ def listar_pedidos(
 ):
     pedidos = db.query(models.Pedido).filter(
         models.Pedido.restaurante_id == current_restaurante.id
-    ).all()
+    ).order_by(models.Pedido.data_criacao.desc()).all()
     return pedidos

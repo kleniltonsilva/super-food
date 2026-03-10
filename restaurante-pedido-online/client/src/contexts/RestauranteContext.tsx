@@ -3,12 +3,14 @@
  *
  * Provê siteInfo (nome, cores, horário, etc) para todos os componentes via useRestaurante().
  * Internamente usa React Query (useSiteInfo) para cache automático com staleTime de 60 min.
- * CSS variables --cor-primaria, --cor-secundaria e tokens de tema são aplicadas ao :root via useEffect.
- * Presets de cores por tipo_restaurante garantem visual adequado mesmo sem customização.
+ * CSS variables são aplicadas ao :root via useEffect usando themeConfig.ts.
+ *
+ * useRestauranteTheme() retorna a configuração completa do tema (cores, fontes, isDark, etc).
  */
 
-import React, { createContext, useContext, useEffect } from "react";
+import React, { createContext, useContext, useEffect, useMemo } from "react";
 import { useSiteInfo } from "@/hooks/useQueries";
+import { getThemeConfig, themeToCSSVars, type ThemeConfig } from "@/config/themeConfig";
 
 // Tipos baseados na resposta da API /site/{codigo_acesso}
 export interface SiteInfo {
@@ -39,37 +41,12 @@ export interface SiteInfo {
   dias_semana_abertos: string[];
 }
 
-interface ThemePreset {
-  primary: string;
-  secondary: string;
-}
-
-/**
- * Retorna cores padrão por tipo de restaurante.
- * As cores da API (tema_cor_primaria/secundaria) sempre têm prioridade.
- */
-function getThemePreset(tipo: string): ThemePreset {
-  const t = (tipo || "").toLowerCase();
-  if (t.includes("pizza")) return { primary: "#E31A24", secondary: "#FFD700" };
-  if (t.includes("hambur") || t.includes("lanch")) return { primary: "#FF6B00", secondary: "#FFD700" };
-  if (t.includes("sushi") || t.includes("japon")) return { primary: "#1A1A2E", secondary: "#E94560" };
-  if (t.includes("acai") || t.includes("sorvet")) return { primary: "#7B2D8E", secondary: "#FF69B4" };
-  if (t.includes("esfih")) return { primary: "#D4A017", secondary: "#8B4513" };
-  if (t.includes("bebid")) return { primary: "#1565C0", secondary: "#42A5F5" };
-  if (t.includes("salgad") || t.includes("doce")) return { primary: "#E65100", secondary: "#FFB74D" };
-  if (t.includes("churrasco") || t.includes("grill")) return { primary: "#B71C1C", secondary: "#FF8A65" };
-  if (t.includes("padaria") || t.includes("cafe")) return { primary: "#795548", secondary: "#D7CCC8" };
-  if (t.includes("fitness") || t.includes("sauda")) return { primary: "#2E7D32", secondary: "#81C784" };
-  if (t.includes("marmitex") || t.includes("marmita")) return { primary: "#E65100", secondary: "#FFA726" };
-  if (t.includes("restaurante") || t.includes("geral")) return { primary: "#2E7D32", secondary: "#FFD700" };
-  return { primary: "#E31A24", secondary: "#FFD700" };
-}
-
 interface RestauranteContextType {
   siteInfo: SiteInfo | null;
   loading: boolean;
   error: string | null;
   codigoAcesso: string;
+  theme: ThemeConfig;
 }
 
 const RestauranteContext = createContext<RestauranteContextType | undefined>(undefined);
@@ -81,26 +58,53 @@ export function RestauranteProvider({ children }: { children: React.ReactNode })
   // staleTime: 60min (definido em useQueries.ts).
   const { data: siteInfo, isLoading, error: queryError } = useSiteInfo();
 
-  // Aplica CSS variables do tema ao :root sempre que siteInfo muda.
-  // Usa presets por tipo_restaurante como fallback. API colors têm prioridade.
+  // Resolve o tema completo baseado no tipo_restaurante
+  const theme = useMemo(() => {
+    return getThemeConfig(siteInfo?.tipo_restaurante || "restaurante");
+  }, [siteInfo?.tipo_restaurante]);
+
+  // Aplica CSS variables do tema ao :root sempre que siteInfo ou tema mudam.
+  // Cores customizadas do restaurante (API) sempre têm prioridade sobre o preset.
   useEffect(() => {
-    if (siteInfo) {
-      const root = document.documentElement;
-      const preset = getThemePreset(siteInfo.tipo_restaurante);
+    if (!siteInfo) return;
 
-      // Cores do restaurante (API > preset > fallback)
-      const primary = siteInfo.tema_cor_primaria || preset.primary;
-      const secondary = siteInfo.tema_cor_secundaria || preset.secondary;
+    const root = document.documentElement;
+    const cssVars = themeToCSSVars(
+      theme,
+      siteInfo.tema_cor_primaria || undefined,
+      siteInfo.tema_cor_secundaria || undefined,
+    );
 
-      root.style.setProperty("--cor-primaria", primary);
-      root.style.setProperty("--cor-secundaria", secondary);
-
-      // Atualiza shadcn accent/primary/ring para match
-      root.style.setProperty("--primary", primary);
-      root.style.setProperty("--accent", primary);
-      root.style.setProperty("--ring", primary);
+    // Aplica todas as CSS vars ao :root
+    for (const [key, value] of Object.entries(cssVars)) {
+      root.style.setProperty(key, value);
     }
-  }, [siteInfo]);
+
+    // Font families no body
+    document.body.style.fontFamily = theme.fonts.special || theme.fonts.body;
+
+    // Classe utilitária no body para temas escuros
+    if (theme.isDark) {
+      root.classList.add("theme-dark");
+      root.classList.remove("theme-light");
+    } else {
+      root.classList.add("theme-light");
+      root.classList.remove("theme-dark");
+    }
+
+    // Classe do tipo de tema para CSS específico
+    root.dataset.theme = theme.id;
+
+    return () => {
+      // Cleanup ao desmontar
+      for (const key of Object.keys(cssVars)) {
+        root.style.removeProperty(key);
+      }
+      root.classList.remove("theme-dark", "theme-light");
+      delete root.dataset.theme;
+      document.body.style.fontFamily = "";
+    };
+  }, [siteInfo, theme]);
 
   // Formata mensagem de erro amigável a partir do erro do React Query
   const errorMsg = queryError
@@ -113,6 +117,7 @@ export function RestauranteProvider({ children }: { children: React.ReactNode })
       loading: isLoading,
       error: errorMsg,
       codigoAcesso,
+      theme,
     }}>
       {children}
     </RestauranteContext.Provider>
@@ -125,4 +130,13 @@ export function useRestaurante() {
     throw new Error("useRestaurante deve ser usado dentro de RestauranteProvider");
   }
   return context;
+}
+
+/**
+ * Hook que retorna apenas a configuração do tema.
+ * Atalho para useRestaurante().theme.
+ */
+export function useRestauranteTheme(): ThemeConfig {
+  const { theme } = useRestaurante();
+  return theme;
 }

@@ -62,6 +62,23 @@ export default function Login() {
       toast.error("Preencha todos os campos obrigatórios");
       return;
     }
+    // Validar nome
+    if (regNome.trim().length < 2) {
+      toast.error("Nome deve ter no mínimo 2 caracteres");
+      return;
+    }
+    // Validar email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(regEmail.trim())) {
+      toast.error("Email inválido");
+      return;
+    }
+    // Validar telefone (mín 10 dígitos)
+    const telDigitos = regTelefone.replace(/\D/g, "");
+    if (telDigitos.length < 10) {
+      toast.error("Telefone inválido — mínimo 10 dígitos");
+      return;
+    }
     if (regSenha !== regSenhaConfirm) {
       toast.error("As senhas não coincidem");
       return;
@@ -75,16 +92,27 @@ export default function Login() {
     try {
       // trim() na senha para ignorar espaços acidentais (defesa em profundidade)
       const data = await registrarCliente({
-        nome: regNome,
-        email: regEmail,
-        telefone: regTelefone,
+        nome: regNome.trim(),
+        email: regEmail.trim(),
+        telefone: telDigitos,
         senha: regSenha.trim(),
       });
       login(data.access_token, data.cliente);
       toast.success(`Conta criada com sucesso! Bem-vindo, ${data.cliente.nome}!`);
       navigate("/");
     } catch (err: any) {
-      const msg = err?.response?.data?.detail || "Erro ao criar conta";
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      let msg = "Erro ao criar conta";
+      if (status === 409 || (typeof detail === "string" && detail.toLowerCase().includes("já"))) {
+        msg = "Este email já está cadastrado. Tente fazer login.";
+      } else if (status === 422) {
+        msg = "Dados inválidos — verifique os campos e tente novamente";
+      } else if (status === 404) {
+        msg = "Restaurante não encontrado";
+      } else if (typeof detail === "string") {
+        msg = detail;
+      }
       toast.error(msg);
     } finally {
       setProcessing(false);

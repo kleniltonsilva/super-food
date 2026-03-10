@@ -10,13 +10,13 @@ from datetime import datetime
 from typing import Optional, List
 
 from ..database import get_db
-from .. import models
+from .. import models, auth
 
 router = APIRouter(prefix="/api/gps", tags=["GPS"])
 
 
 class GPSUpdate(BaseModel):
-    """Schema para atualização de GPS"""
+    """Schema para atualização de GPS (endpoint legado sem auth)"""
     motoboy_id: int
     restaurante_id: int
     latitude: float
@@ -24,6 +24,15 @@ class GPSUpdate(BaseModel):
     velocidade: Optional[float] = 0.0
     precisao: Optional[float] = None
     heading: Optional[float] = None  # Direção em graus
+
+
+class GPSUpdateAuth(BaseModel):
+    """Schema para atualização de GPS (endpoint JWT — motoboy_id e restaurante_id vêm do token)"""
+    latitude: float
+    longitude: float
+    velocidade: Optional[float] = 0.0
+    precisao: Optional[float] = None
+    heading: Optional[float] = None
 
 
 class GPSResponse(BaseModel):
@@ -147,6 +156,51 @@ async def listar_motoboys_gps(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/update-auth", response_model=GPSResponse)
+async def atualizar_gps_auth(
+    gps_data: GPSUpdateAuth,
+    current_motoboy: models.Motoboy = Depends(auth.get_current_motoboy),
+    db: Session = Depends(get_db)
+):
+    """
+    Atualiza GPS com autenticação JWT.
+
+    motoboy_id e restaurante_id são extraídos do token JWT.
+    Endpoint seguro para o app React PWA.
+    """
+    try:
+        if not current_motoboy.disponivel:
+            return GPSResponse(sucesso=False, mensagem="Motoboy está offline")
+
+        timestamp = datetime.now()
+
+        gps_record = models.GPSMotoboy(
+            motoboy_id=current_motoboy.id,
+            restaurante_id=current_motoboy.restaurante_id,
+            latitude=gps_data.latitude,
+            longitude=gps_data.longitude,
+            velocidade=gps_data.velocidade or 0.0,
+            timestamp=timestamp
+        )
+        db.add(gps_record)
+
+        current_motoboy.latitude_atual = gps_data.latitude
+        current_motoboy.longitude_atual = gps_data.longitude
+        current_motoboy.ultima_atualizacao_gps = timestamp
+
+        db.commit()
+
+        return GPSResponse(
+            sucesso=True,
+            mensagem="Localização atualizada",
+            timestamp=timestamp.isoformat()
+        )
+
+    except Exception as e:
+        db.rollback()
+        return GPSResponse(sucesso=False, mensagem=f"Erro ao atualizar GPS: {str(e)}")
 
 
 @router.get("/historico/{motoboy_id}")

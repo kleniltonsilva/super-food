@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.mypy_cache
+.pytest_cache
+.venv
+venv
+env
+
+# Node
+restaurante-pedido-online/node_modules
+restaurante-pedido-online/.vite
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Database local
+*.db
+*.sqlite3
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Streamlit (legado)
+streamlit_app/
+app_motoboy/
+
+# Docs
+*.md
+docs/
+LICENSE
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/

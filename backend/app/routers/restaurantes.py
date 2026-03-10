@@ -46,13 +46,17 @@ def signup_restaurante(restaurante_in: schemas.RestauranteCreate, db: Session = 
 
         # Cria restaurante (Pydantic v2)
         plano = (restaurante_in.plano or "basico").lower()
+        dados = restaurante_in.model_dump(exclude={"senha", "plano"})
+        # nome é obrigatório no model — usar nome_fantasia se não fornecido
+        if "nome" not in dados or not dados.get("nome"):
+            dados["nome"] = dados["nome_fantasia"]
         novo_rest = models.Restaurante(
-            **restaurante_in.model_dump(exclude={"senha", "plano"}),
-            hashed_password=auth.get_password_hash(restaurante_in.senha),
-            lat=lat,
-            lon=lon,
-            plano=plano
+            **dados,
+            plano=plano,
+            latitude=lat,
+            longitude=lon,
         )
+        novo_rest.set_senha(restaurante_in.senha)
         novo_rest.gerar_codigo_acesso()
 
         db.add(novo_rest)

@@ -5,17 +5,17 @@ Router de Upload de Imagens
 Aceita upload de arquivos, redimensiona com Pillow e salva localmente.
 """
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from PIL import Image, ImageOps
 import uuid
 import os
 from pathlib import Path
 from io import BytesIO
 
-router = APIRouter(prefix="/api/upload", tags=["Upload"])
+from .. import models, auth
+from ..storage import get_storage
 
-# Diretório base para uploads
-UPLOAD_DIR = Path("backend/static/uploads")
+router = APIRouter(prefix="/api/upload", tags=["Upload"])
 
 # Configurações por tipo de imagem
 TIPO_CONFIG = {
@@ -35,6 +35,7 @@ async def upload_imagem(
     arquivo: UploadFile = File(...),
     tipo: str = Form(...),
     restaurante_id: int = Form(...),
+    current_restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
 ):
     """
     Upload e processamento de imagem.
@@ -47,6 +48,10 @@ async def upload_imagem(
     Returns:
         {"url": "/static/uploads/{restaurante_id}/tipo_uuid.webp"}
     """
+    # Validar que o restaurante_id do form é o mesmo do token
+    if restaurante_id != current_restaurante.id:
+        raise HTTPException(status_code=403, detail="Sem permissão para este restaurante")
+
     # Validar tipo
     if tipo not in TIPO_CONFIG:
         raise HTTPException(
@@ -97,18 +102,17 @@ async def upload_imagem(
         # Thumbnail mantém aspect ratio
         img.thumbnail(max_size, Image.LANCZOS)
 
-    # Criar diretório do restaurante
-    dest_dir = UPLOAD_DIR / str(restaurante_id)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-
-    # Gerar nome único
+    # Gerar nome unico
     filename = f"{tipo}_{uuid.uuid4().hex[:12]}.webp"
-    filepath = dest_dir / filename
+    key = f"{restaurante_id}/{filename}"
 
-    # Salvar como WebP (melhor compressão)
-    img.save(str(filepath), "WEBP", quality=85)
+    # Salvar como WebP em memoria
+    buffer = BytesIO()
+    img.save(buffer, "WEBP", quality=85)
+    file_bytes = buffer.getvalue()
 
-    # URL relativa para servir via /static
-    url = f"/static/uploads/{restaurante_id}/{filename}"
+    # Upload via storage backend (local ou R2)
+    storage = get_storage()
+    url = storage.upload(file_bytes, key, content_type="image/webp")
 
     return {"url": url, "filename": filename}

@@ -112,7 +112,7 @@ export async function getTaxaBairro(nomeBairro: string) {
 }
 
 export async function autocompleteEndereco(q: string) {
-  const { data } = await api.get(`/site/${getCodigoAcesso()}/autocomplete-endereco`, { params: { q } });
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/autocomplete-endereco`, { params: { query: q } });
   return data;
 }
 
@@ -139,17 +139,17 @@ export async function adicionarAoCarrinho(item: {
 }
 
 export async function atualizarQuantidade(itemIndex: number, quantidade: number) {
-  const { data } = await api.put(`/carrinho/atualizar-quantidade/${itemIndex}`, null, { params: { nova_quantidade: quantidade } });
+  const { data } = await api.put(`/carrinho/atualizar-quantidade/${itemIndex}`, null, { params: { nova_quantidade: quantidade, codigo_acesso: getCodigoAcesso() } });
   return data;
 }
 
 export async function removerDoCarrinho(itemIndex: number) {
-  const { data } = await api.delete(`/carrinho/remover/${itemIndex}`);
+  const { data } = await api.delete(`/carrinho/remover/${itemIndex}`, { params: { codigo_acesso: getCodigoAcesso() } });
   return data;
 }
 
 export async function limparCarrinho() {
-  const { data } = await api.delete("/carrinho/limpar");
+  const { data } = await api.delete("/carrinho/limpar", { params: { codigo_acesso: getCodigoAcesso() } });
   return data;
 }
 
@@ -164,7 +164,7 @@ export async function finalizarPedido(payload: {
   troco_para?: number;
   observacoes?: string;
 }) {
-  const { data } = await api.post("/carrinho/finalizar", payload);
+  const { data } = await api.post("/carrinho/finalizar", { ...payload, codigo_acesso: getCodigoAcesso() });
   return data;
 }
 

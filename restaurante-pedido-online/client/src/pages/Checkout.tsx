@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ArrowLeft, MapPin, CreditCard, User, Plus, Search } from "lucide-react";
 import { useLocation } from "wouter";
-import { autocompleteEndereco, validarEntrega } from "@/lib/apiClient";
+import { autocompleteEndereco, validarEntrega, validarCupom } from "@/lib/apiClient";
 import { useCarrinho, useEnderecos, useFinalizarPedido, useCriarEndereco } from "@/hooks/useQueries";
 import { useRestaurante } from "@/contexts/RestauranteContext";
 import { useAuth } from "@/contexts/AuthContext";
@@ -94,6 +94,8 @@ export default function Checkout() {
   // Campos do formulário
   const [observacao, setObservacao] = useState("");
   const [cupom, setCupom] = useState("");
+  const [cupomValidado, setCupomValidado] = useState<{ valido: boolean; desconto: number; mensagem: string } | null>(null);
+  const [validandoCupom, setValidandoCupom] = useState(false);
   const [troco, setTroco] = useState("");
 
   // Seleciona endereço padrão quando endereços carregam do cache/API
@@ -242,7 +244,28 @@ export default function Checkout() {
   }
 
   const subtotal = cartItems.reduce((sum, item) => sum + item.subtotal, 0);
-  const total = subtotal + (deliveryType === "retirada" ? 0 : deliveryFee);
+  const descontoCupom = cupomValidado?.valido ? cupomValidado.desconto : 0;
+  const total = subtotal + (deliveryType === "retirada" ? 0 : deliveryFee) - descontoCupom;
+
+  async function handleValidarCupom() {
+    if (!cupom.trim()) { toast.error("Digite o código do cupom"); return; }
+    setValidandoCupom(true);
+    try {
+      const result = await validarCupom(cupom.trim(), subtotal);
+      if (result.valido) {
+        setCupomValidado({ valido: true, desconto: result.desconto, mensagem: result.mensagem || "Cupom aplicado!" });
+        toast.success(result.mensagem || "Cupom aplicado!");
+      } else {
+        setCupomValidado({ valido: false, desconto: 0, mensagem: result.mensagem || "Cupom inválido" });
+        toast.error(result.mensagem || "Cupom inválido");
+      }
+    } catch {
+      setCupomValidado({ valido: false, desconto: 0, mensagem: "Erro ao validar cupom" });
+      toast.error("Erro ao validar cupom");
+    } finally {
+      setValidandoCupom(false);
+    }
+  }
 
   // Métodos de pagamento disponíveis
   const paymentMethods: { value: PaymentMethod; label: string }[] = [];
@@ -337,6 +360,8 @@ export default function Checkout() {
         forma_pagamento: paymentMethod,
         troco_para: paymentMethod === "Dinheiro" && troco ? parseFloat(troco) : undefined,
         observacoes: observacao || undefined,
+        cupom_desconto: cupomValidado?.valido ? cupom : undefined,
+        valor_desconto: cupomValidado?.valido ? descontoCupom : undefined,
         cliente_nome: isLoggedIn ? cliente?.nome : nomeCliente,
         cliente_telefone: isLoggedIn ? cliente?.telefone : telefoneCliente,
         endereco_entrega: enderecoFinal || undefined,
@@ -524,7 +549,7 @@ export default function Checkout() {
                       />
                     </div>
                     {showSugestoes && sugestoes.length > 0 && (
-                      <div className="absolute z-50 w-full bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                      <div data-autocomplete-dropdown className="absolute z-50 w-full bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
                         {sugestoes.map((s, i) => (
                           <button
                             key={i}
@@ -569,7 +594,7 @@ export default function Checkout() {
                           />
                         </div>
                         {showNewSugestoes && newSugestoes.length > 0 && (
-                          <div className="absolute z-50 w-full bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                          <div data-autocomplete-dropdown className="absolute z-50 w-full bg-[var(--bg-card)] border border-[var(--border-subtle)] rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
                             {newSugestoes.map((s, i) => (
                               <button
                                 key={i}
@@ -647,8 +672,30 @@ export default function Checkout() {
               <div className="space-y-4">
                 <div>
                   <label className="text-sm font-bold mb-1 block">Cupom de desconto</label>
-                  <input type="text" value={cupom} onChange={e => setCupom(e.target.value.toUpperCase())}
-                    placeholder="Digite o código do cupom" className="dark-input" />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={cupom}
+                      onChange={e => { setCupom(e.target.value.toUpperCase()); setCupomValidado(null); }}
+                      placeholder="Digite o código do cupom"
+                      className="dark-input flex-1"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleValidarCupom}
+                      disabled={validandoCupom || !cupom.trim()}
+                      className="shrink-0"
+                    >
+                      {validandoCupom ? "..." : "Aplicar"}
+                    </Button>
+                  </div>
+                  {cupomValidado && (
+                    <p className={`text-sm mt-1 font-semibold ${cupomValidado.valido ? "text-green-400" : "text-red-400"}`}>
+                      {cupomValidado.mensagem}
+                      {cupomValidado.valido && ` (-R$ ${cupomValidado.desconto.toFixed(2)})`}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-bold mb-1 block">Observações</label>
@@ -691,6 +738,12 @@ export default function Checkout() {
                     <span className="font-bold">
                       {calculandoTaxa ? "..." : deliveryFee > 0 ? `R$ ${deliveryFee.toFixed(2)}` : "A calcular"}
                     </span>
+                  </div>
+                )}
+                {descontoCupom > 0 && (
+                  <div className="flex items-center justify-between text-green-400">
+                    <span>Desconto (cupom):</span>
+                    <span className="font-bold">-R$ {descontoCupom.toFixed(2)}</span>
                   </div>
                 )}
               </div>

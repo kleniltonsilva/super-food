@@ -1,0 +1,27 @@
+{
+  "name": "Super Food Entregador",
+  "short_name": "Entregador",
+  "description": "App de entregas Super Food",
+  "start_url": "/entregador",
+  "scope": "/entregador",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["food"],
+  "lang": "pt-BR"
+}

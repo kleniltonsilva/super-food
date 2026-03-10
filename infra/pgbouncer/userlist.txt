@@ -1,0 +1,4 @@
+; Formato: "usuario" "senha_md5"
+; Gere com: echo -n "md5$(echo -n 'senhausuario' | md5sum | cut -d' ' -f1)"
+; IMPORTANTE: Troque a senha em producao!
+"superfood" "md5_placeholder_change_in_production"

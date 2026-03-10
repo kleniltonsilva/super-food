@@ -1,8 +1,9 @@
 # migrations/env.py
 
 """
-Configuração do ambiente Alembic
+Configuracao do ambiente Alembic
 Carrega models SQLAlchemy para autogenerate funcionar
+Le DATABASE_URL do .env (prioridade sobre alembic.ini)
 """
 
 from logging.config import fileConfig
@@ -11,6 +12,9 @@ import sys
 
 # Adiciona raiz do projeto ao path
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
+from dotenv import load_dotenv
+load_dotenv()
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -22,12 +26,18 @@ from database.models import *  # noqa: F403
 # Config do ini
 config = context.config
 
+# Sobrescreve URL do banco com .env (se definida)
+database_url = os.getenv("DATABASE_URL")
+if database_url:
+    config.set_main_option("sqlalchemy.url", database_url)
+
 # Logging
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Target metadata para autogenerate
 target_metadata = Base.metadata
+
 
 def run_migrations_offline():
     """Run migrations in 'offline' mode."""
@@ -41,6 +51,7 @@ def run_migrations_offline():
 
     with context.begin_transaction():
         context.run_migrations()
+
 
 def run_migrations_online():
     """Run migrations in 'online' mode."""
@@ -58,6 +69,7 @@ def run_migrations_online():
 
         with context.begin_transaction():
             context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()

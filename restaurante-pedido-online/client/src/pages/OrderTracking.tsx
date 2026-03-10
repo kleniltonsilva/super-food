@@ -27,7 +27,7 @@ const STATUS_STEPS = [
   { key: "confirmado", label: "Confirmado", icon: Check },
   { key: "em_preparo", label: "Preparando", icon: ChefHat },
   { key: "pronto", label: "Pronto", icon: Check },
-  { key: "saiu_entrega", label: "Saiu para Entrega", icon: Truck },
+  { key: "em_entrega", label: "Saiu para Entrega", icon: Truck },
   { key: "entregue", label: "Entregue", icon: Check },
 ];
 
@@ -56,7 +56,7 @@ export default function OrderTracking() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Polling mais rápido quando motoboy está em rota (10s) vs normal (30s)
-  const isEmRota = tracking?.status === "saiu_entrega" && tracking?.motoboy?.latitude != null;
+  const isEmRota = tracking?.status === "em_entrega" && tracking?.motoboy?.latitude != null;
 
   useEffect(() => {
     async function load() {
@@ -199,7 +199,7 @@ export default function OrderTracking() {
         )}
 
         {/* Motoboy info + Mapa em tempo real */}
-        {tracking.motoboy && tracking.status === "saiu_entrega" && (
+        {tracking.motoboy && tracking.status === "em_entrega" && (
           <Card className="p-4 md:p-6 mb-6">
             <h2 className="font-bold text-lg mb-3 flex items-center gap-2">
               <Truck className="w-5 h-5" />
@@ -228,7 +228,7 @@ export default function OrderTracking() {
         )}
 
         {/* Motoboy info (sem mapa — antes de sair para entrega) */}
-        {tracking.motoboy && tracking.status !== "saiu_entrega" && (
+        {tracking.motoboy && tracking.status !== "em_entrega" && (
           <Card className="p-6 mb-6">
             <h2 className="font-bold text-lg mb-3 flex items-center gap-2">
               <Truck className="w-5 h-5" />
