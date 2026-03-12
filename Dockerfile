@@ -37,6 +37,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ backend/
 COPY database/ database/
 COPY migrations/ migrations/
+COPY utils/ utils/
 COPY alembic.ini .
 
 # Copia build do React
