@@ -14,21 +14,7 @@ alembic>=1.13.1
 # Variáveis de Ambiente
 python-dotenv>=1.0.1
 
-# ==================== FRONTEND ====================
-
-# Streamlit - Interface Web
-streamlit>=1.40.2
-
-# Data manipulation
-pandas>=2.2.3
-
-# Mapas interativos
-pydeck>=0.9.1
-
-# Gráficos
-plotly>=5.24.1
-
-# ==================== BACKEND API (OPCIONAL) ====================
+# ==================== BACKEND API ====================
 
 # FastAPI + Uvicorn
 fastapi>=0.115.0

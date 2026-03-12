@@ -1,14 +1,13 @@
 #!/usr/bin/env bash
 # ============================================================
-# Super Food - Iniciar TODOS os Serviços + Rebuild Automático
+# Super Food v4.0 - Iniciar Sistema (Build + FastAPI)
 # ============================================================
-# Fluxo: build React → FastAPI → (opcional) Streamlit
+# Fluxo: build React → FastAPI (serve todos os apps React)
 # Acesso produção: http://localhost:8000
-# Acesso dev live: http://localhost:5173 (sem rebuild, hot-reload)
+# Acesso dev live: http://localhost:5173 (hot-reload, sem build)
 #
 # Uso:
-#   ./iniciar_tudo.sh              # Build + FastAPI + Streamlit
-#   ./iniciar_tudo.sh --react-only # Build + FastAPI (sem Streamlit)
+#   ./iniciar_tudo.sh              # Build + FastAPI
 #   ./iniciar_tudo.sh --no-browser # Não abre navegador
 #   ./iniciar_tudo.sh --skip-build # Pula o build (mais rápido)
 # ============================================================
@@ -30,13 +29,11 @@ FRONTEND_DIR="$PROJECT_DIR/restaurante-pedido-online"
 LOG_DIR="/tmp/superfood_logs"
 
 # Flags
-REACT_ONLY=false
 NO_BROWSER=false
 SKIP_BUILD=false
 
 for arg in "$@"; do
     case $arg in
-        --react-only)  REACT_ONLY=true ;;
         --no-browser)  NO_BROWSER=true ;;
         --skip-build)  SKIP_BUILD=true ;;
     esac
@@ -65,9 +62,6 @@ cleanup_old_processes() {
     echo -e "${YELLOW}Limpando processos antigos...${NC}"
     lsof -ti:8000 2>/dev/null | xargs -r kill -9 2>/dev/null || true
     lsof -ti:5173 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-    lsof -ti:8501 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-    lsof -ti:8502 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-    lsof -ti:8503 2>/dev/null | xargs -r kill -9 2>/dev/null || true
     sleep 1
     print_status "Processos antigos limpos"
 }
@@ -125,9 +119,6 @@ cleanup() {
     done
     lsof -ti:8000 2>/dev/null | xargs -r kill -9 2>/dev/null || true
     lsof -ti:5173 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-    lsof -ti:8501 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-    lsof -ti:8502 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-    lsof -ti:8503 2>/dev/null | xargs -r kill -9 2>/dev/null || true
     echo -e "${GREEN}✅ Todos os serviços parados.${NC}"
     exit 0
 }
@@ -154,7 +145,7 @@ echo ""
 if [ "$SKIP_BUILD" = true ]; then
     print_warn "Build pulado (--skip-build)"
 else
-    print_step "[1/4] Compilando React (npm run build)..."
+    print_step "[1/3] Compilando React (npm run build)..."
     echo -e "      ${YELLOW}Aguarde, isso leva ~1 minuto...${NC}"
     cd "$FRONTEND_DIR"
     if npm run build > "$LOG_DIR/build.log" 2>&1; then
@@ -171,7 +162,7 @@ fi
 # 2. FastAPI Backend (porta 8000) — serve o build React
 # ============================================================
 echo ""
-print_step "[2/4] Iniciando FastAPI Backend (porta 8000)..."
+print_step "[2/3] Iniciando FastAPI Backend (porta 8000)..."
 
 cd "$PROJECT_DIR"
 uvicorn backend.app.main:app \
@@ -183,52 +174,16 @@ echo $! > "$LOG_DIR/fastapi.pid"
 print_status "FastAPI iniciado (PID: $(cat "$LOG_DIR/fastapi.pid"))"
 
 # ============================================================
-# 3. Streamlit Apps (portas 8501-8503) — legado
-# ============================================================
-if [ "$REACT_ONLY" = false ]; then
-    echo ""
-    print_step "[3/4] Iniciando apps Streamlit (legado)..."
-
-    streamlit run streamlit_app/super_admin.py \
-        --server.port=8501 --server.headless=true \
-        --server.runOnSave=false --browser.gatherUsageStats=false \
-        > "$LOG_DIR/streamlit_admin.log" 2>&1 &
-    echo $! > "$LOG_DIR/streamlit_admin.pid"
-    print_status "Super Admin Streamlit → porta 8501"
-
-    streamlit run streamlit_app/restaurante_app.py \
-        --server.port=8502 --server.headless=true \
-        --server.runOnSave=false --browser.gatherUsageStats=false \
-        > "$LOG_DIR/streamlit_restaurante.log" 2>&1 &
-    echo $! > "$LOG_DIR/streamlit_restaurante.pid"
-    print_status "Restaurante Streamlit → porta 8502"
-
-    streamlit run app_motoboy/motoboy_app.py \
-        --server.port=8503 --server.headless=true \
-        --server.runOnSave=false --browser.gatherUsageStats=false \
-        > "$LOG_DIR/streamlit_motoboy.log" 2>&1 &
-    echo $! > "$LOG_DIR/streamlit_motoboy.pid"
-    print_status "Motoboy Streamlit → porta 8503"
-else
-    print_warn "Streamlit ignorado (--react-only)"
-fi
-
-# ============================================================
-# 4. Aguardar serviços
+# 3. Aguardar serviços
 # ============================================================
 echo ""
-print_step "[4/4] Aguardando serviços ficarem prontos..."
+print_step "[3/3] Aguardando serviços ficarem prontos..."
 
 echo -n "  FastAPI (8000)... "
 if wait_for_service "http://localhost:8000/health/live" 30; then
     echo -e "${GREEN}OK${NC}"
 else
     echo -e "${RED}TIMEOUT — verifique $LOG_DIR/fastapi.log${NC}"
-fi
-
-if [ "$REACT_ONLY" = false ]; then
-    echo -n "  Streamlit (8501)... "
-    wait_for_service "http://localhost:8501" 15 && echo -e "${GREEN}OK${NC}" || echo -e "${YELLOW}TIMEOUT${NC}"
 fi
 
 # ============================================================
@@ -310,14 +265,6 @@ echo -e "${BOLD}  🔑 Credenciais:${NC}"
 echo -e "     Super Admin:  superadmin / SuperFood2025!"
 echo -e "     Restaurantes: teste-{tipo}@superfood.test / 123456"
 
-if [ "$REACT_ONLY" = false ]; then
-    echo ""
-    echo -e "${BOLD}  📋 Streamlit (legado):${NC}"
-    echo -e "     Super Admin:  ${YELLOW}http://localhost:8501${NC}"
-    echo -e "     Restaurante:  ${YELLOW}http://localhost:8502${NC}"
-    echo -e "     Motoboy:      ${YELLOW}http://localhost:8503${NC}"
-fi
-
 echo ""
 echo -e "${BOLD}  📁 Logs:${NC} $LOG_DIR/"
 echo -e "${BOLD}  💡 Para pular o build:${NC} ./iniciar_tudo.sh --skip-build"
@@ -342,12 +289,6 @@ if [ "$NO_BROWSER" = false ]; then
             sleep 0.3
         fi
     done
-
-    if [ "$REACT_ONLY" = false ]; then
-        open_browser "http://localhost:8501"
-        sleep 0.3
-        open_browser "http://localhost:8502"
-    fi
 
     print_status "Abas do navegador abertas"
 fi
