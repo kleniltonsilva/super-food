@@ -18,6 +18,10 @@ load_dotenv()
 # IMPORTANTE: O banco fica na RAIZ do projeto, não dentro de /database/
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./super_food.db")
 
+# SQLAlchemy 2.0 nao aceita "postgres://" — converte para "postgresql://"
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 # Configurações do engine
 if "sqlite" in DATABASE_URL:
     # SQLite: usar StaticPool e check_same_thread=False
