@@ -19,6 +19,10 @@ load_dotenv(PROJECT_ROOT / ".env")
 # URL do banco
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{PROJECT_ROOT}/super_food.db")
 
+# SQLAlchemy 2.0 nao aceita "postgres://" — converte para "postgresql://"
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
 # Detecta se esta usando PgBouncer (porta 6432 ou env var)
 PGBOUNCER_ACTIVE = os.getenv("PGBOUNCER_ACTIVE", "").lower() == "true" or ":6432/" in DATABASE_URL
 
