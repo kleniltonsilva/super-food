@@ -33,6 +33,9 @@ python-multipart>=0.0.20
 # Processamento de imagens (resize, crop, WebP)
 Pillow>=10.0.0
 
+# Templates (Jinja2 para Starlette)
+jinja2>=3.1.0
+
 # WebSockets (realtime)
 websockets>=14.1
 
