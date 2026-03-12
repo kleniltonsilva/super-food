@@ -36,7 +36,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia codigo do projeto
 COPY backend/ backend/
 COPY database/ database/
-COPY utils/ utils/
 COPY migrations/ migrations/
 COPY alembic.ini .
 
