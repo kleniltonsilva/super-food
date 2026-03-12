@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { CreditCard, Edit, Users, Loader2 } from "lucide-react";
+import InfoTooltip from "@/components/InfoTooltip";
 
 interface Plano {
   nome: string;
@@ -176,7 +177,10 @@ export default function GerenciarPlanos() {
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Valor Mensal (R$)</label>
+              <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                Valor Mensal (R$)
+                <InfoTooltip text="Valor cobrado mensalmente do restaurante. Ao alterar, todos os restaurantes com este plano serão atualizados." />
+              </label>
               <Input
                 type="number"
                 step="0.01"
@@ -186,7 +190,10 @@ export default function GerenciarPlanos() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Limite de Motoboys</label>
+              <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                Limite de Motoboys
+                <InfoTooltip text="Quantidade máxima de motoboys ativos que o restaurante pode ter. 999 = ilimitados." />
+              </label>
               <Input
                 type="number"
                 value={editForm.motoboys}
@@ -195,7 +202,10 @@ export default function GerenciarPlanos() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Descrição</label>
+              <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                Descrição
+                <InfoTooltip text="Descrição exibida na seleção de plano ao criar novo restaurante." />
+              </label>
               <Input
                 value={editForm.descricao}
                 onChange={(e) => setEditForm({ ...editForm, descricao: e.target.value })}

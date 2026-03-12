@@ -25,6 +25,8 @@ export const ADMIN_QUERY_KEYS = {
   relatorioVendas: ["admin", "relatorios", "vendas"] as const,
   relatorioMotoboys: ["admin", "relatorios", "motoboys"] as const,
   relatorioProdutos: ["admin", "relatorios", "produtos"] as const,
+  entregasAtivas: ["admin", "entregas", "ativas"] as const,
+  diagnosticoTempo: ["admin", "entregas", "diagnostico-tempo"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -99,11 +101,12 @@ export function useDespacharPedido() {
 export function useCancelarPedido() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, motivo }: { id: number; motivo?: string }) =>
-      api.cancelarPedido(id, motivo),
+    mutationFn: ({ id, senha }: { id: number; senha?: string }) =>
+      api.cancelarPedido(id, senha),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.caixaAtual });
     },
   });
 }
@@ -551,6 +554,47 @@ export function useCarregarProdutosModelo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.produtos });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.categorias });
+    },
+  });
+}
+
+// ─── Analytics Avançado ──────────────────────────────
+export function useAnalyticsAvancado(params?: { periodo?: string; senha: string }) {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.relatorioProdutos, "analytics", params?.periodo],
+    queryFn: () => api.getAnalyticsAvancado(params!),
+    staleTime: 60 * 1000,
+    enabled: !!params?.senha,
+  });
+}
+
+// ─── Entregas Ativas ──────────────────────────────────
+export function useEntregasAtivas() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.entregasAtivas,
+    queryFn: api.getEntregasAtivas,
+    staleTime: 10 * 1000,
+    refetchInterval: 30 * 1000,
+  });
+}
+
+// ─── Diagnóstico de Tempo ─────────────────────────────
+export function useDiagnosticoTempo() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo,
+    queryFn: api.getDiagnosticoTempo,
+    staleTime: 15 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+}
+
+export function useAjustarTempo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.ajustarTempoAutomatico,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configSite });
     },
   });
 }

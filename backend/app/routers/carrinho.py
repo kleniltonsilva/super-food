@@ -504,15 +504,32 @@ def finalizar_carrinho(
     )
     
     db.add(pedido)
-    
+
+    # Auto-aceitar pedido do site: se restaurante configurado e cliente tem histórico positivo
+    config_rest = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == carrinho.restaurante_id
+    ).first()
+
+    if config_rest and config_rest.aceitar_pedido_site_auto and cliente:
+        # Verifica se cliente tem ao menos 1 pedido concluído (entregue ou finalizado)
+        pedido_anterior = db.query(models.Pedido).filter(
+            models.Pedido.cliente_id == cliente.id,
+            models.Pedido.restaurante_id == carrinho.restaurante_id,
+            models.Pedido.status.in_(['entregue', 'finalizado'])
+        ).first()
+
+        if pedido_anterior:
+            pedido.status = 'confirmado'
+
     # Limpa carrinho
     db.delete(carrinho)
-    
+
     db.commit()
     db.refresh(pedido)
-    
+
     return {
         "pedido_id": pedido.id,
         "comanda": pedido.comanda,
+        "status": pedido.status,
         "mensagem": "Pedido realizado com sucesso!"
     }

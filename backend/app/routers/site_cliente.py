@@ -77,7 +77,9 @@ def get_site_info(
         "status_aberto": config_rest.status_atual == 'aberto' if config_rest else False,
         "horario_abertura": config_rest.horario_abertura if config_rest else "18:00",
         "horario_fechamento": config_rest.horario_fechamento if config_rest else "23:00",
-        "dias_semana_abertos": config_rest.dias_semana_abertos.split(',') if config_rest else []
+        "dias_semana_abertos": config_rest.dias_semana_abertos.split(',') if config_rest else [],
+        "modo_preco_pizza": config_rest.modo_preco_pizza if config_rest else "mais_caro",
+        "ingredientes_adicionais_pizza": site_config.ingredientes_adicionais_pizza or [],
     }
     cache_set(cache_key, result, ttl_seconds=300)  # 5 min
     return result
@@ -262,6 +264,7 @@ def get_produto_detalhado(
         "destaque": produto.destaque,
         "promocao": produto.promocao,
         "categoria_id": produto.categoria_id,
+        "ingredientes": produto.ingredientes_json or [],
         "variacoes_agrupadas": variacoes_agrupadas
     }
 
@@ -457,7 +460,8 @@ def get_sabores_disponiveis(
                 "nome": s.nome,
                 "descricao": s.descricao,
                 "preco": s.preco,
-                "imagem_url": s.imagem_url
+                "imagem_url": s.imagem_url,
+                "ingredientes": s.ingredientes_json or []
             }
             for s in sabores
         ]
@@ -556,21 +560,48 @@ def get_pedido_tracking(
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido não encontrado")
 
-    # Busca motoboy se despachado
+    # Busca motoboy via relacionamento Entrega (Pedido não tem motoboy_id direto)
     motoboy_info = None
-    if pedido.motoboy_id:
+    if pedido.entrega and pedido.entrega.motoboy_id:
         motoboy = db.query(models.Motoboy).filter(
-            models.Motoboy.id == pedido.motoboy_id
+            models.Motoboy.id == pedido.entrega.motoboy_id
         ).first()
         if motoboy:
-            gps = db.query(models.GPSMotoboy).filter(
-                models.GPSMotoboy.motoboy_id == motoboy.id
-            ).order_by(models.GPSMotoboy.data_hora.desc()).first()
+            # Usa lat/lng do próprio model Motoboy (atualizado pelo GPS hook)
+            # fallback: última entrada na tabela GPS
+            lat = motoboy.latitude_atual
+            lng = motoboy.longitude_atual
+            if lat is None or lng is None:
+                gps = db.query(models.GPSMotoboy).filter(
+                    models.GPSMotoboy.motoboy_id == motoboy.id
+                ).order_by(models.GPSMotoboy.timestamp.desc()).first()
+                if gps:
+                    lat = gps.latitude
+                    lng = gps.longitude
             motoboy_info = {
                 "nome": motoboy.nome,
-                "latitude": gps.latitude if gps else None,
-                "longitude": gps.longitude if gps else None,
+                "latitude": lat,
+                "longitude": lng,
             }
+
+    # Verifica config auto-aceitar para informar cliente sobre próximos pedidos
+    config_rest = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == restaurante.id
+    ).first()
+    aceitar_auto = config_rest.aceitar_pedido_site_auto if config_rest else False
+
+    # Verifica se este é o primeiro pedido concluído do cliente (para exibir aviso)
+    primeiro_pedido_concluido = False
+    status_concluido = pedido.status in ('entregue', 'finalizado')
+    if aceitar_auto and status_concluido and pedido.cliente_id:
+        qtd_anteriores = db.query(models.Pedido).filter(
+            models.Pedido.cliente_id == pedido.cliente_id,
+            models.Pedido.restaurante_id == restaurante.id,
+            models.Pedido.status.in_(['entregue', 'finalizado']),
+            models.Pedido.id != pedido.id
+        ).count()
+        # Se não há outros pedidos concluídos, este é o primeiro
+        primeiro_pedido_concluido = (qtd_anteriores == 0)
 
     return {
         "id": pedido.id,
@@ -585,6 +616,8 @@ def get_pedido_tracking(
         "tempo_estimado": pedido.tempo_estimado,
         "motoboy": motoboy_info,
         "carrinho_json": pedido.carrinho_json,
+        "aceitar_pedido_site_auto": aceitar_auto,
+        "aviso_proximo_pedido_auto": primeiro_pedido_concluido,
     }
 
 

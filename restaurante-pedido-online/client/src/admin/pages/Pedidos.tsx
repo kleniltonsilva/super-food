@@ -7,6 +7,7 @@ import {
   useCancelarPedido,
   useDespacharPedido,
   useDashboard,
+  useEntregasAtivas,
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -60,11 +61,14 @@ import {
   Bike,
   Globe,
   Smartphone,
+  AlertTriangle,
+  MapPin,
 } from "lucide-react";
 import { toast } from "sonner";
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   pendente: { label: "Pendente", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
+  confirmado: { label: "Confirmado", color: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30" },
   em_preparo: { label: "Em Preparo", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
   pronto: { label: "Pronto", color: "bg-green-500/20 text-green-400 border-green-500/30" },
   em_entrega: { label: "Em Entrega", color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
@@ -75,16 +79,25 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
 
 const STATUS_FLOW: Record<string, string[]> = {
   pendente: ["em_preparo", "cancelado"],
+  confirmado: ["em_preparo", "cancelado"],
   em_preparo: ["pronto", "cancelado"],
   pronto: ["em_entrega", "entregue", "cancelado"],
   em_entrega: ["entregue"],
 };
+
+function tempoColor(min: number): string {
+  if (min < 15) return "text-green-400";
+  if (min < 30) return "text-yellow-400";
+  return "text-red-400";
+}
 
 export default function Pedidos() {
   const [, navigate] = useLocation();
   const [statusFilter, setStatusFilter] = useState<string>("todos");
   const [busca, setBusca] = useState("");
   const [cancelarId, setCancelarId] = useState<number | null>(null);
+  const [cancelarSenha, setCancelarSenha] = useState("");
+  const [cancelarRequerSenha, setCancelarRequerSenha] = useState(false);
   const [tab, setTab] = useState("ativos");
   const [histDataInicio, setHistDataInicio] = useState("");
   const [histDataFim, setHistDataFim] = useState("");
@@ -101,11 +114,13 @@ export default function Pedidos() {
 
   const { data, isLoading, refetch } = usePedidos(tab === "ativos" ? ativosParams : histParams);
   const { data: dashData } = useDashboard();
+  const { data: entregasData } = useEntregasAtivas();
   const atualizarStatus = useAtualizarStatusPedido();
   const cancelar = useCancelarPedido();
   const despachar = useDespacharPedido();
 
   const pedidos = data?.pedidos || [];
+  const entregas = entregasData?.entregas || [];
 
   // Pedidos prontos para despacho
   const pedidosProntos = (tab === "ativos" ? pedidos : []).filter(
@@ -122,16 +137,33 @@ export default function Pedidos() {
     );
   }
 
+  function handleCancelarClick(id: number) {
+    const pedido = pedidos.find((p: Record<string, unknown>) => p.id === id);
+    const statusProtegidos = ['entregue', 'pago', 'finalizado'];
+    setCancelarRequerSenha(statusProtegidos.includes(pedido?.status as string));
+    setCancelarSenha("");
+    setCancelarId(id);
+  }
+
   function handleCancelar() {
     if (!cancelarId) return;
+    if (cancelarRequerSenha && !cancelarSenha.trim()) {
+      toast.error("Informe a senha do administrador");
+      return;
+    }
     cancelar.mutate(
-      { id: cancelarId },
+      { id: cancelarId, senha: cancelarRequerSenha ? cancelarSenha.trim() : undefined },
       {
         onSuccess: () => {
           toast.success("Pedido cancelado");
           setCancelarId(null);
+          setCancelarSenha("");
         },
-        onError: () => toast.error("Erro ao cancelar pedido"),
+        onError: (err: unknown) => {
+          const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+          const msg = typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map((e: { msg?: string }) => e.msg || String(e)).join(", ") : "Erro ao cancelar pedido";
+          toast.error(msg);
+        },
       }
     );
   }
@@ -168,6 +200,11 @@ export default function Pedidos() {
     return <span title="Manual"><Smartphone className="h-4 w-4 text-orange-400" /></span>;
   }
 
+  function getTempoDesde(iso: string | null): number {
+    if (!iso) return 0;
+    return Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  }
+
   return (
     <AdminLayout>
       <div className="space-y-4">
@@ -202,6 +239,64 @@ export default function Pedidos() {
             </Button>
           </div>
         </div>
+
+        {/* Entregas em Rota */}
+        {entregas.length > 0 && tab === "ativos" && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm font-medium text-[var(--text-secondary)]">
+              <Truck className="h-4 w-4" />
+              Entregas em Rota ({entregas.length})
+              {(entregasData?.total_atrasadas ?? 0) > 0 && (
+                <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-xs">
+                  {entregasData?.total_atrasadas} atrasada{(entregasData?.total_atrasadas ?? 0) > 1 ? "s" : ""}
+                </Badge>
+              )}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {entregas.map((e: Record<string, unknown>) => (
+                <Card
+                  key={e.entrega_id as number}
+                  className={`border-[var(--border-subtle)] bg-[var(--bg-card)] cursor-pointer hover:bg-[var(--bg-card-hover)] transition-colors ${
+                    e.atrasada ? "border-red-500/40" : ""
+                  }`}
+                  onClick={() => navigate(`/pedidos/${e.pedido_id}`)}
+                >
+                  <CardContent className="p-3 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono text-sm text-[var(--text-primary)]">
+                        #{e.comanda as string}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {!!e.atrasada && (
+                          <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-xs animate-pulse">
+                            <AlertTriangle className="mr-1 h-3 w-3" />Atrasada
+                          </Badge>
+                        )}
+                        <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30 border text-xs">
+                          {e.status === "em_rota" ? "Em rota" : "Pendente"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-1 text-[var(--text-secondary)]">
+                        <Bike className="h-3.5 w-3.5" />
+                        {(e.motoboy_nome as string) || "Aguardando"}
+                      </div>
+                      <span className={`font-mono text-sm ${tempoColor(e.tempo_decorrido_min as number)}`}>
+                        {e.tempo_decorrido_min as number}min
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
+                      <MapPin className="h-3 w-3" />
+                      {((e.endereco as string) || "").slice(0, 40)}
+                      {((e.endereco as string) || "").length > 40 ? "..." : ""}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Barra de capacidade motoboys */}
         {dashData && (
@@ -249,6 +344,7 @@ export default function Pedidos() {
                   <SelectContent>
                     <SelectItem value="todos">Todos</SelectItem>
                     <SelectItem value="pendente">Pendente</SelectItem>
+                    <SelectItem value="confirmado">Confirmado</SelectItem>
                     <SelectItem value="em_preparo">Em Preparo</SelectItem>
                     <SelectItem value="pronto">Pronto</SelectItem>
                     <SelectItem value="em_entrega">Em Entrega</SelectItem>
@@ -268,9 +364,10 @@ export default function Pedidos() {
               isLoading={isLoading}
               navigate={navigate}
               handleStatusChange={handleStatusChange}
-              setCancelarId={setCancelarId}
+              setCancelarId={handleCancelarClick}
               formatDate={formatDate}
               getOrigemBadge={getOrigemBadge}
+              getTempoDesde={getTempoDesde}
             />
           </TabsContent>
 
@@ -306,28 +403,44 @@ export default function Pedidos() {
               isLoading={isLoading}
               navigate={navigate}
               handleStatusChange={handleStatusChange}
-              setCancelarId={setCancelarId}
+              setCancelarId={handleCancelarClick}
               formatDate={formatDate}
               getOrigemBadge={getOrigemBadge}
+              getTempoDesde={getTempoDesde}
             />
           </TabsContent>
         </Tabs>
       </div>
 
       {/* Dialog cancelar */}
-      <AlertDialog open={cancelarId !== null} onOpenChange={() => setCancelarId(null)}>
+      <AlertDialog open={cancelarId !== null} onOpenChange={() => { setCancelarId(null); setCancelarSenha(""); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancelar Pedido</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja cancelar o pedido #{cancelarId}? Esta ação não pode ser desfeita.
+              {cancelarRequerSenha
+                ? "Este pedido já foi entregue/pago. Para cancelar, informe a senha do administrador."
+                : `Tem certeza que deseja cancelar o pedido #${cancelarId}? Esta ação não pode ser desfeita.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {cancelarRequerSenha && (
+            <div className="px-6 pb-2">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">Senha do Administrador</label>
+              <Input
+                type="password"
+                value={cancelarSenha}
+                onChange={(e) => setCancelarSenha(e.target.value)}
+                className="dark-input mt-1"
+                placeholder="Digite a senha"
+              />
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Voltar</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleCancelar}
               className="bg-red-600 hover:bg-red-700"
+              disabled={cancelarRequerSenha && !cancelarSenha.trim()}
             >
               Cancelar Pedido
             </AlertDialogAction>
@@ -346,14 +459,16 @@ function PedidosTabela({
   setCancelarId,
   formatDate,
   getOrigemBadge,
+  getTempoDesde,
 }: {
   pedidos: Record<string, unknown>[];
   isLoading: boolean;
   navigate: (path: string) => void;
   handleStatusChange: (id: number, status: string) => void;
-  setCancelarId: (id: number | null) => void;
+  setCancelarId: (id: number) => void;
   formatDate: (iso: string | null) => string;
   getOrigemBadge: (p: Record<string, unknown>) => React.ReactNode;
+  getTempoDesde: (iso: string | null) => number;
 }) {
   return (
     <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
@@ -366,6 +481,7 @@ function PedidosTabela({
               <TableHead className="text-[var(--text-muted)]">Tipo</TableHead>
               <TableHead className="text-[var(--text-muted)]">Valor</TableHead>
               <TableHead className="text-[var(--text-muted)]">Status</TableHead>
+              <TableHead className="text-[var(--text-muted)]">Tempo</TableHead>
               <TableHead className="text-[var(--text-muted)]">Data</TableHead>
               <TableHead className="text-[var(--text-muted)] text-right">Ações</TableHead>
             </TableRow>
@@ -374,24 +490,28 @@ function PedidosTabela({
             {isLoading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i} className="border-[var(--border-subtle)]">
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 8 }).map((_, j) => (
                     <TableCell key={j}><Skeleton className="h-5 w-20" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : pedidos.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-[var(--text-muted)]">
+                <TableCell colSpan={8} className="py-12 text-center text-[var(--text-muted)]">
                   Nenhum pedido encontrado
                 </TableCell>
               </TableRow>
             ) : (
               pedidos.map((p: Record<string, unknown>) => {
                 const st = STATUS_MAP[p.status as string] || { label: p.status, color: "bg-gray-500/20 text-gray-400" };
+                const tempoMin = getTempoDesde(p.data_criacao as string);
+                const isAtivo = !["entregue", "cancelado", "recusado"].includes(p.status as string);
                 return (
                   <TableRow
                     key={p.id as number}
-                    className="border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-card-hover)]"
+                    className={`border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-card-hover)] ${
+                      isAtivo && tempoMin > 30 ? "border-l-2 border-l-red-500" : ""
+                    }`}
                     onClick={() => navigate(`/pedidos/${p.id}`)}
                   >
                     <TableCell className="font-mono text-[var(--text-primary)]">
@@ -420,6 +540,15 @@ function PedidosTabela({
                     </TableCell>
                     <TableCell>
                       <Badge className={`${st.color} border`}>{st.label}</Badge>
+                    </TableCell>
+                    <TableCell>
+                      {isAtivo ? (
+                        <span className={`font-mono text-sm ${tempoColor(tempoMin)}`}>
+                          {tempoMin}min
+                        </span>
+                      ) : (
+                        <span className="text-sm text-[var(--text-muted)]">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm text-[var(--text-muted)]">
                       {formatDate(p.data_criacao as string)}

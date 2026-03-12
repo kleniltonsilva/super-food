@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { ADMIN_QUERY_KEYS } from "@/admin/hooks/useAdminQueries";
 import AdminLayout from "@/admin/components/AdminLayout";
 import {
   useMotoboys,
@@ -11,7 +13,7 @@ import {
   useRelatorioMotoboys,
   useConfig,
 } from "@/admin/hooks/useAdminQueries";
-import { getRelatorioMotoboys } from "@/admin/lib/adminApiClient";
+import { getRelatorioMotoboys, atualizarHierarquia } from "@/admin/lib/adminApiClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +46,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Check, X, Trophy, Key, Download, Loader2, AlertTriangle, ShieldCheck, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Trophy, Key, Download, Loader2, AlertTriangle, ShieldCheck, Search, ArrowUp, ArrowDown, GripVertical, Info } from "lucide-react";
 import { toast } from "sonner";
 
 interface MotoboyForm {
@@ -56,7 +58,7 @@ interface MotoboyForm {
   cpf: string;
 }
 
-const emptyForm: MotoboyForm = { nome: "", usuario: "", telefone: "", senha: "", capacidade_entregas: "3", cpf: "" };
+const emptyForm: MotoboyForm = { nome: "", usuario: "", telefone: "", senha: "", capacidade_entregas: "5", cpf: "" };
 
 export default function Motoboys() {
   const { data: motoboys, isLoading } = useMotoboys();
@@ -67,6 +69,8 @@ export default function Motoboys() {
   const atualizarMotoboy = useAtualizarMotoboy();
   const deletarMotoboy = useDeletarMotoboy();
   const responderSolic = useResponderSolicitacao();
+
+  const qc = useQueryClient();
 
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -79,11 +83,41 @@ export default function Motoboys() {
   const [rankDados, setRankDados] = useState<Record<string, unknown>[] | null>(null);
   const [rankLoading, setRankLoading] = useState(false);
 
+  // Hierarquia state
+  const [hierarquiaSaving, setHierarquiaSaving] = useState<number | null>(null);
+
   // Pagamentos state
   const [pagDataInicio, setPagDataInicio] = useState("");
   const [pagDataFim, setPagDataFim] = useState("");
   const [pagDados, setPagDados] = useState<Record<string, unknown>[] | null>(null);
   const [pagLoading, setPagLoading] = useState(false);
+
+  async function moverHierarquia(motoboyId: number, direcao: "subir" | "descer") {
+    const ativos = motoboyList
+      .filter((m) => m.status === "ativo")
+      .sort((a, b) => Number(a.ordem_hierarquia || 0) - Number(b.ordem_hierarquia || 0));
+    const idx = ativos.findIndex((m) => (m.id as number) === motoboyId);
+    if (idx < 0) return;
+    const outroIdx = direcao === "subir" ? idx - 1 : idx + 1;
+    if (outroIdx < 0 || outroIdx >= ativos.length) return;
+
+    const meuMotoboy = ativos[idx];
+    const outroMotoboy = ativos[outroIdx];
+    const minhaOrdem = Number(meuMotoboy.ordem_hierarquia || 0);
+    const outraOrdem = Number(outroMotoboy.ordem_hierarquia || 0);
+
+    setHierarquiaSaving(motoboyId);
+    try {
+      await atualizarHierarquia(motoboyId, outraOrdem);
+      await atualizarHierarquia(outroMotoboy.id as number, minhaOrdem);
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.motoboys });
+      toast.success(`${meuMotoboy.nome} movido para posição ${outraOrdem + 1}`);
+    } catch {
+      toast.error("Erro ao reordenar");
+    } finally {
+      setHierarquiaSaving(null);
+    }
+  }
 
   function openNew() {
     setEditId(null);
@@ -98,7 +132,7 @@ export default function Motoboys() {
       usuario: m.usuario as string,
       telefone: (m.telefone as string) || "",
       senha: "",
-      capacidade_entregas: String(m.capacidade_entregas || 3),
+      capacidade_entregas: String(m.capacidade_entregas ?? 5),
       cpf: (m.cpf as string) || "",
     });
     setShowForm(true);
@@ -274,6 +308,9 @@ export default function Motoboys() {
             <TabsTrigger value="pagamentos">
               Pagamentos
             </TabsTrigger>
+            <TabsTrigger value="hierarquia">
+              Hierarquia
+            </TabsTrigger>
           </TabsList>
 
           {/* Lista */}
@@ -346,7 +383,7 @@ export default function Motoboys() {
                             </div>
                           </TableCell>
                           <TableCell className="text-sm text-[var(--text-primary)]">
-                            {(m.capacidade_entregas as number) || 3}
+                            {(m.capacidade_entregas as number) ?? 5}
                           </TableCell>
                           <TableCell className="text-sm text-[var(--text-primary)]">
                             {(m.total_entregas as number) || 0}
@@ -597,6 +634,95 @@ export default function Motoboys() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+          {/* Hierarquia */}
+          <TabsContent value="hierarquia">
+            <div className="space-y-3">
+              {/* Explicação */}
+              <div className="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+                <Info className="mt-0.5 h-5 w-5 shrink-0 text-blue-400" />
+                <div className="space-y-1.5">
+                  <p className="text-sm font-medium text-blue-300">Como funciona a hierarquia?</p>
+                  <p className="text-sm text-blue-300/80">
+                    Quando o sistema precisa escolher um motoboy automaticamente, ele prioriza quem fez
+                    <strong> menos entregas no dia</strong> (distribuição justa). Se dois ou mais motoboys
+                    empatarem em número de entregas, a <strong>hierarquia abaixo</strong> define quem será
+                    escolhido primeiro.
+                  </p>
+                  <p className="text-sm text-blue-300/80">
+                    O motoboy na <strong>posição 1</strong> tem preferência sobre o da posição 2 no desempate.
+                    Use as setas para ajustar a ordem conforme sua preferência.
+                  </p>
+                </div>
+              </div>
+
+              <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                <CardHeader>
+                  <CardTitle className="text-[var(--text-primary)] text-base">Ordem de Preferência</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1">
+                  {(() => {
+                    const ativos = motoboyList
+                      .filter((m) => m.status === "ativo")
+                      .sort((a, b) => Number(a.ordem_hierarquia || 0) - Number(b.ordem_hierarquia || 0));
+                    if (ativos.length === 0) {
+                      return (
+                        <p className="py-8 text-center text-sm text-[var(--text-muted)]">
+                          Nenhum motoboy ativo para ordenar
+                        </p>
+                      );
+                    }
+                    return ativos.map((m, idx) => (
+                      <div
+                        key={m.id as number}
+                        className="flex items-center gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 py-3 transition-colors hover:bg-[var(--bg-card-hover)]"
+                      >
+                        <GripVertical className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--cor-primaria)]/20 text-sm font-bold text-[var(--cor-primaria)]">
+                          {idx + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-[var(--text-primary)] truncate">{m.nome as string}</p>
+                          <p className="text-xs text-[var(--text-muted)]">
+                            {m.disponivel ? "Online" : "Offline"}
+                            {m.em_rota ? " · Em rota" : ""}
+                            {" · "}{(m.total_entregas as number) || 0} entregas total
+                          </p>
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={idx === 0 || hierarquiaSaving !== null}
+                            onClick={() => moverHierarquia(m.id as number, "subir")}
+                            className="h-8 w-8"
+                          >
+                            {hierarquiaSaving === (m.id as number) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ArrowUp className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            disabled={idx === ativos.length - 1 || hierarquiaSaving !== null}
+                            onClick={() => moverHierarquia(m.id as number, "descer")}
+                            className="h-8 w-8"
+                          >
+                            {hierarquiaSaving === (m.id as number) ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ArrowDown className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

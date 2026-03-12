@@ -128,6 +128,8 @@ class SiteConfig(Base):
     meta_title = Column(String(200))
     meta_description = Column(Text)
     meta_keywords = Column(Text)
+    # Pizza — ingredientes adicionais globais [{nome: str, preco: float}, ...]
+    ingredientes_adicionais_pizza = Column(JSON, nullable=True)
     # Timestamps
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -188,6 +190,7 @@ class Produto(Base):
     # Imagens
     imagem_url = Column(String(500))
     imagens_adicionais_json = Column(JSON)  # Array de URLs
+    ingredientes_json = Column(JSON)  # ["Calabresa", "Cebola", "Molho de Tomate", "Mussarela"]
     # Destaque e promoção
     destaque = Column(Boolean, default=False)
     promocao = Column(Boolean, default=False)
@@ -366,10 +369,17 @@ class ConfigRestaurante(Base):
     # Validação antifraude por localização (raio de 50m)
     permitir_finalizar_fora_raio = Column(Boolean, default=False)  # Se True, ranking não é antifraude
     distancia_base_motoboy_km = Column(Float, default=3.0)  # Km incluídos no valor base do motoboy
+    # Pedidos do site — aceitar automaticamente após 1º pedido concluído
+    aceitar_pedido_site_auto = Column(Boolean, default=False)
+    # Tolerância de atraso em minutos (alerta quando entrega ultrapassa estimado + tolerância)
+    tolerancia_atraso_min = Column(Integer, default=10)
     # Horários
     horario_abertura = Column(String(5), default='18:00')
     horario_fechamento = Column(String(5), default='23:00')
     dias_semana_abertos = Column(String(200), default='segunda,terca,quarta,quinta,sexta,sabado,domingo')
+    # Modo de precificação para pizza com múltiplos sabores
+    # "mais_caro" = cobra pelo sabor mais caro | "proporcional" = divide proporcionalmente
+    modo_preco_pizza = Column(String(20), default='mais_caro')
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     # Relacionamento
     restaurante = relationship("Restaurante", back_populates="config")
@@ -388,7 +398,7 @@ class Motoboy(Base):
     telefone = Column(String(20), nullable=False)
     senha = Column(String(256))
     status = Column(String(20), default='pendente')  # pendente, ativo, inativo, excluido
-    capacidade_entregas = Column(Integer, default=3)
+    capacidade_entregas = Column(Integer, default=5)
     ultimo_status_online = Column(DateTime)
 
     # Identificação (CPF preserva dados ao excluir)
@@ -618,6 +628,10 @@ class Caixa(Base):
     valor_abertura = Column(Float, nullable=False, default=0.0)
     total_vendas = Column(Float, default=0.0)
     valor_retiradas = Column(Float, default=0.0)
+    total_dinheiro = Column(Float, default=0.0)
+    total_cartao = Column(Float, default=0.0)
+    total_pix = Column(Float, default=0.0)
+    total_vale = Column(Float, default=0.0)
     status = Column(String(20), default='aberto')
     data_fechamento = Column(DateTime)
     operador_fechamento = Column(String(100))
@@ -640,6 +654,8 @@ class MovimentacaoCaixa(Base):
     tipo = Column(String(50), nullable=False)
     valor = Column(Float, nullable=False)
     descricao = Column(Text)
+    forma_pagamento = Column(String(50))
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
     data_hora = Column(DateTime, default=datetime.utcnow)
     # Relacionamento
     caixa = relationship("Caixa", back_populates="movimentacoes")

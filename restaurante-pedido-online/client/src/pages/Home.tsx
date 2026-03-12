@@ -25,6 +25,7 @@ import ProductCard from "@/components/site/ProductCard";
 import ProductCarousel from "@/components/site/ProductCarousel";
 import FooterSection from "@/components/site/FooterSection";
 import CartSidebar from "@/components/site/CartSidebar";
+import PizzaBuilder from "@/components/site/PizzaBuilder";
 import AgeVerification, { useAgeVerification } from "@/components/site/AgeVerification";
 
 interface Variacao {
@@ -32,6 +33,7 @@ interface Variacao {
   tipo_variacao: string;
   nome: string;
   preco_adicional: number;
+  max_sabores?: number;
 }
 
 interface Produto {
@@ -60,7 +62,11 @@ export default function Home() {
   const [activeSection, setActiveSection] = useState<number | null>(null);
   const [busca, setBusca] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
+  const [pizzaBuilderId, setPizzaBuilderId] = useState<number | null>(null);
   const { needsVerification, confirmAge } = useAgeVerification(siteInfo?.tipo_restaurante || "");
+
+  // Habilita PizzaBuilder apenas para pizzarias
+  const isPizzaria = (siteInfo?.tipo_restaurante || "").toLowerCase().includes("pizza");
 
   // React Query
   const { data: categorias = [], isLoading: loadingCat } = useCategorias();
@@ -302,7 +308,11 @@ export default function Home() {
 
                 {/* Grid ou Carousel de produtos */}
                 {produtos.length > 6 ? (
-                  <ProductCarousel produtos={produtos} getEmoji={getEmoji} />
+                  <ProductCarousel
+                    produtos={produtos}
+                    getEmoji={getEmoji}
+                    onPizzaBuilderOpen={isPizzaria ? setPizzaBuilderId : undefined}
+                  />
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4">
                     {produtos.map((produto: Produto) => (
@@ -310,6 +320,7 @@ export default function Home() {
                         key={produto.id}
                         produto={produto}
                         emoji={getEmoji(produto)}
+                        onPizzaBuilderOpen={isPizzaria ? setPizzaBuilderId : undefined}
                       />
                     ))}
                   </div>
@@ -349,6 +360,14 @@ export default function Home() {
           </span>
         )}
       </button>
+
+      {/* ═══════════ Pizza Builder Modal ═══════════ */}
+      {pizzaBuilderId && (
+        <PizzaBuilder
+          produtoId={pizzaBuilderId}
+          onClose={() => setPizzaBuilderId(null)}
+        />
+      )}
     </div>
   );
 }

@@ -92,8 +92,8 @@ export async function despacharPedido(id: number, motoboy_id: number) {
   return data;
 }
 
-export async function cancelarPedido(id: number, motivo?: string) {
-  const { data } = await adminApi.put(`/painel/pedidos/${id}/cancelar`, { motivo });
+export async function cancelarPedido(id: number, senha?: string) {
+  const { data } = await adminApi.put(`/painel/pedidos/${id}/cancelar`, { senha });
   return data;
 }
 
@@ -217,8 +217,8 @@ export async function deletarMotoboy(id: number) {
   return data;
 }
 
-export async function atualizarHierarquia(id: number, hierarquia: number) {
-  const { data } = await adminApi.put(`/painel/motoboys/${id}/hierarquia`, { hierarquia });
+export async function atualizarHierarquia(id: number, ordem: number) {
+  const { data } = await adminApi.put(`/painel/motoboys/${id}/hierarquia`, { ordem });
   return data;
 }
 
@@ -244,7 +244,7 @@ export async function getCaixaAtual() {
 }
 
 export async function abrirCaixa(valor_inicial: number) {
-  const { data } = await adminApi.post("/painel/caixa/abrir", { valor_inicial });
+  const { data } = await adminApi.post("/painel/caixa/abrir", { valor_abertura: valor_inicial });
   return data;
 }
 
@@ -373,12 +373,50 @@ export async function carregarProdutosModelo() {
   return data;
 }
 
+// ─── Entregas Ativas (tempo real) ─────────────────────
+export async function getEntregasAtivas() {
+  const { data } = await adminApi.get("/painel/entregas/ativas");
+  return data;
+}
+
+// ─── Diagnóstico de Tempo ────────────────────────────
+export async function getDiagnosticoTempo() {
+  const { data } = await adminApi.get("/painel/entregas/diagnostico-tempo");
+  return data;
+}
+
+export async function ajustarTempoAutomatico(payload: { tempo_entrega_estimado?: number; tempo_retirada_estimado?: number }) {
+  const { data } = await adminApi.post("/painel/entregas/ajustar-tempo", payload);
+  return data;
+}
+
+// ─── Analytics Avançado ────────────────────────────────
+export async function getAnalyticsAvancado(params: { periodo?: string; senha: string }) {
+  const { data } = await adminApi.get("/painel/relatorios/analytics", { params });
+  return data;
+}
+
 // ─── Upload ────────────────────────────────────────────
-export async function uploadImagem(file: File) {
+export async function uploadImagem(file: File, tipo: string = "produto") {
+  // Obter restaurante_id do localStorage
+  const restauranteStr = localStorage.getItem("sf_admin_restaurante");
+  let restauranteId = 0;
+  if (restauranteStr) {
+    try {
+      const r = JSON.parse(restauranteStr);
+      restauranteId = r.id || 0;
+    } catch { /* ignore */ }
+  }
+  if (!restauranteId) {
+    throw new Error("Restaurante não identificado. Faça login novamente.");
+  }
+
   const formData = new FormData();
-  formData.append("file", file);
-  // NÃO definir Content-Type manualmente — Axios gera automaticamente com boundary correto
-  const { data } = await adminApi.post("/api/upload", formData, {
+  formData.append("arquivo", file);
+  formData.append("tipo", tipo);
+  formData.append("restaurante_id", String(restauranteId));
+
+  const { data } = await adminApi.post("/api/upload/imagem", formData, {
     headers: { "Content-Type": undefined },
   });
   return data;

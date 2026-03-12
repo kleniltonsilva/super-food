@@ -10,6 +10,7 @@ import {
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -49,6 +50,8 @@ import {
   Truck,
   XCircle,
   Bike,
+  AlertTriangle,
+  Package,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,6 +63,12 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   entregue: { label: "Entregue", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
   cancelado: { label: "Cancelado", color: "bg-red-500/20 text-red-400 border-red-500/30" },
 };
+
+// Calcula minutos entre duas datas ISO
+function diffMinutos(a: string | null, b: string | null): number | null {
+  if (!a || !b) return null;
+  return Math.round((new Date(b).getTime() - new Date(a).getTime()) / 60000);
+}
 
 export default function PedidoDetalhe() {
   const [, navigate] = useLocation();
@@ -73,6 +82,7 @@ export default function PedidoDetalhe() {
   const { data: motoboys } = useMotoboys();
 
   const [showCancelar, setShowCancelar] = useState(false);
+  const [cancelarSenha, setCancelarSenha] = useState("");
   const [showDespachar, setShowDespachar] = useState(false);
   const [motoboyId, setMotoboyId] = useState<string>("");
 
@@ -125,15 +135,26 @@ export default function PedidoDetalhe() {
     );
   }
 
+  const requerSenha = ['entregue', 'pago', 'finalizado'].includes(pedido?.status);
+
   function handleCancelar() {
+    if (requerSenha && !cancelarSenha.trim()) {
+      toast.error("Informe a senha do administrador");
+      return;
+    }
     cancelar.mutate(
-      { id: pedidoId },
+      { id: pedidoId, senha: requerSenha ? cancelarSenha.trim() : undefined },
       {
         onSuccess: () => {
           toast.success("Pedido cancelado");
           setShowCancelar(false);
+          setCancelarSenha("");
         },
-        onError: () => toast.error("Erro ao cancelar"),
+        onError: (err: unknown) => {
+          const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+          const msg = typeof detail === "string" ? detail : Array.isArray(detail) ? detail.map((e: { msg?: string }) => e.msg || String(e)).join(", ") : "Erro ao cancelar";
+          toast.error(msg);
+        },
       }
     );
   }
@@ -163,6 +184,45 @@ export default function PedidoDetalhe() {
     // fallback to itens text
   }
 
+  // Timeline data
+  const entrega = pedido.entrega;
+  const timelineSteps = [
+    { label: "Recebido", time: pedido.data_criacao, icon: Package, done: true },
+    {
+      label: "Em Preparo",
+      time: pedido.status !== "pendente" ? pedido.data_criacao : null,
+      icon: ChefHat,
+      done: ["em_preparo", "pronto", "em_entrega", "entregue"].includes(pedido.status),
+    },
+    {
+      label: "Pronto",
+      time: ["pronto", "em_entrega", "entregue"].includes(pedido.status)
+        ? (entrega?.atribuido_em || pedido.atualizado_em)
+        : null,
+      icon: CheckCircle,
+      done: ["pronto", "em_entrega", "entregue"].includes(pedido.status),
+    },
+    {
+      label: "Saiu p/ Entrega",
+      time: entrega?.saiu_em || (entrega?.atribuido_em && ["em_entrega", "entregue"].includes(pedido.status) ? entrega.atribuido_em : null),
+      icon: Truck,
+      done: ["em_entrega", "entregue"].includes(pedido.status),
+    },
+    {
+      label: "Entregue",
+      time: entrega?.entregue_em,
+      icon: CheckCircle,
+      done: pedido.status === "entregue",
+    },
+  ];
+
+  // Identificar gargalo
+  const tempoPreparo = diffMinutos(pedido.data_criacao, entrega?.atribuido_em || pedido.atualizado_em);
+  const tempoEntrega = entrega ? diffMinutos(entrega.atribuido_em, entrega.entregue_em) : null;
+  const gargalo = tempoPreparo !== null && tempoEntrega !== null
+    ? (tempoPreparo > tempoEntrega ? "cozinha" : "entrega")
+    : null;
+
   return (
     <AdminLayout>
       <div className="space-y-4">
@@ -187,6 +247,89 @@ export default function PedidoDetalhe() {
         <div className="grid gap-4 lg:grid-cols-3">
           {/* Coluna principal */}
           <div className="space-y-4 lg:col-span-2">
+            {/* Timeline */}
+            <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+              <CardHeader>
+                <CardTitle className="text-[var(--text-primary)]">Timeline</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="relative space-y-0">
+                  {timelineSteps.map((step, i) => {
+                    const Icon = step.icon;
+                    const nextStep = timelineSteps[i + 1];
+                    const duracao = step.time && nextStep?.time ? diffMinutos(step.time, nextStep.time) : null;
+                    const isLast = i === timelineSteps.length - 1;
+                    const isCancelled = pedido.status === "cancelado";
+
+                    return (
+                      <div key={step.label} className="relative flex items-start gap-3 pb-6 last:pb-0">
+                        {/* Linha vertical */}
+                        {!isLast && (
+                          <div className={`absolute left-[15px] top-[30px] h-[calc(100%-18px)] w-0.5 ${
+                            step.done && nextStep?.done ? "bg-green-500" : "bg-[var(--border-subtle)]"
+                          }`} />
+                        )}
+                        {/* Ícone */}
+                        <div className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                          step.done
+                            ? isCancelled ? "bg-red-500/20 text-red-400" : "bg-green-500/20 text-green-400"
+                            : "bg-[var(--bg-surface)] text-[var(--text-muted)]"
+                        }`}>
+                          {isCancelled && step.label === "Entregue" ? (
+                            <XCircle className="h-4 w-4" />
+                          ) : (
+                            <Icon className="h-4 w-4" />
+                          )}
+                        </div>
+                        {/* Conteúdo */}
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${
+                            step.done ? "text-[var(--text-primary)]" : "text-[var(--text-muted)]"
+                          }`}>
+                            {isCancelled && step.label === "Entregue" ? "Cancelado" : step.label}
+                          </p>
+                          {step.time && (
+                            <p className="text-xs text-[var(--text-muted)]">
+                              {formatDate(step.time)}
+                            </p>
+                          )}
+                          {duracao !== null && duracao > 0 && (
+                            <div className="mt-1 flex items-center gap-1">
+                              <Clock className="h-3 w-3 text-[var(--text-muted)]" />
+                              <span className={`text-xs ${
+                                duracao > 30 ? "text-red-400" : duracao > 15 ? "text-yellow-400" : "text-[var(--text-muted)]"
+                              }`}>
+                                {duracao} min
+                                {duracao > 30 && (
+                                  <span className="ml-1">
+                                    ({i <= 1 ? "cozinha demorou" : "entrega demorou"})
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Gargalo */}
+                {gargalo && pedido.status === "entregue" && (
+                  <div className={`mt-4 flex items-center gap-2 rounded-md p-2 text-xs ${
+                    gargalo === "cozinha"
+                      ? "bg-yellow-500/10 text-yellow-400"
+                      : "bg-blue-500/10 text-blue-400"
+                  }`}>
+                    <AlertTriangle className="h-3.5 w-3.5" />
+                    Gargalo identificado: <strong>{gargalo === "cozinha" ? "tempo de preparo" : "tempo de entrega"}</strong>
+                    {tempoPreparo !== null && tempoEntrega !== null && (
+                      <span> (preparo: {tempoPreparo}min, entrega: {tempoEntrega}min)</span>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Itens */}
             <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
               <CardHeader>
@@ -381,17 +524,35 @@ export default function PedidoDetalhe() {
       </div>
 
       {/* Dialog cancelar */}
-      <AlertDialog open={showCancelar} onOpenChange={setShowCancelar}>
+      <AlertDialog open={showCancelar} onOpenChange={(open) => { setShowCancelar(open); if (!open) setCancelarSenha(""); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Cancelar Pedido</AlertDialogTitle>
             <AlertDialogDescription>
-              Tem certeza que deseja cancelar o pedido #{pedido.comanda || pedido.id}?
+              {requerSenha
+                ? "Este pedido já foi entregue/pago. Para cancelar, informe a senha do administrador."
+                : `Tem certeza que deseja cancelar o pedido #${pedido.comanda || pedido.id}?`}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {requerSenha && (
+            <div className="px-6 pb-2">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">Senha do Administrador</label>
+              <Input
+                type="password"
+                value={cancelarSenha}
+                onChange={(e) => setCancelarSenha(e.target.value)}
+                className="dark-input mt-1"
+                placeholder="Digite a senha"
+              />
+            </div>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Voltar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleCancelar} className="bg-red-600 hover:bg-red-700">
+            <AlertDialogAction
+              onClick={handleCancelar}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={requerSenha && !cancelarSenha.trim()}
+            >
               Cancelar Pedido
             </AlertDialogAction>
           </AlertDialogFooter>

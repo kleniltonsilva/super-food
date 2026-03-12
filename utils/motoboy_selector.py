@@ -1,24 +1,25 @@
 """
 Módulo de Seleção Justa de Motoboys - Super Food SaaS
 
-Implementa algoritmo de seleção justa para distribuir entregas
+Implementa algoritmo de seleção inteligente para distribuir entregas
 entre motoboys de forma equilibrada.
 
-Critérios de Seleção (em ordem de prioridade):
+Critérios de Seleção (filtro rígido, sem fallback):
 1. Motoboy deve estar ATIVO e DISPONÍVEL
-2. Motoboy NÃO pode estar em rota ativa
-3. Motoboy com menos entregas pendentes tem prioridade
-4. Ordem hierárquica (rotação justa - quem recebeu há mais tempo)
-5. Em caso de empate: proximidade do restaurante
+2. Motoboy NÃO pode estar em rota (em_rota == False E entregas_pendentes == 0)
+3. GPS atualizado obrigatório
+4. Distância até restaurante ≤ 50 metros (haversine)
+5. Score: entregas_hoje × 1000 + ordem_hierarquia + distância × 10
+   Quem fez menos no dia = selecionado. Desempate: hierarquia.
 
 Autor: Super Food Team
-Versão: 1.0
+Versão: 2.0 — Seleção inteligente com GPS e distribuição diária
 """
 
 import sys
 from pathlib import Path
 from typing import Optional, List, Dict, Tuple
-from datetime import datetime
+from datetime import datetime, date
 
 # Adiciona raiz do projeto ao path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -28,7 +29,28 @@ from database.models import Motoboy, Restaurante, ConfigRestaurante, Entrega, Pe
 from utils.haversine import haversine
 
 
+# ==================== FUNÇÕES AUXILIARES ====================
+
+def contar_entregas_dia(motoboy_id: int, session) -> int:
+    """
+    Conta entregas finalizadas pelo motoboy no dia atual.
+    Reutilizável em relatórios e seleção.
+    """
+    hoje = date.today()
+    inicio_dia = datetime.combine(hoje, datetime.min.time())
+    status_finalizados = ['entregue', 'cliente_ausente', 'cancelado_cliente']
+
+    count = session.query(Entrega).filter(
+        Entrega.motoboy_id == motoboy_id,
+        Entrega.status.in_(status_finalizados),
+        Entrega.entregue_em >= inicio_dia
+    ).count()
+    return count
+
+
 # ==================== SELEÇÃO PRINCIPAL ====================
+
+RAIO_MAXIMO_METROS = 50  # Motoboy deve estar a no máximo 50m do restaurante
 
 def selecionar_motoboy_para_rota(
     restaurante_id: int,
@@ -38,12 +60,15 @@ def selecionar_motoboy_para_rota(
     """
     Seleciona o motoboy mais adequado para receber uma nova rota.
 
-    Algoritmo de Seleção Justa:
-    1. Filtra motoboys ativos e disponíveis
-    2. Exclui motoboys em rota ativa
-    3. Prioriza quem tem menos entregas pendentes
-    4. Usa ordem hierárquica para rotação justa
-    5. Em empate, usa proximidade do restaurante
+    Filtro rígido (sem fallback):
+    1. status == 'ativo', disponivel == True
+    2. em_rota == False E entregas_pendentes == 0 (finalizou tudo)
+    3. GPS atualizado obrigatório (latitude_atual e longitude_atual)
+    4. Distância até restaurante ≤ 50 metros
+
+    Score (menor é melhor):
+    - entregas_hoje × 1000 + ordem_hierarquia + distância × 10
+    - Quem fez menos no dia = selecionado. Desempate: hierarquia.
 
     Args:
         restaurante_id: ID do restaurante
@@ -52,15 +77,6 @@ def selecionar_motoboy_para_rota(
 
     Returns:
         Dict com dados do motoboy selecionado ou None se nenhum disponível
-        {
-            'motoboy_id': int,
-            'nome': str,
-            'telefone': str,
-            'ordem_hierarquia': int,
-            'entregas_pendentes': int,
-            'distancia_restaurante_km': float,
-            'motivo_selecao': str
-        }
     """
     close_session = session is None
     if session is None:
@@ -75,30 +91,18 @@ def selecionar_motoboy_para_rota(
         if not restaurante:
             return None
 
-        # Buscar configuração do restaurante
-        config = session.query(ConfigRestaurante).filter(
-            ConfigRestaurante.restaurante_id == restaurante_id
-        ).first()
+        # Coordenadas do restaurante são obrigatórias para filtro de distância
+        if not restaurante.latitude or not restaurante.longitude:
+            return None
 
-        max_pedidos_rota = config.max_pedidos_por_rota if config else 5
-
-        # Buscar motoboys elegíveis - primeiro os que não estão em rota
+        # Filtro rígido: ativo, disponível, NÃO em rota, sem pendências
         motoboys = session.query(Motoboy).filter(
             Motoboy.restaurante_id == restaurante_id,
             Motoboy.status == 'ativo',
             Motoboy.disponivel == True,
-            Motoboy.em_rota == False
+            Motoboy.em_rota == False,
+            Motoboy.entregas_pendentes <= 0
         ).all()
-
-        if not motoboys:
-            # Tentar motoboys em rota mas com capacidade disponível
-            motoboys = session.query(Motoboy).filter(
-                Motoboy.restaurante_id == restaurante_id,
-                Motoboy.status == 'ativo',
-                Motoboy.disponivel == True
-            ).all()
-            # Filtrar apenas os que têm capacidade
-            motoboys = [m for m in motoboys if (m.entregas_pendentes or 0) < (m.capacidade_entregas or 3)]
 
         if not motoboys:
             return None
@@ -106,33 +110,36 @@ def selecionar_motoboy_para_rota(
         # Calcular score para cada motoboy
         candidatos = []
         for motoboy in motoboys:
-            # Verificar capacidade
-            entregas_atuais = motoboy.entregas_pendentes or 0
-            if entregas_atuais + quantidade_pedidos > motoboy.capacidade_entregas:
+            # GPS obrigatório — sem GPS atualizado = não elegível
+            if not motoboy.latitude_atual or not motoboy.longitude_atual:
                 continue
 
-            # Calcular distância do restaurante
-            distancia_km = 0.0
-            if motoboy.latitude_atual and motoboy.longitude_atual:
-                if restaurante.latitude and restaurante.longitude:
-                    distancia_km = haversine(
-                        (motoboy.latitude_atual, motoboy.longitude_atual),
-                        (restaurante.latitude, restaurante.longitude)
-                    )
+            # Calcular distância do restaurante em km
+            distancia_km = haversine(
+                (motoboy.latitude_atual, motoboy.longitude_atual),
+                (restaurante.latitude, restaurante.longitude)
+            )
+
+            # Filtro de proximidade: ≤ 50 metros (0.05 km)
+            distancia_metros = distancia_km * 1000
+            if distancia_metros > RAIO_MAXIMO_METROS:
+                continue
+
+            # Contar entregas realizadas hoje (distribuição justa)
+            entregas_hoje = contar_entregas_dia(motoboy.id, session)
 
             # Score: menor é melhor
-            # Peso maior para entregas_pendentes, depois hierarquia, depois distância
             score = (
-                (entregas_atuais * 1000) +  # Prioridade máxima: menos entregas
-                (motoboy.ordem_hierarquia or 0) +  # Rotação justa
-                (distancia_km * 10)  # Proximidade como desempate
+                (entregas_hoje * 1000) +         # Prioridade máxima: menos entregas no dia
+                (motoboy.ordem_hierarquia or 0) + # Rotação justa
+                (distancia_km * 10)               # Proximidade como desempate
             )
 
             candidatos.append({
                 'motoboy': motoboy,
                 'score': score,
                 'distancia_km': distancia_km,
-                'entregas_pendentes': entregas_atuais
+                'entregas_hoje': entregas_hoje
             })
 
         if not candidatos:
@@ -146,21 +153,20 @@ def selecionar_motoboy_para_rota(
         motoboy = selecionado['motoboy']
 
         # Determinar motivo da seleção
-        if selecionado['entregas_pendentes'] == 0:
-            motivo = "Disponível sem entregas pendentes"
-        elif len(candidatos) == 1:
-            motivo = "Único motoboy disponível"
+        if len(candidatos) == 1:
+            motivo = "Único motoboy elegível no raio de 50m"
+        elif selecionado['entregas_hoje'] == 0:
+            motivo = "Sem entregas no dia, menor hierarquia"
         else:
-            motivo = f"Menor score ({selecionado['score']:.1f}) na rotação"
+            motivo = f"Menos entregas hoje ({selecionado['entregas_hoje']}), score {selecionado['score']:.0f}"
 
         return {
             'motoboy_id': motoboy.id,
             'nome': motoboy.nome,
             'telefone': motoboy.telefone,
             'ordem_hierarquia': motoboy.ordem_hierarquia or 0,
-            'entregas_pendentes': selecionado['entregas_pendentes'],
+            'entregas_hoje': selecionado['entregas_hoje'],
             'distancia_restaurante_km': round(selecionado['distancia_km'], 2),
-            'capacidade_restante': motoboy.capacidade_entregas - selecionado['entregas_pendentes'],
             'motivo_selecao': motivo,
             'total_candidatos': len(candidatos)
         }
@@ -349,8 +355,8 @@ def finalizar_entrega_motoboy(
         fora_do_raio = False
         if lat_atual is not None and lon_atual is not None and pedido:
             from utils.haversine import haversine
-            lat_destino = pedido.latitude
-            lon_destino = pedido.longitude
+            lat_destino = pedido.latitude_entrega
+            lon_destino = pedido.longitude_entrega
 
             if lat_destino and lon_destino:
                 distancia_metros = haversine((lat_atual, lon_atual), (lat_destino, lon_destino)) * 1000

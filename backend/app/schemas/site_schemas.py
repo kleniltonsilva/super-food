@@ -30,6 +30,8 @@ class SiteInfoPublic(BaseModel):
     horario_abertura: str
     horario_fechamento: str
     dias_semana_abertos: List[str]
+    modo_preco_pizza: Optional[str] = "mais_caro"
+    ingredientes_adicionais_pizza: Optional[List[Dict]] = []
 
 class CategoriaPublic(BaseModel):
     id: int

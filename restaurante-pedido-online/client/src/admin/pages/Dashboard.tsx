@@ -1,3 +1,4 @@
+import { useState, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import AdminLayout from "@/admin/components/AdminLayout";
 import {
@@ -8,6 +9,9 @@ import {
   useAbrirCaixa,
   useAtualizarConfig,
   useConfig,
+  useEntregasAtivas,
+  useDiagnosticoTempo,
+  useAjustarTempo,
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +27,9 @@ import {
   Store,
   Eye,
   Clock,
+  AlertTriangle,
+  Truck,
+  Timer,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -44,6 +51,12 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   cancelado: { label: "Cancelado", color: "bg-red-500/20 text-red-400 border-red-500/30" },
 };
 
+const MODO_LABELS: Record<string, string> = {
+  rapido_economico: "Rápido",
+  cronologico_inteligente: "Cronológico",
+  manual: "Manual",
+};
+
 export default function Dashboard() {
   const [, navigate] = useLocation();
   const { data, isLoading } = useDashboard();
@@ -51,12 +64,82 @@ export default function Dashboard() {
   const { data: config } = useConfig();
   const { data: pedidosData } = usePedidos({ limite: 5 });
   const { data: caixaData } = useCaixaAtual();
+  const { data: entregasData } = useEntregasAtivas();
+  const { data: diagnostico } = useDiagnosticoTempo();
   const atualizarConfig = useAtualizarConfig();
   const abrirCaixa = useAbrirCaixa();
+  const ajustarTempo = useAjustarTempo();
 
   const pedidosRecentes = pedidosData?.pedidos || [];
   const caixaAberto = caixaData?.status === "aberto";
   const restauranteAberto = config?.status_atual === "aberto";
+  const totalAtrasadas = entregasData?.total_atrasadas ?? 0;
+  const totalAtivas = entregasData?.total_ativas ?? 0;
+  const modoDespacho = config?.modo_prioridade_entrega || "rapido_economico";
+
+  // Estado do modal de ajuste de tempo
+  const [mostrarAjusteTempo, setMostrarAjusteTempo] = useState(false);
+  const [ajusteJaVisto, setAjusteJaVisto] = useState(false);
+
+  // Som de alerta para ajuste de tempo
+  const tocarSomAjuste = useCallback(() => {
+    try {
+      const ctx = new AudioContext();
+      [0, 0.3, 0.6].forEach((t) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 523;
+        osc.type = "triangle";
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+        osc.start(ctx.currentTime + t);
+        osc.stop(ctx.currentTime + t + 0.25);
+      });
+    } catch { /* sem audio */ }
+  }, []);
+
+  // Detectar quando precisa ajustar tempo
+  useEffect(() => {
+    if (diagnostico?.precisa_aumentar && !ajusteJaVisto) {
+      setMostrarAjusteTempo(true);
+      tocarSomAjuste();
+    } else if (diagnostico?.pode_diminuir && !ajusteJaVisto) {
+      setMostrarAjusteTempo(true);
+      tocarSomAjuste();
+    }
+  }, [diagnostico?.precisa_aumentar, diagnostico?.pode_diminuir, ajusteJaVisto, tocarSomAjuste]);
+
+  function handleAceitarAjuste() {
+    if (!diagnostico) return;
+    ajustarTempo.mutate(
+      {
+        tempo_entrega_estimado: diagnostico.tempo_sugerido_entrega,
+        tempo_retirada_estimado: diagnostico.tempo_sugerido_retirada,
+      },
+      {
+        onSuccess: () => {
+          toast.success(
+            diagnostico.precisa_aumentar
+              ? `Tempos ajustados: entrega ${diagnostico.tempo_sugerido_entrega}min, retirada ${diagnostico.tempo_sugerido_retirada}min`
+              : `Tempos normalizados: entrega ${diagnostico.tempo_sugerido_entrega}min, retirada ${diagnostico.tempo_sugerido_retirada}min`
+          );
+          setMostrarAjusteTempo(false);
+          setAjusteJaVisto(true);
+          // Resetar flag após 5 min para verificar novamente
+          setTimeout(() => setAjusteJaVisto(false), 5 * 60 * 1000);
+        },
+        onError: () => toast.error("Erro ao ajustar tempos"),
+      }
+    );
+  }
+
+  function handleRecusarAjuste() {
+    setMostrarAjusteTempo(false);
+    setAjusteJaVisto(true);
+    setTimeout(() => setAjusteJaVisto(false), 5 * 60 * 1000);
+  }
 
   function toggleRestaurante() {
     const novoStatus = restauranteAberto ? "fechado" : "aberto";
@@ -85,8 +168,89 @@ export default function Dashboard() {
   return (
     <AdminLayout>
       <div className="space-y-6">
+        {/* Banner de alerta de atraso */}
+        {totalAtrasadas > 0 && (
+          <div className="flex items-center justify-between rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 animate-pulse">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-400" />
+              <span className="font-medium text-red-400">
+                {totalAtrasadas} entrega{totalAtrasadas > 1 ? "s" : ""} atrasada{totalAtrasadas > 1 ? "s" : ""} — verifique!
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+              onClick={() => navigate("/pedidos")}
+            >
+              Ver Entregas
+            </Button>
+          </div>
+        )}
+
+        {/* Modal de ajuste automático de tempo */}
+        {mostrarAjusteTempo && diagnostico && (diagnostico.precisa_aumentar || diagnostico.pode_diminuir) && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <Timer className="h-5 w-5 text-amber-400" />
+              <div>
+                <p className="font-medium text-amber-400">
+                  {diagnostico.precisa_aumentar
+                    ? "Tempos de entrega precisam ser ajustados"
+                    : "Movimento normalizou — tempos podem voltar ao padrão"}
+                </p>
+                <p className="text-sm text-[var(--text-muted)]">
+                  {diagnostico.motivo}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="rounded-md bg-[var(--bg-surface)] p-3">
+                <p className="text-[var(--text-muted)]">Entrega</p>
+                <p className="text-[var(--text-primary)]">
+                  Atual: <strong>{diagnostico.tempo_entrega_atual}min</strong> →
+                  Sugerido: <strong className="text-amber-400">{diagnostico.tempo_sugerido_entrega}min</strong>
+                </p>
+              </div>
+              <div className="rounded-md bg-[var(--bg-surface)] p-3">
+                <p className="text-[var(--text-muted)]">Retirada</p>
+                <p className="text-[var(--text-primary)]">
+                  Atual: <strong>{diagnostico.tempo_retirada_atual}min</strong> →
+                  Sugerido: <strong className="text-amber-400">{diagnostico.tempo_sugerido_retirada}min</strong>
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-[var(--text-muted)]">
+              Quando o movimento normalizar, o sistema sugerirá voltar aos tempos padrão automaticamente.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700"
+                onClick={handleAceitarAjuste}
+                disabled={ajustarTempo.isPending}
+              >
+                Sim, ajustar tempos
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-[var(--border-subtle)] text-[var(--text-secondary)]"
+                onClick={handleRecusarAjuste}
+              >
+                Não, manter atual
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-[var(--text-primary)]">Dashboard</h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-2xl font-bold text-[var(--text-primary)]">Dashboard</h2>
+            <Badge className="bg-[var(--cor-primaria)]/10 text-[var(--cor-primaria)] border-[var(--cor-primaria)]/30 border text-xs">
+              {MODO_LABELS[modoDespacho] || modoDespacho}
+            </Badge>
+          </div>
           <div className="flex gap-2">
             <Button
               size="sm"
@@ -136,15 +300,17 @@ export default function Dashboard() {
             loading={isLoading}
           />
           <MetricCard
+            title="Entregas Ativas"
+            value={totalAtivas}
+            icon={Truck}
+            loading={isLoading}
+            valueColor={totalAtrasadas > 0 ? "text-red-400" : totalAtivas > 0 ? "text-purple-400" : undefined}
+            extra={totalAtrasadas > 0 ? `${totalAtrasadas} atrasada${totalAtrasadas > 1 ? "s" : ""}` : undefined}
+          />
+          <MetricCard
             title="Ticket Médio"
             value={data?.ticket_medio != null ? `R$ ${Number(data.ticket_medio).toFixed(2)}` : undefined}
             icon={TrendingUp}
-            loading={isLoading}
-          />
-          <MetricCard
-            title="Clientes Ativos"
-            value={data?.clientes_ativos}
-            icon={Users}
             loading={isLoading}
           />
           <MetricCard
@@ -274,12 +440,14 @@ function MetricCard({
   icon: Icon,
   loading,
   valueColor,
+  extra,
 }: {
   title: string;
   value?: string | number;
   icon: React.ComponentType<{ className?: string }>;
   loading: boolean;
   valueColor?: string;
+  extra?: string;
 }) {
   return (
     <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
@@ -292,9 +460,14 @@ function MetricCard({
           {loading ? (
             <Skeleton className="mt-1 h-7 w-20" />
           ) : (
-            <p className={`text-2xl font-bold ${valueColor || "text-[var(--text-primary)]"}`}>
-              {value ?? "—"}
-            </p>
+            <>
+              <p className={`text-2xl font-bold ${valueColor || "text-[var(--text-primary)]"}`}>
+                {value ?? "—"}
+              </p>
+              {extra && (
+                <p className="text-xs text-red-400">{extra}</p>
+              )}
+            </>
           )}
         </div>
       </CardContent>

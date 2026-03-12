@@ -5,12 +5,21 @@ function getCodigoAcesso(): string {
   return (window as any).RESTAURANTE_CODIGO || "demo";
 }
 
-// Session ID para carrinho anonimo
+// Chaves do localStorage com namespace por restaurante (isolamento multi-tenant)
+function getTokenKey(): string {
+  return `sf_token_${getCodigoAcesso()}`;
+}
+function getClienteKey(): string {
+  return `sf_cliente_${getCodigoAcesso()}`;
+}
+
+// Session ID para carrinho anonimo (namespace por restaurante)
 function getSessionId(): string {
-  let sid = localStorage.getItem("sf_session_id");
+  const key = `sf_session_id_${getCodigoAcesso()}`;
+  let sid = localStorage.getItem(key);
   if (!sid) {
     sid = crypto.randomUUID();
-    localStorage.setItem("sf_session_id", sid);
+    localStorage.setItem(key, sid);
   }
   return sid;
 }
@@ -23,7 +32,7 @@ const api = axios.create({
 // Interceptor: adiciona headers em toda request
 api.interceptors.request.use((config) => {
   config.headers["X-Session-ID"] = getSessionId();
-  const token = localStorage.getItem("sf_token");
+  const token = localStorage.getItem(getTokenKey());
   if (token) {
     config.headers["Authorization"] = `Bearer ${token}`;
   }
@@ -48,11 +57,11 @@ api.interceptors.response.use(
       // Não faz logout em rotas de autenticação (401 = "senha errada", não "token expirado")
       const isAuthRoute = url.includes("/auth/cliente/login") || url.includes("/auth/cliente/registro");
       if (!isAuthRoute) {
-        localStorage.removeItem("sf_token");
-        localStorage.removeItem("sf_cliente");
+        localStorage.removeItem(getTokenKey());
+        localStorage.removeItem(getClienteKey());
         // Dispara evento para sync entre abas (AuthContext escuta este evento)
         window.dispatchEvent(new StorageEvent("storage", {
-          key: "sf_token",
+          key: getTokenKey(),
           newValue: null,
         }));
       }

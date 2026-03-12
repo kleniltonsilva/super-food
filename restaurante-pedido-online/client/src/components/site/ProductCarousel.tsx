@@ -17,6 +17,7 @@ interface Variacao {
   tipo_variacao: string;
   nome: string;
   preco_adicional: number;
+  max_sabores?: number;
 }
 
 interface Produto {
@@ -35,9 +36,10 @@ interface Produto {
 interface ProductCarouselProps {
   produtos: Produto[];
   getEmoji: (produto: Produto) => string;
+  onPizzaBuilderOpen?: (produtoId: number) => void;
 }
 
-export default function ProductCarousel({ produtos, getEmoji }: ProductCarouselProps) {
+export default function ProductCarousel({ produtos, getEmoji, onPizzaBuilderOpen }: ProductCarouselProps) {
   const theme = useRestauranteTheme();
 
   const [emblaRef, emblaApi] = useEmblaCarousel({
@@ -73,7 +75,7 @@ export default function ProductCarousel({ produtos, getEmoji }: ProductCarouselP
               key={produto.id}
               className="flex-shrink-0 w-[48%] sm:w-[31%] lg:w-[31%]"
             >
-              <ProductCard produto={produto} emoji={getEmoji(produto)} />
+              <ProductCard produto={produto} emoji={getEmoji(produto)} onPizzaBuilderOpen={onPizzaBuilderOpen} />
             </div>
           ))}
         </div>

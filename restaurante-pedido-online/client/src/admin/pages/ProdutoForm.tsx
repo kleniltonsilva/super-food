@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Plus, Trash2, Upload, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Upload, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 interface VariacaoLocal {
@@ -68,6 +68,8 @@ export default function ProdutoForm() {
   const [ordemExibicao, setOrdemExibicao] = useState("0");
   const [uploading, setUploading] = useState(false);
   const [variacoes, setVariacoes] = useState<VariacaoLocal[]>([]);
+  const [ingredientes, setIngredientes] = useState<string[]>([]);
+  const [novoIngrediente, setNovoIngrediente] = useState("");
 
   // Populate form when editing
   useEffect(() => {
@@ -84,6 +86,7 @@ export default function ProdutoForm() {
       setEstoqueIlimitado(produto.estoque_ilimitado !== false);
       setEstoqueQuantidade(produto.estoque_quantidade ? String(produto.estoque_quantidade) : "");
       setOrdemExibicao(String(produto.ordem_exibicao ?? 0));
+      setIngredientes(produto.ingredientes_json || []);
     }
   }, [isEdit, produto]);
 
@@ -154,6 +157,7 @@ export default function ProdutoForm() {
       estoque_ilimitado: estoqueIlimitado,
       estoque_quantidade: !estoqueIlimitado && estoqueQuantidade ? Number(estoqueQuantidade) : null,
       ordem_exibicao: Number(ordemExibicao) || 0,
+      ingredientes_json: ingredientes.length > 0 ? ingredientes : null,
     };
 
     try {
@@ -310,6 +314,65 @@ export default function ProdutoForm() {
                     </label>
                   </div>
                 </div>
+
+                {/* Ingredientes */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-[var(--text-secondary)]">
+                    Ingredientes
+                  </label>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    Ingredientes do produto (usado no montador de pizza para permitir remoção)
+                  </p>
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {ingredientes.map((ing, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium bg-[var(--cor-primaria)]/15 text-[var(--cor-primaria)] border border-[var(--cor-primaria)]/20"
+                      >
+                        {ing}
+                        <button
+                          type="button"
+                          onClick={() => setIngredientes(ingredientes.filter((_, i) => i !== idx))}
+                          className="hover:text-red-500 transition-colors"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Input
+                      value={novoIngrediente}
+                      onChange={(e) => setNovoIngrediente(e.target.value)}
+                      className="dark-input"
+                      placeholder="Ex: Mussarela, Calabresa..."
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const val = novoIngrediente.trim();
+                          if (val && !ingredientes.includes(val)) {
+                            setIngredientes([...ingredientes, val]);
+                            setNovoIngrediente("");
+                          }
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const val = novoIngrediente.trim();
+                        if (val && !ingredientes.includes(val)) {
+                          setIngredientes([...ingredientes, val]);
+                          setNovoIngrediente("");
+                        }
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
@@ -395,7 +458,7 @@ export default function ProdutoForm() {
                               value={v.descricao}
                               onChange={(e) => updateVariacao(idx, "descricao", e.target.value)}
                               className="dark-input h-9 text-sm"
-                              placeholder="Descrição da variação (opcional)"
+                              placeholder={v.tipo_variacao === "tamanho" ? "Ex: 8 Fatias 35cm" : "Descrição da variação (opcional)"}
                             />
                           </div>
                           {v.tipo_variacao === "tamanho" && (

@@ -56,6 +56,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Expor WebSocket manager no app.state para uso nos routers
+app.state.ws_manager = manager
+
 # ==================== Middlewares ====================
 # Ordem importa: ultimo adicionado = primeiro executado
 

@@ -9,9 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .. import models, database, auth
+
+# Motoboys precisam de sessão longa — ficam sem internet, app fica em background
+MOTOBOY_TOKEN_DAYS = 30
 
 router = APIRouter(prefix="/auth/motoboy", tags=["Auth Motoboy"])
 
@@ -108,13 +111,14 @@ def login_motoboy(
     motoboy.ultimo_status_online = datetime.utcnow()
     db.commit()
 
-    # Gerar JWT com role motoboy
+    # Gerar JWT com role motoboy — 30 dias para não deslogar durante uso diário
     token = auth.create_access_token(
         data={
             "sub": str(motoboy.id),
             "role": "motoboy",
             "restaurante_id": restaurante.id
-        }
+        },
+        expires_delta=timedelta(days=MOTOBOY_TOKEN_DAYS)
     )
 
     return MotoboyLoginResponse(
@@ -181,6 +185,26 @@ def me_motoboy(
             "longitude": rest.longitude,
         }
     )
+
+
+@router.post("/refresh")
+def refresh_token_motoboy(
+    current_motoboy: models.Motoboy = Depends(auth.get_current_motoboy),
+):
+    """
+    Renova o token JWT do motoboy sem precisar de login.
+    Chamado automaticamente pelo app quando o token está próximo do vencimento.
+    Retorna um novo token com mais 30 dias a partir de agora.
+    """
+    new_token = auth.create_access_token(
+        data={
+            "sub": str(current_motoboy.id),
+            "role": "motoboy",
+            "restaurante_id": current_motoboy.restaurante_id
+        },
+        expires_delta=timedelta(days=MOTOBOY_TOKEN_DAYS)
+    )
+    return {"access_token": new_token, "token_type": "bearer"}
 
 
 @router.put("/senha")

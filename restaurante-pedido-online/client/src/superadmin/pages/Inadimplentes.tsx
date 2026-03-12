@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/table";
 import { toast } from "sonner";
 import { AlertTriangle, Play, XCircle, RefreshCw } from "lucide-react";
+import InfoTooltip from "@/components/InfoTooltip";
 import { cn } from "@/lib/utils";
 
 interface Inadimplente {
@@ -81,7 +82,10 @@ export default function Inadimplentes() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-2xl font-bold text-white">Inadimplentes</h2>
           <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-400 whitespace-nowrap">Tolerância (dias):</label>
+            <label className="text-sm text-gray-400 whitespace-nowrap flex items-center gap-1.5">
+              Tolerância (dias):
+              <InfoTooltip text="Dias de carência após o vencimento antes de listar como inadimplente. 0 = mostra todos vencidos imediatamente." />
+            </label>
             <Input
               type="number"
               min={0}

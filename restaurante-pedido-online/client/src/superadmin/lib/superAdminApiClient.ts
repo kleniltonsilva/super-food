@@ -110,6 +110,12 @@ export async function getMetricas() {
   return data;
 }
 
+// ─── Analytics ────────────────────────────────────────
+export async function getAnalytics(params?: { periodo?: string }) {
+  const { data } = await superAdminApi.get("/api/admin/analytics", { params });
+  return data;
+}
+
 // ─── Inadimplentes ─────────────────────────────────────
 export async function getInadimplentes(dias_tolerancia?: number) {
   const { data } = await superAdminApi.get("/api/admin/inadimplentes", {

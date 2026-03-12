@@ -21,6 +21,7 @@ interface Variacao {
   tipo_variacao: string;
   nome: string;
   preco_adicional: number;
+  max_sabores?: number;
 }
 
 interface Produto {
@@ -39,6 +40,7 @@ interface Produto {
 interface ProductCardProps {
   produto: Produto;
   emoji?: string;
+  onPizzaBuilderOpen?: (produtoId: number) => void;
 }
 
 function getPrecoDisplay(produto: Produto): string {
@@ -56,8 +58,11 @@ function getPrecoDisplay(produto: Produto): string {
   return `R$ ${produto.preco.toFixed(2)}`;
 }
 
-export default function ProductCard({ produto, emoji }: ProductCardProps) {
+export default function ProductCard({ produto, emoji, onPizzaBuilderOpen }: ProductCardProps) {
   const theme = useRestauranteTheme();
+
+  // Abre o PizzaBuilder para todos os produtos quando é pizzaria
+  const hasPizzaBuilder = !!onPizzaBuilderOpen;
 
   const cardStyle: React.CSSProperties = {
     background: theme.colors.cardBg,
@@ -68,8 +73,7 @@ export default function ProductCard({ produto, emoji }: ProductCardProps) {
 
   const isCircular = theme.circularImages;
 
-  return (
-    <Link href={`/product/${produto.id}`}>
+  const content = (
       <div
         className="cursor-pointer overflow-hidden h-full flex flex-col card-hover group"
         style={cardStyle}
@@ -180,6 +184,11 @@ export default function ProductCard({ produto, emoji }: ProductCardProps) {
           </div>
         </div>
       </div>
-    </Link>
   );
+
+  if (hasPizzaBuilder) {
+    return <div onClick={() => onPizzaBuilderOpen!(produto.id)}>{content}</div>;
+  }
+
+  return <Link href={`/product/${produto.id}`}>{content}</Link>;
 }

@@ -7,6 +7,9 @@ export type WsEventTipo =
   | "novo_pedido"
   | "pedido_atualizado"
   | "pedido_cancelado"
+  | "pedido_despachado"
+  | "entrega_atrasada"
+  | "tempo_ajustado"
   | "motoboy_posicao"
   | "ping";
 
@@ -34,6 +37,28 @@ function tocarSomNotificacao() {
     });
   } catch {
     // AudioContext não disponível no ambiente
+  }
+}
+
+// ─── Som de alerta (mais grave e longo, para atrasos) ───
+function tocarSomAlerta() {
+  try {
+    const ctx = new AudioContext();
+    const tempos = [0, 0.25, 0.5, 0.75];
+    tempos.forEach((t) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 440;
+      osc.type = "square";
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch {
+    // AudioContext não disponível
   }
 }
 
@@ -74,6 +99,8 @@ export function useWebSocket({
         case "novo_pedido":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
           if (habilitarSom) tocarSomNotificacao();
           if (habilitarNotificacaoSistema) {
             notificarSistema("Novo Pedido!", "Você recebeu um novo pedido.");
@@ -82,10 +109,30 @@ export function useWebSocket({
         case "pedido_atualizado":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          break;
+        case "pedido_despachado":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.motoboys });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
           break;
         case "pedido_cancelado":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          break;
+        case "entrega_atrasada":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          if (habilitarSom) tocarSomAlerta();
+          if (habilitarNotificacaoSistema) {
+            notificarSistema("Entrega Atrasada!", "Uma entrega ultrapassou o tempo estimado.");
+          }
+          break;
+        case "tempo_ajustado":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configSite });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
           break;
         case "motoboy_posicao":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.motoboys });
@@ -152,5 +199,5 @@ export function useWebSocket({
     };
   }, [conectar]);
 
-  return { tocarSomNotificacao };
+  return { tocarSomNotificacao, tocarSomAlerta };
 }

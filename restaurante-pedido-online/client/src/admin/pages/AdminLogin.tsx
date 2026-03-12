@@ -7,6 +7,7 @@ import { useAdminAuth } from "@/admin/contexts/AdminAuthContext";
 import { loginRestaurante } from "@/admin/lib/adminApiClient";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { REDIRECT_KEY } from "@/admin/components/PrivateRoute";
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
@@ -31,7 +32,10 @@ export default function AdminLogin() {
       const data = await loginRestaurante(email.trim(), senha.trim());
       login(data.access_token, data.restaurante);
       toast.success("Login realizado com sucesso!");
-      navigate("/");
+      // Volta para a página que o usuário tentava acessar antes do logout
+      const redirectTo = sessionStorage.getItem(REDIRECT_KEY) || "/";
+      sessionStorage.removeItem(REDIRECT_KEY);
+      navigate(redirectTo);
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data

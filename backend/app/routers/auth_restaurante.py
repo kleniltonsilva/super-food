@@ -9,9 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from .. import models, database, auth
+
+# Token do restaurante dura 30 dias para sessão persistente
+RESTAURANTE_TOKEN_EXPIRE = timedelta(days=30)
 
 router = APIRouter(prefix="/auth/restaurante", tags=["Auth Restaurante"])
 
@@ -92,7 +95,8 @@ def login_restaurante(
         )
 
     token = auth.create_access_token(
-        data={"sub": str(restaurante.id), "role": "restaurante"}
+        data={"sub": str(restaurante.id), "role": "restaurante"},
+        expires_delta=RESTAURANTE_TOKEN_EXPIRE,
     )
 
     return RestauranteLoginResponse(
@@ -109,12 +113,19 @@ def login_restaurante(
     )
 
 
-@router.get("/me", response_model=RestauranteMeResponse)
+@router.get("/me")
 def me_restaurante(
     current_restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
 ):
-    """Retorna dados completos do restaurante logado."""
-    return current_restaurante
+    """Retorna dados completos do restaurante logado + token renovado."""
+    # Renova o token a cada chamada para manter sessão persistente
+    new_token = auth.create_access_token(
+        data={"sub": str(current_restaurante.id), "role": "restaurante"},
+        expires_delta=RESTAURANTE_TOKEN_EXPIRE,
+    )
+    data = RestauranteMeResponse.model_validate(current_restaurante).model_dump()
+    data["refreshed_token"] = new_token
+    return data
 
 
 @router.put("/perfil", response_model=RestauranteMeResponse)

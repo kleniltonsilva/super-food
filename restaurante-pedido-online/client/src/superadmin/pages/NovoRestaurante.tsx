@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { Loader2, ArrowLeft, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { tiposRestaurante } from "@/config/themeConfig";
+import InfoTooltip from "@/components/InfoTooltip";
 
 const PLANOS = [
   { nome: "Básico", valor: 199.0, motoboys: 3, descricao: "Ideal para pequenos restaurantes - até 3 motoboys simultâneos" },
@@ -214,7 +215,10 @@ export default function NovoRestaurante() {
             <h3 className="mb-4 text-lg font-semibold text-white">Dados Básicos</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Nome Fantasia *</label>
+                <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                  Nome Fantasia *
+                  <InfoTooltip text="Nome comercial do restaurante, exibido no site e no painel. Mínimo 3 caracteres." />
+                </label>
                 <Input
                   placeholder="Ex: Burger Elite"
                   value={form.nome_fantasia}
@@ -251,7 +255,10 @@ export default function NovoRestaurante() {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">CNPJ</label>
+                <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                  CNPJ
+                  <InfoTooltip text="Opcional. Se informado, deve ter 14 dígitos. Será validado como único no sistema." />
+                </label>
                 <Input
                   placeholder="00.000.000/0000-00"
                   value={form.cnpj}
@@ -318,14 +325,18 @@ export default function NovoRestaurante() {
                   checked={form.criar_site}
                   onCheckedChange={(checked) => updateField("criar_site", !!checked)}
                 />
-                <label htmlFor="criar_site" className="text-sm text-gray-300">
+                <label htmlFor="criar_site" className="text-sm text-gray-300 flex items-center gap-1.5">
                   Criar site automaticamente
+                  <InfoTooltip text="Gera automaticamente o site do cliente com cardápio, checkout e tracking. Categorias padrão são criadas com base no tipo de restaurante." />
                 </label>
               </div>
               {form.criar_site && (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300">Tipo de Restaurante *</label>
+                    <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                      Tipo de Restaurante *
+                      <InfoTooltip text="Define o tema visual do site (cores, fontes, layout). Cada tipo tem categorias padrão pré-configuradas." />
+                    </label>
                     <Select value={form.tipo_restaurante} onValueChange={(v) => updateField("tipo_restaurante", v)}>
                       <SelectTrigger className="border-gray-700 bg-gray-800 text-white">
                         <SelectValue />
@@ -338,7 +349,10 @@ export default function NovoRestaurante() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300">WhatsApp (com DDD)</label>
+                    <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                      WhatsApp (com DDD)
+                      <InfoTooltip text="Número com DDD (ex: 11999999999). Exibe botão de contato no site do cliente." />
+                    </label>
                     <Input
                       placeholder="11999999999"
                       value={form.whatsapp}
@@ -353,7 +367,10 @@ export default function NovoRestaurante() {
 
           {/* Bloco 4 - Plano */}
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-            <h3 className="mb-4 text-lg font-semibold text-white">Plano de Assinatura</h3>
+            <h3 className="mb-4 text-lg font-semibold text-white flex items-center gap-1.5">
+              Plano de Assinatura
+              <InfoTooltip text="O plano define o valor mensal e o limite de motoboys simultâneos. Pode ser alterado depois." />
+            </h3>
             <div className="grid gap-3 sm:grid-cols-2">
               {PLANOS.map((p) => (
                 <button

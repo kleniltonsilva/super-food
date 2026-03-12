@@ -14,13 +14,27 @@ motoboyApi.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor — 401 remove token e dispara StorageEvent
+// Endpoints que NUNCA devem causar logout — falhas transitórias são ignoradas.
+// GPS envia a cada 10s: um 401 transitório NÃO pode deslogar o motoboy.
+const ENDPOINTS_SEM_LOGOUT = [
+  "/api/gps/update-auth",   // GPS background (10s)
+  "/motoboy/status",        // heartbeat de status
+  "/motoboy/entregas/pendentes",
+  "/motoboy/entregas/em-rota",
+];
+
+// Response interceptor — 401 só causa logout em endpoints de autenticação explícita
 motoboyApi.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
       const url = err.config?.url || "";
-      if (!url.includes("/auth/motoboy/login")) {
+      const isLoginRoute = url.includes("/auth/motoboy/login");
+      const isRefreshRoute = url.includes("/auth/motoboy/refresh");
+      const isSemLogout = ENDPOINTS_SEM_LOGOUT.some((e) => url.includes(e));
+
+      // Só desloga se for endpoint de validação de identidade (não GPS ou background)
+      if (!isLoginRoute && !isRefreshRoute && !isSemLogout) {
         localStorage.removeItem("sf_motoboy_token");
         localStorage.removeItem("sf_motoboy_data");
         window.dispatchEvent(
@@ -45,6 +59,11 @@ export async function loginMotoboy(codigo_restaurante: string, usuario: string, 
 export async function getMe() {
   const { data } = await motoboyApi.get("/auth/motoboy/me");
   return data;
+}
+
+export async function refreshToken() {
+  const { data } = await motoboyApi.post("/auth/motoboy/refresh");
+  return data as { access_token: string; token_type: string };
 }
 
 export async function alterarSenha(senha_atual: string, nova_senha: string) {

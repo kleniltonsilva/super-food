@@ -7,21 +7,21 @@ Veja o arquivo LICENSE para os termos legais completos.
 
 ---
 
-Sistema multi-tenant completo para gestao de restaurantes com entregas inteligentes, rastreamento GPS em tempo real, otimizacao de rotas (TSP), site do cliente React SPA e gestao financeira integrada.
+Sistema multi-tenant completo para gestao de restaurantes com entregas inteligentes, rastreamento GPS em tempo real, otimizacao de rotas (TSP), layouts tematicos por tipo de restaurante, analytics avancados e gestao financeira integrada.
 
 ## Visao Geral
 
-O Super Food e composto por **5 aplicacoes principais**:
+O Super Food e composto por **5 aplicacoes principais**, todas em React + FastAPI:
 
-| Aplicacao | Tecnologia | Porta | Descricao |
-|-----------|------------|-------|-----------|
-| **API Backend** | FastAPI + Uvicorn | 8000 | API REST, WebSockets, serve React SPA |
-| **Super Admin** | Streamlit | 8501 | Painel administrativo do SaaS |
-| **Dashboard Restaurante** | Streamlit | 8502 | Gestao completa do restaurante |
-| **App Motoboy (PWA)** | Streamlit | 8503 | App mobile para entregadores |
-| **Site Cliente (React SPA)** | React 19 + Vite 7 | 5173 (dev) / 8000 (prod) | Pedido online para clientes |
+| Aplicacao | Tecnologia | Rota | Descricao |
+|-----------|------------|------|-----------|
+| **API Backend** | FastAPI + Uvicorn | `:8000` | API REST, WebSockets, serve React SPAs |
+| **Super Admin** | React 19 | `/superadmin` | Painel administrativo do SaaS com analytics |
+| **Painel Restaurante** | React 19 | `/admin` | Gestao completa do restaurante (20+ paginas) |
+| **App Motoboy (PWA)** | React 19 | `/entregador` | App mobile para entregadores com GPS |
+| **Site Cliente** | React 19 | `/cliente/{codigo}` | Pedido online com 8 layouts tematicos |
 
-**Versao atual: 3.1.0 (14/02/2026) — Migracao v4.0 em andamento**
+**Versao atual: 4.0.0 (11/03/2026)**
 
 ### Stack Tecnologica
 
@@ -29,22 +29,27 @@ O Super Food e composto por **5 aplicacoes principais**:
 |--------|-----------|
 | Backend API | Python 3.12+ / FastAPI / Uvicorn |
 | ORM | SQLAlchemy 2.0+ |
-| Migrations | Alembic |
+| Migrations | Alembic (12 migrations) |
 | Banco (dev) | SQLite |
-| Banco (prod) | PostgreSQL |
-| Dashboards | Streamlit 1.40+ |
-| Site Cliente | React 19 + Vite 7 + TanStack Query v5 + wouter + Tailwind CSS 4 + Radix UI |
-| Auth | JWT (HS256) + bcrypt (FastAPI) / SHA256 (Streamlit) |
-| Mapas | Mapbox API (geocoding, autocomplete, rotas) |
-| Imagens | Pillow (resize + WebP) |
-| Algoritmos | TSP (Nearest Neighbor), Haversine |
+| Banco (prod) | PostgreSQL 16+ / PgBouncer |
+| Frontend | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
+| State Management | TanStack Query v5 (React Query) |
+| Router | wouter (nest mode) |
+| UI Components | shadcn/ui (Radix UI) |
+| Graficos | recharts (LineChart, PieChart, BarChart) |
+| Carousel | embla-carousel |
+| Mapas | Mapbox GL JS (mapas) + Mapbox API (geocoding, rotas) |
+| Auth | JWT (HS256) via authlib + bcrypt |
+| Imagens | Pillow (resize + WebP) / Cloudflare R2 (prod) |
+| Cache | Redis (menus, sessoes, rate limit, Pub/Sub WS) |
+| Algoritmos | TSP (Nearest Neighbor), Haversine, GPS antifraude |
 
 ---
 
 ## Pre-requisitos
 
 - Python 3.12+
-- Node.js 18+ e npm (para o React SPA)
+- Node.js 18+ e npm
 - pip
 - Conta Mapbox (para API de geocodificacao)
 
@@ -60,12 +65,11 @@ cd super-food
 # Criar ambiente virtual Python
 python3 -m venv venv
 source venv/bin/activate  # Linux/Mac
-# ou: venv\Scripts\activate  # Windows
 
 # Instalar dependencias Python
 pip install -r requirements.txt
 
-# Instalar dependencias do React SPA
+# Instalar dependencias do React
 cd restaurante-pedido-online
 npm install
 cd ..
@@ -79,6 +83,9 @@ python init_database.py
 
 # Aplicar migrations
 alembic upgrade head
+
+# Build do React (producao)
+cd restaurante-pedido-online && npm run build && cd ..
 ```
 
 ---
@@ -117,11 +124,12 @@ DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/super_food
 ```bash
 source venv/bin/activate
 
-# Iniciar TODOS os servicos (FastAPI + Streamlit)
-./start_services.sh
-
-# Iniciar apenas a API FastAPI
+# Iniciar API FastAPI (serve todas as SPAs React)
 ./start_services.sh --api-only
+
+# Desenvolvimento (API + Vite dev server com HMR)
+# Terminal 1: uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
+# Terminal 2: cd restaurante-pedido-online && npm run dev
 ```
 
 ### Executar Servicos Individualmente
@@ -129,29 +137,14 @@ source venv/bin/activate
 ```bash
 source venv/bin/activate
 
-# FastAPI Backend (porta 8000) - PRINCIPAL
+# FastAPI Backend (porta 8000) - serve todas as SPAs em producao
 uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Super Admin (porta 8501)
-streamlit run streamlit_app/super_admin.py --server.port=8501
-
-# Dashboard Restaurante (porta 8502)
-streamlit run streamlit_app/restaurante_app.py --server.port=8502
-
-# App Motoboy PWA (porta 8503)
-streamlit run app_motoboy/motoboy_app.py --server.port=8503
-
-# React SPA - Desenvolvimento (porta 5173, com proxy para API)
+# React - Desenvolvimento (porta 5173, proxy para API)
 cd restaurante-pedido-online && npm run dev
 
-# React SPA - Build para producao (servido pelo FastAPI em /cliente/{codigo})
+# React - Build para producao (servido pelo FastAPI)
 cd restaurante-pedido-online && npm run build
-```
-
-### Parar Todos os Servicos
-
-```bash
-pkill -f "uvicorn|streamlit"
 ```
 
 ---
@@ -162,11 +155,11 @@ pkill -f "uvicorn|streamlit"
 |---------|-----|
 | API Docs (Swagger) | http://localhost:8000/docs |
 | API Docs (ReDoc) | http://localhost:8000/redoc |
-| Super Admin | http://localhost:8501 |
-| Dashboard Restaurante | http://localhost:8502 |
-| App Motoboy | http://localhost:8503 |
-| Site Cliente (dev) | http://localhost:5173 |
-| Site Cliente (prod) | http://localhost:8000/cliente/{CODIGO_RESTAURANTE} |
+| Super Admin | http://localhost:8000/superadmin |
+| Painel Restaurante | http://localhost:8000/admin |
+| App Motoboy (PWA) | http://localhost:8000/entregador |
+| Site Cliente | http://localhost:8000/cliente/{CODIGO_RESTAURANTE} |
+| Health Check | http://localhost:8000/health |
 
 ### Credenciais de Teste
 
@@ -188,56 +181,113 @@ super-food/
 │       ├── auth.py             # Auth JWT para restaurantes
 │       ├── database.py         # get_db() para FastAPI DI
 │       ├── models.py           # Re-exporta de database/models.py
-│       ├── routers/            # 8 arquivos de rotas (50+ endpoints)
-│       ├── schemas/            # Pydantic schemas (site, carrinho, cliente)
-│       ├── utils/              # Despacho, templates de menu
-│       ├── templates/          # HTML legado (Jinja2)
-│       └── static/             # CSS legado
+│       ├── storage.py          # Abstração storage (Local / R2)
+│       ├── cache.py            # Redis cache helper
+│       ├── rate_limit.py       # Rate limiting (Redis sliding window)
+│       ├── routers/            # 10 arquivos de rotas (80+ endpoints)
+│       │   ├── auth_restaurante.py  # Auth JWT restaurante
+│       │   ├── auth_cliente.py      # Auth cliente
+│       │   ├── auth_motoboy.py      # Auth motoboy
+│       │   ├── painel.py            # Todas rotas /painel/* (admin restaurante)
+│       │   ├── admin.py             # Rotas /api/admin/* (super admin)
+│       │   ├── site_cliente.py      # Rotas site publico
+│       │   ├── carrinho.py          # Carrinho/checkout
+│       │   ├── upload.py            # Upload imagens (JWT + Pillow)
+│       │   ├── pedidos.py           # Pedidos legado
+│       │   └── motoboys.py          # GPS motoboys
+│       ├── schemas/            # Pydantic schemas
+│       └── utils/              # Despacho, menus, templates
 │
 ├── database/                   # SQLAlchemy ORM
-│   ├── models.py               # 28 modelos ORM (fonte de verdade)
+│   ├── models.py               # 28+ modelos ORM (fonte de verdade)
 │   ├── session.py              # get_db_session() + helpers
 │   ├── base.py                 # Base declarativa
 │   ├── init.py                 # Funcoes de inicializacao
-│   └── seed/                   # 6 seeds (super admin, planos, restaurante, etc)
+│   └── seed/                   # Seeds (super admin, planos, restaurante, etc)
 │
 ├── migrations/                 # Alembic (12 migrations)
-│   ├── env.py
 │   └── versions/
 │
-├── restaurante-pedido-online/  # React SPA (Site do Cliente)
+├── restaurante-pedido-online/  # FRONTEND REACT (todas as SPAs)
+│   ├── package.json            # Scripts: dev, build, check
+│   ├── vite.config.ts          # Build config (proxy, aliases)
+│   ├── tsconfig.json           # TypeScript config
+│   ├── dist/public/            # BUILD OUTPUT (servido pelo FastAPI)
 │   └── client/
 │       └── src/
-│           ├── App.tsx         # 11 rotas (wouter)
-│           ├── main.tsx        # Entry point (QueryClient, contexts)
-│           ├── lib/apiClient.ts # 30+ funcoes API (axios)
-│           ├── hooks/useQueries.ts # React Query hooks centralizados
-│           ├── contexts/       # RestauranteContext, AuthContext, ThemeContext
-│           ├── pages/          # 11 paginas (Home, Cart, Checkout, etc)
-│           └── components/     # UI components (Radix)
-│
-├── streamlit_app/              # Dashboards Streamlit
-│   ├── super_admin.py          # Admin SaaS
-│   ├── restaurante_app.py      # Dashboard Restaurante (~1900 linhas)
-│   └── cliente_app.py          # Site do Cliente (legado Streamlit)
-│
-├── app_motoboy/                # PWA Motoboy
-│   └── motoboy_app.py          # App Entregadores
+│           ├── main.tsx            # Entry point React
+│           ├── App.tsx             # Router principal (4 apps: cliente, admin, motoboy, superadmin)
+│           ├── index.css           # Estilos globais + Tailwind + CSS vars tematicos
+│           │
+│           ├── pages/              # Paginas site cliente (11 paginas)
+│           ├── components/         # Componentes UI compartilhados (shadcn + tematicos)
+│           │   ├── ui/             # shadcn/radix-ui primitives
+│           │   ├── site/           # Componentes tematicos do site
+│           │   │   ├── RestauranteHeader.tsx    # Header adaptativo por tema
+│           │   │   ├── HeroBanner.tsx           # Banner com fallback por tipo
+│           │   │   ├── CategoryNav.tsx          # Nav categorias horizontal
+│           │   │   ├── ProductCard.tsx          # Card produto tematico
+│           │   │   ├── ProductCarousel.tsx      # Carousel embla (7+ itens)
+│           │   │   ├── ComboSection.tsx         # Combos + ComboDetailModal
+│           │   │   ├── CartSidebar.tsx          # Carrinho lateral/drawer
+│           │   │   ├── FooterSection.tsx        # Footer 3 colunas
+│           │   │   └── AgeVerification.tsx      # Verificacao idade (Bebidas)
+│           │   ├── InfoTooltip.tsx  # Tooltip reutilizavel (icone ℹ️)
+│           │   └── MapTracking.tsx  # Mapa rastreamento Mapbox GL
+│           │
+│           ├── config/
+│           │   └── themeConfig.ts   # 8 temas visuais por tipo de restaurante
+│           ├── hooks/              # Hooks cliente (useQueries, useCart, etc)
+│           ├── contexts/           # RestauranteContext, AuthContext, ThemeContext
+│           ├── lib/                # apiClient.ts (axios + JWT)
+│           │
+│           ├── admin/              # PAINEL ADMIN RESTAURANTE
+│           │   ├── AdminApp.tsx    # Router admin (protegido)
+│           │   ├── lib/            # adminApiClient.ts
+│           │   ├── hooks/          # useAdminQueries.ts (57 hooks), useWebSocket.ts
+│           │   ├── pages/          # 20+ paginas
+│           │   │   ├── Dashboard.tsx         # Metricas + entregas ativas + alertas atraso
+│           │   │   ├── Pedidos.tsx            # Lista + entregas em rota + timeline
+│           │   │   ├── PedidoDetalhe.tsx      # Detalhe + timeline 5 passos
+│           │   │   ├── Configuracoes.tsx      # Config restaurante + site (32 tooltips)
+│           │   │   ├── Relatorios.tsx         # Vendas/Motoboys/Produtos + Analytics avancado
+│           │   │   ├── MapaMotoboys.tsx       # Mapa GPS tempo real
+│           │   │   └── ...                   # Categorias, Produtos, Combos, Motoboys, Caixa, etc
+│           │   └── components/     # AdminLayout, Sidebar, Topbar
+│           │
+│           ├── motoboy/            # APP MOTOBOY (PWA)
+│           │   ├── MotoboyApp.tsx   # Router motoboy
+│           │   ├── lib/            # motoboyApiClient.ts
+│           │   ├── hooks/          # useMotoboyQueries.ts, useGPS.ts
+│           │   └── pages/          # Login, Home, Entrega, Ganhos, Historico
+│           │
+│           └── superadmin/         # SUPER ADMIN
+│               ├── SuperAdminApp.tsx  # Router super admin
+│               ├── lib/            # superAdminApiClient.ts
+│               ├── hooks/          # useSuperAdminQueries.ts
+│               └── pages/          # Dashboard (analytics), Restaurantes, Planos, Inadimplentes
 │
 ├── utils/                      # Utilitarios compartilhados
 │   ├── mapbox_api.py           # Integracao Mapbox (geocoding, rotas)
 │   ├── haversine.py            # Calculo de distancia offline (fallback)
 │   ├── calculos.py             # Taxas de entrega e ganhos de motoboy
-│   ├── motoboy_selector.py     # Selecao justa de motoboys (rotacao)
+│   ├── motoboy_selector.py     # Selecao justa de motoboys (GPS 50m, rotacao)
 │   └── tsp_optimizer.py        # Otimizacao de rotas (Nearest Neighbor)
+│
+├── infra/                      # Infraestrutura Docker/Cloud
+│   ├── Dockerfile              # Multi-stage (Node build + Python API)
+│   ├── docker-compose.yml      # Dev: postgres + redis + api
+│   ├── docker-compose.prod.yml # Prod: + pgbouncer + caddy + replicas
+│   └── Caddyfile               # Reverse proxy + SSL + wildcard
+│
+├── docs/                       # Documentacao extra
+│   └── dominios-personalizados.md
 │
 ├── alembic.ini                 # Config Alembic
 ├── requirements.txt            # Dependencias Python
 ├── init_database.py            # Inicializador do banco
-├── start_services.sh           # Script para iniciar todos os servicos
-├── run_production.py           # Script Python alternativo
-├── super_food.db               # Banco SQLite (dev)
-├── CLAUDE.md                   # Memoria tecnica completa (para IA)
+├── start_services.sh           # Script para iniciar servicos
+├── CLAUDE.md                   # Memoria tecnica (para IA)
 ├── ESTRUTURA.md                # Arvore de pastas + fluxo de dados
 └── .env                        # Variaveis de ambiente
 ```
@@ -249,70 +299,235 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 ## Funcionalidades Principais
 
 ### API FastAPI (Backend)
-- API REST completa com 50+ endpoints documentados (Swagger/ReDoc)
+- API REST completa com 80+ endpoints documentados (Swagger/ReDoc)
 - WebSockets para notificacoes em tempo real por restaurante
-- Servindo React SPA em producao (`/cliente/{codigo}`)
+- Servindo 4 React SPAs em producao (admin, motoboy, superadmin, site cliente)
 - Upload de imagens com resize automatico (WebP)
-- JWT auth para restaurantes (24h) e clientes (72h)
+- JWT auth para restaurantes (24h), clientes (72h), motoboys (24h), super admin (12h)
+- Rate limiting, cache Redis, health checks
 
-### Site Cliente (React SPA)
-- Cardapio por categorias com busca
-- Carrinho de compras (anonimo ou logado)
+### Site Cliente (8 Layouts Tematicos)
+- **8 temas visuais**: Pizzaria, Hamburgueria, Acai/Sorvetes, Bebidas, Esfiharia, Restaurante, Salgados/Doces, Sushi
+- Cardapio por categorias com busca e carousel
+- Carrinho lateral (sidebar desktop / drawer mobile)
 - Checkout com autocomplete de endereco (Mapbox) e calculo de taxa
-- Cadastro/login de clientes (JWT + bcrypt)
-- Historico de pedidos com acompanhamento em tempo real
+- Combos: padrao, do dia (por dia da semana), kits festa (por quantidade de pessoas)
 - Programa de fidelidade (pontos + premios)
-- Combos e promocoes com cupons
-- Gestao de enderecos (CRUD)
-- Pagina Minha Conta (perfil, enderecos, logout)
-- Cache inteligente com React Query (staleTime por tipo de dado)
+- Promocoes com cupons
+- Verificacao de idade (Bebidas)
+- Montador de pizza (multi-sabores)
+- Acompanhamento de pedido em tempo real
 
-### Super Admin
-- Criacao e gestao de restaurantes (tenants)
+### Super Admin (Dashboard Analytics)
+- Dashboard com analytics globais (faturamento real, pedidos, ticket medio)
+- Top 5 restaurantes por faturamento (com medalhas)
+- Graficos: tendencia faturamento, formas pagamento, tipos entrega
+- Tabela "Saude dos Restaurantes" (pesquisavel/ordenavel)
+- Alertas: restaurantes inativos, motoboys ociosos
+- Insights: horario pico, crescimento MoM, clientes novos
+- Gestao de restaurantes (CRUD, ativar/desativar)
 - Controle de planos de assinatura (Basico, Essencial, Avancado, Premium)
-- Dashboard com metricas globais
-- Gestao de inadimplencia e renovacoes
+- Gestao de inadimplencia com tolerancia configuravel
 
-### Dashboard Restaurante
-- Criacao e gestao de pedidos (Entrega, Retirada, Mesa)
+### Painel Restaurante (20+ Paginas)
+- Dashboard com metricas + entregas ativas + alertas de atraso
+- Pedidos com timeline visual 5 passos e deteccao de gargalo
 - Despacho automatico com 3 modos (rapido economico, cronologico, manual)
-- Gestao de cardapio (categorias, produtos, variacoes, combos)
-- Gestao de motoboys (cadastro, capacidade, ranking)
-- Mapa GPS em tempo real dos motoboys (Folium)
+- Gestao de cardapio (categorias drag & drop, produtos, variacoes, combos)
+- Mapa GPS em tempo real (Mapbox GL JS)
 - Controle de caixa (abertura, movimentacoes, fechamento)
-- Configuracao de taxas de entrega e pagamento de motoboys
-- Antifraude por localizacao (raio 50m)
+- **Relatorios com aba Analytics protegida por senha** (projecoes, analise horario/dia, top produtos, recorrencia)
+- **32 tooltips explicativos** em todas as configuracoes (ℹ️)
+- Configuracao de taxas, raio, pagamentos, tema visual, SEO
 
 ### App Motoboy (PWA)
 - Login com codigo do restaurante + usuario + senha
-- Recebimento de rotas otimizadas (TSP)
-- GPS em tempo real (envia a cada 10s)
-- Finalizacao de entregas com calculo automatico de ganhos
-- Visualizacao de estatisticas e ganhos do dia
-- Toggle online/offline para disponibilidade
+- Fluxo completo: em_rota → no_destino → pagamento → finalizar
+- GPS em tempo real (watchPosition + envio 10s)
+- Antifraude: finalizacao apenas a 50m do destino (configuravel)
+- Notificacoes sonoras (Web Push API)
+- Visualizacao de ganhos (base + extra) e historico
+- Service Worker + manifest.json (instalavel como app)
 
 ---
 
-## Fluxo de Motoboys
+## Sistema de Entregas Inteligente
 
-### Cadastro e Login
-1. **Restaurante cadastra motoboy** -> motoboy fica OFFLINE
-2. **Motoboy faz login no App** (codigo restaurante + usuario + senha) -> fica ONLINE
-3. **Restaurante despacha pedidos** -> apenas para motoboys ONLINE
-4. **Motoboy finaliza entregas** -> recebe novos pedidos ou fica disponivel
+### 3 Modos de Despacho
 
-### Modos de Despacho
 | Modo | Descricao |
 |------|-----------|
-| **Rapido Economico** | TSP por proximidade - otimiza combustivel (padrao) |
-| **Cronologico Inteligente** | Agrupa pedidos por tempo (10 min), depois TSP |
-| **Manual** | Restaurante atribui manualmente cada pedido |
+| **Rapido Economico** | TSP por proximidade — otimiza combustivel. Seleciona motoboy com menos entregas no dia + mais proximo (GPS real) |
+| **Cronologico Inteligente** | Agrupa pedidos por janela de tempo (10 min), depois aplica TSP no grupo |
+| **Manual** | Restaurante atribui manualmente cada pedido a um motoboy |
+
+### Selecao Justa de Motoboys
+
+O algoritmo de selecao (`motoboy_selector.py`) garante distribuicao justa:
+
+1. **Filtro disponibilidade**: apenas motoboys ONLINE + com capacidade + com GPS recente (<5 min)
+2. **Prioridade hierarquica**: respeita ordem definida pelo restaurante
+3. **Menos entregas no dia**: motoboy com menos corridas tem prioridade
+4. **GPS real**: usa posicao GPS para calcular distancia ao restaurante
+5. **Sem fallback**: se nenhum motoboy qualificado, retorna erro (nao despacha para inapto)
+
+### Antifraude GPS
+
+- Motoboy so pode finalizar entrega a **50m do endereco de destino** (configuravel via `permitir_finalizar_fora_raio`)
+- Calculo de distancia via Haversine entre GPS do motoboy e coordenadas do pedido
+- Configuracao no painel: ativar/desativar por restaurante
 
 ### Rastreamento GPS em Tempo Real
-- Motoboy online envia GPS automaticamente a cada 10 segundos
-- Mapa em tempo real no painel do restaurante (aba "Mapa")
+
+- Motoboy online envia GPS automaticamente a cada 10 segundos (`useGPS` hook)
+- Mapa Mapbox GL JS no painel do restaurante (aba "Mapa")
 - Historico de posicoes armazenado no banco
-- Indicador visual de status GPS no app do motoboy
+- Timeline visual de 5 passos no detalhe do pedido
+
+### Entregas Ativas + Deteccao de Atraso
+
+- Endpoint `GET /painel/entregas/ativas` retorna todas entregas em andamento com tempo decorrido
+- Dashboard exibe banner vermelho pulsante quando ha entregas atrasadas
+- Tolerancia de atraso configuravel (5/8/10/15 minutos) por restaurante
+- Sons diferenciados: 880Hz (novo pedido), 440Hz (atraso), 523Hz (ajuste tempo)
+
+### Diagnostico e Ajuste Automatico de Tempo
+
+- Endpoint `GET /painel/entregas/diagnostico-tempo` analisa historico de entregas
+- Calcula tempo medio real vs tempo estimado configurado
+- Sugere ajustes automaticos baseados em dados reais
+- Endpoint `POST /painel/entregas/ajustar-tempo` aplica sugestoes
+
+---
+
+## Layouts Tematicos (8 Tipos)
+
+Cada restaurante pode escolher um tipo visual que altera **todo** o site do cliente:
+
+| Tipo | Cores | Mood | Features Unicas |
+|------|-------|------|-----------------|
+| **Pizzaria** | Vermelho `#e4002e` + Rosa | Italiano/classico | Montador de pizza multi-sabores |
+| **Hamburgueria** | Amarelo `#ffcd00` + Preto | Dark/urbano | Tema dark completo |
+| **Acai/Sorvetes** | Roxo `#61269c` + Verde | Dessert/tropical | Upsell de adicionais com +/- |
+| **Bebidas** | Vermelho `#e50e16` + Cinza | Clean/fresh | Verificacao de idade |
+| **Esfiharia** | Laranja `#d4880f` + Marrom | Arabe/quente | — |
+| **Restaurante** | Laranja `#ff990a` + Marrom | Casual/quente | Combos do dia (por dia da semana) |
+| **Salgados/Doces** | Laranja `#ff883a` + Creme | Artesanal/festa | Kits festa (por quantidade de pessoas) |
+| **Sushi** | Vermelho escuro `#a40000` + Carvao | Oriental/minimalista | Fonte cursiva Kaushan Script |
+
+### Componentes Tematicos
+
+Cada componente adapta-se automaticamente ao tema:
+
+- **RestauranteHeader** — dark/light/pattern backgrounds
+- **HeroBanner** — banner por tipo com fallback (`/themes/{tipo}/banner.png`)
+- **CategoryNav** — scroll horizontal com cores adaptativas
+- **ProductCard** — imagem circular (pizzaria) vs rounded, badges coloridos
+- **ProductCarousel** — carousel embla para 7+ produtos
+- **ComboSection** — agrupamento por tipo (padrao, do_dia, kit_festa)
+- **CartSidebar** — sidebar 340px desktop / drawer mobile
+- **FooterSection** — 3 colunas com cores do tema
+- **AgeVerification** — modal verificacao idade (apenas Bebidas)
+
+### CSS Variables Dinamicas
+
+O tema e aplicado via 25+ CSS variables no `:root` + classe `theme-dark`/`theme-light` + atributo `data-theme`:
+
+```css
+--primary, --secondary, --background, --text-primary, --text-secondary,
+--card-bg, --card-border, --header-bg, --footer-bg, --badge-color,
+--price-color, --button-bg, --button-text, --nav-active, --nav-hover, ...
+```
+
+O restaurante pode sobrescrever cores primaria/secundaria no painel de configuracoes.
+
+---
+
+## Analytics Super Admin
+
+### Dashboard Completo
+
+O super admin acessa um dashboard com dados reais de **todos os restaurantes**:
+
+- **Faturamento**: hoje, semana, mes, mes anterior (liquido vs bruto)
+- **Pedidos**: hoje, mes, cancelamentos (%), ticket medio
+- **Top 5 Restaurantes**: ranqueados por faturamento com medalhas ouro/prata/bronze
+- **Graficos**: tendencia faturamento (LineChart), formas pagamento (PieChart), tipo entrega (PieChart)
+- **Insights**: horario pico, clientes novos na semana, motoboys ociosos, crescimento MoM (%)
+- **Alertas**: restaurantes inativos (0 pedidos em 7 dias) com banner amarelo
+- **Tabela Saude**: pesquisavel por nome, ordenavel por qualquer coluna, badges de status (verde/amarelo/vermelho)
+
+### Seletor de Periodo
+
+- 7 dias / 30 dias / 90 dias
+- staleTime: 60 segundos
+
+---
+
+## Relatorios Avancados do Restaurante
+
+### Aba Analytics (Protegida por Senha)
+
+Alem dos relatorios basicos (vendas, motoboys, produtos), o painel restaurante oferece uma aba **Analytics** com dados avancados protegida por senha dupla (JWT + senha do admin):
+
+**Secoes:**
+
+1. **Faturamento** — Mes atual, projecao anual, variacao vs anterior, ticket medio + grafico tendencia
+2. **Quando Mais Vende** — Melhor dia da semana, horario pico, distribuicao por dia (BarChart) e por hora (BarChart)
+3. **O Que Mais Vende** — Top 20 produtos (tabela), categorias mais vendidas (PieChart)
+4. **Como Pagam** — Cards por forma de pagamento (Dinheiro, Cartao, PIX, Vale)
+5. **Clientes** — Unicos no mes, novos, recorrentes (2+ pedidos), taxa de recorrencia
+6. **Cancelamentos** — Total e taxa (%), grafico tendencia
+7. **Previsao** — Projecao 3 meses (media movel ponderada), comparacao ano atual vs anterior
+8. **Entregas vs Retiradas** — Proporacao (PieChart)
+
+**Periodos disponiveis:** 30 dias, 90 dias, 12 meses, anual
+
+**Logica de projecao:**
+- Projecao anual = media dos ultimos 3 meses x 12
+- Previsao proximos 3 meses = media movel ponderada (mes recente peso 3, anterior peso 2, outro peso 1)
+- Comparacao anual = mes a mes quando existem dados do ano anterior
+
+---
+
+## Tooltips Explicativos
+
+Todas as configuracoes do painel restaurante possuem tooltips (icone ℹ️) com explicacoes claras:
+
+### Aba Restaurante (17 campos)
+| Campo | Explicacao |
+|-------|-----------|
+| Status | Define se aceita pedidos (Aberto/Fechado/Pausado) |
+| Horario Abertura/Fechamento | Horario de funcionamento exibido no site |
+| Modo Prioridade Entrega | Rapido=TSP, Cronologico=agrupa tempo, Manual=operador |
+| Tolerancia Atraso | Minutos extras antes de marcar entrega como atrasada |
+| Max Pedidos por Rota | Pedidos por saida do motoboy (1-10) |
+| Raio Entrega | Distancia maxima aceita (recusa no checkout) |
+| Taxa Base / Dist. Base / KM Extra | Calculo de frete do cliente |
+| Permitir Ver Saldo | Motoboy pode ver ganhos no app |
+| Permitir Finalizar Fora Raio | Antifraude GPS (50m) |
+| Aceitar Pedidos Auto | Pedidos do site aceitos automaticamente |
+| Valor Base / KM Extra Motoboy | Pagamento do motoboy por entrega |
+| Taxa Diaria / Valor Lanche | Beneficios fixos diarios |
+| Endereco + Geocodificar | Converte endereco em GPS |
+
+### Aba Site/Cardapio (15 campos)
+| Campo | Explicacao |
+|-------|-----------|
+| Tipo Restaurante | Tema visual completo (cores, fontes, layout) |
+| Cor Primaria/Secundaria | Sobrescreve cores do tema |
+| Logo / Banner | Imagens do header e destaque |
+| Pedido Minimo | Valor minimo em produtos (sem frete) |
+| Tempo Entrega/Retirada | Exibido no site (ajuste automatico) |
+| WhatsApp | Numero com DDD para botao de contato |
+| Site Ativo | Desativado=site inacessivel |
+| Pagamentos (4 switches) | Formas aceitas no checkout |
+| Meta Title/Description | SEO — resultados do Google |
+
+### Tooltips em Super Admin
+- Novo Restaurante: 7 tooltips (Nome, CNPJ, Criar Site, Tipo, WhatsApp, Plano)
+- Gerenciar Planos: 3 tooltips (Valor, Limite Motoboys, Descricao)
+- Inadimplentes: 1 tooltip (Tolerancia dias)
 
 ---
 
@@ -320,14 +535,26 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 
 | Prefixo | Router | Endpoints | Descricao |
 |---------|--------|-----------|-----------|
-| `/restaurantes` | restaurantes.py | 3 | Signup, listar, detalhe |
+| `/auth/restaurante` | auth_restaurante.py | 4 | Login, me, perfil, senha |
 | `/auth/cliente` | auth_cliente.py | 12 | Registro, login, perfil, enderecos, pedidos |
+| `/auth/motoboy` | auth_motoboy.py | 2 | Login, me |
+| `/auth/admin` | admin.py | 2 | Login super admin, me |
+| `/painel` | painel.py | 50+ | Dashboard, pedidos, categorias, produtos, combos, motoboys, caixa, config, bairros, promocoes, fidelidade, relatorios, entregas, analytics |
+| `/api/admin` | admin.py | 8 | Restaurantes, planos, metricas, inadimplentes, analytics |
 | `/site/{codigo}` | site_cliente.py | 16 | Info publica, categorias, produtos, combos, fidelidade, promocoes |
 | `/carrinho` | carrinho.py | 7 | Adicionar, atualizar, remover, finalizar |
-| `/pedidos` | pedidos.py | 2 | Criar, listar (restaurante) |
-| `/api/gps` | gps.py | 3 | Update GPS, motoboys online, historico |
-| `/api/upload` | upload.py | 1 | Upload de imagem (resize + WebP) |
+| `/motoboy` | auth_motoboy.py | 8 | Entregas, status, estatisticas, ganhos |
+| `/api/gps` | motoboys.py | 3 | Update GPS, motoboys online, historico |
+| `/api/upload` | upload.py | 1 | Upload imagem (resize + WebP) |
 | `/ws/{id}` | main.py | 1 | WebSocket por restaurante |
+| `/health` | main.py | 3 | Health check (live, ready, full) |
+
+**Novos endpoints v4.0:**
+- `GET /api/admin/analytics` — Analytics globais do super admin
+- `GET /painel/relatorios/analytics` — Analytics avancado do restaurante (exige senha)
+- `GET /painel/entregas/ativas` — Entregas em andamento com tempo real
+- `GET /painel/entregas/diagnostico-tempo` — Diagnostico de tempos de entrega
+- `POST /painel/entregas/ajustar-tempo` — Ajuste automatico de tempos
 
 Documentacao completa: http://localhost:8000/docs
 
@@ -345,36 +572,46 @@ alembic revision --autogenerate -m "descricao"  # Criar nova migration
 
 ---
 
-## Cache e Performance (Site Cliente React)
+## Cache e Performance
 
-O site cliente usa **React Query (TanStack Query v5)** para cache profissional:
+### React Query (TanStack Query v5)
 
 | Dado | staleTime | Descricao |
 |------|-----------|-----------|
 | Site Info | 60 min | Nome, cores, horario — raramente muda |
 | Categorias | 15 min | Categorias do cardapio |
-| Produtos | 5 min | Produtos por categoria (placeholderData entre trocas) |
+| Produtos | 5 min | Produtos por categoria |
 | Combos | 15 min | Combos e ofertas |
 | Carrinho | 30 seg | Dado em tempo real |
-| Pedidos | 1 min | Status pode mudar frequentemente |
+| Pedidos | 1 min | Status muda frequentemente |
 | Enderecos | 5 min | Muda quando cliente edita |
+| Analytics (admin) | 60 seg | Dados agregados |
+| Analytics (super admin) | 60 seg | Dados globais |
 
-**Hooks centrais**: `hooks/useQueries.ts` — todos os hooks React Query.
-**Mutations**: invalidam cache automaticamente (ex: adicionar ao carrinho invalida `["carrinho"]`).
+### Sessao e Autenticacao
 
-### Sessao e Autenticacao (Cliente)
-- JWT token salvo em `localStorage` (sf_token) — sobrevive reload
-- Cache do cliente em `localStorage` (sf_cliente) — evita flash de UI deslogada
+| App | Token | localStorage Key | Expiracao |
+|-----|-------|-------------------|-----------|
+| Cliente | JWT | `sf_token` + `sf_cliente` | 72h |
+| Admin Restaurante | JWT | `sf_admin_token` + `sf_admin_restaurante` | 24h |
+| Motoboy | JWT | `sf_motoboy_token` | 24h |
+| Super Admin | JWT | `sf_superadmin_token` | 12h |
+
 - Interceptor 401 no axios — logout automatico quando token expira
 - Sync multi-aba via StorageEvent — login/logout reflete em todas as abas
+
+### Backend
+
+- **Redis cache** para cardapios e menus (invalidacao automatica)
+- **Redis Pub/Sub** para WebSocket multi-instancia
+- **Rate limiting** via sliding window (Redis)
+- **GZip/Brotli** via middleware + Caddy em producao
+- **Health checks**: `/health`, `/health/live`, `/health/ready`
+- **Metricas**: `GET /metrics` (request count, latency, errors)
 
 ---
 
 ## Arquitetura Cloud — Escala para 1000+ Restaurantes
-
-O Super Food esta sendo preparado para funcionar como SaaS completo na nuvem, suportando **1000+ restaurantes simultaneos** com seus respectivos sites, paineis e apps de motoboy.
-
-### Visao Geral da Arquitetura de Producao
 
 ```
                         ┌──────────────────────────────┐
@@ -391,145 +628,62 @@ O Super Food esta sendo preparado para funcionar como SaaS completo na nuvem, su
               ┌────────────────────────┼────────────────────────┐
               │                        │                        │
      ┌────────▼────────┐    ┌─────────▼─────────┐    ┌────────▼────────┐
-     │   FastAPI x N    │    │   React Static     │    │   Celery Workers │
-     │   (Gunicorn)     │    │   (via CDN)        │    │   (tarefas bg)   │
-     │   API + WebSocket│    │   3 SPAs:           │    │   - notificacoes │
-     │                  │    │   - Site Cliente    │    │   - relatorios   │
-     │                  │    │   - Painel Rest.    │    │   - cleanup      │
+     │   FastAPI x N    │    │   React Static     │    │   Redis          │
+     │   (Gunicorn)     │    │   (via CDN)        │    │   - Cache menus  │
+     │   API + WebSocket│    │   4 SPAs:           │    │   - Rate limit   │
+     │                  │    │   - Site Cliente    │    │   - Pub/Sub WS   │
+     │                  │    │   - Painel Rest.    │    │                  │
      │                  │    │   - App Motoboy     │    │                  │
-     └────────┬────────┘    └───────────────────┘    └────────┬────────┘
-              │                                                │
-     ┌────────▼────────────────────────────────────────────────▼────┐
+     │                  │    │   - Super Admin     │    │                  │
+     └────────┬────────┘    └───────────────────┘    └─────────────────┘
+              │
+     ┌────────▼────────────────────────────────────────────────────┐
      │                    PostgreSQL (Principal)                     │
      │              PgBouncer (connection pooling)                   │
      │         Indices compostos em restaurante_id + ...             │
-     └──────────────────────────────────────────────────────────────┘
-              │                        │
-     ┌────────▼────────┐    ┌─────────▼─────────┐
-     │   Redis          │    │   S3 / R2          │
-     │   - Cache menus  │    │   (Cloudflare R2)  │
-     │   - Sessoes      │    │   - logos           │
-     │   - Rate limit   │    │   - banners         │
-     │   - Pub/Sub WS   │    │   - fotos produtos  │
-     └─────────────────┘    └───────────────────┘
+     └──────────────────────────┬───────────────────────────────────┘
+                                │
+                       ┌────────▼────────┐
+                       │   S3 / R2        │
+                       │   (Cloudflare R2) │
+                       │   logos, banners  │
+                       │   fotos produtos  │
+                       └─────────────────┘
 ```
-
-### Por que migrar de Streamlit para React
-
-O Streamlit funciona por processo Python por sessao de usuario. Para 1000 restaurantes:
-
-| Componente | Streamlit (atual) | React (planejado) |
-|------------|-------------------|-------------------|
-| RAM por usuario | ~50-100 MB (processo Python) | ~0 MB (static files via CDN) |
-| 1000 restaurantes (3 usuarios cada) | 150-300 GB RAM | ~2 GB (apenas FastAPI) |
-| Motoboys (5 por restaurante x 1000) | +250-500 GB RAM | ~0 MB (PWA statico) |
-| CDN cache | Impossivel | Sim (React = arquivos estaticos) |
-| PWA/Offline | Nao suportado | Suporte nativo |
-| Push notifications | Nao suportado | Web Push API |
-| GPS em background | Limitado (precisa aba aberta) | Service Worker |
-| Load balancing | Complexo (estado local) | Trivial (API stateless) |
-
-**Conclusao:** Streamlit e inviavel para mais de ~50 restaurantes simultaneos. React + FastAPI escala horizontalmente.
 
 ### Banco de Dados — PostgreSQL Multi-Tenant
 
-O sistema usa **banco unico** com isolamento por `restaurante_id` em todas as 28 tabelas. Isso e a abordagem correta para ate ~5000 restaurantes.
-
-**Requisitos para producao:**
-- **PostgreSQL 16+** (substituir SQLite)
-- **PgBouncer** para connection pooling (max ~200 conexoes reais, ~10000 virtuais)
-- **Indices compostos** nas tabelas mais consultadas:
-  - `pedidos(restaurante_id, status, data_criacao)`
-  - `produtos(restaurante_id, categoria_id, disponivel)`
-  - `motoboys(restaurante_id, disponivel, em_rota)`
-  - `gps_motoboys(motoboy_id, timestamp)`
-- **Read replicas** se necessario (leitura de cardapios em replica, escrita no primary)
-- **Backups automaticos** (pg_dump diario + WAL archiving)
-
-```env
-# .env producao
-DATABASE_URL=postgresql+psycopg2://superfood:senha@db.internal:5432/superfood
-PGBOUNCER_URL=postgresql+psycopg2://superfood:senha@pgbouncer.internal:6432/superfood
-```
+Banco unico com isolamento por `restaurante_id` em todas as 28+ tabelas:
+- **PgBouncer** para connection pooling
+- **45+ indices compostos** nas tabelas mais consultadas
+- **Read replicas** se necessario
 
 ### Armazenamento de Imagens — S3/R2 + CDN
 
-Em producao, imagens NAO ficam no filesystem local. Cada restaurante pode ter:
-- 1 logo + 1 banner + ~50 fotos de produtos = ~52 imagens
-- 1000 restaurantes = ~52.000 imagens
-
-**Stack recomendada:**
-- **Cloudflare R2** (compativel S3, sem egress fee — mais barato que AWS S3)
-- **CDN Cloudflare** para servir imagens (cache global)
+- **Cloudflare R2** (compativel S3, sem egress fee)
+- **CDN Cloudflare** para servir imagens
 - Estrutura: `r2://superfood-uploads/{restaurante_id}/{tipo}_{uuid}.webp`
-
-**Fluxo:**
-```
-Upload via API → Pillow redimensiona → Salva no R2 → Retorna URL CDN
-URL: https://cdn.superfood.com.br/uploads/123/logo_abc123.webp
-```
 
 ### Dominios Personalizados
 
-Cada restaurante pode ter:
+- **Subdominio automatico**: `pizzaria-do-ze.superfood.com.br` (incluso)
+- **Dominio proprio**: CNAME para `custom.superfood.com.br` + SSL via Caddy
 
-**Nivel 1 — Subdominio automatico (incluso em todos os planos):**
-```
-pizzaria-do-ze.superfood.com.br     → Site do cliente
-```
-- Wildcard DNS: `*.superfood.com.br → IP do servidor`
-- Wildcard SSL via Caddy ou Cloudflare
-- FastAPI resolve subdominio → codigo_acesso do restaurante
-
-**Nivel 2 — Dominio proprio do cliente (planos avancados):**
-```
-www.pizzariadoze.com.br → CNAME para custom.superfood.com.br
-```
-**Fluxo de configuracao:**
-1. Restaurante digita seu dominio no painel (`www.pizzariadoze.com.br`)
-2. Sistema gera instrucao: "Configure um CNAME apontando para `custom.superfood.com.br`"
-3. Restaurante configura no registrador de dominio
-4. Sistema verifica DNS (polling a cada 5 min por 48h)
-5. Caddy emite SSL automaticamente via Let's Encrypt
-6. Dominio ativo
-
-**Tabela no banco:**
-```
-dominios_personalizados:
-  id, restaurante_id, dominio, verificado, ssl_ativo, criado_em
-```
-
-**Middleware FastAPI:**
-```python
-# Resolve o Host header para identificar o restaurante
-# 1. pizza.superfood.com.br → busca por subdominio
-# 2. www.pizzariadoze.com.br → busca na tabela dominios_personalizados
-# 3. superfood.com.br/cliente/CODIGO → busca por codigo_acesso (fallback atual)
-```
-
-### Docker Compose (Deploy)
+### Docker Compose
 
 ```yaml
-# docker-compose.prod.yml (simplificado)
 services:
   api:
     build: .
-    ports: ["8000:8000"]
-    environment:
-      DATABASE_URL: postgresql+psycopg2://...
-      REDIS_URL: redis://redis:6379
-      S3_BUCKET: superfood-uploads
-    depends_on: [db, redis]
     deploy:
-      replicas: 3  # escala horizontal
+      replicas: 3
+    depends_on: [db, redis]
 
   db:
     image: postgres:16
-    volumes: [pgdata:/var/lib/postgresql/data]
 
   pgbouncer:
     image: edoburu/pgbouncer
-    depends_on: [db]
 
   redis:
     image: redis:7-alpine
@@ -537,158 +691,92 @@ services:
   caddy:
     image: caddy:2
     ports: ["80:80", "443:443"]
-    volumes: [./Caddyfile:/etc/caddy/Caddyfile]
 ```
-
-### Onboarding de Novo Restaurante (Fluxo SaaS)
-
-Quando o super admin cria um restaurante, TUDO e automatico:
-
-| Passo | Acao | Automatico? |
-|-------|------|-------------|
-| 1 | Criar registro no banco (restaurantes + config + site_config) | Sim |
-| 2 | Gerar codigo_acesso unico | Sim |
-| 3 | Site do cliente disponivel em `/{codigo}` ou subdominio | Sim |
-| 4 | Painel do restaurante disponivel (login com email/senha) | Sim |
-| 5 | App motoboy disponivel (login com codigo + usuario) | Sim |
-| 6 | Pasta no S3 para uploads criada | Sim |
-| 7 | Subdominio automatico ativo | Sim |
-| 8 | Dominio personalizado (opcional) | Restaurante configura |
-
-**Zero comandos manuais do dono do SaaS.** Tudo via painel super admin.
 
 ### Performance Estimada (1000 restaurantes)
 
 | Recurso | Estimativa |
 |---------|-----------|
-| FastAPI (3 replicas, 4 workers cada) | ~12.000 req/s |
+| FastAPI (3 replicas, 4 workers) | ~12.000 req/s |
 | PostgreSQL + PgBouncer | ~5.000 queries/s |
 | Redis cache | ~100.000 ops/s |
-| RAM total servidor | ~4-8 GB (API) + 2 GB (PostgreSQL) + 512 MB (Redis) |
+| RAM total | ~4-8 GB (API) + 2 GB (DB) + 512 MB (Redis) |
 | Armazenamento S3 | ~5 GB (imagens) |
-| Bandwidth CDN | Cloudflare Free/Pro tier |
-
-### Custos Estimados de Infraestrutura (USD)
-
-| Restaurantes | VPS/Cloud | DB Managed | S3/R2 + CDN | Redis | Total USD | Total BRL (~R$6/USD) |
-|-------------|-----------|------------|-------------|-------|-----------|----------------------|
-| 100 | $40 (8GB) | $25 | $5 | $10 | **~$80/mes** | **~R$480/mes** |
-| 500 | $120 (16GB) | $50 | $15 | $20 | **~$205/mes** | **~R$1.230/mes** |
-| 1000 | $250 (32GB ou multi) | $80 | $25 | $30 | **~$385/mes** | **~R$2.310/mes** |
-
-**Providers recomendados:** Hetzner (melhor custo), DigitalOcean, ou AWS Lightsail para VPS. Supabase ou Neon para PostgreSQL managed. Cloudflare R2 + CDN (sem taxa de egress). Upstash para Redis serverless.
-
-> Com 1000 restaurantes pagando R$99/mes cada = R$99.000/mes de receita. Custo de infra ~R$2.310 = **~2.3% da receita**.
-
-### Variaveis de Ambiente — Producao
-
-```env
-# Banco
-DATABASE_URL=postgresql+psycopg2://superfood:SENHA_FORTE@db.internal:5432/superfood
-
-# Auth
-SECRET_KEY=chave_secreta_256_bits_gerada_com_openssl
-JWT_ALGORITHM=HS256
-
-# Mapbox
-MAPBOX_TOKEN=pk.live_token_aqui
-
-# Storage (S3/R2)
-S3_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
-S3_ACCESS_KEY=chave_acesso
-S3_SECRET_KEY=chave_secreta
-S3_BUCKET=superfood-uploads
-CDN_BASE_URL=https://cdn.superfood.com.br
-
-# Redis
-REDIS_URL=redis://redis.internal:6379/0
-
-# App
-ENVIRONMENT=production
-DEBUG=False
-ALLOWED_ORIGINS=https://superfood.com.br,https://*.superfood.com.br
-BASE_DOMAIN=superfood.com.br
-```
 
 ---
 
 ## Changelog
 
+### v4.0.0 (11/03/2026) — Mega Migracao React + Features Avancadas
+- **100% React** — Zero Streamlit. Todas 4 aplicacoes em React 19 + TypeScript
+- **Painel Restaurante React** — 20+ paginas, 57 hooks, WebSocket tempo real
+- **App Motoboy PWA** — React + Service Worker + GPS background + Push API
+- **Super Admin React** — Dashboard com analytics globais completos
+- **8 Layouts Tematicos** — Pizzaria, Hamburgueria, Acai, Bebidas, Esfiharia, Restaurante, Salgados, Sushi
+- **Sistema de Entregas Inteligente** — 3 modos despacho, GPS 50m antifraude, selecao justa, timeline, diagnostico
+- **Analytics Super Admin** — Faturamento real, top 5 restaurantes, saude por restaurante, tendencias
+- **Relatorios Avancados** — Aba Analytics protegida por senha, projecoes, analise horario/dia
+- **32 Tooltips** — Todas configuracoes documentadas com icone ℹ️
+- **Combos avancados** — Do dia (por dia semana), kits festa (por quantidade pessoas)
+- **Infraestrutura Cloud** — Docker, PostgreSQL, Redis, R2, Caddy, dominios custom, health checks
+- **Auditoria completa** — Paridade funcional Streamlit/React verificada campo a campo
+
+### v3.1.0 (14/02/2026)
+- Fix bug upload logo/banner no painel restaurante
+- Plano de migracao v4.0 documentado (343 etapas, 11 sprints)
+- Arquitetura cloud documentada
+
+### v3.0+ (Site Cliente React SPA)
+- React SPA completo: Home, ProductDetail, Cart, Checkout, Orders, Loyalty
+- AuthContext com JWT + sync multi-aba
+- RestauranteContext com CSS variables
+- Hooks centralizados com React Query
+
 ### v2.8.3 (07/02/2026)
 - Ranking antifraude: config para permitir/bloquear finalizacao fora do raio de 50m
-- UI Configuracoes: checkbox e aviso visual para opcao de antifraude
 
 ### v2.8.2 (03/02/2026)
-- Correcoes: status de entregas, permissao GPS, notificacoes com som, erro removeChild
-- Melhorias: toast temporario, status ABERTO/FECHADO, retirada de caixa, historico caixa
+- Correcoes: status de entregas, permissao GPS, notificacoes com som
 
 ### v2.8.1 (02/02/2026)
 - GPS em tempo real dos motoboys (a cada 10s)
-- Mapa Folium no painel do restaurante
 - 3 modos de despacho (rapido economico, cronologico, manual)
-- API GPS completa (`/api/gps/*`)
 
 ### v2.8.0
-- Login de motoboy com codigo do restaurante (isolamento multi-tenant)
-- Capacidade de entregas configuravel por motoboy (1-20)
-- Despacho automatico respeita capacidade
-
-### v3.1.0 (14/02/2026)
-- Fix bug upload logo/banner no painel restaurante (st.image com URL relativa)
-- Plano de migracao v4.0 documentado (185 etapas, 8 sprints)
-- Arquitetura cloud documentada (PostgreSQL, S3, Redis, Docker, dominios custom)
-
-### v3.0+ (Site Cliente React SPA)
-- React SPA completo: Home, ProductDetail, Cart, Checkout, Orders, Loyalty, Login, Account
-- OrderTracking e OrderSuccess
-- Redesign tema escuro profissional (11/02/2026)
-- AuthContext com JWT + sync multi-aba
-- RestauranteContext com CSS variables
-- Hooks centralizados (useQueries.ts) com React Query
-- apiClient.ts com 30+ funcoes e interceptors
+- Login de motoboy com codigo do restaurante
+- Capacidade de entregas configuravel por motoboy
 
 ---
 
 ## Roadmap
 
-- [x] Fase 1-8: Sistema base, ORM, Alembic, motoboys, GPS, multi-tenant
-- [x] Fase 9: Site Cliente React SPA (v3.0) — cardapio, carrinho, checkout, fidelidade
-- [x] Fase 10: Redesign tema escuro profissional
-- [ ] **Fase 11: MEGA MIGRACAO v4.0** — Streamlit → React + Cloud-Ready (em andamento)
-  - Sprint 0: Correcoes pre-migracao (bugs, seguranca, limpeza)
-  - Sprint 1: API endpoints para painel restaurante (64 endpoints)
-  - Sprint 2: React SPA painel restaurante (32 telas)
-  - Sprint 3: API endpoints para app motoboy (11 endpoints)
-  - Sprint 4: React PWA app motoboy (14 telas + Service Worker + Push)
-  - Sprint 5: API endpoints para super admin (10 endpoints)
-  - Sprint 6: React SPA super admin (10 telas)
-  - Sprint 7: Infraestrutura cloud (PostgreSQL, S3, Redis, Docker, dominios custom)
-  - Sprint 8: Aposentar Streamlit (remover dependencia, release v4.0.0)
+- [x] Fases 1-8: Sistema base, ORM, Alembic, motoboys, GPS, multi-tenant
+- [x] Fase 9: Site Cliente React SPA (v3.0)
+- [x] Fase 10: Redesign tema escuro
+- [x] **Fase 11: MEGA MIGRACAO v4.0** — Streamlit → React + Cloud-Ready
+  - Sprint 0-8: API + React (painel, motoboy, super admin, site) + auditoria
+  - Sprint 9: 8 layouts tematicos por tipo de restaurante
+  - Sprint 10: Aposentar Streamlit (remover dependencias)
+  - Sprint 11: Deploy Fly.io (producao GRU)
 - [ ] Fase 12: Integracao iFood
-- [ ] Fase 13: Recuperacao de senha por SMS (Twilio/AWS SNS)
-- [ ] Fase 14: Push notifications para motoboy (Web Push API)
+- [ ] Fase 13: Recuperacao de senha por SMS
+- [ ] Fase 14: Push notifications nativas
 - [ ] Fase 15: App nativo (React Native ou Capacitor)
 
 ---
 
-## Verificando se os Servicos Estao Rodando
+## Verificando se o Sistema Esta Rodando
 
 ```bash
-# Verificar portas ativas
-lsof -i :8000,:8501,:8502,:8503 | grep LISTEN
+# Verificar porta ativa
+lsof -i :8000 | grep LISTEN
 
 # Testar FastAPI
-curl http://localhost:8000/
-# Resposta: {"mensagem":"Super Food API - Site do Cliente ativo!"}
+curl http://localhost:8000/health
+# Resposta: {"status":"healthy","checks":{"database":"ok","uptime":...}}
 
 # Testar Swagger
 # Abrir no navegador: http://localhost:8000/docs
-
-# Logs dos servicos
-tail -f /tmp/superfood_api.log
-tail -f /tmp/superfood_admin.log
-tail -f /tmp/superfood_restaurante.log
-tail -f /tmp/superfood_motoboy.log
 ```
 
 ---

@@ -56,6 +56,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       const data = await getMe();
+      // Se o backend retornou token renovado, salvar para estender a sessão
+      if (data.refreshed_token) {
+        localStorage.setItem("sf_admin_token", data.refreshed_token);
+      }
       setRestaurante(data);
       localStorage.setItem("sf_admin_restaurante", JSON.stringify(data));
     } catch {

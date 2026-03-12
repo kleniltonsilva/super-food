@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, Component, type ReactNode } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import AdminLayout from "@/admin/components/AdminLayout";
@@ -6,6 +6,21 @@ import { useAdminAuth } from "@/admin/contexts/AdminAuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, MapPin, Bike, Clock } from "lucide-react";
+
+// ─── ErrorBoundary local para capturar erros do Mapbox ──
+class MapErrorBoundary extends Component<
+  { children: ReactNode; fallback: (error: string) => ReactNode },
+  { error: string | null }
+> {
+  state = { error: null as string | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error: error.message || "Erro ao inicializar o mapa" };
+  }
+  render() {
+    if (this.state.error) return this.props.fallback(this.state.error);
+    return this.props.children;
+  }
+}
 
 // ─── Tipos ──────────────────────────────────────────────
 interface MotoboyGPS {
@@ -109,7 +124,26 @@ function AvisoSemToken() {
 export default function MapaMotoboys() {
   if (!MAPBOX_TOKEN) return <AvisoSemToken />;
 
-  return <MapaMotoboyComToken token={MAPBOX_TOKEN} />;
+  return (
+    <MapErrorBoundary
+      fallback={(error) => (
+        <AdminLayout>
+          <div className="flex flex-col items-center justify-center h-[70vh] gap-4 text-center">
+            <MapPin className="w-16 h-16 text-red-400" />
+            <h2 className="text-2xl font-bold">Erro no Mapa</h2>
+            <p className="text-muted-foreground max-w-md">
+              Não foi possível carregar o mapa: <span className="text-red-500">{error}</span>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Verifique se o token <code className="bg-muted px-2 py-0.5 rounded text-sm font-mono">VITE_MAPBOX_TOKEN</code> está válido no arquivo <code className="bg-muted px-1 rounded">.env</code> e reinicie o servidor Vite.
+            </p>
+          </div>
+        </AdminLayout>
+      )}
+    >
+      <MapaMotoboyComToken token={MAPBOX_TOKEN} />
+    </MapErrorBoundary>
+  );
 }
 
 function MapaMotoboyComToken({ token }: { token: string }) {
@@ -121,6 +155,7 @@ function MapaMotoboyComToken({ token }: { token: string }) {
   const [carregando, setCarregando] = useState(true);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
   const [motoboyAtivo, setMotoboyAtivo] = useState<number | null>(null);
+  const [erroMapa, setErroMapa] = useState<string | null>(null);
 
   const buscarMotoboys = useCallback(async () => {
     if (!restaurante?.id) return;
@@ -185,24 +220,32 @@ function MapaMotoboyComToken({ token }: { token: string }) {
   // Inicializar mapa
   useEffect(() => {
     if (!mapContainerRef.current) return;
-    mapboxgl.accessToken = token;
 
-    const map = new mapboxgl.Map({
-      container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/streets-v12",
-      center: [-46.6333, -23.5505], // São Paulo como padrão
-      zoom: 13,
-    });
-
-    map.addControl(new mapboxgl.NavigationControl(), "top-right");
-    map.addControl(new mapboxgl.GeolocateControl({ trackUserLocation: false }), "top-right");
-
-    mapRef.current = map;
+    let map: mapboxgl.Map | null = null;
+    try {
+      mapboxgl.accessToken = token;
+      map = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: "mapbox://styles/mapbox/streets-v12",
+        center: [-46.6333, -23.5505], // São Paulo como padrão
+        zoom: 13,
+      });
+      map.addControl(new mapboxgl.NavigationControl(), "top-right");
+      map.addControl(new mapboxgl.GeolocateControl({ trackUserLocation: false }), "top-right");
+      map.on("error", (e) => {
+        setErroMapa("Token do Mapbox inválido ou sem permissão para este estilo.");
+        console.error("Mapbox error:", e.error);
+      });
+      mapRef.current = map;
+    } catch (e) {
+      setErroMapa("Não foi possível inicializar o mapa. Verifique o token VITE_MAPBOX_TOKEN.");
+      console.error("Erro ao criar mapa Mapbox:", e);
+    }
 
     return () => {
       marcadoresRef.current.forEach((m) => m.remove());
       marcadoresRef.current.clear();
-      map.remove();
+      map?.remove();
       mapRef.current = null;
     };
   }, [token]);
@@ -248,8 +291,17 @@ function MapaMotoboyComToken({ token }: { token: string }) {
         {/* Layout: mapa + sidebar */}
         <div className="flex gap-4 flex-1 overflow-hidden">
           {/* Mapa */}
-          <div className="flex-1 rounded-xl overflow-hidden border shadow-sm">
+          <div className="flex-1 rounded-xl overflow-hidden border shadow-sm relative">
             <div ref={mapContainerRef} className="w-full h-full" />
+            {erroMapa && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-background/95 gap-3 text-center p-8">
+                <MapPin className="w-12 h-12 text-muted-foreground" />
+                <p className="font-semibold text-red-500">{erroMapa}</p>
+                <p className="text-sm text-muted-foreground">
+                  Configure <code className="bg-muted px-1 rounded">VITE_MAPBOX_TOKEN</code> no arquivo <code className="bg-muted px-1 rounded">.env</code> e recompile.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Sidebar com lista */}

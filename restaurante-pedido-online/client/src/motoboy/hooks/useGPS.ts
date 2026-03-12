@@ -11,7 +11,16 @@ interface GPSState {
   erro: string | null;
 }
 
-const GPS_INTERVAL = 10_000; // 10 segundos
+// Throttle mínimo entre envios (ms) — evita flood quando GPS dispara muito rápido
+const MIN_INTERVALO_MS = 3_000;
+// Distância mínima (graus ~= 5 metros) para considerar que o motoboy se moveu
+const MIN_DISTANCIA_GRAUS = 0.00005;
+// Heartbeat: envia mesmo parado a cada N ms (para o servidor saber que está vivo)
+const HEARTBEAT_MS = 30_000;
+
+function distancia(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  return Math.hypot(lat2 - lat1, lng2 - lng1);
+}
 
 export function useGPS(ativo: boolean) {
   const [state, setState] = useState<GPSState>({
@@ -25,10 +34,14 @@ export function useGPS(ativo: boolean) {
   });
 
   const watchIdRef = useRef<number | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastSendRef = useRef<number>(0);
+  const lastPosRef = useRef<{ lat: number; lng: number } | null>(null);
   const lastPositionRef = useRef<GeolocationPosition | null>(null);
 
   const enviar = useCallback(async (pos: GeolocationPosition) => {
+    lastSendRef.current = Date.now();
+    lastPosRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
     try {
       setState((s) => ({ ...s, status: "enviando" }));
       await enviarGPS({
@@ -59,10 +72,12 @@ export function useGPS(ativo: boolean) {
       return;
     }
 
-    // Iniciar watch
+    // watchPosition dispara a cada movimento detectado pelo SO (quase instantâneo)
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         lastPositionRef.current = pos;
+
+        // Atualiza estado local imediatamente (UI reage na hora)
         setState((s) => ({
           ...s,
           latitude: pos.coords.latitude,
@@ -72,6 +87,20 @@ export function useGPS(ativo: boolean) {
           heading: pos.coords.heading,
           status: s.status === "idle" || s.status === "sem_permissao" ? "ativo" : s.status,
         }));
+
+        const agora = Date.now();
+        const throttleOk = agora - lastSendRef.current >= MIN_INTERVALO_MS;
+
+        // Verifica se moveu o suficiente
+        const moveu = !lastPosRef.current || distancia(
+          lastPosRef.current.lat, lastPosRef.current.lng,
+          pos.coords.latitude, pos.coords.longitude
+        ) >= MIN_DISTANCIA_GRAUS;
+
+        // Envia ao servidor: throttle + movimento mínimo
+        if (throttleOk && moveu) {
+          enviar(pos);
+        }
       },
       (err) => {
         if (err.code === err.PERMISSION_DENIED) {
@@ -80,24 +109,24 @@ export function useGPS(ativo: boolean) {
           setState((s) => ({ ...s, status: "erro", erro: err.message }));
         }
       },
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 }
+      { enableHighAccuracy: true, maximumAge: 2000, timeout: 15000 }
     );
 
-    // Enviar a cada intervalo
-    intervalRef.current = setInterval(() => {
+    // Heartbeat: envia mesmo parado para manter presença no servidor
+    heartbeatRef.current = setInterval(() => {
       if (lastPositionRef.current) {
         enviar(lastPositionRef.current);
       }
-    }, GPS_INTERVAL);
+    }, HEARTBEAT_MS);
 
     return () => {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
       }
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+      if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
       }
     };
   }, [ativo, enviar]);

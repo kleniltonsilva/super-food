@@ -8,6 +8,7 @@ import {
   getPlanos,
   atualizarPlano,
   getInadimplentes,
+  getAnalytics,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -86,6 +87,15 @@ export function useAtualizarPlano() {
       qc.invalidateQueries({ queryKey: ["superadmin", "planos"] });
       qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
     },
+  });
+}
+
+// ─── Analytics ────────────────────────────────────────
+export function useAnalytics(periodo?: string) {
+  return useQuery({
+    queryKey: ["superadmin", "analytics", periodo],
+    queryFn: () => getAnalytics(periodo ? { periodo } : undefined),
+    staleTime: 60_000,
   });
 }
 

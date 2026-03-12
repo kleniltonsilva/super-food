@@ -21,6 +21,8 @@ import {
   getSiteInfo,
   getCategorias,
   getProdutos,
+  getProdutoDetalhe,
+  getSaboresDisponiveis,
   getCombos,
   getCarrinho,
   adicionarAoCarrinho,
@@ -52,6 +54,8 @@ export const QUERY_KEYS = {
   enderecos: ["enderecos"] as const,
   pontosFidelidade: (clienteId: number) => ["pontosFidelidade", clienteId] as const,
   premiosFidelidade: ["premiosFidelidade"] as const,
+  produtoDetalhe: (id: number) => ["produtoDetalhe", id] as const,
+  saboresDisponiveis: (id: number) => ["saboresDisponiveis", id] as const,
 } as const;
 
 // =============================================================================
@@ -188,6 +192,32 @@ export function usePremiosFidelidade(enabled = true) {
     queryFn: getPremiosFidelidade,
     staleTime: 15 * 60 * 1000,     // 15 min
     enabled,
+  });
+}
+
+/**
+ * Detalhes completos de um produto (com variações agrupadas + ingredientes).
+ * staleTime: 5 min — usado pelo PizzaBuilder e ProductDetail.
+ */
+export function useProdutoDetalhe(produtoId: number | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.produtoDetalhe(produtoId!),
+    queryFn: () => getProdutoDetalhe(produtoId!),
+    enabled: !!produtoId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Sabores disponíveis (produtos da mesma categoria) para montagem de pizza.
+ * staleTime: 5 min — muda quando restaurante edita cardápio.
+ */
+export function useSaboresDisponiveis(produtoId: number | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.saboresDisponiveis(produtoId!),
+    queryFn: () => getSaboresDisponiveis(produtoId!),
+    enabled: !!produtoId,
+    staleTime: 5 * 60 * 1000,
   });
 }
 

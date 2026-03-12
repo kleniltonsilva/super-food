@@ -39,6 +39,8 @@ export interface SiteInfo {
   horario_abertura: string;
   horario_fechamento: string;
   dias_semana_abertos: string[];
+  modo_preco_pizza?: string;
+  ingredientes_adicionais_pizza?: Array<{ nome: string; preco: number }>;
 }
 
 interface RestauranteContextType {

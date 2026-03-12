@@ -23,6 +23,19 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
 import { getClienteMe } from "@/lib/apiClient";
 
+// Namespace das chaves por restaurante — isolamento multi-tenant.
+// localStorage é scoped por origin (domínio+porta), não por path.
+// Sem namespace, sf_token seria compartilhado entre todos os restaurantes.
+function getCodigoRestaurante(): string {
+  return (window as any).RESTAURANTE_CODIGO || "demo";
+}
+function getTokenKey(): string {
+  return `sf_token_${getCodigoRestaurante()}`;
+}
+function getClienteKey(): string {
+  return `sf_cliente_${getCodigoRestaurante()}`;
+}
+
 interface Cliente {
   id: number;
   nome: string;
@@ -55,11 +68,11 @@ const AuthContext = createContext<AuthContextType>({
  */
 function getCachedCliente(): Cliente | null {
   try {
-    const cached = localStorage.getItem("sf_cliente");
+    const cached = localStorage.getItem(getClienteKey());
     if (cached) return JSON.parse(cached);
   } catch {
     // JSON inválido — limpa cache corrompido
-    localStorage.removeItem("sf_cliente");
+    localStorage.removeItem(getClienteKey());
   }
   return null;
 }
@@ -67,7 +80,7 @@ function getCachedCliente(): Cliente | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   // Restaura cliente do cache imediatamente (sem esperar API)
   // Isso evita o "flash" de UI deslogada durante o mount
-  const hasToken = !!localStorage.getItem("sf_token");
+  const hasToken = !!localStorage.getItem(getTokenKey());
   const [cliente, setCliente] = useState<Cliente | null>(hasToken ? getCachedCliente() : null);
   const [loading, setLoading] = useState(hasToken);
 
@@ -76,10 +89,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Se token inválido/expirado, faz cleanup completo.
    */
   const loadCliente = useCallback(async () => {
-    const token = localStorage.getItem("sf_token");
+    const token = localStorage.getItem(getTokenKey());
     if (!token) {
       setCliente(null);
-      localStorage.removeItem("sf_cliente");
+      localStorage.removeItem(getClienteKey());
       setLoading(false);
       return;
     }
@@ -88,11 +101,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await getClienteMe();
       setCliente(data);
       // Atualiza cache para próximos mounts
-      localStorage.setItem("sf_cliente", JSON.stringify(data));
+      localStorage.setItem(getClienteKey(), JSON.stringify(data));
     } catch {
       // Token expirado ou inválido — cleanup
-      localStorage.removeItem("sf_token");
-      localStorage.removeItem("sf_cliente");
+      localStorage.removeItem(getTokenKey());
+      localStorage.removeItem(getClienteKey());
       setCliente(null);
     } finally {
       setLoading(false);
@@ -117,14 +130,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   useEffect(() => {
     function handleStorageChange(e: StorageEvent) {
-      if (e.key === "sf_token") {
+      if (e.key === getTokenKey()) {
         if (e.newValue) {
           // Outra aba fez login — recarrega dados do cliente
           loadCliente();
         } else {
           // Outra aba fez logout ou token expirou — desloga aqui também
           setCliente(null);
-          localStorage.removeItem("sf_cliente");
+          localStorage.removeItem(getClienteKey());
         }
       }
     }
@@ -138,8 +151,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * O cache em sf_cliente permite mount instantâneo no próximo reload.
    */
   const login = useCallback((token: string, clienteData: Cliente) => {
-    localStorage.setItem("sf_token", token);
-    localStorage.setItem("sf_cliente", JSON.stringify(clienteData));
+    localStorage.setItem(getTokenKey(), token);
+    localStorage.setItem(getClienteKey(), JSON.stringify(clienteData));
     setCliente(clienteData);
   }, []);
 
@@ -148,8 +161,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * Não dispara StorageEvent manual porque o efeito já é imediato.
    */
   const logout = useCallback(() => {
-    localStorage.removeItem("sf_token");
-    localStorage.removeItem("sf_cliente");
+    localStorage.removeItem(getTokenKey());
+    localStorage.removeItem(getClienteKey());
     setCliente(null);
   }, []);
 

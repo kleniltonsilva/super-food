@@ -6,7 +6,7 @@ Sprint 1 da migração v4.0
 Todos os endpoints requerem auth JWT do restaurante.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_, desc
 from pydantic import BaseModel
@@ -218,8 +218,9 @@ class PedidoManualRequest(BaseModel):
 
 
 @router.post("/pedidos")
-def criar_pedido_manual(
+async def criar_pedido_manual(
     dados: PedidoManualRequest,
+    request: Request,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
@@ -250,6 +251,14 @@ def criar_pedido_manual(
     db.add(pedido)
     db.commit()
     db.refresh(pedido)
+
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "novo_pedido",
+            "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda, "cliente_nome": pedido.cliente_nome, "valor_total": pedido.valor_total}
+        }, rest.id)
+
     return {"id": pedido.id, "comanda": pedido.comanda, "status": pedido.status}
 
 
@@ -258,8 +267,9 @@ class StatusUpdate(BaseModel):
 
 
 @router.put("/pedidos/{pedido_id}/status")
-def atualizar_status_pedido(
+async def atualizar_status_pedido(
     pedido_id: int, dados: StatusUpdate,
+    request: Request,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
@@ -270,7 +280,53 @@ def atualizar_status_pedido(
         raise HTTPException(404, "Pedido não encontrado")
     pedido.status = dados.status
     pedido.atualizado_em = datetime.utcnow()
+
+    # Auto-lançar venda no caixa quando pedido é entregue
+    if dados.status == 'entregue' and pedido.valor_total and pedido.valor_total > 0:
+        caixa_aberto = db.query(models.Caixa).filter(
+            models.Caixa.restaurante_id == rest.id,
+            models.Caixa.status == 'aberto'
+        ).first()
+        if caixa_aberto:
+            forma = (pedido.forma_pagamento_real or pedido.forma_pagamento or '').strip().lower()
+            # Mapear forma de pagamento para categoria
+            if 'pix' in forma:
+                campo_pgto = 'pix'
+            elif 'cart' in forma or 'credito' in forma or 'debito' in forma or 'cartão' in forma:
+                campo_pgto = 'cartao'
+            elif 'vale' in forma:
+                campo_pgto = 'vale'
+            else:
+                campo_pgto = 'dinheiro'
+
+            mov = models.MovimentacaoCaixa(
+                caixa_id=caixa_aberto.id,
+                tipo='venda',
+                valor=pedido.valor_total,
+                descricao=f"Pedido #{pedido.comanda} — {(pedido.forma_pagamento_real or pedido.forma_pagamento or 'N/I')}",
+                forma_pagamento=campo_pgto,
+                pedido_id=pedido.id,
+            )
+            db.add(mov)
+            caixa_aberto.total_vendas = (caixa_aberto.total_vendas or 0) + pedido.valor_total
+            if campo_pgto == 'dinheiro':
+                caixa_aberto.total_dinheiro = (caixa_aberto.total_dinheiro or 0) + pedido.valor_total
+            elif campo_pgto == 'cartao':
+                caixa_aberto.total_cartao = (caixa_aberto.total_cartao or 0) + pedido.valor_total
+            elif campo_pgto == 'pix':
+                caixa_aberto.total_pix = (caixa_aberto.total_pix or 0) + pedido.valor_total
+            elif campo_pgto == 'vale':
+                caixa_aberto.total_vale = (caixa_aberto.total_vale or 0) + pedido.valor_total
+
     db.commit()
+
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "pedido_atualizado",
+            "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda, "status": pedido.status}
+        }, rest.id)
+
     return {"id": pedido.id, "status": pedido.status}
 
 
@@ -279,8 +335,9 @@ class DespachoRequest(BaseModel):
 
 
 @router.post("/pedidos/{pedido_id}/despachar")
-def despachar_pedido(
+async def despachar_pedido(
     pedido_id: int, dados: DespachoRequest,
+    request: Request,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
@@ -290,29 +347,43 @@ def despachar_pedido(
     if not pedido:
         raise HTTPException(404, "Pedido não encontrado")
 
+    # Ler modo de prioridade da config
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+    modo = config.modo_prioridade_entrega if config else 'rapido_economico'
+
+    # Modo manual: motoboy_id obrigatório
+    if modo == 'manual' and not dados.motoboy_id:
+        raise HTTPException(400, "Modo manual ativo — selecione um motoboy")
+
     if dados.motoboy_id:
+        # Seleção manual (funciona em qualquer modo)
         motoboy = db.query(models.Motoboy).filter(
             models.Motoboy.id == dados.motoboy_id,
             models.Motoboy.restaurante_id == rest.id,
             models.Motoboy.status == 'ativo'
         ).first()
         if not motoboy:
-            raise HTTPException(404, "Motoboy não encontrado")
+            raise HTTPException(404, "Motoboy não encontrado ou inativo")
     else:
+        # Seleção automática com novas regras (GPS + distribuição diária)
+        from utils.motoboy_selector import selecionar_motoboy_para_rota
+        resultado = selecionar_motoboy_para_rota(rest.id, session=db)
+        if not resultado:
+            raise HTTPException(
+                400,
+                "Nenhum motoboy elegível (verificar: ativo, disponível, GPS atualizado, dentro de 50m do restaurante, sem entregas pendentes)"
+            )
         motoboy = db.query(models.Motoboy).filter(
-            models.Motoboy.restaurante_id == rest.id,
-            models.Motoboy.status == 'ativo',
-            models.Motoboy.disponivel == True
-        ).order_by(models.Motoboy.ordem_hierarquia).first()
-        if not motoboy:
-            raise HTTPException(400, "Nenhum motoboy disponível")
+            models.Motoboy.id == resultado['motoboy_id']
+        ).first()
 
     # Calcular distância restaurante → endereço de entrega
     distancia_km = None
     if rest.latitude and rest.longitude:
         lat_entrega = pedido.latitude_entrega
         lon_entrega = pedido.longitude_entrega
-        # Se pedido não tem coords mas tem endereço, geocodificar
         if (not lat_entrega or not lon_entrega) and pedido.endereco_entrega:
             try:
                 from utils.mapbox_api import geocode_address
@@ -330,12 +401,26 @@ def despachar_pedido(
                 (lat_entrega, lon_entrega)
             ), 2)
 
+    # Aplicar TSP se modo automático e há coordenadas
+    tempo_estimado_min = None
+    if modo != 'manual' and distancia_km is not None:
+        try:
+            from utils.tsp_optimizer import calcular_metricas_rota
+            metricas = calcular_metricas_rota(
+                (rest.latitude, rest.longitude),
+                [{'lat': pedido.latitude_entrega, 'lon': pedido.longitude_entrega, 'pedido_id': pedido.id}]
+            )
+            tempo_estimado_min = metricas.get('tempo_total_min')
+        except Exception:
+            pass
+
     entrega = models.Entrega(
         pedido_id=pedido.id,
         motoboy_id=motoboy.id,
         status='pendente',
         atribuido_em=datetime.utcnow(),
-        distancia_km=distancia_km
+        distancia_km=distancia_km,
+        tempo_entrega=tempo_estimado_min
     )
     db.add(entrega)
     pedido.despachado = True
@@ -343,12 +428,35 @@ def despachar_pedido(
     motoboy.entregas_pendentes = (motoboy.entregas_pendentes or 0) + 1
     motoboy.ultima_rota_em = datetime.utcnow()
     db.commit()
-    return {"id": pedido.id, "motoboy_id": motoboy.id, "motoboy_nome": motoboy.nome}
+
+    # Broadcast WebSocket
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "pedido_despachado",
+            "dados": {
+                "pedido_id": pedido.id, "comanda": pedido.comanda,
+                "motoboy_id": motoboy.id, "motoboy_nome": motoboy.nome,
+                "distancia_km": distancia_km, "tempo_estimado_min": tempo_estimado_min,
+            }
+        }, rest.id)
+
+    return {
+        "id": pedido.id, "motoboy_id": motoboy.id, "motoboy_nome": motoboy.nome,
+        "distancia_km": distancia_km, "tempo_estimado_min": tempo_estimado_min,
+        "modo": modo,
+    }
+
+
+class CancelarPedidoRequest(BaseModel):
+    senha: Optional[str] = None
 
 
 @router.put("/pedidos/{pedido_id}/cancelar")
-def cancelar_pedido(
+async def cancelar_pedido(
     pedido_id: int,
+    request: Request,
+    dados: CancelarPedidoRequest = CancelarPedidoRequest(),
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
@@ -357,10 +465,300 @@ def cancelar_pedido(
     ).first()
     if not pedido:
         raise HTTPException(404, "Pedido não encontrado")
+
+    # Pedidos entregues/pagos requerem senha do admin
+    status_protegidos = ('entregue', 'pago', 'finalizado')
+    if pedido.status in status_protegidos:
+        if not dados.senha:
+            raise HTTPException(400, "Senha do administrador necessária para cancelar pedido já entregue")
+        if not rest.verificar_senha(dados.senha.strip()):
+            raise HTTPException(403, "Senha incorreta")
+
+    status_anterior = pedido.status
     pedido.status = 'cancelado'
     pedido.atualizado_em = datetime.utcnow()
+
+    # Reverter lançamento no caixa se pedido havia sido registrado
+    if status_anterior in status_protegidos and pedido.valor_total and pedido.valor_total > 0:
+        caixa_aberto = db.query(models.Caixa).filter(
+            models.Caixa.restaurante_id == rest.id,
+            models.Caixa.status == 'aberto'
+        ).first()
+        if caixa_aberto:
+            # Verificar se existe movimentação de venda para este pedido
+            mov_venda = db.query(models.MovimentacaoCaixa).filter(
+                models.MovimentacaoCaixa.caixa_id == caixa_aberto.id,
+                models.MovimentacaoCaixa.pedido_id == pedido.id,
+                models.MovimentacaoCaixa.tipo == 'venda'
+            ).first()
+            if mov_venda:
+                # Criar movimentação de estorno
+                estorno = models.MovimentacaoCaixa(
+                    caixa_id=caixa_aberto.id,
+                    tipo='estorno',
+                    valor=mov_venda.valor,
+                    descricao=f"Estorno - Pedido #{pedido.comanda} cancelado",
+                    forma_pagamento=mov_venda.forma_pagamento,
+                    pedido_id=pedido.id,
+                )
+                db.add(estorno)
+                # Reverter totais
+                caixa_aberto.total_vendas = (caixa_aberto.total_vendas or 0) - mov_venda.valor
+                campo = mov_venda.forma_pagamento or 'dinheiro'
+                if campo == 'dinheiro':
+                    caixa_aberto.total_dinheiro = (caixa_aberto.total_dinheiro or 0) - mov_venda.valor
+                elif campo == 'cartao':
+                    caixa_aberto.total_cartao = (caixa_aberto.total_cartao or 0) - mov_venda.valor
+                elif campo == 'pix':
+                    caixa_aberto.total_pix = (caixa_aberto.total_pix or 0) - mov_venda.valor
+                elif campo == 'vale':
+                    caixa_aberto.total_vale = (caixa_aberto.total_vale or 0) - mov_venda.valor
+
     db.commit()
+
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "pedido_cancelado",
+            "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+        }, rest.id)
+
     return {"id": pedido.id, "status": "cancelado"}
+
+
+# ============================================================
+# ENTREGAS ATIVAS (tempo real + detecção de atraso)
+# ============================================================
+
+@router.get("/entregas/ativas")
+def entregas_ativas(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Retorna entregas em andamento com cálculos de tempo e atraso.
+    Usado pelo Dashboard e Pedidos para visão em tempo real.
+    """
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+    tolerancia = (config.tolerancia_atraso_min if config else 10) or 10
+
+    entregas = db.query(models.Entrega).join(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Entrega.status.in_(['pendente', 'em_rota'])
+    ).options(
+        joinedload(models.Entrega.pedido),
+        joinedload(models.Entrega.motoboy)
+    ).all()
+
+    agora = datetime.utcnow()
+    resultado = []
+    total_atrasadas = 0
+
+    for e in entregas:
+        pedido = e.pedido
+        motoboy = e.motoboy
+
+        # Tempo estimado baseado na distância (25 km/h)
+        tempo_estimado_min = None
+        if e.distancia_km and e.distancia_km > 0:
+            tempo_estimado_min = round((e.distancia_km / 25) * 60)
+        elif e.tempo_entrega:
+            tempo_estimado_min = e.tempo_entrega
+
+        # Tempo decorrido desde início da entrega (ou atribuição)
+        referencia = e.delivery_started_at or e.atribuido_em or pedido.data_criacao
+        tempo_decorrido_min = round((agora - referencia).total_seconds() / 60) if referencia else 0
+
+        # Detectar atraso
+        atrasada = False
+        if tempo_estimado_min is not None and tempo_decorrido_min > (tempo_estimado_min + tolerancia):
+            atrasada = True
+            total_atrasadas += 1
+
+        resultado.append({
+            "entrega_id": e.id,
+            "pedido_id": pedido.id,
+            "comanda": pedido.comanda,
+            "cliente_nome": pedido.cliente_nome,
+            "endereco": pedido.endereco_entrega,
+            "valor_total": pedido.valor_total,
+            "status": e.status,
+            "distancia_km": e.distancia_km,
+            "motoboy_nome": motoboy.nome if motoboy else None,
+            "motoboy_lat": motoboy.latitude_atual if motoboy else None,
+            "motoboy_lon": motoboy.longitude_atual if motoboy else None,
+            "pedido_criado_em": pedido.data_criacao.isoformat() if pedido.data_criacao else None,
+            "atribuido_em": e.atribuido_em.isoformat() if e.atribuido_em else None,
+            "saiu_em": e.delivery_started_at.isoformat() if e.delivery_started_at else None,
+            "tempo_estimado_min": tempo_estimado_min,
+            "tempo_decorrido_min": tempo_decorrido_min,
+            "atrasada": atrasada,
+        })
+
+    return {
+        "entregas": resultado,
+        "total_ativas": len(resultado),
+        "total_atrasadas": total_atrasadas,
+        "tolerancia_min": tolerancia,
+    }
+
+
+# ============================================================
+# DIAGNÓSTICO DE TEMPO (ajuste automático de tempos)
+# ============================================================
+
+@router.get("/entregas/diagnostico-tempo")
+def diagnostico_tempo(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Analisa carga atual e sugere ajuste de tempo de entrega/retirada.
+    Retorna sugestão quando detecta que tempos prometidos não são viáveis.
+    """
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+    site_config = db.query(models.SiteConfig).filter(
+        models.SiteConfig.restaurante_id == rest.id
+    ).first()
+
+    tempo_entrega_atual = site_config.tempo_entrega_estimado if site_config else 50
+    tempo_retirada_atual = site_config.tempo_retirada_estimado if site_config else 20
+    tempo_preparo = config.tempo_medio_preparo if config else 30
+
+    agora = datetime.utcnow()
+
+    # Pedidos ativos (pendente + em_preparo + pronto)
+    pedidos_ativos = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.status.in_(['pendente', 'em_preparo', 'pronto'])
+    ).count()
+
+    # Entregas em andamento
+    entregas_ativas = db.query(models.Entrega).join(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Entrega.status.in_(['pendente', 'em_rota'])
+    ).count()
+
+    # Motoboys disponíveis (ativos, disponíveis, não em rota)
+    motoboys_livres = db.query(models.Motoboy).filter(
+        models.Motoboy.restaurante_id == rest.id,
+        models.Motoboy.status == 'ativo',
+        models.Motoboy.disponivel == True,
+        models.Motoboy.em_rota == False
+    ).count()
+
+    # Calcular tempo médio real das últimas 10 entregas do dia
+    hoje = datetime.combine(date.today(), datetime.min.time())
+    ultimas_entregas = db.query(models.Entrega).join(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Entrega.status == 'entregue',
+        models.Entrega.entregue_em >= hoje,
+        models.Entrega.delivery_started_at.isnot(None)
+    ).order_by(models.Entrega.entregue_em.desc()).limit(10).all()
+
+    tempo_medio_real = None
+    if ultimas_entregas:
+        tempos = []
+        for e in ultimas_entregas:
+            if e.delivery_started_at and e.entregue_em:
+                delta = (e.entregue_em - e.delivery_started_at).total_seconds() / 60
+                tempos.append(delta)
+        if tempos:
+            tempo_medio_real = round(sum(tempos) / len(tempos))
+
+    # Lógica de sugestão
+    # Se há mais pedidos que motoboys podem atender, tempo precisa aumentar
+    pedidos_por_motoboy = pedidos_ativos / max(motoboys_livres, 1)
+    fila_espera_min = max(0, (pedidos_ativos - max(motoboys_livres, 1))) * tempo_preparo
+
+    # Tempo sugerido = tempo_preparo + fila de espera + tempo médio real de entrega
+    tempo_entrega_medio = tempo_medio_real or 20
+    tempo_sugerido_entrega = tempo_preparo + fila_espera_min + tempo_entrega_medio
+    tempo_sugerido_retirada = tempo_preparo + fila_espera_min
+
+    # Arredondar para múltiplos de 5
+    tempo_sugerido_entrega = max(30, ((tempo_sugerido_entrega + 4) // 5) * 5)
+    tempo_sugerido_retirada = max(15, ((tempo_sugerido_retirada + 4) // 5) * 5)
+
+    # Detectar se precisa ajustar
+    precisa_aumentar = (
+        tempo_sugerido_entrega > tempo_entrega_atual + 10 or
+        tempo_sugerido_retirada > tempo_retirada_atual + 10
+    )
+    pode_diminuir = (
+        pedidos_ativos <= 2 and motoboys_livres >= 1 and
+        (tempo_entrega_atual > 50 or tempo_retirada_atual > 25)
+    )
+
+    return {
+        "pedidos_ativos": pedidos_ativos,
+        "entregas_ativas": entregas_ativas,
+        "motoboys_livres": motoboys_livres,
+        "pedidos_por_motoboy": round(pedidos_por_motoboy, 1),
+        "tempo_medio_real_min": tempo_medio_real,
+        "tempo_entrega_atual": tempo_entrega_atual,
+        "tempo_retirada_atual": tempo_retirada_atual,
+        "tempo_sugerido_entrega": int(tempo_sugerido_entrega),
+        "tempo_sugerido_retirada": int(tempo_sugerido_retirada),
+        "precisa_aumentar": precisa_aumentar,
+        "pode_diminuir": pode_diminuir,
+        "motivo": (
+            f"Fila com {pedidos_ativos} pedidos e {motoboys_livres} motoboy(s) livre(s)"
+            if precisa_aumentar else
+            "Movimento normalizado, tempos podem voltar ao padrão"
+            if pode_diminuir else
+            "Tempos adequados para a demanda atual"
+        ),
+    }
+
+
+@router.post("/entregas/ajustar-tempo")
+async def ajustar_tempo_automatico(
+    dados: dict,
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Aplica ajuste de tempo de entrega/retirada sugerido pelo diagnóstico.
+    Body: { tempo_entrega_estimado: int, tempo_retirada_estimado: int }
+    """
+    site_config = db.query(models.SiteConfig).filter(
+        models.SiteConfig.restaurante_id == rest.id
+    ).first()
+    if not site_config:
+        site_config = models.SiteConfig(restaurante_id=rest.id)
+        db.add(site_config)
+
+    tempo_entrega = dados.get('tempo_entrega_estimado')
+    tempo_retirada = dados.get('tempo_retirada_estimado')
+
+    if tempo_entrega is not None:
+        site_config.tempo_entrega_estimado = int(tempo_entrega)
+    if tempo_retirada is not None:
+        site_config.tempo_retirada_estimado = int(tempo_retirada)
+
+    db.commit()
+
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "tempo_ajustado",
+            "dados": {
+                "tempo_entrega_estimado": site_config.tempo_entrega_estimado,
+                "tempo_retirada_estimado": site_config.tempo_retirada_estimado,
+            }
+        }, rest.id)
+
+    return {
+        "mensagem": "Tempos atualizados",
+        "tempo_entrega_estimado": site_config.tempo_entrega_estimado,
+        "tempo_retirada_estimado": site_config.tempo_retirada_estimado,
+    }
 
 
 # ============================================================
@@ -479,6 +877,7 @@ class ProdutoRequest(BaseModel):
     estoque_ilimitado: Optional[bool] = True
     estoque_quantidade: Optional[int] = 0
     disponivel: Optional[bool] = True
+    ingredientes_json: Optional[list] = None
 
 
 @router.get("/produtos")
@@ -526,6 +925,7 @@ def detalhe_produto(
         "preco_promocional": prod.preco_promocional,
         "disponivel": prod.disponivel, "ordem_exibicao": prod.ordem_exibicao,
         "estoque_ilimitado": prod.estoque_ilimitado, "estoque_quantidade": prod.estoque_quantidade,
+        "ingredientes_json": prod.ingredientes_json or [],
         "variacoes": [{
             "id": v.id, "tipo_variacao": v.tipo_variacao, "nome": v.nome,
             "descricao": v.descricao, "preco_adicional": v.preco_adicional,
@@ -806,7 +1206,7 @@ class MotoboyRequest(BaseModel):
     usuario: str
     telefone: str
     senha: Optional[str] = None
-    capacidade_entregas: Optional[int] = 3
+    capacidade_entregas: Optional[int] = 5
     cpf: Optional[str] = None
 
 
@@ -828,6 +1228,7 @@ def listar_motoboys(
         "ordem_hierarquia": m.ordem_hierarquia,
         "latitude_atual": m.latitude_atual, "longitude_atual": m.longitude_atual,
         "ultima_atualizacao_gps": m.ultima_atualizacao_gps.isoformat() if m.ultima_atualizacao_gps else None,
+        "capacidade_entregas": m.capacidade_entregas,
     } for m in motoboys]
 
 
@@ -1013,15 +1414,21 @@ def caixa_atual(
         "valor_abertura": caixa.valor_abertura,
         "total_vendas": caixa.total_vendas,
         "valor_retiradas": caixa.valor_retiradas,
+        "total_dinheiro": caixa.total_dinheiro or 0,
+        "total_cartao": caixa.total_cartao or 0,
+        "total_pix": caixa.total_pix or 0,
+        "total_vale": caixa.total_vale or 0,
         "movimentacoes": [{
             "id": m.id, "tipo": m.tipo, "valor": m.valor,
-            "descricao": m.descricao, "data_hora": m.data_hora.isoformat() if m.data_hora else None,
+            "descricao": m.descricao,
+            "forma_pagamento": m.forma_pagamento,
+            "pedido_id": m.pedido_id,
+            "data_hora": m.data_hora.isoformat() if m.data_hora else None,
         } for m in movs],
     }
 
 
 class AbrirCaixaRequest(BaseModel):
-    operador: str
     valor_abertura: float = 0.0
 
 
@@ -1040,7 +1447,7 @@ def abrir_caixa(
     caixa = models.Caixa(
         restaurante_id=rest.id,
         data_abertura=datetime.utcnow(),
-        operador_abertura=dados.operador,
+        operador_abertura=rest.nome,
         valor_abertura=dados.valor_abertura
     )
     db.add(caixa)
@@ -1083,7 +1490,6 @@ def registrar_movimentacao(
 
 
 class FecharCaixaRequest(BaseModel):
-    operador: str
     valor_contado: float
 
 
@@ -1104,7 +1510,7 @@ def fechar_caixa(
 
     caixa.status = 'fechado'
     caixa.data_fechamento = datetime.utcnow()
-    caixa.operador_fechamento = dados.operador
+    caixa.operador_fechamento = rest.nome
     caixa.valor_contado = dados.valor_contado
     caixa.diferenca = round(diferenca, 2)
     db.commit()
@@ -1127,6 +1533,10 @@ def historico_caixa(
         "operador_abertura": c.operador_abertura,
         "valor_abertura": c.valor_abertura, "total_vendas": c.total_vendas,
         "valor_retiradas": c.valor_retiradas,
+        "total_dinheiro": c.total_dinheiro or 0,
+        "total_cartao": c.total_cartao or 0,
+        "total_pix": c.total_pix or 0,
+        "total_vale": c.total_vale or 0,
         "valor_contado": c.valor_contado, "diferenca": c.diferenca,
     } for c in caixas]
 
@@ -1164,9 +1574,12 @@ def get_config(
         "permitir_ver_saldo_motoboy": config.permitir_ver_saldo_motoboy,
         "permitir_finalizar_fora_raio": config.permitir_finalizar_fora_raio,
         "distancia_base_motoboy_km": config.distancia_base_motoboy_km,
+        "aceitar_pedido_site_auto": config.aceitar_pedido_site_auto,
+        "tolerancia_atraso_min": config.tolerancia_atraso_min,
         "horario_abertura": config.horario_abertura,
         "horario_fechamento": config.horario_fechamento,
         "dias_semana_abertos": config.dias_semana_abertos,
+        "modo_preco_pizza": config.modo_preco_pizza,
         # Localização do restaurante (de Restaurante, não ConfigRestaurante)
         "endereco_completo": rest.endereco_completo,
         "latitude": rest.latitude,
@@ -1193,8 +1606,9 @@ def atualizar_config(
         'distancia_base_km', 'taxa_km_extra', 'valor_base_motoboy', 'valor_km_extra_motoboy',
         'taxa_diaria', 'valor_lanche', 'max_pedidos_por_rota',
         'permitir_ver_saldo_motoboy', 'permitir_finalizar_fora_raio',
-        'distancia_base_motoboy_km', 'horario_abertura', 'horario_fechamento',
-        'dias_semana_abertos'
+        'distancia_base_motoboy_km', 'aceitar_pedido_site_auto',
+        'tolerancia_atraso_min', 'horario_abertura', 'horario_fechamento',
+        'dias_semana_abertos', 'modo_preco_pizza'
     }
     for campo, valor in dados.items():
         if campo in campos_validos:
@@ -1232,6 +1646,7 @@ def get_site_config(
         "aceita_dinheiro": sc.aceita_dinheiro, "aceita_cartao": sc.aceita_cartao,
         "aceita_pix": sc.aceita_pix, "aceita_vale_refeicao": sc.aceita_vale_refeicao,
         "meta_title": sc.meta_title, "meta_description": sc.meta_description,
+        "ingredientes_adicionais_pizza": sc.ingredientes_adicionais_pizza,
     }
 
 
@@ -1255,7 +1670,8 @@ def atualizar_site_config(
         'pedido_minimo', 'tempo_entrega_estimado', 'tempo_retirada_estimado',
         'site_ativo', 'aceita_agendamento',
         'aceita_dinheiro', 'aceita_cartao', 'aceita_pix', 'aceita_vale_refeicao',
-        'meta_title', 'meta_description', 'meta_keywords'
+        'meta_title', 'meta_description', 'meta_keywords',
+        'ingredientes_adicionais_pizza'
     }
     for campo, valor in dados.items():
         if campo in campos_validos:
@@ -1775,3 +2191,606 @@ def remover_dominio(
     db.delete(dominio)
     db.commit()
     return {"mensagem": f"Dominio {dominio.dominio} removido com sucesso"}
+
+
+# ============================================================
+# RELATÓRIO ANALYTICS AVANÇADO
+# ============================================================
+
+@router.get("/relatorios/analytics")
+def relatorio_analytics(
+    senha: str = Query(..., description="Senha do restaurante para autenticação dupla"),
+    periodo: str = Query("30d", description="Período: 30d, 90d, 12m, anual"),
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """
+    Relatório analytics avançado com faturamento, projeções, tendências,
+    produtos mais vendidos, formas de pagamento, clientes e cancelamentos.
+    Requer autenticação dupla (JWT + senha).
+    """
+    # --- Autenticação dupla: validar senha ---
+    if not rest.verificar_senha(senha.strip()):
+        raise HTTPException(403, "Senha inválida")
+
+    # --- Calcular datas do período ---
+    agora = datetime.utcnow()
+    hoje = date.today()
+    inicio_mes_atual = datetime(hoje.year, hoje.month, 1)
+    inicio_ano_atual = datetime(hoje.year, 1, 1)
+
+    if periodo == "90d":
+        inicio_periodo = agora - timedelta(days=90)
+    elif periodo == "12m":
+        inicio_periodo = agora - timedelta(days=365)
+    elif periodo == "anual":
+        inicio_periodo = inicio_ano_atual
+    else:  # 30d padrão
+        inicio_periodo = agora - timedelta(days=30)
+
+    NOMES_DIAS = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+
+    rest_id = rest.id
+
+    # =============================
+    # FATURAMENTO
+    # =============================
+
+    # Faturamento mês atual
+    faturamento_mes = db.query(
+        func.coalesce(func.sum(models.Pedido.valor_total), 0.0)
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'entregue',
+        models.Pedido.data_criacao >= inicio_mes_atual
+    ).scalar()
+    faturamento_mes = round(float(faturamento_mes), 2)
+
+    # Faturamento ano atual
+    faturamento_ano = db.query(
+        func.coalesce(func.sum(models.Pedido.valor_total), 0.0)
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'entregue',
+        models.Pedido.data_criacao >= inicio_ano_atual
+    ).scalar()
+    faturamento_ano = round(float(faturamento_ano), 2)
+
+    # Faturamento dos últimos 6 meses (para projeções e comparações)
+    faturamento_por_mes = []
+    pedidos_por_mes = []
+    for i in range(6):
+        # Mês i meses atrás
+        mes_ref = hoje.month - i
+        ano_ref = hoje.year
+        while mes_ref <= 0:
+            mes_ref += 12
+            ano_ref -= 1
+        inicio_ref = datetime(ano_ref, mes_ref, 1)
+        if mes_ref == 12:
+            fim_ref = datetime(ano_ref + 1, 1, 1)
+        else:
+            fim_ref = datetime(ano_ref, mes_ref + 1, 1)
+
+        fat_mes = db.query(
+            func.coalesce(func.sum(models.Pedido.valor_total), 0.0)
+        ).filter(
+            models.Pedido.restaurante_id == rest_id,
+            models.Pedido.status == 'entregue',
+            models.Pedido.data_criacao >= inicio_ref,
+            models.Pedido.data_criacao < fim_ref
+        ).scalar()
+
+        ped_mes = db.query(func.count(models.Pedido.id)).filter(
+            models.Pedido.restaurante_id == rest_id,
+            models.Pedido.status == 'entregue',
+            models.Pedido.data_criacao >= inicio_ref,
+            models.Pedido.data_criacao < fim_ref
+        ).scalar()
+
+        faturamento_por_mes.append(float(fat_mes))
+        pedidos_por_mes.append(int(ped_mes))
+
+    # Projeção anual: média últimos 3 meses × 12
+    ultimos_3_fat = [f for f in faturamento_por_mes[:3] if f > 0]
+    if ultimos_3_fat:
+        projecao_anual = round((sum(ultimos_3_fat) / len(ultimos_3_fat)) * 12, 2)
+    else:
+        projecao_anual = 0.0
+
+    # Projeção próximo mês: média ponderada (peso 3 para mais recente, 2, 1)
+    pesos = [3, 2, 1]
+    soma_ponderada = 0.0
+    soma_pesos = 0
+    for idx, fat in enumerate(faturamento_por_mes[:3]):
+        if fat > 0 or idx == 0:  # Sempre inclui o mês atual mesmo se zero
+            soma_ponderada += fat * pesos[idx]
+            soma_pesos += pesos[idx]
+    projecao_proximo_mes = round(soma_ponderada / soma_pesos, 2) if soma_pesos > 0 else 0.0
+
+    # Comparação com mês anterior (%)
+    fat_mes_atual = faturamento_por_mes[0]
+    fat_mes_anterior = faturamento_por_mes[1]
+    if fat_mes_anterior > 0:
+        comparacao_mes_anterior = round(((fat_mes_atual - fat_mes_anterior) / fat_mes_anterior) * 100, 2)
+    else:
+        comparacao_mes_anterior = 100.0 if fat_mes_atual > 0 else 0.0
+
+    # =============================
+    # MELHOR/PIOR DIA E HORÁRIO
+    # =============================
+
+    # Distribuição por dia da semana — usar Python para compatibilidade SQLite/PostgreSQL
+    pedidos_periodo = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'entregue',
+        models.Pedido.data_criacao >= inicio_periodo
+    ).all()
+
+    dias_stats = {}
+    for d in range(7):
+        dias_stats[d] = {"pedidos": 0, "faturamento": 0.0}
+
+    horas_stats = {}
+    for h in range(24):
+        horas_stats[h] = {"pedidos": 0, "faturamento": 0.0}
+
+    for p in pedidos_periodo:
+        if p.data_criacao:
+            dia_semana = p.data_criacao.weekday()  # 0=Segunda ... 6=Domingo
+            hora = p.data_criacao.hour
+            valor = float(p.valor_total or 0)
+
+            dias_stats[dia_semana]["pedidos"] += 1
+            dias_stats[dia_semana]["faturamento"] += valor
+
+            horas_stats[hora]["pedidos"] += 1
+            horas_stats[hora]["faturamento"] += valor
+
+    # Distribuição dia da semana
+    distribuicao_dia_semana = []
+    for d in range(7):
+        distribuicao_dia_semana.append({
+            "dia": d,
+            "nome": NOMES_DIAS[d],
+            "pedidos": dias_stats[d]["pedidos"],
+            "faturamento": round(dias_stats[d]["faturamento"], 2)
+        })
+
+    # Melhor e pior dia
+    dias_com_pedidos = [d for d in distribuicao_dia_semana if d["pedidos"] > 0]
+    if dias_com_pedidos:
+        melhor_dia = max(dias_com_pedidos, key=lambda x: x["faturamento"])
+        pior_dia = min(dias_com_pedidos, key=lambda x: x["faturamento"])
+        melhor_dia_semana = {"dia": melhor_dia["nome"], "total_pedidos": melhor_dia["pedidos"], "faturamento": melhor_dia["faturamento"]}
+        pior_dia_semana = {"dia": pior_dia["nome"], "total_pedidos": pior_dia["pedidos"], "faturamento": pior_dia["faturamento"]}
+    else:
+        melhor_dia_semana = {"dia": "N/A", "total_pedidos": 0, "faturamento": 0.0}
+        pior_dia_semana = {"dia": "N/A", "total_pedidos": 0, "faturamento": 0.0}
+
+    # Distribuição por hora
+    distribuicao_hora = []
+    for h in range(24):
+        distribuicao_hora.append({
+            "hora": h,
+            "pedidos": horas_stats[h]["pedidos"],
+            "faturamento": round(horas_stats[h]["faturamento"], 2)
+        })
+
+    # Horário de pico
+    horas_com_pedidos = [h for h in distribuicao_hora if h["pedidos"] > 0]
+    if horas_com_pedidos:
+        pico = max(horas_com_pedidos, key=lambda x: x["pedidos"])
+        horario_pico = {"hora": pico["hora"], "total_pedidos": pico["pedidos"]}
+    else:
+        horario_pico = {"hora": 0, "total_pedidos": 0}
+
+    # =============================
+    # PRODUTOS MAIS VENDIDOS (TOP 20)
+    # =============================
+
+    itens_vendidos = db.query(
+        models.ItemPedido.produto_id,
+        func.sum(models.ItemPedido.quantidade).label('quantidade'),
+        func.sum(models.ItemPedido.quantidade * models.ItemPedido.preco_unitario).label('receita')
+    ).join(models.Pedido, models.ItemPedido.pedido_id == models.Pedido.id).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'entregue',
+        models.Pedido.data_criacao >= inicio_periodo
+    ).group_by(models.ItemPedido.produto_id).order_by(
+        desc('quantidade')
+    ).limit(20).all()
+
+    produto_ids = [i.produto_id for i in itens_vendidos if i.produto_id]
+    produtos_map = {}
+    if produto_ids:
+        produtos_db = db.query(models.Produto).options(
+            joinedload(models.Produto.categoria)
+        ).filter(models.Produto.id.in_(produto_ids)).all()
+        for pr in produtos_db:
+            produtos_map[pr.id] = {
+                "nome": pr.nome,
+                "categoria": pr.categoria.nome if pr.categoria else "Sem categoria"
+            }
+
+    total_quantidade_vendida = sum(int(i.quantidade or 0) for i in itens_vendidos)
+
+    produtos_mais_vendidos = []
+    for i in itens_vendidos:
+        info = produtos_map.get(i.produto_id, {"nome": "Produto removido", "categoria": "N/A"})
+        qtd = int(i.quantidade or 0)
+        produtos_mais_vendidos.append({
+            "nome": info["nome"],
+            "categoria": info["categoria"],
+            "quantidade": qtd,
+            "receita": round(float(i.receita or 0), 2),
+            "percentual_vendas": round((qtd / total_quantidade_vendida * 100), 2) if total_quantidade_vendida > 0 else 0.0
+        })
+
+    # Categorias mais vendidas
+    categorias_vendidas_query = db.query(
+        models.CategoriaMenu.nome.label('categoria_nome'),
+        func.sum(models.ItemPedido.quantidade).label('quantidade'),
+        func.sum(models.ItemPedido.quantidade * models.ItemPedido.preco_unitario).label('receita')
+    ).join(
+        models.Produto, models.ItemPedido.produto_id == models.Produto.id
+    ).join(
+        models.CategoriaMenu, models.Produto.categoria_id == models.CategoriaMenu.id
+    ).join(
+        models.Pedido, models.ItemPedido.pedido_id == models.Pedido.id
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'entregue',
+        models.Pedido.data_criacao >= inicio_periodo
+    ).group_by(models.CategoriaMenu.nome).order_by(desc('receita')).all()
+
+    total_receita_categorias = sum(float(c.receita or 0) for c in categorias_vendidas_query)
+
+    categorias_mais_vendidas = []
+    for c in categorias_vendidas_query:
+        rec = float(c.receita or 0)
+        categorias_mais_vendidas.append({
+            "nome": c.categoria_nome,
+            "quantidade": int(c.quantidade or 0),
+            "receita": round(rec, 2),
+            "percentual": round((rec / total_receita_categorias * 100), 2) if total_receita_categorias > 0 else 0.0
+        })
+
+    # =============================
+    # FORMAS DE PAGAMENTO
+    # =============================
+
+    formas_query = db.query(
+        models.Pedido.forma_pagamento,
+        func.count(models.Pedido.id).label('total'),
+        func.coalesce(func.sum(models.Pedido.valor_total), 0.0).label('valor')
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'entregue',
+        models.Pedido.data_criacao >= inicio_periodo,
+        models.Pedido.forma_pagamento.isnot(None)
+    ).group_by(models.Pedido.forma_pagamento).order_by(desc('total')).all()
+
+    total_formas = sum(int(f.total) for f in formas_query)
+
+    formas_pagamento = []
+    for f in formas_query:
+        formas_pagamento.append({
+            "forma": f.forma_pagamento or "Não informado",
+            "total": int(f.total),
+            "valor": round(float(f.valor), 2),
+            "percentual": round((int(f.total) / total_formas * 100), 2) if total_formas > 0 else 0.0
+        })
+
+    # =============================
+    # CANCELAMENTOS
+    # =============================
+
+    cancelamentos_mes = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'cancelado',
+        models.Pedido.data_criacao >= inicio_mes_atual
+    ).scalar()
+
+    total_pedidos_mes = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.data_criacao >= inicio_mes_atual
+    ).scalar()
+
+    taxa_cancelamento = round((cancelamentos_mes / total_pedidos_mes * 100), 2) if total_pedidos_mes > 0 else 0.0
+
+    # Tendência de cancelamentos (dia a dia nos últimos 30 dias)
+    cancelamentos_periodo = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'cancelado',
+        models.Pedido.data_criacao >= agora - timedelta(days=30)
+    ).all()
+
+    cancelamentos_por_dia = {}
+    for p in cancelamentos_periodo:
+        if p.data_criacao:
+            dia_str = p.data_criacao.strftime("%Y-%m-%d")
+            cancelamentos_por_dia[dia_str] = cancelamentos_por_dia.get(dia_str, 0) + 1
+
+    tendencia_cancelamentos = []
+    for i in range(30):
+        dia = hoje - timedelta(days=29 - i)
+        dia_str = dia.strftime("%Y-%m-%d")
+        tendencia_cancelamentos.append({
+            "data": dia_str,
+            "total": cancelamentos_por_dia.get(dia_str, 0)
+        })
+
+    # =============================
+    # CLIENTES
+    # =============================
+
+    # Clientes únicos com pedido no mês
+    clientes_unicos_mes = db.query(
+        func.count(func.distinct(models.Pedido.cliente_telefone))
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.data_criacao >= inicio_mes_atual,
+        models.Pedido.cliente_telefone.isnot(None)
+    ).scalar() or 0
+
+    # Clientes novos no mês: telefones cujo PRIMEIRO pedido foi neste mês
+    # Subquery: primeiro pedido de cada telefone
+    primeiro_pedido_subq = db.query(
+        models.Pedido.cliente_telefone,
+        func.min(models.Pedido.data_criacao).label('primeiro_pedido')
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.cliente_telefone.isnot(None)
+    ).group_by(models.Pedido.cliente_telefone).subquery()
+
+    clientes_novos_mes = db.query(
+        func.count(primeiro_pedido_subq.c.cliente_telefone)
+    ).filter(
+        primeiro_pedido_subq.c.primeiro_pedido >= inicio_mes_atual
+    ).scalar() or 0
+
+    # Clientes recorrentes (2+ pedidos no período)
+    clientes_recorrentes_subq = db.query(
+        models.Pedido.cliente_telefone,
+        func.count(models.Pedido.id).label('total_pedidos')
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.data_criacao >= inicio_periodo,
+        models.Pedido.cliente_telefone.isnot(None)
+    ).group_by(models.Pedido.cliente_telefone).subquery()
+
+    clientes_recorrentes = db.query(
+        func.count(clientes_recorrentes_subq.c.cliente_telefone)
+    ).filter(
+        clientes_recorrentes_subq.c.total_pedidos >= 2
+    ).scalar() or 0
+
+    total_clientes_periodo = db.query(
+        func.count(func.distinct(models.Pedido.cliente_telefone))
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.data_criacao >= inicio_periodo,
+        models.Pedido.cliente_telefone.isnot(None)
+    ).scalar() or 0
+
+    taxa_recorrencia = round((clientes_recorrentes / total_clientes_periodo * 100), 2) if total_clientes_periodo > 0 else 0.0
+
+    # Ticket médio
+    total_pedidos_entregues_periodo = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'entregue',
+        models.Pedido.data_criacao >= inicio_periodo
+    ).scalar() or 0
+
+    faturamento_periodo = db.query(
+        func.coalesce(func.sum(models.Pedido.valor_total), 0.0)
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.status == 'entregue',
+        models.Pedido.data_criacao >= inicio_periodo
+    ).scalar()
+    faturamento_periodo = float(faturamento_periodo)
+
+    ticket_medio = round(faturamento_periodo / total_pedidos_entregues_periodo, 2) if total_pedidos_entregues_periodo > 0 else 0.0
+
+    # =============================
+    # TIPO DE PEDIDO (entregas vs retiradas)
+    # =============================
+
+    entregas_count = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.tipo_entrega == 'entrega',
+        models.Pedido.data_criacao >= inicio_periodo
+    ).scalar() or 0
+
+    retiradas_count = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.tipo_entrega == 'retirada',
+        models.Pedido.data_criacao >= inicio_periodo
+    ).scalar() or 0
+
+    entregas_vs_retiradas = {"entregas": entregas_count, "retiradas": retiradas_count}
+
+    # =============================
+    # TENDÊNCIA (dia a dia no período)
+    # =============================
+
+    # Buscar todos os pedidos no período para agrupar por dia em Python (compatível SQLite/PostgreSQL)
+    todos_pedidos_periodo = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.data_criacao >= inicio_periodo
+    ).all()
+
+    tendencia_map = {}
+    for p in todos_pedidos_periodo:
+        if p.data_criacao:
+            dia_str = p.data_criacao.strftime("%Y-%m-%d")
+            if dia_str not in tendencia_map:
+                tendencia_map[dia_str] = {"pedidos": 0, "faturamento": 0.0, "cancelamentos": 0}
+            if p.status == 'cancelado':
+                tendencia_map[dia_str]["cancelamentos"] += 1
+            if p.status == 'entregue':
+                tendencia_map[dia_str]["faturamento"] += float(p.valor_total or 0)
+            tendencia_map[dia_str]["pedidos"] += 1
+
+    # Gerar lista dia a dia no período
+    dias_no_periodo = (hoje - inicio_periodo.date()).days + 1 if hasattr(inicio_periodo, 'date') else (hoje - inicio_periodo.date()).days + 1
+    try:
+        data_inicio_date = inicio_periodo.date() if hasattr(inicio_periodo, 'date') else inicio_periodo
+        dias_no_periodo = (hoje - data_inicio_date).days + 1
+    except Exception:
+        dias_no_periodo = 30
+
+    tendencia = []
+    for i in range(dias_no_periodo):
+        dia = data_inicio_date + timedelta(days=i)
+        dia_str = dia.strftime("%Y-%m-%d")
+        info = tendencia_map.get(dia_str, {"pedidos": 0, "faturamento": 0.0, "cancelamentos": 0})
+        tendencia.append({
+            "data": dia_str,
+            "pedidos": info["pedidos"],
+            "faturamento": round(info["faturamento"], 2),
+            "cancelamentos": info["cancelamentos"]
+        })
+
+    # =============================
+    # COMPARAÇÃO ANUAL
+    # =============================
+
+    ano_atual = hoje.year
+    ano_anterior = ano_atual - 1
+
+    # Verificar se existem pedidos no ano anterior
+    pedidos_ano_anterior = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.data_criacao >= datetime(ano_anterior, 1, 1),
+        models.Pedido.data_criacao < datetime(ano_atual, 1, 1)
+    ).scalar() or 0
+
+    comparacao_anual = None
+    if pedidos_ano_anterior > 0:
+        comparacao_anual = []
+        for mes in range(1, 13):
+            # Faturamento ano atual
+            inicio_mes = datetime(ano_atual, mes, 1)
+            if mes == 12:
+                fim_mes = datetime(ano_atual + 1, 1, 1)
+            else:
+                fim_mes = datetime(ano_atual, mes + 1, 1)
+
+            fat_atual = db.query(
+                func.coalesce(func.sum(models.Pedido.valor_total), 0.0)
+            ).filter(
+                models.Pedido.restaurante_id == rest_id,
+                models.Pedido.status == 'entregue',
+                models.Pedido.data_criacao >= inicio_mes,
+                models.Pedido.data_criacao < fim_mes
+            ).scalar()
+
+            # Faturamento ano anterior
+            inicio_mes_ant = datetime(ano_anterior, mes, 1)
+            if mes == 12:
+                fim_mes_ant = datetime(ano_anterior + 1, 1, 1)
+            else:
+                fim_mes_ant = datetime(ano_anterior, mes + 1, 1)
+
+            fat_anterior = db.query(
+                func.coalesce(func.sum(models.Pedido.valor_total), 0.0)
+            ).filter(
+                models.Pedido.restaurante_id == rest_id,
+                models.Pedido.status == 'entregue',
+                models.Pedido.data_criacao >= inicio_mes_ant,
+                models.Pedido.data_criacao < fim_mes_ant
+            ).scalar()
+
+            comparacao_anual.append({
+                "mes": mes,
+                "faturamento_atual": round(float(fat_atual), 2),
+                "faturamento_anterior": round(float(fat_anterior), 2)
+            })
+
+    # =============================
+    # PREVISÃO PRÓXIMOS 3 MESES
+    # =============================
+
+    # Média ponderada dos últimos 3 meses (peso 3 para mais recente, 2, 1)
+    previsao_proximos_3_meses = []
+    for offset_mes in range(1, 4):
+        mes_futuro = hoje.month + offset_mes
+        ano_futuro = hoje.year
+        while mes_futuro > 12:
+            mes_futuro -= 12
+            ano_futuro += 1
+
+        nome_mes = f"{ano_futuro}-{mes_futuro:02d}"
+
+        # Faturamento estimado: média ponderada
+        soma_pond_fat = 0.0
+        soma_pond_ped = 0.0
+        soma_p = 0
+        for idx in range(min(3, len(faturamento_por_mes))):
+            peso = 3 - idx  # 3, 2, 1
+            soma_pond_fat += faturamento_por_mes[idx] * peso
+            soma_pond_ped += pedidos_por_mes[idx] * peso
+            soma_p += peso
+
+        fat_estimado = round(soma_pond_fat / soma_p, 2) if soma_p > 0 else 0.0
+        ped_estimados = round(soma_pond_ped / soma_p) if soma_p > 0 else 0
+
+        previsao_proximos_3_meses.append({
+            "mes": nome_mes,
+            "faturamento_estimado": fat_estimado,
+            "pedidos_estimados": int(ped_estimados)
+        })
+
+    # =============================
+    # RESPOSTA FINAL
+    # =============================
+
+    return {
+        # Faturamento
+        "faturamento_mes": faturamento_mes,
+        "faturamento_ano": faturamento_ano,
+        "projecao_anual": projecao_anual,
+        "projecao_proximo_mes": projecao_proximo_mes,
+        "comparacao_mes_anterior": comparacao_mes_anterior,
+
+        # Melhor/pior dia e horário
+        "melhor_dia_semana": melhor_dia_semana,
+        "pior_dia_semana": pior_dia_semana,
+        "horario_pico": horario_pico,
+        "distribuicao_hora": distribuicao_hora,
+        "distribuicao_dia_semana": distribuicao_dia_semana,
+
+        # Produtos mais vendidos
+        "produtos_mais_vendidos": produtos_mais_vendidos,
+        "categorias_mais_vendidas": categorias_mais_vendidas,
+
+        # Formas de pagamento
+        "formas_pagamento": formas_pagamento,
+
+        # Cancelamentos
+        "cancelamentos_mes": cancelamentos_mes,
+        "taxa_cancelamento": taxa_cancelamento,
+        "tendencia_cancelamentos": tendencia_cancelamentos,
+
+        # Clientes
+        "clientes_unicos_mes": clientes_unicos_mes,
+        "clientes_novos_mes": clientes_novos_mes,
+        "clientes_recorrentes": clientes_recorrentes,
+        "taxa_recorrencia": taxa_recorrencia,
+        "ticket_medio": ticket_medio,
+
+        # Tipo de pedido
+        "entregas_vs_retiradas": entregas_vs_retiradas,
+
+        # Tendência
+        "tendencia": tendencia,
+
+        # Comparação anual
+        "comparacao_anual": comparacao_anual,
+
+        # Previsão
+        "previsao_proximos_3_meses": previsao_proximos_3_meses,
+    }

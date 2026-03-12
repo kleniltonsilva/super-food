@@ -22,7 +22,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Save, Upload, Loader2, AlertTriangle, MapPin, Eye } from "lucide-react";
+import { Save, Upload, Loader2, AlertTriangle, MapPin, Eye, Plus, Trash2 } from "lucide-react";
+import InfoTooltip from "@/components/InfoTooltip";
 import { toast } from "sonner";
 import { getThemeConfig, tiposRestaurante } from "@/config/themeConfig";
 
@@ -68,12 +69,14 @@ export default function Configuracoes() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(field);
+    const tipo = field === "logo_url" ? "logo" : "banner";
     try {
-      const data = await uploadImagem(file);
+      const data = await uploadImagem(file, tipo);
       setSiteForm({ ...siteForm, [field]: data.url || data.path || "" });
       toast.success("Imagem enviada");
-    } catch {
-      toast.error("Erro ao enviar imagem");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Erro ao enviar imagem";
+      toast.error(msg);
     } finally {
       setUploading(null);
     }
@@ -111,7 +114,10 @@ export default function Configuracoes() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Status</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Status
+                        <InfoTooltip text="Define se aceita pedidos. Aberto=aceita, Fechado=bloqueia, Pausado=exibe aviso temporário no site." />
+                      </label>
                       <Select value={(restForm.status_atual as string) || "aberto"} onValueChange={(v) => updateRest("status_atual", v)}>
                         <SelectTrigger className="dark-input"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -123,11 +129,17 @@ export default function Configuracoes() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Horário Abertura</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Horário Abertura
+                          <InfoTooltip text="Horário de funcionamento exibido no site. Fora do horário, o site mostra 'Fechado' e bloqueia novos pedidos." />
+                        </label>
                         <Input value={(restForm.horario_abertura as string) || ""} onChange={(e) => updateRest("horario_abertura", e.target.value)} className="dark-input" placeholder="08:00" />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Horário Fechamento</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Horário Fechamento
+                          <InfoTooltip text="Horário em que o site para de aceitar pedidos automaticamente." />
+                        </label>
                         <Input value={(restForm.horario_fechamento as string) || ""} onChange={(e) => updateRest("horario_fechamento", e.target.value)} className="dark-input" placeholder="23:00" />
                       </div>
                     </div>
@@ -141,7 +153,10 @@ export default function Configuracoes() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Modo Prioridade de Entrega</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Modo Prioridade de Entrega
+                        <InfoTooltip text="Rápido Econômico=otimiza rota por menor distância (TSP). Cronológico=agrupa pedidos por tempo de criação. Manual=operador escolhe o motoboy para cada pedido." />
+                      </label>
                       <div className="space-y-2">
                         {[
                           { value: "rapido_economico", label: "Rápido Econômico", desc: "Otimiza por proximidade (TSP)" },
@@ -173,8 +188,40 @@ export default function Configuracoes() {
                       </div>
                     </div>
 
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Tolerância para Alerta de Atraso
+                        <InfoTooltip text="Minutos extras além do tempo estimado antes de marcar a entrega como atrasada. O painel exibirá alerta vermelho pulsante quando ultrapassar." />
+                      </label>
+                      <div className="flex gap-2">
+                        {[5, 8, 10, 15].map((min) => (
+                          <label
+                            key={min}
+                            className={`flex items-center justify-center rounded-lg border px-3 py-2 text-sm font-medium cursor-pointer transition-colors ${
+                              (restForm.tolerancia_atraso_min as number || 10) === min
+                                ? "border-[var(--cor-primaria)] bg-[var(--cor-primaria)]/10 text-[var(--cor-primaria)]"
+                                : "border-[var(--border-subtle)] text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)]"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="tolerancia_atraso"
+                              value={min}
+                              checked={(restForm.tolerancia_atraso_min as number || 10) === min}
+                              onChange={() => updateRest("tolerancia_atraso_min", min)}
+                              className="sr-only"
+                            />
+                            {min} min
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Máx. Pedidos por Rota</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Máx. Pedidos por Rota
+                        <InfoTooltip text="Quantos pedidos o motoboy pode carregar por saída (1 a 10). Mais pedidos por rota = menos viagens, mas entregas podem demorar mais." />
+                      </label>
                       <Input
                         type="number"
                         min="1"
@@ -187,33 +234,51 @@ export default function Configuracoes() {
 
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Raio Entrega (km)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Raio Entrega (km)
+                          <InfoTooltip text="Distância máxima aceita para entrega. Pedidos com endereço fora deste raio serão recusados automaticamente no checkout." />
+                        </label>
                         <Input type="number" step="0.1" value={(restForm.raio_entrega_km as number) || ""} onChange={(e) => updateRest("raio_entrega_km", Number(e.target.value))} className="dark-input" />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Taxa Base (R$)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Taxa Base (R$)
+                          <InfoTooltip text="Valor mínimo de frete cobrado do cliente, válido até a distância base configurada." />
+                        </label>
                         <Input type="number" step="0.01" value={(restForm.taxa_entrega_base as number) || ""} onChange={(e) => updateRest("taxa_entrega_base", Number(e.target.value))} className="dark-input" />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Dist. Base (km)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Dist. Base (km)
+                          <InfoTooltip text="Distância incluída na taxa base. Além desta distância, será cobrado o valor de KM Extra por quilômetro adicional." />
+                        </label>
                         <Input type="number" step="0.1" value={(restForm.distancia_base_km as number) || ""} onChange={(e) => updateRest("distancia_base_km", Number(e.target.value))} className="dark-input" />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Taxa KM Extra (R$)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Taxa KM Extra (R$)
+                          <InfoTooltip text="Valor adicional cobrado do cliente por cada km que excede a distância base. Ex: Dist. Base 3km, Taxa KM Extra R$1,50 → 5km = Taxa Base + 2×R$1,50." />
+                        </label>
                         <Input type="number" step="0.01" value={(restForm.taxa_km_extra as number) || ""} onChange={(e) => updateRest("taxa_km_extra", Number(e.target.value))} className="dark-input" />
                       </div>
                     </div>
 
                     <div className="flex items-center justify-between">
-                      <label className="text-sm text-[var(--text-secondary)]">Permitir Motoboy Ver Saldo</label>
+                      <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Permitir Motoboy Ver Saldo
+                        <InfoTooltip text="Quando ativado, o motoboy pode ver seus ganhos acumulados (base + extras) no app de entregas." />
+                      </label>
                       <Switch checked={!!restForm.permitir_ver_saldo_motoboy} onCheckedChange={(v) => updateRest("permitir_ver_saldo_motoboy", v)} />
                     </div>
 
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm text-[var(--text-secondary)]">Permitir Finalizar Fora do Raio</label>
+                        <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Permitir Finalizar Fora do Raio
+                          <InfoTooltip text="Antifraude GPS. Quando desativado, o motoboy só consegue finalizar a entrega se estiver a menos de 50 metros do endereço de destino." />
+                        </label>
                         <Switch checked={!!restForm.permitir_finalizar_fora_raio} onCheckedChange={(v) => updateRest("permitir_finalizar_fora_raio", v)} />
                       </div>
                       {!!restForm.permitir_finalizar_fora_raio && (
@@ -221,6 +286,65 @@ export default function Configuracoes() {
                           <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
                           <p className="text-xs text-yellow-400">
                             Motoboys poderão finalizar entregas mesmo fora do raio de entrega configurado.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Modo Preço Pizza */}
+                <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                  <CardHeader>
+                    <CardTitle className="text-[var(--text-primary)]">Pizza</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Modo de preço para múltiplos sabores
+                        <InfoTooltip text="Define como calcular o preço da pizza com mais de 1 sabor. Mais Caro: cobra pelo sabor de maior preço (ex: Calabresa R$30 + Especial R$45 → R$45). Proporcional: divide proporcionalmente (ex: Calabresa R$30 + Especial R$45 → R$15 + R$22,50 = R$37,50)." />
+                      </label>
+                      <Select
+                        value={(restForm.modo_preco_pizza as string) || "mais_caro"}
+                        onValueChange={(v) => updateRest("modo_preco_pizza", v)}
+                      >
+                        <SelectTrigger className="dark-input"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mais_caro">Mais Caro (cobra pelo sabor mais caro)</SelectItem>
+                          <SelectItem value="proporcional">Proporcional (divide entre sabores)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Pedidos do Site */}
+                <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                  <CardHeader>
+                    <CardTitle className="text-[var(--text-primary)]">Pedidos do Site</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Aceitar pedidos automaticamente
+                          <InfoTooltip text="Quando ativado, pedidos do site são aceitos automaticamente para clientes com ao menos 1 pedido concluído. O primeiro pedido de cada cliente ainda exige aceitação manual." />
+                        </label>
+                        <Switch
+                          checked={!!restForm.aceitar_pedido_site_auto}
+                          onCheckedChange={(v) => updateRest("aceitar_pedido_site_auto", v)}
+                        />
+                      </div>
+                      {!!restForm.aceitar_pedido_site_auto ? (
+                        <div className="flex items-start gap-2 rounded-md bg-green-500/10 border border-green-500/30 px-3 py-2">
+                          <p className="text-xs text-green-400">
+                            Clientes com pedido anterior concluído terão seus novos pedidos aceitos automaticamente. O primeiro pedido sempre precisará de confirmação manual.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-2 rounded-md bg-[var(--bg-card-hover)] border border-[var(--border-subtle)] px-3 py-2">
+                          <p className="text-xs text-[var(--text-muted)]">
+                            Todos os pedidos do site precisam de aceitação manual no painel.
                           </p>
                         </div>
                       )}
@@ -236,21 +360,33 @@ export default function Configuracoes() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Valor Base (R$)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Valor Base (R$)
+                          <InfoTooltip text="Valor pago ao motoboy por entrega, independente da distância percorrida." />
+                        </label>
                         <Input type="number" step="0.01" value={(restForm.valor_base_motoboy as number) || ""} onChange={(e) => updateRest("valor_base_motoboy", Number(e.target.value))} className="dark-input" />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">KM Extra (R$)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          KM Extra (R$)
+                          <InfoTooltip text="Adicional pago ao motoboy por cada km além da distância base. Somado ao valor base." />
+                        </label>
                         <Input type="number" step="0.01" value={(restForm.valor_km_extra_motoboy as number) || ""} onChange={(e) => updateRest("valor_km_extra_motoboy", Number(e.target.value))} className="dark-input" />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Taxa Diária (R$)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Taxa Diária (R$)
+                          <InfoTooltip text="Valor fixo pago ao motoboy por dia trabalhado, independente de quantas entregas fizer. 0 = não pagar taxa diária." />
+                        </label>
                         <Input type="number" step="0.01" value={(restForm.taxa_diaria as number) || ""} onChange={(e) => updateRest("taxa_diaria", Number(e.target.value))} className="dark-input" />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Valor Lanche (R$)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Valor Lanche (R$)
+                          <InfoTooltip text="Auxílio alimentação diário pago ao motoboy. 0 = não aplicar auxílio alimentação." />
+                        </label>
                         <Input type="number" step="0.01" value={(restForm.valor_lanche as number) || ""} onChange={(e) => updateRest("valor_lanche", Number(e.target.value))} className="dark-input" />
                       </div>
                     </div>
@@ -264,7 +400,10 @@ export default function Configuracoes() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Endereço Completo</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Endereço Completo
+                        <InfoTooltip text="Endereço do restaurante. Ao geocodificar, converte em coordenadas GPS usadas para calcular distâncias e taxas de entrega." />
+                      </label>
                       <Textarea
                         value={(restForm.endereco_completo as string) || ""}
                         onChange={(e) => updateRest("endereco_completo", e.target.value)}
@@ -334,7 +473,10 @@ export default function Configuracoes() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Tipo de Restaurante</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Tipo de Restaurante
+                        <InfoTooltip text="Define o tema visual completo do site (cores, fontes, layout dos cards, header, footer). A mudança é instantânea para o cliente." />
+                      </label>
                       <Select value={(siteForm.tipo_restaurante as string) || "restaurante"} onValueChange={(v) => updateSite("tipo_restaurante", v)}>
                         <SelectTrigger className="dark-input"><SelectValue /></SelectTrigger>
                         <SelectContent>
@@ -387,7 +529,10 @@ export default function Configuracoes() {
                     })()}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Cor Primária</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Cor Primária
+                          <InfoTooltip text="Sobrescreve a cor primária do tema selecionado. Use o seletor de cor ou insira um código hex (#ff6600)." />
+                        </label>
                         <div className="flex gap-2">
                           <input
                             type="color"
@@ -399,7 +544,10 @@ export default function Configuracoes() {
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Cor Secundária</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Cor Secundária
+                          <InfoTooltip text="Sobrescreve a cor secundária do tema. Usada em fundos, bordas e elementos de destaque." />
+                        </label>
                         <div className="flex gap-2">
                           <input
                             type="color"
@@ -414,7 +562,10 @@ export default function Configuracoes() {
 
                     {/* Logo */}
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Logo</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Logo
+                        <InfoTooltip text="Exibida no header do site. Recomendado: imagem quadrada 200x200px em PNG ou WebP com fundo transparente." />
+                      </label>
                       <div className="flex items-center gap-3">
                         {siteForm.logo_url ? (
                           <img src={siteForm.logo_url as string} alt="" className="h-12 w-12 rounded-lg object-contain" />
@@ -429,7 +580,10 @@ export default function Configuracoes() {
 
                     {/* Banner */}
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Banner Principal</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Banner Principal
+                        <InfoTooltip text="Imagem de destaque na página inicial do site. Recomendado: 1200x400px. Se não definido, usa o banner padrão do tema." />
+                      </label>
                       <div className="flex items-center gap-3">
                         {siteForm.banner_principal_url ? (
                           <img src={siteForm.banner_principal_url as string} alt="" className="h-12 w-24 rounded-lg object-cover" />
@@ -452,25 +606,40 @@ export default function Configuracoes() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Pedido Mínimo (R$)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Pedido Mínimo (R$)
+                          <InfoTooltip text="Valor mínimo em produtos (sem frete) para o cliente finalizar o pedido. 0 = sem valor mínimo." />
+                        </label>
                         <Input type="number" step="0.01" value={(siteForm.pedido_minimo as number) || ""} onChange={(e) => updateSite("pedido_minimo", Number(e.target.value))} className="dark-input" />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)]">Tempo Entrega (min)</label>
+                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Tempo Entrega (min)
+                          <InfoTooltip text="Tempo estimado exibido ao cliente. O sistema pode ajustar automaticamente com base no histórico real de entregas." />
+                        </label>
                         <Input type="number" value={(siteForm.tempo_entrega_estimado as number) || ""} onChange={(e) => updateSite("tempo_entrega_estimado", Number(e.target.value))} className="dark-input" />
                       </div>
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Tempo Retirada Estimado (min)</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Tempo Retirada Estimado (min)
+                        <InfoTooltip text="Tempo estimado para o cliente retirar o pedido no balcão. Exibido quando o cliente escolhe 'Retirada'." />
+                      </label>
                       <Input type="number" value={(siteForm.tempo_retirada_estimado as number) || ""} onChange={(e) => updateSite("tempo_retirada_estimado", Number(e.target.value))} className="dark-input" placeholder="15" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">WhatsApp</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        WhatsApp
+                        <InfoTooltip text="Número com código do país e DDD (ex: 5511999999999). Exibe botão de contato flutuante no site do cliente." />
+                      </label>
                       <Input value={(siteForm.whatsapp_numero as string) || ""} onChange={(e) => updateSite("whatsapp_numero", e.target.value)} className="dark-input" placeholder="5511999999999" />
                     </div>
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <label className="text-sm text-[var(--text-secondary)]">Site Ativo</label>
+                        <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Site Ativo
+                          <InfoTooltip text="Quando desativado, o site fica inacessível e exibe uma página de manutenção para os clientes." />
+                        </label>
                         <Switch checked={!!siteForm.site_ativo} onCheckedChange={(v) => updateSite("site_ativo", v)} />
                       </div>
                       <div className="flex items-center justify-between">
@@ -478,22 +647,114 @@ export default function Configuracoes() {
                         <Switch checked={!!siteForm.whatsapp_ativo} onCheckedChange={(v) => updateSite("whatsapp_ativo", v)} />
                       </div>
                       <div className="flex items-center justify-between">
-                        <label className="text-sm text-[var(--text-secondary)]">Aceita Dinheiro</label>
+                        <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Aceita Dinheiro
+                          <InfoTooltip text="Habilita dinheiro como forma de pagamento no checkout. O campo 'troco para' aparece quando selecionado." />
+                        </label>
                         <Switch checked={!!siteForm.aceita_dinheiro} onCheckedChange={(v) => updateSite("aceita_dinheiro", v)} />
                       </div>
                       <div className="flex items-center justify-between">
-                        <label className="text-sm text-[var(--text-secondary)]">Aceita Cartão</label>
+                        <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Aceita Cartão
+                          <InfoTooltip text="Habilita cartão de crédito/débito na maquininha como opção de pagamento na entrega." />
+                        </label>
                         <Switch checked={!!siteForm.aceita_cartao} onCheckedChange={(v) => updateSite("aceita_cartao", v)} />
                       </div>
                       <div className="flex items-center justify-between">
-                        <label className="text-sm text-[var(--text-secondary)]">Aceita PIX</label>
+                        <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Aceita PIX
+                          <InfoTooltip text="Habilita PIX como forma de pagamento. O cliente seleciona no checkout e paga diretamente." />
+                        </label>
                         <Switch checked={!!siteForm.aceita_pix} onCheckedChange={(v) => updateSite("aceita_pix", v)} />
                       </div>
                       <div className="flex items-center justify-between">
-                        <label className="text-sm text-[var(--text-secondary)]">Aceita Vale Refeição</label>
+                        <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                          Aceita Vale Refeição
+                          <InfoTooltip text="Habilita vale-refeição/alimentação como forma de pagamento aceita na entrega." />
+                        </label>
                         <Switch checked={!!siteForm.aceita_vale_refeicao} onCheckedChange={(v) => updateSite("aceita_vale_refeicao", v)} />
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Ingredientes Adicionais Pizza */}
+                <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] lg:col-span-2">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-[var(--text-primary)] flex items-center gap-1.5">
+                        Ingredientes Adicionais (Pizza)
+                        <InfoTooltip text="Lista de ingredientes extras disponíveis no montador de pizza. O cliente pode adicionar qualquer um destes ao montar sua pizza, cada um com seu preço adicional." />
+                      </CardTitle>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const lista = ((siteForm.ingredientes_adicionais_pizza as Array<{nome: string; preco: number}>) || []);
+                          updateSite("ingredientes_adicionais_pizza", [...lista, { nome: "", preco: 0 }]);
+                        }}
+                      >
+                        <Plus className="mr-1 h-4 w-4" /> Adicionar
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {(() => {
+                      const lista = ((siteForm.ingredientes_adicionais_pizza as Array<{nome: string; preco: number}>) || []);
+                      if (lista.length === 0) {
+                        return (
+                          <p className="text-sm text-[var(--text-muted)]">
+                            Nenhum ingrediente adicional cadastrado. Adicione ingredientes como Bacon, Champignon, Cheddar, etc.
+                          </p>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-[1fr_100px_40px] gap-2 text-xs font-medium text-[var(--text-muted)] px-1">
+                            <span>Nome</span>
+                            <span>Preço (R$)</span>
+                            <span></span>
+                          </div>
+                          {lista.map((ing, idx) => (
+                            <div key={idx} className="grid grid-cols-[1fr_100px_40px] gap-2 items-center">
+                              <Input
+                                value={ing.nome}
+                                onChange={(e) => {
+                                  const next = [...lista];
+                                  next[idx] = { ...next[idx], nome: e.target.value };
+                                  updateSite("ingredientes_adicionais_pizza", next);
+                                }}
+                                className="dark-input h-9 text-sm"
+                                placeholder="Ex: Bacon"
+                              />
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={ing.preco}
+                                onChange={(e) => {
+                                  const next = [...lista];
+                                  next[idx] = { ...next[idx], preco: Number(e.target.value) };
+                                  updateSite("ingredientes_adicionais_pizza", next);
+                                }}
+                                className="dark-input h-9 text-sm"
+                                placeholder="0.00"
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-red-400"
+                                onClick={() => {
+                                  const next = lista.filter((_, i) => i !== idx);
+                                  updateSite("ingredientes_adicionais_pizza", next);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </CardContent>
                 </Card>
 
@@ -504,11 +765,17 @@ export default function Configuracoes() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Meta Title</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Meta Title
+                        <InfoTooltip text="Título exibido na aba do navegador e nos resultados de busca do Google. Recomendado: até 60 caracteres." />
+                      </label>
                       <Input value={(siteForm.meta_title as string) || ""} onChange={(e) => updateSite("meta_title", e.target.value)} className="dark-input" />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)]">Meta Description</label>
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Meta Description
+                        <InfoTooltip text="Descrição que aparece abaixo do título nos resultados do Google. Recomendado: até 160 caracteres." />
+                      </label>
                       <Input value={(siteForm.meta_description as string) || ""} onChange={(e) => updateSite("meta_description", e.target.value)} className="dark-input" />
                     </div>
                   </CardContent>

@@ -8,7 +8,7 @@ Tarefas 131-138
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, or_, case, cast, Integer, Float, String
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timedelta
@@ -620,3 +620,413 @@ def listar_inadimplentes(
         ))
 
     return resultado
+
+
+# --- GET /admin/analytics ---
+
+@router.get("/analytics")
+def obter_analytics(
+    periodo: str = Query("30d"),
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db)
+):
+    """Retorna analytics detalhados do sistema: faturamento, pedidos, tendências, saúde dos restaurantes."""
+    # Validar período
+    periodos_validos = {"7d": 7, "30d": 30, "90d": 90}
+    dias = periodos_validos.get(periodo, 30)
+
+    # Calcular datas
+    agora = datetime.utcnow()
+    hoje = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+    # Início da semana (segunda-feira)
+    inicio_semana = hoje - timedelta(days=hoje.weekday())
+    # Início do mês atual
+    inicio_mes = hoje.replace(day=1)
+    # Início e fim do mês anterior
+    fim_mes_anterior = inicio_mes - timedelta(days=1)
+    inicio_mes_anterior = fim_mes_anterior.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    fim_mes_anterior = fim_mes_anterior.replace(hour=23, minute=59, second=59, microsecond=999999)
+    # Data limite baseada no período
+    data_limite = hoje - timedelta(days=dias)
+
+    # ==================== FATURAMENTO ====================
+
+    # Faturamento hoje (entregues)
+    faturamento_hoje = db.query(func.coalesce(func.sum(models.Pedido.valor_total), 0.0)).filter(
+        models.Pedido.status == "entregue",
+        models.Pedido.data_criacao >= hoje
+    ).scalar() or 0.0
+
+    # Faturamento semana (entregues)
+    faturamento_semana = db.query(func.coalesce(func.sum(models.Pedido.valor_total), 0.0)).filter(
+        models.Pedido.status == "entregue",
+        models.Pedido.data_criacao >= inicio_semana
+    ).scalar() or 0.0
+
+    # Faturamento mês (entregues)
+    faturamento_mes = db.query(func.coalesce(func.sum(models.Pedido.valor_total), 0.0)).filter(
+        models.Pedido.status == "entregue",
+        models.Pedido.data_criacao >= inicio_mes
+    ).scalar() or 0.0
+
+    # Faturamento mês anterior (só entregues)
+    faturamento_mes_anterior = db.query(func.coalesce(func.sum(models.Pedido.valor_total), 0.0)).filter(
+        models.Pedido.status == "entregue",
+        models.Pedido.data_criacao >= inicio_mes_anterior,
+        models.Pedido.data_criacao <= fim_mes_anterior
+    ).scalar() or 0.0
+
+    # Faturamento mês anterior bruto (todos pedidos)
+    faturamento_mes_anterior_bruto = db.query(func.coalesce(func.sum(models.Pedido.valor_total), 0.0)).filter(
+        models.Pedido.data_criacao >= inicio_mes_anterior,
+        models.Pedido.data_criacao <= fim_mes_anterior
+    ).scalar() or 0.0
+
+    # ==================== PEDIDOS ====================
+
+    pedidos_hoje = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.data_criacao >= hoje
+    ).scalar() or 0
+
+    pedidos_semana = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.data_criacao >= inicio_semana
+    ).scalar() or 0
+
+    pedidos_mes = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.data_criacao >= inicio_mes
+    ).scalar() or 0
+
+    cancelamentos_hoje = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.status == "cancelado",
+        models.Pedido.data_criacao >= hoje
+    ).scalar() or 0
+
+    cancelamentos_semana = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.status == "cancelado",
+        models.Pedido.data_criacao >= inicio_semana
+    ).scalar() or 0
+
+    cancelamentos_mes = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.status == "cancelado",
+        models.Pedido.data_criacao >= inicio_mes
+    ).scalar() or 0
+
+    taxa_cancelamento_mes = round((cancelamentos_mes / pedidos_mes * 100), 2) if pedidos_mes > 0 else 0.0
+
+    ticket_medio_real = db.query(func.coalesce(func.avg(models.Pedido.valor_total), 0.0)).filter(
+        models.Pedido.status == "entregue",
+        models.Pedido.data_criacao >= inicio_mes
+    ).scalar() or 0.0
+    ticket_medio_real = round(float(ticket_medio_real), 2)
+
+    # ==================== TOP 5 RESTAURANTES ====================
+
+    top_restaurantes_query = db.query(
+        models.Restaurante.id,
+        models.Restaurante.nome_fantasia,
+        func.coalesce(func.sum(
+            case(
+                (models.Pedido.status == "entregue", models.Pedido.valor_total),
+                else_=0.0
+            )
+        ), 0.0).label("faturamento"),
+        func.count(models.Pedido.id).label("total_pedidos"),
+        func.coalesce(func.avg(
+            case(
+                (models.Pedido.status == "entregue", models.Pedido.valor_total),
+                else_=None
+            )
+        ), 0.0).label("ticket_medio"),
+        func.coalesce(func.sum(
+            case(
+                (models.Pedido.status == "cancelado", 1),
+                else_=0
+            )
+        ), 0).label("cancelamentos")
+    ).outerjoin(
+        models.Pedido,
+        and_(
+            models.Pedido.restaurante_id == models.Restaurante.id,
+            models.Pedido.data_criacao >= inicio_mes
+        )
+    ).filter(
+        models.Restaurante.ativo == True
+    ).group_by(
+        models.Restaurante.id,
+        models.Restaurante.nome_fantasia
+    ).order_by(
+        func.coalesce(func.sum(
+            case(
+                (models.Pedido.status == "entregue", models.Pedido.valor_total),
+                else_=0.0
+            )
+        ), 0.0).desc()
+    ).limit(5).all()
+
+    top_restaurantes = []
+    for row in top_restaurantes_query:
+        top_restaurantes.append({
+            "id": row.id,
+            "nome": row.nome_fantasia,
+            "faturamento": round(float(row.faturamento), 2),
+            "total_pedidos": int(row.total_pedidos),
+            "ticket_medio": round(float(row.ticket_medio), 2),
+            "cancelamentos": int(row.cancelamentos)
+        })
+
+    # ==================== TENDÊNCIA DIA A DIA ====================
+
+    tendencia_query = db.query(
+        func.date(models.Pedido.data_criacao).label("dia"),
+        func.coalesce(func.sum(
+            case(
+                (models.Pedido.status == "entregue", models.Pedido.valor_total),
+                else_=0.0
+            )
+        ), 0.0).label("faturamento"),
+        func.count(models.Pedido.id).label("pedidos")
+    ).filter(
+        models.Pedido.data_criacao >= data_limite
+    ).group_by(
+        func.date(models.Pedido.data_criacao)
+    ).order_by(
+        func.date(models.Pedido.data_criacao)
+    ).all()
+
+    tendencia_faturamento = []
+    for row in tendencia_query:
+        tendencia_faturamento.append({
+            "data": str(row.dia)[:10],
+            "faturamento": round(float(row.faturamento), 2),
+            "pedidos": int(row.pedidos)
+        })
+
+    # ==================== SAÚDE POR RESTAURANTE ====================
+
+    restaurantes_ativos = db.query(models.Restaurante).filter(
+        models.Restaurante.ativo == True
+    ).all()
+
+    saude_restaurantes = []
+    for r in restaurantes_ativos:
+        # Pedidos do dia
+        r_pedidos_dia = db.query(func.count(models.Pedido.id)).filter(
+            models.Pedido.restaurante_id == r.id,
+            models.Pedido.data_criacao >= hoje
+        ).scalar() or 0
+
+        # Pedidos da semana
+        r_pedidos_semana = db.query(func.count(models.Pedido.id)).filter(
+            models.Pedido.restaurante_id == r.id,
+            models.Pedido.data_criacao >= inicio_semana
+        ).scalar() or 0
+
+        # Pedidos do mês
+        r_pedidos_mes = db.query(func.count(models.Pedido.id)).filter(
+            models.Pedido.restaurante_id == r.id,
+            models.Pedido.data_criacao >= inicio_mes
+        ).scalar() or 0
+
+        # Faturamento do mês (entregues)
+        r_faturamento_mes = db.query(func.coalesce(func.sum(models.Pedido.valor_total), 0.0)).filter(
+            models.Pedido.restaurante_id == r.id,
+            models.Pedido.status == "entregue",
+            models.Pedido.data_criacao >= inicio_mes
+        ).scalar() or 0.0
+
+        # Cancelamentos do mês
+        r_cancelamentos_mes = db.query(func.count(models.Pedido.id)).filter(
+            models.Pedido.restaurante_id == r.id,
+            models.Pedido.status == "cancelado",
+            models.Pedido.data_criacao >= inicio_mes
+        ).scalar() or 0
+
+        # Taxa de cancelamento
+        r_taxa_cancelamento = round((r_cancelamentos_mes / r_pedidos_mes * 100), 2) if r_pedidos_mes > 0 else 0.0
+
+        # Ticket médio (entregues do mês)
+        r_ticket_medio = db.query(func.coalesce(func.avg(models.Pedido.valor_total), 0.0)).filter(
+            models.Pedido.restaurante_id == r.id,
+            models.Pedido.status == "entregue",
+            models.Pedido.data_criacao >= inicio_mes
+        ).scalar() or 0.0
+
+        # Último pedido
+        ultimo_pedido = db.query(func.max(models.Pedido.data_criacao)).filter(
+            models.Pedido.restaurante_id == r.id
+        ).scalar()
+
+        saude_restaurantes.append({
+            "id": r.id,
+            "nome": r.nome_fantasia,
+            "plano": r.plano,
+            "pedidos_dia": r_pedidos_dia,
+            "pedidos_semana": r_pedidos_semana,
+            "pedidos_mes": r_pedidos_mes,
+            "faturamento_mes": round(float(r_faturamento_mes), 2),
+            "cancelamentos_mes": r_cancelamentos_mes,
+            "taxa_cancelamento": r_taxa_cancelamento,
+            "ticket_medio": round(float(r_ticket_medio), 2),
+            "ultimo_pedido": ultimo_pedido.isoformat() if ultimo_pedido else None
+        })
+
+    # ==================== INSIGHTS ====================
+
+    # Horário pico — tentar func.extract, fallback para func.strftime (SQLite)
+    try:
+        horario_pico_query = db.query(
+            func.extract('hour', models.Pedido.data_criacao).label("hora"),
+            func.count(models.Pedido.id).label("total")
+        ).filter(
+            models.Pedido.data_criacao >= data_limite
+        ).group_by(
+            func.extract('hour', models.Pedido.data_criacao)
+        ).order_by(
+            func.count(models.Pedido.id).desc()
+        ).first()
+        if horario_pico_query:
+            horario_pico = {"hora": int(horario_pico_query.hora), "total_pedidos": int(horario_pico_query.total)}
+        else:
+            horario_pico = {"hora": 0, "total_pedidos": 0}
+    except Exception:
+        # Fallback SQLite
+        try:
+            horario_pico_query = db.query(
+                cast(func.strftime('%H', models.Pedido.data_criacao), Integer).label("hora"),
+                func.count(models.Pedido.id).label("total")
+            ).filter(
+                models.Pedido.data_criacao >= data_limite
+            ).group_by(
+                func.strftime('%H', models.Pedido.data_criacao)
+            ).order_by(
+                func.count(models.Pedido.id).desc()
+            ).first()
+            if horario_pico_query:
+                horario_pico = {"hora": int(horario_pico_query.hora), "total_pedidos": int(horario_pico_query.total)}
+            else:
+                horario_pico = {"hora": 0, "total_pedidos": 0}
+        except Exception:
+            horario_pico = {"hora": 0, "total_pedidos": 0}
+
+    # Formas de pagamento no período
+    formas_pagamento_query = db.query(
+        models.Pedido.forma_pagamento,
+        func.count(models.Pedido.id).label("total")
+    ).filter(
+        models.Pedido.data_criacao >= data_limite,
+        models.Pedido.forma_pagamento != None
+    ).group_by(
+        models.Pedido.forma_pagamento
+    ).order_by(
+        func.count(models.Pedido.id).desc()
+    ).all()
+
+    total_formas = sum(row.total for row in formas_pagamento_query) if formas_pagamento_query else 0
+    formas_pagamento = []
+    for row in formas_pagamento_query:
+        formas_pagamento.append({
+            "forma": row.forma_pagamento or "Não informado",
+            "total": int(row.total),
+            "percentual": round((row.total / total_formas * 100), 2) if total_formas > 0 else 0.0
+        })
+
+    # Tipos de entrega no período
+    tipos_entrega_query = db.query(
+        models.Pedido.tipo_entrega,
+        func.count(models.Pedido.id).label("total")
+    ).filter(
+        models.Pedido.data_criacao >= data_limite,
+        models.Pedido.tipo_entrega != None
+    ).group_by(
+        models.Pedido.tipo_entrega
+    ).order_by(
+        func.count(models.Pedido.id).desc()
+    ).all()
+
+    total_tipos = sum(row.total for row in tipos_entrega_query) if tipos_entrega_query else 0
+    tipos_entrega = []
+    for row in tipos_entrega_query:
+        tipos_entrega.append({
+            "tipo": row.tipo_entrega or "Não informado",
+            "total": int(row.total),
+            "percentual": round((row.total / total_tipos * 100), 2) if total_tipos > 0 else 0.0
+        })
+
+    # Clientes novos na semana
+    clientes_novos_semana = db.query(func.count(models.Cliente.id)).filter(
+        models.Cliente.data_cadastro >= inicio_semana
+    ).scalar() or 0
+
+    # Restaurantes inativos (ativos mas sem pedido nos últimos 7 dias)
+    data_7_dias = hoje - timedelta(days=7)
+    # Subquery: restaurantes com pedido nos últimos 7 dias
+    subquery_ativos = db.query(models.Pedido.restaurante_id).filter(
+        models.Pedido.data_criacao >= data_7_dias
+    ).distinct().subquery()
+
+    restaurantes_inativos_query = db.query(models.Restaurante).filter(
+        models.Restaurante.ativo == True,
+        ~models.Restaurante.id.in_(db.query(subquery_ativos))
+    ).all()
+
+    restaurantes_inativos = []
+    for r in restaurantes_inativos_query:
+        ultimo_p = db.query(func.max(models.Pedido.data_criacao)).filter(
+            models.Pedido.restaurante_id == r.id
+        ).scalar()
+        restaurantes_inativos.append({
+            "id": r.id,
+            "nome": r.nome_fantasia,
+            "ultimo_pedido": ultimo_p.isoformat() if ultimo_p else None
+        })
+
+    # Motoboys ociosos (ativos mas sem entrega finalizada nos últimos 7 dias)
+    subquery_motoboys_com_entrega = db.query(models.Entrega.motoboy_id).filter(
+        models.Entrega.entregue_em >= data_7_dias,
+        models.Entrega.status == "entregue"
+    ).distinct().subquery()
+
+    motoboys_ociosos = db.query(func.count(models.Motoboy.id)).filter(
+        models.Motoboy.status == "ativo",
+        ~models.Motoboy.id.in_(db.query(subquery_motoboys_com_entrega))
+    ).scalar() or 0
+
+    # Crescimento MoM (Month over Month)
+    if faturamento_mes_anterior > 0:
+        crescimento_mom = round((float(faturamento_mes) / float(faturamento_mes_anterior) - 1) * 100, 2)
+    else:
+        crescimento_mom = 0.0 if float(faturamento_mes) == 0 else 100.0
+
+    # ==================== RESPOSTA ====================
+
+    return {
+        # Faturamento
+        "faturamento_hoje": round(float(faturamento_hoje), 2),
+        "faturamento_semana": round(float(faturamento_semana), 2),
+        "faturamento_mes": round(float(faturamento_mes), 2),
+        "faturamento_mes_anterior": round(float(faturamento_mes_anterior), 2),
+        "faturamento_mes_anterior_bruto": round(float(faturamento_mes_anterior_bruto), 2),
+        # Pedidos
+        "pedidos_hoje": pedidos_hoje,
+        "pedidos_semana": pedidos_semana,
+        "pedidos_mes": pedidos_mes,
+        "cancelamentos_hoje": cancelamentos_hoje,
+        "cancelamentos_semana": cancelamentos_semana,
+        "cancelamentos_mes": cancelamentos_mes,
+        "taxa_cancelamento_mes": taxa_cancelamento_mes,
+        "ticket_medio_real": ticket_medio_real,
+        # Top 5 restaurantes
+        "top_restaurantes": top_restaurantes,
+        # Tendência
+        "tendencia_faturamento": tendencia_faturamento,
+        # Saúde
+        "saude_restaurantes": saude_restaurantes,
+        # Insights
+        "horario_pico": horario_pico,
+        "formas_pagamento": formas_pagamento,
+        "tipos_entrega": tipos_entrega,
+        "clientes_novos_semana": clientes_novos_semana,
+        "restaurantes_inativos": restaurantes_inativos,
+        "motoboys_ociosos": motoboys_ociosos,
+        "crescimento_mom": crescimento_mom
+    }
