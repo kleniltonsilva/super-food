@@ -45,6 +45,10 @@ primary_region = "gru"
     timeout = "10s"
     type = "http"
 
+[mounts]
+  source = "superfood_uploads"
+  destination = "/app/backend/static/uploads"
+
 [[vm]]
   memory = "512mb"
   cpu_kind = "shared"
