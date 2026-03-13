@@ -645,7 +645,10 @@ DADOS_PRODUTOS = {
 
 def criar_produtos_padrao(session, restaurante_id: int, tipo_restaurante: str) -> int:
     """
-    Cria produtos padrão para um restaurante recém-criado.
+    Cria categorias + produtos + variações + combos para um restaurante recém-criado.
+
+    Autossuficiente: cria suas próprias categorias se não existirem,
+    sem depender do menu_templates.py (que tem tipos diferentes).
 
     Chamado automaticamente ao criar um novo restaurante via SuperAdmin.
     Pula se o restaurante já tiver produtos.
@@ -659,35 +662,57 @@ def criar_produtos_padrao(session, restaurante_id: int, tipo_restaurante: str) -
     Returns:
         Número de produtos criados
     """
+    import logging
+    import random
+    logger = logging.getLogger(__name__)
+
     # Verificar se já tem produtos
     count_existente = session.query(Produto).filter(
         Produto.restaurante_id == restaurante_id
     ).count()
     if count_existente > 0:
+        logger.info(f"Restaurante {restaurante_id} já tem {count_existente} produtos, pulando seed")
         return 0
 
     # Obter dados para o tipo
     dados = DADOS_PRODUTOS.get(tipo_restaurante)
     if not dados:
+        logger.warning(f"Tipo '{tipo_restaurante}' não tem dados de produtos padrão")
         return 0
 
-    # Buscar categorias já criadas (em ordem)
-    categorias_db = session.query(CategoriaMenu).filter(
-        CategoriaMenu.restaurante_id == restaurante_id,
-        CategoriaMenu.ativo == True
-    ).order_by(CategoriaMenu.ordem_exibicao).all()
+    # Remover categorias vazias criadas pelo menu_templates.py (nomes diferentes)
+    categorias_existentes = session.query(CategoriaMenu).filter(
+        CategoriaMenu.restaurante_id == restaurante_id
+    ).all()
+    for cat in categorias_existentes:
+        # Verificar se tem produtos
+        count_prods = session.query(Produto).filter(
+            Produto.categoria_id == cat.id
+        ).count()
+        if count_prods == 0:
+            session.delete(cat)
+    session.flush()
 
-    if not categorias_db:
-        return 0
+    # Criar categorias corretas a partir dos dados do seed
+    categoria_ids = []
+    for i, cat_dados in enumerate(dados["categorias"]):
+        categoria = CategoriaMenu(
+            restaurante_id=restaurante_id,
+            nome=cat_dados["nome"],
+            icone=cat_dados.get("emoji", "📦"),
+            ordem_exibicao=i + 1,
+            ativo=True,
+        )
+        session.add(categoria)
+        session.flush()
+        categoria_ids.append(categoria.id)
 
-    # Mapear pelo índice: dados["categorias"][i] → categorias_db[i]
+    # Criar produtos para cada categoria
     total_criados = 0
     produto_ids = []
 
     for i, cat_dados in enumerate(dados["categorias"]):
-        if i >= len(categorias_db):
-            break
-        categoria_id = categorias_db[i].id
+        categoria_id = categoria_ids[i]
 
         for j, (nome, descricao, preco) in enumerate(cat_dados["produtos"]):
             produto = Produto(
@@ -697,7 +722,7 @@ def criar_produtos_padrao(session, restaurante_id: int, tipo_restaurante: str) -
                 descricao=descricao,
                 preco=preco,
                 disponivel=True,
-                destaque=(j == 0),  # Primeiro de cada categoria é destaque
+                destaque=(j == 0),
                 ordem_exibicao=j + 1,
             )
             session.add(produto)
@@ -739,7 +764,6 @@ def criar_produtos_padrao(session, restaurante_id: int, tipo_restaurante: str) -
 
         # Adicionar itens ao combo (até 3 produtos)
         if produto_ids:
-            import random
             num_itens = min(3, len(produto_ids))
             itens = random.sample(produto_ids, num_itens)
             for prod_id in itens:
@@ -750,4 +774,6 @@ def criar_produtos_padrao(session, restaurante_id: int, tipo_restaurante: str) -
                 ))
 
     session.flush()
+    logger.info(f"Restaurante {restaurante_id} ({tipo_restaurante}): {total_criados} produtos + "
+                f"{len(categoria_ids)} categorias + {len(dados.get('combos', []))} combos criados")
     return total_criados

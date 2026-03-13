@@ -318,35 +318,21 @@ def criar_restaurante(
         )
         db.add(site_config)
 
-        # Criar categorias padrão baseado no tipo
-        try:
-            from ..utils.menu_templates import TEMPLATES_RESTAURANTE
-            template = TEMPLATES_RESTAURANTE.get(dados.tipo_restaurante, {})
-            categorias = template.get("categorias_padrao", [])
-            for cat in categorias:
-                categoria = models.CategoriaMenu(
-                    restaurante_id=restaurante.id,
-                    nome=cat["nome"],
-                    icone=cat.get("icone", ""),
-                    ordem_exibicao=cat.get("ordem", 0),
-                    ativo=True
-                )
-                db.add(categoria)
-        except Exception:
-            pass  # Se falhar categorias, não impede criação
-
     db.commit()
     db.refresh(restaurante)
 
-    # Criar produtos padrão para o tipo de restaurante
+    # Criar categorias + produtos + combos padrão (seed autossuficiente)
     if dados.criar_site and dados.tipo_restaurante:
         try:
             from database.seed.seed_produtos_padrao import criar_produtos_padrao
             total = criar_produtos_padrao(db, restaurante.id, dados.tipo_restaurante)
             if total > 0:
                 db.commit()
-        except Exception:
-            pass  # Se falhar produtos, não impede criação do restaurante
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Seed produtos padrão falhou: {e}")
+            db.rollback()
+            db.refresh(restaurante)
 
     return {
         **RestauranteDetalhe.model_validate(restaurante).model_dump(),
