@@ -675,13 +675,54 @@ super-food/
 335. [x] Login super admin OK — JWT gerado com sucesso (13/03)
 336. [ ] Testar criar restaurante + site cliente
 
-**11.5 Domínio (quando comprar)**
-337. [ ] Comprar domínio em Registro.br ou Cloudflare
-338. [ ] `fly certs add superfood.com.br`
-339. [ ] Configurar DNS: A record → IP do Fly.io
-340. [ ] Testar HTTPS no domínio final
+**11.5 Uploads Persistentes** ✅ COMPLETO
+337. [x] Volume Fly.io `superfood_uploads` (1GB, criptografado, snapshots automáticos) criado em GRU (13/03)
+338. [x] Montado em `/app/backend/static/uploads` via `fly.toml` seção `[mounts]` (13/03)
+339. [x] Uploads de imagens persistem entre deploys (13/03)
 
-**11.6 Monitoramento**
-341. [x] `fly logs` — logs verificados em tempo real (13/03)
-342. [x] `fly status` — instância rodando GRU, 2/2 checks passing (13/03)
-343. [ ] Configurar alertas de downtime (Fly.io dashboard)
+> **REGRA CRÍTICA DE DEPLOY:** Imagens são armazenadas no volume persistente.
+> O volume NÃO é recriado entre deploys. Deploys são seguros para dados de upload.
+> **NUNCA** deletar o volume `superfood_uploads` sem migrar os arquivos antes.
+> Para verificar: `fly volumes list` | Para backup: `fly volumes snapshots list vol_ID`
+>
+> **Limite atual:** 1GB (volume Fly.io). Quando atingir ~700MB ou ~50 restaurantes
+> ativos com muitas fotos, migrar para Cloudflare R2 (já implementado em `storage.py`).
+> Migração: Sprint 12 abaixo.
+
+**11.6 Domínio (quando comprar)**
+340. [ ] Comprar domínio em Registro.br ou Cloudflare
+341. [ ] `fly certs add superfood.com.br`
+342. [ ] Configurar DNS: A record → IP do Fly.io
+343. [ ] Testar HTTPS no domínio final
+
+**11.7 Monitoramento**
+344. [x] `fly logs` — logs verificados em tempo real (13/03)
+345. [x] `fly status` — instância rodando GRU, 2/2 checks passing (13/03)
+346. [ ] Configurar alertas de downtime (Fly.io dashboard)
+
+---
+
+### SPRINT 12: Migração Storage para Cloudflare R2 (quando necessário)
+
+> **Quando executar:** Quando volume atingir ~700MB OU ~50+ restaurantes ativos com muitas fotos.
+> **Por que R2:** Armazenamento ilimitado, CDN global, free tier 10GB/mês, independente da máquina.
+> O código R2 já existe em `backend/app/storage.py` (R2StorageBackend), pronto para uso.
+
+**12.1 Setup Cloudflare R2**
+347. [ ] Criar conta Cloudflare (se não tiver)
+348. [ ] Criar bucket R2 `superfood-uploads` no dashboard Cloudflare
+349. [ ] Gerar Access Key ID + Secret (R2 API tokens)
+350. [ ] Configurar domínio público do bucket (CDN): `cdn.superfood.com.br/` ou similar
+
+**12.2 Migração de Arquivos**
+351. [ ] Script migrar imagens do volume Fly.io → R2 (já existe em `backend/app/migrate_images.py`)
+352. [ ] Atualizar URLs no banco: `/static/uploads/X` → `https://cdn.superfood.com.br/X`
+353. [ ] Testar que todas imagens carregam via CDN
+
+**12.3 Ativar R2 em Produção**
+354. [ ] `fly secrets set R2_ENDPOINT=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_BUCKET_NAME=superfood-uploads CDN_URL=https://cdn.superfood.com.br`
+355. [ ] Alterar `fly.toml`: `STORAGE_BACKEND = "r2"` (trocar de "local" para "r2")
+356. [ ] `fly deploy` — novos uploads vão direto para R2
+357. [ ] Verificar que uploads novos funcionam via R2/CDN
+358. [ ] Remover seção `[mounts]` do `fly.toml` (volume não mais necessário)
+359. [ ] `fly volumes delete vol_ID` — liberar volume após confirmar migração completa
