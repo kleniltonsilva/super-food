@@ -36,8 +36,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Trash2, Layers, Eye, EyeOff, Calendar, Users } from "lucide-react";
+import { Plus, Pencil, Trash2, Layers, Eye, EyeOff, Calendar, Users, Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { uploadImagem } from "@/admin/lib/adminApiClient";
 
 interface ComboItem {
   produto_id: number;
@@ -55,6 +56,7 @@ interface ComboForm {
   tipo_combo: string;
   dia_semana: string;
   quantidade_pessoas: string;
+  imagem_url: string;
   itens: ComboItem[];
 }
 
@@ -74,7 +76,7 @@ const emptyForm: ComboForm = {
   nome: "", descricao: "", preco_combo: "", preco_original: "",
   ordem_exibicao: "0", data_inicio: "", data_fim: "",
   tipo_combo: "padrao", dia_semana: "", quantidade_pessoas: "",
-  itens: [],
+  imagem_url: "", itens: [],
 };
 
 export default function Combos() {
@@ -88,6 +90,7 @@ export default function Combos() {
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<ComboForm>(emptyForm);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   function openNew() {
     setEditId(null);
@@ -108,6 +111,7 @@ export default function Combos() {
       tipo_combo: (combo.tipo_combo as string) || "padrao",
       dia_semana: combo.dia_semana != null ? String(combo.dia_semana) : "",
       quantidade_pessoas: combo.quantidade_pessoas ? String(combo.quantidade_pessoas) : "",
+      imagem_url: (combo.imagem_url as string) || "",
       itens: (combo.itens as ComboItem[]) || [],
     });
     setShowForm(true);
@@ -128,6 +132,21 @@ export default function Combos() {
     });
   }
 
+  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const data = await uploadImagem(file);
+      setForm((f) => ({ ...f, imagem_url: data.url || data.path || "" }));
+      toast.success("Imagem enviada");
+    } catch {
+      toast.error("Erro ao enviar imagem");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function handleSave() {
     if (!form.nome.trim()) { toast.error("Informe o nome"); return; }
     if (!form.preco_combo) { toast.error("Informe o preço do combo"); return; }
@@ -143,6 +162,7 @@ export default function Combos() {
       descricao: form.descricao.trim() || null,
       preco_combo: Number(form.preco_combo),
       preco_original: Number(form.preco_original || form.preco_combo),
+      imagem_url: form.imagem_url || null,
       ordem_exibicao: Number(form.ordem_exibicao) || 0,
       data_inicio: form.data_inicio || null,
       data_fim: form.data_fim || null,
@@ -231,7 +251,16 @@ export default function Combos() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {comboList.map((combo) => (
-              <Card key={combo.id as number} className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+              <Card key={combo.id as number} className="border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
+                {(combo.imagem_url as string) && (
+                  <div className="h-36 w-full overflow-hidden">
+                    <img
+                      src={combo.imagem_url as string}
+                      alt={combo.nome as string}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                )}
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between">
                     <div className="space-y-1">
@@ -325,6 +354,41 @@ export default function Combos() {
                 className="dark-input"
                 rows={2}
               />
+            </div>
+
+            {/* Imagem */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">Imagem</label>
+              <div className="flex items-center gap-3">
+                {form.imagem_url && (
+                  <img src={form.imagem_url} alt="" className="h-16 w-16 rounded-lg object-cover" />
+                )}
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[var(--border-subtle)] px-4 py-3 text-sm text-[var(--text-muted)] hover:bg-[var(--bg-card-hover)]">
+                  {uploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  {uploading ? "Enviando..." : "Enviar imagem"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageUpload}
+                    disabled={uploading}
+                  />
+                </label>
+                {form.imagem_url && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-400 text-xs"
+                    onClick={() => setForm({ ...form, imagem_url: "" })}
+                  >
+                    Remover
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Tipo do Combo */}
