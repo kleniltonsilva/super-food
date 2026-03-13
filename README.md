@@ -21,7 +21,7 @@ O Super Food e composto por **5 aplicacoes principais**, todas em React + FastAP
 | **App Motoboy (PWA)** | React 19 | `/entregador` | App mobile para entregadores com GPS |
 | **Site Cliente** | React 19 | `/cliente/{codigo}` | Pedido online com 8 layouts tematicos |
 
-**Versao atual: 4.0.0 (11/03/2026)**
+**Versao atual: 4.0.0 (13/03/2026) — Em producao: https://superfood-api.fly.dev**
 
 ### Stack Tecnologica
 
@@ -707,7 +707,13 @@ services:
 
 ## Changelog
 
-### v4.0.0 (11/03/2026) — Mega Migracao React + Features Avancadas
+### v4.0.0 (13/03/2026) — Mega Migracao React + Deploy Fly.io
+
+- **Deploy em producao** — Fly.io GRU (Sao Paulo), PostgreSQL + Upstash Redis
+- **Sprint 10 completo** — Streamlit 100% removido, sistema 100% React
+- **Alembic em producao** — migrations automaticas no startup do Docker
+
+### v4.0.0-rc (11/03/2026) — Mega Migracao React + Features Avancadas
 - **100% React** — Zero Streamlit. Todas 4 aplicacoes em React 19 + TypeScript
 - **Painel Restaurante React** — 20+ paginas, 57 hooks, WebSocket tempo real
 - **App Motoboy PWA** — React + Service Worker + GPS background + Push API
@@ -756,8 +762,8 @@ services:
 - [x] **Fase 11: MEGA MIGRACAO v4.0** — Streamlit → React + Cloud-Ready
   - Sprint 0-8: API + React (painel, motoboy, super admin, site) + auditoria
   - Sprint 9: 8 layouts tematicos por tipo de restaurante
-  - Sprint 10: Aposentar Streamlit (remover dependencias)
-  - Sprint 11: Deploy Fly.io (producao GRU)
+  - Sprint 10: Aposentar Streamlit (remover dependencias) ✅
+  - Sprint 11: Deploy Fly.io (producao GRU) ✅
 - [ ] Fase 12: Integracao iFood
 - [ ] Fase 13: Recuperacao de senha por SMS
 - [ ] Fase 14: Push notifications nativas
@@ -765,7 +771,74 @@ services:
 
 ---
 
-## Verificando se o Sistema Esta Rodando
+## Deploy — Fly.io (Producao)
+
+O sistema esta em producao na Fly.io, regiao GRU (Sao Paulo):
+
+**URL de producao:** https://superfood-api.fly.dev
+
+### Infraestrutura Fly.io
+
+| Recurso | Detalhes |
+|---------|---------|
+| App | `superfood-api` — GRU (Sao Paulo) |
+| PostgreSQL | `superfood-db` — GRU, conectado via DATABASE_URL |
+| Redis | Upstash (via Fly.io) — conectado via REDIS_URL |
+| VM | shared-cpu-1x, 512MB RAM |
+| Workers | 2 Gunicorn + Uvicorn |
+
+### Fazer Deploy
+
+```bash
+# Instalar CLI (se nao tiver)
+curl -L https://fly.io/install.sh | sh
+
+# Login (conta: kleniltonportugal@gmail.com)
+~/.fly/bin/fly auth login
+
+# Deploy (na pasta raiz do projeto)
+~/.fly/bin/fly deploy
+```
+
+O Dockerfile faz tudo automaticamente:
+1. Build do React (Node 20)
+2. Instala dependencias Python
+3. Ao iniciar: `alembic upgrade head` (migrations automaticas)
+4. Inicia Gunicorn com 2 workers Uvicorn
+
+### Verificar Apos Deploy
+
+```bash
+# Ver logs em tempo real
+~/.fly/bin/fly logs --app superfood-api
+
+# Verificar status das maquinas
+~/.fly/bin/fly status --app superfood-api
+
+# Health check
+curl https://superfood-api.fly.dev/health
+# Resposta esperada: {"status":"healthy","checks":{"api":"ok","database":"ok","redis":"ok"}}
+```
+
+### Acesso em Producao
+
+| Servico | URL |
+|---------|-----|
+| Super Admin | https://superfood-api.fly.dev/superadmin |
+| Painel Restaurante | https://superfood-api.fly.dev/admin |
+| App Motoboy | https://superfood-api.fly.dev/entregador |
+| Site Cliente | https://superfood-api.fly.dev/cliente/{CODIGO} |
+| Health Check | https://superfood-api.fly.dev/health |
+
+### Notas Importantes
+
+- **Local vs Producao:** Local usa SQLite + `create_all` automatico. Producao usa PostgreSQL + Alembic.
+- **Novas migrations:** Criar arquivo em `migrations/versions/` e rodar `fly deploy`.
+- **Migrations PostgreSQL:** Usar `false`/`true` para booleanos (nao `0`/`1`).
+
+---
+
+## Verificando se o Sistema Esta Rodando (Local)
 
 ```bash
 # Verificar porta ativa
@@ -773,7 +846,7 @@ lsof -i :8000 | grep LISTEN
 
 # Testar FastAPI
 curl http://localhost:8000/health
-# Resposta: {"status":"healthy","checks":{"database":"ok","uptime":...}}
+# Resposta: {"status":"healthy","checks":{"database":"ok",...}}
 
 # Testar Swagger
 # Abrir no navegador: http://localhost:8000/docs

@@ -50,12 +50,44 @@
 
 ## ESTADO ATUAL DO PROJETO
 
-- **Sprint atual:** Sprint 9 — Layouts Temáticos por Tipo de Restaurante — **~99% COMPLETO**
-- **Tarefa atual:** 9.10 combos do dia + kits festa COMPLETOS. Faltam apenas: 9.14 testes visuais manuais
-- **Status:** 9.1-9.13 COMPLETOS. 9.10 COMPLETO. Pendente: 9.14 (testes visuais manuais)
-- **Ultima sessao:** 08/03/2026 — Backend + frontend combo types (do_dia, kit_festa), migration 010
-- **Proxima etapa:** Sprint 10 (Aposentar Streamlit) ou testes visuais Sprint 9
+- **Sprint atual:** Sprint 11 — Deploy Fly.io — **EM PROGRESSO**
+- **Tarefa atual:** Deploy concluido! App rodando em https://superfood-api.fly.dev
+- **Status:** Sprint 10 COMPLETO (Streamlit removido, tag v4.0.0). Sprint 11: 11.1-11.4 parcialmente concluidos
+- **Ultima sessao:** 13/03/2026 — Deploy Fly.io com PostgreSQL + Redis + Alembic migrations
+- **Proxima etapa:** 11.4 testes finais, 11.5 dominio, 11.6 monitoramento
 - **Bugs conhecidos:** Nenhum critico pendente
+
+---
+
+## DEPLOY — COMO SUBIR PARA PRODUÇÃO
+
+**Comando único (na pasta raiz do projeto):**
+```bash
+~/.fly/bin/fly deploy
+```
+
+**O Dockerfile faz tudo automaticamente:**
+1. Build React (Node 20)
+2. Instala deps Python
+3. Na inicialização: `alembic upgrade head` → migrations automáticas
+4. Inicia Gunicorn com 2 workers Uvicorn
+
+**Infraestrutura Fly.io (já configurada):**
+- App: `superfood-api` — https://superfood-api.fly.dev
+- PostgreSQL: `superfood-db` (GRU) — conectado automaticamente via DATABASE_URL
+- Redis: Upstash — conectado via REDIS_URL
+- Secrets: já configurados (SECRET_KEY, SUPER_ADMIN_USER/PASS, MAPBOX_TOKEN, REDIS_URL)
+
+**Verificar depois do deploy:**
+```bash
+~/.fly/bin/fly logs --app superfood-api  # ver logs
+curl https://superfood-api.fly.dev/health  # verificar saúde
+```
+
+**IMPORTANTE — Ambiente local vs produção:**
+- Local: SQLite + `create_all` automático (ENVIRONMENT não é "production")
+- Produção: PostgreSQL + Alembic migrations (ENVIRONMENT=production no fly.toml)
+- Para adicionar migration nova: criar arquivo em `migrations/versions/` e rodar `fly deploy`
 
 ---
 
@@ -603,17 +635,17 @@ super-food/
 
 ---
 
-### SPRINT 10: Aposentar Streamlit
+### SPRINT 10: Aposentar Streamlit ✅ COMPLETO
 
-314. [ ] Validar 100% funcionalidades restaurante
-315. [ ] Validar 100% funcionalidades motoboy
-316. [ ] Validar 100% funcionalidades super admin
-317. [ ] Remover streamlit_app/
-318. [ ] Remover app_motoboy/
-319. [ ] Remover streamlit do requirements.txt
-320. [ ] Atualizar start_services.sh
-321. [ ] Atualizar documentacao
-322. [ ] Tag v4.0.0
+314. [x] Validar 100% funcionalidades restaurante (12/03)
+315. [x] Validar 100% funcionalidades motoboy (12/03)
+316. [x] Validar 100% funcionalidades super admin (12/03)
+317. [x] Remover streamlit_app/ (12/03)
+318. [x] Remover app_motoboy/ (12/03)
+319. [x] Remover streamlit do requirements.txt (12/03)
+320. [x] Atualizar start_services.sh (12/03)
+321. [x] Atualizar documentacao (12/03)
+322. [x] Tag v4.0.0 (12/03)
 
 ---
 
@@ -621,26 +653,26 @@ super-food/
 
 > Última etapa: subir tudo para a nuvem. Fly.io região GRU (São Paulo).
 
-**11.1 Setup Inicial**
-323. [ ] Instalar CLI Fly.io (`curl -L https://fly.io/install.sh | sh`)
-324. [ ] `fly auth login`
-325. [ ] `fly launch --copy-config --region gru` (usa fly.toml existente)
+**11.1 Setup Inicial** ✅ COMPLETO
+323. [x] Instalar CLI Fly.io (12/03)
+324. [x] `fly auth login` — kleniltonportugal@gmail.com (12/03)
+325. [x] `fly apps create superfood-api --region gru` (12/03)
 
-**11.2 Banco e Cache**
-326. [ ] `fly postgres create --region gru --name superfood-db`
-327. [ ] `fly postgres attach superfood-db` (seta DATABASE_URL)
-328. [ ] `fly redis create --region gru --name superfood-redis`
-329. [ ] Configurar REDIS_URL via `fly secrets set`
+**11.2 Banco e Cache** ✅ COMPLETO
+326. [x] `fly postgres create --region gru --name superfood-db` (12/03)
+327. [x] `fly postgres attach superfood-db` — DATABASE_URL configurada (12/03)
+328. [x] `fly redis create --region gru --name superfood-redis` — Upstash Redis (12/03)
+329. [x] REDIS_URL configurada via `fly secrets set` (12/03)
 
-**11.3 Secrets**
-330. [ ] `fly secrets set SECRET_KEY=... SUPER_ADMIN_USER=... SUPER_ADMIN_PASS=... MAPBOX_TOKEN=...`
-331. [ ] Verificar todos secrets: `fly secrets list`
+**11.3 Secrets** ✅ COMPLETO
+330. [x] `fly secrets set SECRET_KEY, SUPER_ADMIN_USER/PASS, MAPBOX_TOKEN, REDIS_URL, etc.` (12/03)
+331. [x] Verificar todos secrets: `fly secrets list` (12/03)
 
-**11.4 Deploy**
-332. [ ] `fly deploy` (primeiro deploy)
-333. [ ] `fly ssh console -C "alembic upgrade head"` (migrations)
-334. [ ] Verificar health: `curl https://superfood-api.fly.dev/health`
-335. [ ] Testar login super admin
+**11.4 Deploy** ✅ PARCIAL
+332. [x] `fly deploy` — app rodando em https://superfood-api.fly.dev (13/03)
+333. [x] Alembic migrations rodando automaticamente no CMD do Dockerfile (13/03)
+334. [x] Health check OK: `{"status":"healthy","checks":{"api":"ok","database":"ok","redis":"ok"}}` (13/03)
+335. [x] Login super admin OK — JWT gerado com sucesso (13/03)
 336. [ ] Testar criar restaurante + site cliente
 
 **11.5 Domínio (quando comprar)**
@@ -650,6 +682,6 @@ super-food/
 340. [ ] Testar HTTPS no domínio final
 
 **11.6 Monitoramento**
-341. [ ] `fly logs` — verificar logs em tempo real
-342. [ ] `fly status` — verificar instâncias rodando
+341. [x] `fly logs` — logs verificados em tempo real (13/03)
+342. [x] `fly status` — instância rodando GRU, 2/2 checks passing (13/03)
 343. [ ] Configurar alertas de downtime (Fly.io dashboard)
