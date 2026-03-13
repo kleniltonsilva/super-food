@@ -18,7 +18,11 @@ export interface WsEvent {
   dados?: Record<string, unknown>;
 }
 
-// ─── Gera som de notificação via Web Audio API ──────────
+// ─── Sons distintos via Web Audio API ────────────────────
+// Cada evento tem timbre, frequência e padrão únicos para
+// que o atendente identifique pelo som o que está acontecendo.
+
+/** Novo pedido: 3 bips agudos rápidos (sine 880Hz) — "tin tin tin" */
 function tocarSomNotificacao() {
   try {
     const ctx = new AudioContext();
@@ -36,11 +40,11 @@ function tocarSomNotificacao() {
       osc.stop(ctx.currentTime + t + 0.12);
     });
   } catch {
-    // AudioContext não disponível no ambiente
+    // AudioContext não disponível
   }
 }
 
-// ─── Som de alerta (mais grave e longo, para atrasos) ───
+/** Entrega atrasada: 4 bips graves urgentes (square 440Hz) — alarme */
 function tocarSomAlerta() {
   try {
     const ctx = new AudioContext();
@@ -56,6 +60,48 @@ function tocarSomAlerta() {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
       osc.start(ctx.currentTime + t);
       osc.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch {
+    // AudioContext não disponível
+  }
+}
+
+/** Pedido cancelado: tom descendente triste (sawtooth 660→330Hz) */
+function tocarSomCancelamento() {
+  try {
+    const ctx = new AudioContext();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(660, ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(330, ctx.currentTime + 0.5);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.6);
+  } catch {
+    // AudioContext não disponível
+  }
+}
+
+/** Pedido despachado: 2 tons ascendentes de confirmação (triangle 523→784Hz) */
+function tocarSomDespacho() {
+  try {
+    const ctx = new AudioContext();
+    [523, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      const t = i * 0.18;
+      gain.gain.setValueAtTime(0.35, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.15);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.15);
     });
   } catch {
     // AudioContext não disponível
@@ -117,11 +163,16 @@ export function useWebSocket({
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.motoboys });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
+          if (habilitarSom) tocarSomDespacho();
           break;
         case "pedido_cancelado":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          if (habilitarSom) tocarSomCancelamento();
+          if (habilitarNotificacaoSistema) {
+            notificarSistema("Pedido Cancelado", "Um pedido foi cancelado.");
+          }
           break;
         case "entrega_atrasada":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
@@ -199,5 +250,5 @@ export function useWebSocket({
     };
   }, [conectar]);
 
-  return { tocarSomNotificacao, tocarSomAlerta };
+  return { tocarSomNotificacao, tocarSomAlerta, tocarSomCancelamento, tocarSomDespacho };
 }

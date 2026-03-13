@@ -8,14 +8,14 @@ from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pathlib import Path
-import os, json, time, uuid, logging
+import os, json, time, uuid, logging, asyncio
 from typing import List, Dict
 from contextlib import asynccontextmanager
 
 from .routers import restaurantes, pedidos, site_cliente, carrinho, gps, auth_cliente, auth_restaurante, auth_motoboy, auth_admin, upload, painel
 from .routers import motoboy as motoboy_router
 from .routers import admin as admin_router
-from .database import engine, Base, get_db
+from .database import engine, Base, get_db, SessionLocal
 from . import models
 from .logging_config import setup_logging
 from .metrics import metrics
@@ -31,9 +31,71 @@ logger = logging.getLogger("superfood")
 manager = create_manager()
 
 
+async def verificar_entregas_atrasadas(ws_manager):
+    """Task periódica: verifica entregas atrasadas a cada 60s e broadcast alerta"""
+    from datetime import datetime, timedelta
+    while True:
+        await asyncio.sleep(60)
+        try:
+            db = SessionLocal()
+            try:
+                agora = datetime.utcnow()
+                # Busca entregas em rota
+                entregas = db.query(models.Entrega).filter(
+                    models.Entrega.status == "em_rota"
+                ).all()
+
+                for entrega in entregas:
+                    pedido = db.query(models.Pedido).filter(
+                        models.Pedido.id == entrega.pedido_id
+                    ).first()
+                    if not pedido:
+                        continue
+
+                    # Tolerância do restaurante
+                    config = db.query(models.ConfigRestaurante).filter(
+                        models.ConfigRestaurante.restaurante_id == pedido.restaurante_id
+                    ).first()
+                    tolerancia = (config.tolerancia_atraso_min if config and hasattr(config, 'tolerancia_atraso_min') and config.tolerancia_atraso_min else 10)
+
+                    # Tempo estimado
+                    tempo_estimado = entrega.tempo_entrega
+                    if not tempo_estimado and entrega.distancia_km:
+                        tempo_estimado = round((entrega.distancia_km / 25) * 60)
+                    if not tempo_estimado:
+                        tempo_estimado = 30  # fallback 30 min
+
+                    # Referência de início
+                    referencia = entrega.delivery_started_at or entrega.atribuido_em or pedido.data_criacao
+                    if not referencia:
+                        continue
+
+                    decorrido = round((agora - referencia).total_seconds() / 60)
+
+                    if decorrido > (tempo_estimado + tolerancia):
+                        await ws_manager.broadcast({
+                            "tipo": "entrega_atrasada",
+                            "dados": {
+                                "pedido_id": pedido.id,
+                                "comanda": pedido.comanda,
+                                "motoboy_id": entrega.motoboy_id,
+                                "tempo_estimado_min": tempo_estimado,
+                                "tempo_decorrido_min": decorrido,
+                            }
+                        }, pedido.restaurante_id)
+            finally:
+                db.close()
+        except Exception as e:
+            logger.debug(f"Verificação entregas atrasadas: {e}")
+
+
+_entrega_task = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown da aplicacao"""
+    global _entrega_task
     # Startup
     environment = os.getenv("ENVIRONMENT", "development")
     if environment == "production":
@@ -55,9 +117,18 @@ async def lifespan(app: FastAPI):
     if hasattr(manager, 'start'):
         await manager.start()
 
+    # Inicia verificação periódica de entregas atrasadas
+    _entrega_task = asyncio.create_task(verificar_entregas_atrasadas(manager))
+
     yield
 
     # Shutdown
+    if _entrega_task:
+        _entrega_task.cancel()
+        try:
+            await _entrega_task
+        except asyncio.CancelledError:
+            pass
     if hasattr(manager, 'stop'):
         await manager.stop()
     logger.info("Super Food API encerrada")

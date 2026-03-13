@@ -4,7 +4,7 @@
 Router Carrinho - Gerenciamento do carrinho de compras
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
@@ -387,8 +387,9 @@ def limpar_carrinho(
 
 
 @router.post("/finalizar", response_model=dict)
-def finalizar_carrinho(
+async def finalizar_carrinho(
     finalizacao: carrinho_schemas.FinalizarCarrinhoRequest,
+    request: Request,
     sessao_id: str = Depends(get_or_create_sessao_id),
     cliente: Optional[models.Cliente] = Depends(get_cliente_opcional),
     db: Session = Depends(database.get_db)
@@ -539,6 +540,20 @@ def finalizar_carrinho(
 
     db.commit()
     db.refresh(pedido)
+
+    # Broadcast WebSocket para painel admin — alerta sonoro novo pedido
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "novo_pedido",
+            "dados": {
+                "pedido_id": pedido.id,
+                "comanda": pedido.comanda,
+                "cliente_nome": pedido.cliente_nome,
+                "valor_total": pedido.valor_total,
+                "origem": "site",
+            }
+        }, pedido.restaurante_id)
 
     return {
         "pedido_id": pedido.id,

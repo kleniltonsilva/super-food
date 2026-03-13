@@ -30,10 +30,10 @@ DADOS_PRODUTOS = {
                 ],
                 "variacoes": {
                     "tamanho": [
-                        ("Broto (25cm)", -20.00),
-                        ("Média (30cm)", -10.00),
-                        ("Grande (35cm)", 0.00),
-                        ("Gigante (40cm)", 10.00),
+                        ("Broto (25cm)", -20.00, 1),
+                        ("Média (30cm)", -10.00, 2),
+                        ("Grande (35cm)", 0.00, 3),
+                        ("Gigante (40cm)", 10.00, 4),
                     ],
                     "borda": [
                         ("Sem borda", 0.00),
@@ -53,10 +53,10 @@ DADOS_PRODUTOS = {
                 ],
                 "variacoes": {
                     "tamanho": [
-                        ("Broto (25cm)", -20.00),
-                        ("Média (30cm)", -10.00),
-                        ("Grande (35cm)", 0.00),
-                        ("Gigante (40cm)", 10.00),
+                        ("Broto (25cm)", -20.00, 1),
+                        ("Média (30cm)", -10.00, 2),
+                        ("Grande (35cm)", 0.00, 3),
+                        ("Gigante (40cm)", 10.00, 4),
                     ],
                     "borda": [
                         ("Sem borda", 0.00),
@@ -75,9 +75,9 @@ DADOS_PRODUTOS = {
                 ],
                 "variacoes": {
                     "tamanho": [
-                        ("Broto (25cm)", -20.00),
-                        ("Média (30cm)", -10.00),
-                        ("Grande (35cm)", 0.00),
+                        ("Broto (25cm)", -20.00, 1),
+                        ("Média (30cm)", -10.00, 2),
+                        ("Grande (35cm)", 0.00, 2),
                     ],
                     "borda": [
                         ("Sem borda", 0.00),
@@ -733,15 +733,22 @@ def criar_produtos_padrao(session, restaurante_id: int, tipo_restaurante: str) -
             # Criar variações se houver
             variacoes = cat_dados.get("variacoes", {})
             for tipo_var, lista_var in variacoes.items():
-                for ordem_v, (nome_v, preco_add) in enumerate(lista_var, start=1):
-                    session.add(VariacaoProduto(
-                        produto_id=produto.id,
-                        tipo_variacao=tipo_var,
-                        nome=nome_v,
-                        preco_adicional=preco_add,
-                        ordem=ordem_v,
-                        ativo=True,
-                    ))
+                for ordem_v, item_var in enumerate(lista_var, start=1):
+                    # Tupla pode ser (nome, preco) ou (nome, preco, max_sabores)
+                    nome_v = item_var[0]
+                    preco_add = item_var[1]
+                    max_sab = item_var[2] if len(item_var) > 2 else 1
+                    var_kwargs = {
+                        "produto_id": produto.id,
+                        "tipo_variacao": tipo_var,
+                        "nome": nome_v,
+                        "preco_adicional": preco_add,
+                        "ordem": ordem_v,
+                        "ativo": True,
+                    }
+                    if tipo_var == "tamanho" and max_sab > 1:
+                        var_kwargs["max_sabores"] = max_sab
+                    session.add(VariacaoProduto(**var_kwargs))
 
     # Criar combos
     for k, combo_dados in enumerate(dados.get("combos", [])):
