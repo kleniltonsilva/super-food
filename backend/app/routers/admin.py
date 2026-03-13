@@ -338,6 +338,16 @@ def criar_restaurante(
     db.commit()
     db.refresh(restaurante)
 
+    # Criar produtos padrão para o tipo de restaurante
+    if dados.criar_site and dados.tipo_restaurante:
+        try:
+            from database.seed.seed_produtos_padrao import criar_produtos_padrao
+            total = criar_produtos_padrao(db, restaurante.id, dados.tipo_restaurante)
+            if total > 0:
+                db.commit()
+        except Exception:
+            pass  # Se falhar produtos, não impede criação do restaurante
+
     return {
         **RestauranteDetalhe.model_validate(restaurante).model_dump(),
         "senha_padrao": senha_padrao,
