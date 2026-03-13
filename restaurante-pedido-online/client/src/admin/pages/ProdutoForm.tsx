@@ -10,6 +10,7 @@ import {
   useCriarVariacao,
   useAtualizarVariacao,
   useDeletarVariacao,
+  useAplicarMaxSabores,
 } from "@/admin/hooks/useAdminQueries";
 import { uploadImagem } from "@/admin/lib/adminApiClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +26,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ArrowLeft, Plus, Trash2, Upload, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -68,8 +79,11 @@ export default function ProdutoForm() {
   const [ordemExibicao, setOrdemExibicao] = useState("0");
   const [uploading, setUploading] = useState(false);
   const [variacoes, setVariacoes] = useState<VariacaoLocal[]>([]);
+  const [variacoesOriginais, setVariacoesOriginais] = useState<VariacaoLocal[]>([]);
   const [ingredientes, setIngredientes] = useState<string[]>([]);
   const [novoIngrediente, setNovoIngrediente] = useState("");
+  const aplicarMaxSabores = useAplicarMaxSabores();
+  const [saboresDialog, setSaboresDialog] = useState<{ nome: string; max_sabores: number } | null>(null);
 
   // Populate form when editing
   useEffect(() => {
@@ -92,17 +106,17 @@ export default function ProdutoForm() {
 
   useEffect(() => {
     if (isEdit && variacoesBD) {
-      setVariacoes(
-        (variacoesBD as Record<string, unknown>[]).map((v) => ({
-          id: v.id as number,
-          tipo_variacao: (v.tipo_variacao as string) || "tamanho",
-          nome: v.nome as string,
-          descricao: (v.descricao as string) || "",
-          preco_adicional: Number(v.preco_adicional || 0),
-          ordem: Number(v.ordem ?? 0),
-          max_sabores: Number(v.max_sabores ?? 0),
-        }))
-      );
+      const mapped = (variacoesBD as Record<string, unknown>[]).map((v) => ({
+        id: v.id as number,
+        tipo_variacao: (v.tipo_variacao as string) || "tamanho",
+        nome: v.nome as string,
+        descricao: (v.descricao as string) || "",
+        preco_adicional: Number(v.preco_adicional || 0),
+        ordem: Number(v.ordem ?? 0),
+        max_sabores: Number(v.max_sabores ?? 0),
+      }));
+      setVariacoes(mapped);
+      setVariacoesOriginais(mapped.map((v) => ({ ...v })));
     }
   }, [isEdit, variacoesBD]);
 
@@ -189,6 +203,17 @@ export default function ProdutoForm() {
           }
         }
         toast.success("Produto atualizado!");
+
+        // Verifica se max_sabores mudou em algum tamanho — oferece aplicar a todos
+        const tamanhoAlterado = variacoes.find((v) => {
+          if (v.tipo_variacao !== "tamanho" || !v.max_sabores) return false;
+          const original = variacoesOriginais.find((o) => o.id === v.id);
+          return original && original.max_sabores !== v.max_sabores;
+        });
+        if (tamanhoAlterado) {
+          setSaboresDialog({ nome: tamanhoAlterado.nome, max_sabores: tamanhoAlterado.max_sabores });
+          return; // Não navega ainda — espera resposta do dialog
+        }
       } else {
         await criarProduto.mutateAsync(payload);
         toast.success("Produto criado!");
@@ -552,6 +577,49 @@ export default function ProdutoForm() {
           </div>
         </div>
       </div>
+
+      {/* Dialog: aplicar max_sabores a todos os tamanhos com mesmo nome */}
+      <AlertDialog open={saboresDialog !== null} onOpenChange={() => { setSaboresDialog(null); navigate("/produtos"); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Aplicar a todas as pizzas?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você alterou o máximo de sabores do tamanho <strong>{saboresDialog?.nome}</strong> para <strong>{saboresDialog?.max_sabores}</strong>.
+              Deseja aplicar essa regra a todos os produtos que possuem o tamanho &quot;{saboresDialog?.nome}&quot;?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setSaboresDialog(null); navigate("/produtos"); }}>
+              Apenas este produto
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-[var(--cor-primaria)] hover:bg-[var(--cor-primaria)]/90"
+              onClick={() => {
+                if (saboresDialog) {
+                  aplicarMaxSabores.mutate(
+                    { nome_tamanho: saboresDialog.nome, max_sabores: saboresDialog.max_sabores },
+                    {
+                      onSuccess: (res) => {
+                        const r = res as { total?: number };
+                        toast.success(`Aplicado a ${r.total || 0} variações "${saboresDialog.nome}"`);
+                        setSaboresDialog(null);
+                        navigate("/produtos");
+                      },
+                      onError: () => {
+                        toast.error("Erro ao aplicar em massa");
+                        setSaboresDialog(null);
+                        navigate("/produtos");
+                      },
+                    }
+                  );
+                }
+              }}
+            >
+              Aplicar a todas as pizzas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }

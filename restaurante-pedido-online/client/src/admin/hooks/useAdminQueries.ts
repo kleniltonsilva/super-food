@@ -244,6 +244,15 @@ export function useDeletarVariacao() {
   });
 }
 
+export function useAplicarMaxSabores() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dados: { nome_tamanho: string; max_sabores: number }) =>
+      api.aplicarMaxSabores(dados),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "variacoes"] }),
+  });
+}
+
 // ─── Combos ────────────────────────────────────────────
 export function useCombos() {
   return useQuery({

@@ -1053,6 +1053,27 @@ def criar_variacao(
     return {"id": var.id, "nome": var.nome}
 
 
+class AplicarMaxSaboresRequest(BaseModel):
+    nome_tamanho: str
+    max_sabores: int
+
+
+@router.put("/variacoes/aplicar-max-sabores")
+def aplicar_max_sabores_em_massa(
+    dados: AplicarMaxSaboresRequest,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Aplica max_sabores a TODAS as variações de tamanho com o mesmo nome no restaurante"""
+    total = db.query(models.VariacaoProduto).join(models.Produto).filter(
+        models.Produto.restaurante_id == rest.id,
+        models.VariacaoProduto.tipo_variacao == "tamanho",
+        models.VariacaoProduto.nome == dados.nome_tamanho,
+    ).update({"max_sabores": dados.max_sabores}, synchronize_session=False)
+    db.commit()
+    return {"mensagem": f"Atualizado {total} variações '{dados.nome_tamanho}' para {dados.max_sabores} sabores", "total": total}
+
+
 @router.put("/variacoes/{var_id}")
 def editar_variacao(
     var_id: int, dados: VariacaoRequest,

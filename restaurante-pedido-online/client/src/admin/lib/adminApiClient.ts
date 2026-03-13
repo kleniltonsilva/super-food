@@ -175,6 +175,11 @@ export async function deletarVariacao(id: number) {
   return data;
 }
 
+export async function aplicarMaxSabores(payload: { nome_tamanho: string; max_sabores: number }) {
+  const { data } = await adminApi.put("/painel/variacoes/aplicar-max-sabores", payload);
+  return data;
+}
+
 // ─── Combos ────────────────────────────────────────────
 export async function getCombos() {
   const { data } = await adminApi.get("/painel/combos");
