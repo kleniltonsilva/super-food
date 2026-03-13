@@ -424,11 +424,24 @@ def finalizar_carrinho(
     if not carrinho or not carrinho.itens_json:
         raise HTTPException(status_code=400, detail="Carrinho vazio")
 
+    # Verificar se restaurante está aberto
+    config_rest = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == carrinho.restaurante_id
+    ).first()
+    if config_rest and config_rest.status_atual != "aberto":
+        horario_msg = ""
+        if config_rest.horario_abertura and config_rest.horario_fechamento:
+            horario_msg = f" Horário de funcionamento: {config_rest.horario_abertura} às {config_rest.horario_fechamento}."
+        raise HTTPException(
+            status_code=403,
+            detail=f"Restaurante fechado no momento. Não é possível realizar pedidos.{horario_msg}"
+        )
+
     # Busca site config para validar pedido mínimo
     site_config = db.query(models.SiteConfig).filter(
         models.SiteConfig.restaurante_id == carrinho.restaurante_id
     ).first()
-    
+
     if site_config and carrinho.valor_subtotal < site_config.pedido_minimo:
         raise HTTPException(
             status_code=400,

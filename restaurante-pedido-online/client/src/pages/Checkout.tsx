@@ -229,6 +229,9 @@ export default function Checkout() {
     );
   }
 
+  // Bloquear checkout se restaurante fechado
+  const isRestauranteClosed = siteInfo && !siteInfo.status_aberto;
+
   if (cartItems.length === 0) {
     return (
       <div className="min-h-screen bg-background">
@@ -317,6 +320,11 @@ export default function Checkout() {
   };
 
   const handlePlaceOrder = async () => {
+    if (isRestauranteClosed) {
+      toast.error("Restaurante fechado. Não é possível realizar pedidos no momento.");
+      return;
+    }
+
     if (siteInfo && siteInfo.pedido_minimo > 0 && subtotal < siteInfo.pedido_minimo) {
       toast.error(`Pedido mínimo: R$ ${siteInfo.pedido_minimo.toFixed(2)}`);
       return;
@@ -389,6 +397,21 @@ export default function Checkout() {
         </Button>
 
         <h1 className="text-2xl md:text-3xl font-bold mb-6">Checkout</h1>
+
+        {isRestauranteClosed && (
+          <div className="mb-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+            <p className="font-bold text-red-400 text-lg mb-1">Restaurante fechado</p>
+            <p className="text-sm text-red-300">
+              No momento não estamos aceitando pedidos.
+              {siteInfo?.horario_abertura && siteInfo?.horario_fechamento && (
+                <> Horário de funcionamento: <strong>{siteInfo.horario_abertura} às {siteInfo.horario_fechamento}</strong>.</>
+              )}
+              {siteInfo?.dias_semana_abertos && siteInfo.dias_semana_abertos.length > 0 && (
+                <> Dias: <strong>{siteInfo.dias_semana_abertos.join(", ")}</strong>.</>
+              )}
+            </p>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Formulário */}
@@ -757,11 +780,11 @@ export default function Checkout() {
 
               <Button
                 onClick={handlePlaceOrder}
-                disabled={isProcessing}
-                className="w-full py-6 text-lg font-bold text-white"
-                style={{ background: `var(--cor-primaria, #E31A24)` }}
+                disabled={isProcessing || !!isRestauranteClosed}
+                className="w-full py-6 text-lg font-bold text-white disabled:opacity-50"
+                style={{ background: isRestauranteClosed ? undefined : `var(--cor-primaria, #E31A24)` }}
               >
-                {isProcessing ? "Processando..." : "Confirmar Pedido"}
+                {isProcessing ? "Processando..." : isRestauranteClosed ? "Restaurante Fechado" : "Confirmar Pedido"}
               </Button>
 
               <Button variant="outline" className="w-full mt-2" onClick={() => navigate("/cart")} disabled={isProcessing}>
