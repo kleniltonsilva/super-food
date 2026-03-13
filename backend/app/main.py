@@ -35,7 +35,20 @@ manager = create_manager()
 async def lifespan(app: FastAPI):
     """Startup/shutdown da aplicacao"""
     # Startup
-    Base.metadata.create_all(bind=engine)
+    environment = os.getenv("ENVIRONMENT", "development")
+    if environment == "production":
+        # Em producao, Alembic roda antes do gunicorn (via CMD no Dockerfile)
+        logger.info("Producao: tabelas gerenciadas pelo Alembic")
+    else:
+        Base.metadata.create_all(bind=engine)
+
+    # Cria super admin padrao se nao existir
+    try:
+        from database.session import criar_super_admin_padrao
+        criar_super_admin_padrao()
+    except Exception as e:
+        logger.warning(f"Seed super admin: {e}")
+
     logger.info("Super Food API iniciada")
 
     # Inicia WebSocket manager (Redis Pub/Sub se disponivel)

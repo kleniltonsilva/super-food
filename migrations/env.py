@@ -29,6 +29,9 @@ config = context.config
 # Sobrescreve URL do banco com .env (se definida)
 database_url = os.getenv("DATABASE_URL")
 if database_url:
+    # SQLAlchemy 2.0 nao aceita "postgres://" — converte para "postgresql://"
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
     config.set_main_option("sqlalchemy.url", database_url)
 
 # Logging
@@ -62,6 +65,23 @@ def run_migrations_online():
     )
 
     with connectable.connect() as connection:
+        # Pre-criar alembic_version com coluna maior (padrao Alembic e VARCHAR(32))
+        from sqlalchemy import text, inspect
+        inspector = inspect(connection)
+        if not inspector.has_table("alembic_version"):
+            connection.execute(text(
+                "CREATE TABLE alembic_version ("
+                "version_num VARCHAR(128) NOT NULL, "
+                "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num))"
+            ))
+            connection.commit()
+        else:
+            # Expandir coluna se ja existe com tamanho menor
+            connection.execute(text(
+                "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"
+            ))
+            connection.commit()
+
         context.configure(
             connection=connection,
             target_metadata=target_metadata

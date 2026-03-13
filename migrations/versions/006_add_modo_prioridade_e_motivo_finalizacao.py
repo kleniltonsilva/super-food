@@ -58,7 +58,7 @@ def upgrade():
             'entregas',
             sa.Column(
                 'motivo_cancelamento',
-                sa.Text,
+                sa.Text(),
                 nullable=True
             )
         )

@@ -48,8 +48,8 @@ def upgrade():
     # Inicializar valores padrão nos registros existentes
     op.execute("UPDATE motoboys SET total_km = 0.0 WHERE total_km IS NULL")
     op.execute("UPDATE motoboys SET ordem_hierarquia = id WHERE ordem_hierarquia IS NULL")
-    op.execute("UPDATE motoboys SET disponivel = 0 WHERE disponivel IS NULL")
-    op.execute("UPDATE motoboys SET em_rota = 0 WHERE em_rota IS NULL")
+    op.execute("UPDATE motoboys SET disponivel = false WHERE disponivel IS NULL")
+    op.execute("UPDATE motoboys SET em_rota = false WHERE em_rota IS NULL")
     op.execute("UPDATE motoboys SET entregas_pendentes = 0 WHERE entregas_pendentes IS NULL")
 
 
