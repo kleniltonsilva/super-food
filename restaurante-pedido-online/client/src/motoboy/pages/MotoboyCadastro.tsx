@@ -6,12 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cadastroMotoboy } from "@/motoboy/lib/motoboyApiClient";
 import { toast } from "sonner";
 import { Loader2, UserPlus, ArrowLeft } from "lucide-react";
+import { validarCPF, formatarCPF, limparCPF } from "@/utils/cpf";
 
 export default function MotoboyCadastro() {
   const [codigo, setCodigo] = useState("");
   const [nome, setNome] = useState("");
   const [usuario, setUsuario] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [cpf, setCpf] = useState("");
   const [loading, setLoading] = useState(false);
   const [sucesso, setSucesso] = useState(false);
   const [, navigate] = useLocation();
@@ -25,6 +27,8 @@ export default function MotoboyCadastro() {
     if (!usuario.trim() || usuario.trim().length < 3) erros.push("Usuário deve ter pelo menos 3 caracteres");
     const telDigits = telefone.replace(/\D/g, "");
     if (telDigits.length < 10) erros.push("Telefone inválido (mínimo 10 dígitos)");
+    const cpfLimpo = limparCPF(cpf);
+    if (cpfLimpo && !validarCPF(cpfLimpo)) erros.push("CPF inválido");
 
     if (erros.length > 0) {
       erros.forEach((e) => toast.error(e));
@@ -38,6 +42,7 @@ export default function MotoboyCadastro() {
         nome: nome.trim(),
         usuario: usuario.trim(),
         telefone: telefone.trim(),
+        cpf: cpfLimpo || undefined,
       });
       setSucesso(true);
     } catch (err: unknown) {
@@ -130,6 +135,17 @@ export default function MotoboyCadastro() {
                 value={telefone}
                 onChange={(e) => setTelefone(e.target.value)}
                 className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-300">CPF</label>
+              <Input
+                type="text"
+                placeholder="000.000.000-00"
+                value={cpf}
+                onChange={(e) => setCpf(formatarCPF(e.target.value))}
+                className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                maxLength={14}
               />
             </div>
             <Button

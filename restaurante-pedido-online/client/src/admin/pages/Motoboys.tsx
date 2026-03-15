@@ -48,6 +48,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, Pencil, Trash2, Check, X, Trophy, Key, Download, Loader2, AlertTriangle, ShieldCheck, Search, ArrowUp, ArrowDown, GripVertical, Info } from "lucide-react";
 import { toast } from "sonner";
+import { validarCPF, formatarCPF, limparCPF } from "@/utils/cpf";
 
 interface MotoboyForm {
   nome: string;
@@ -133,7 +134,7 @@ export default function Motoboys() {
       telefone: (m.telefone as string) || "",
       senha: "",
       capacidade_entregas: String(m.capacidade_entregas ?? 5),
-      cpf: (m.cpf as string) || "",
+      cpf: m.cpf ? formatarCPF(m.cpf as string) : "",
     });
     setShowForm(true);
   }
@@ -141,12 +142,15 @@ export default function Motoboys() {
   function handleSave() {
     if (!form.nome.trim() || !form.usuario.trim()) { toast.error("Nome e usuário obrigatórios"); return; }
 
+    const cpfLimpo = limparCPF(form.cpf);
+    if (cpfLimpo && !validarCPF(cpfLimpo)) { toast.error("CPF inválido"); return; }
+
     const payload: Record<string, unknown> = {
       nome: form.nome.trim(),
       usuario: form.usuario.trim(),
       telefone: form.telefone.trim(),
       capacidade_entregas: Number(form.capacidade_entregas),
-      cpf: form.cpf.trim() || null,
+      cpf: cpfLimpo || null,
     };
     if (form.senha.trim()) payload.senha = form.senha.trim();
 
@@ -765,8 +769,10 @@ export default function Motoboys() {
                 <label className="text-sm font-medium text-[var(--text-secondary)]">CPF</label>
                 <Input
                   value={form.cpf}
-                  onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                  onChange={(e) => setForm({ ...form, cpf: formatarCPF(e.target.value) })}
                   className="dark-input"
+                  placeholder="000.000.000-00"
+                  maxLength={14}
                 />
               </div>
             </div>

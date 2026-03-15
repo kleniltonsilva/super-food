@@ -1317,6 +1317,14 @@ def cadastrar_motoboy(
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
+    # Validar CPF se fornecido
+    cpf_limpo = None
+    if dados.cpf:
+        from utils.cpf import validar_cpf
+        cpf_limpo = ''.join(filter(str.isdigit, dados.cpf.strip()))
+        if not validar_cpf(cpf_limpo):
+            raise HTTPException(400, "CPF inválido")
+
     existente = db.query(models.Motoboy).filter(
         models.Motoboy.restaurante_id == rest.id,
         models.Motoboy.usuario == dados.usuario
@@ -1331,7 +1339,7 @@ def cadastrar_motoboy(
     motoboy = models.Motoboy(
         restaurante_id=rest.id, nome=dados.nome, usuario=dados.usuario,
         telefone=dados.telefone, capacidade_entregas=dados.capacidade_entregas,
-        cpf=dados.cpf, status='ativo', ordem_hierarquia=max_ordem + 1
+        cpf=cpf_limpo, status='ativo', ordem_hierarquia=max_ordem + 1
     )
     if dados.senha:
         motoboy.set_senha(dados.senha)
@@ -1352,12 +1360,19 @@ def editar_motoboy(
     ).first()
     if not motoboy:
         raise HTTPException(404, "Motoboy não encontrado")
+    # Validar CPF se fornecido
+    if dados.cpf:
+        from utils.cpf import validar_cpf
+        cpf_limpo = ''.join(filter(str.isdigit, dados.cpf.strip()))
+        if not validar_cpf(cpf_limpo):
+            raise HTTPException(400, "CPF inválido")
+        motoboy.cpf = cpf_limpo
+    else:
+        motoboy.cpf = None
     motoboy.nome = dados.nome
     motoboy.usuario = dados.usuario
     motoboy.telefone = dados.telefone
     motoboy.capacidade_entregas = dados.capacidade_entregas
-    if dados.cpf:
-        motoboy.cpf = dados.cpf
     if dados.senha:
         motoboy.set_senha(dados.senha)
     db.commit()

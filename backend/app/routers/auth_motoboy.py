@@ -72,6 +72,7 @@ class MotoboyCadastroRequest(BaseModel):
     nome: str
     usuario: str
     telefone: str
+    cpf: Optional[str] = None
 
 
 # ========== Endpoints ==========
@@ -247,6 +248,14 @@ def cadastro_motoboy(
         raise HTTPException(status_code=400, detail="Usuário deve ter pelo menos 3 caracteres")
     if len(telefone_limpo) < 10:
         raise HTTPException(status_code=400, detail="Telefone inválido (mínimo 10 dígitos)")
+
+    # Validar CPF se fornecido
+    cpf_limpo = None
+    if dados.cpf:
+        from utils.cpf import validar_cpf
+        cpf_limpo = ''.join(filter(str.isdigit, dados.cpf.strip()))
+        if not validar_cpf(cpf_limpo):
+            raise HTTPException(status_code=400, detail="CPF inválido")
 
     # Verificar restaurante
     restaurante = db.query(models.Restaurante).filter(

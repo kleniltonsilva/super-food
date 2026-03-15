@@ -6,7 +6,6 @@ import {
   useDashboardGrafico,
   usePedidos,
   useCaixaAtual,
-  useAbrirCaixa,
   useAtualizarConfig,
   useConfig,
   useEntregasAtivas,
@@ -67,7 +66,6 @@ export default function Dashboard() {
   const { data: entregasData } = useEntregasAtivas();
   const { data: diagnostico } = useDiagnosticoTempo();
   const atualizarConfig = useAtualizarConfig();
-  const abrirCaixa = useAbrirCaixa();
   const ajustarTempo = useAjustarTempo();
 
   const pedidosRecentes = pedidosData?.pedidos || [];
@@ -96,6 +94,32 @@ export default function Dashboard() {
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
         osc.start(ctx.currentTime + t);
         osc.stop(ctx.currentTime + t + 0.25);
+      });
+    } catch { /* sem audio */ }
+  }, []);
+
+  // Som de erro — buzzer grave e agressivo para chamar atenção
+  const tocarSomErro = useCallback(() => {
+    try {
+      const ctx = new AudioContext();
+      // 3 bips curtos graves + 1 longo
+      const notas = [
+        { freq: 200, start: 0, dur: 0.15 },
+        { freq: 200, start: 0.2, dur: 0.15 },
+        { freq: 200, start: 0.4, dur: 0.15 },
+        { freq: 150, start: 0.6, dur: 0.4 },
+      ];
+      notas.forEach(({ freq, start, dur }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        osc.type = "square";
+        gain.gain.setValueAtTime(0.4, ctx.currentTime + start);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+        osc.start(ctx.currentTime + start);
+        osc.stop(ctx.currentTime + start + dur);
       });
     } catch { /* sem audio */ }
   }, []);
@@ -141,7 +165,15 @@ export default function Dashboard() {
     setTimeout(() => setAjusteJaVisto(false), 5 * 60 * 1000);
   }
 
+  const [alertaCaixaAberto, setAlertaCaixaAberto] = useState(false);
+
   function toggleRestaurante() {
+    // Se está fechando e o caixa está aberto, bloquear com alerta
+    if (restauranteAberto && caixaAberto) {
+      tocarSomErro();
+      setAlertaCaixaAberto(true);
+      return;
+    }
     const novoStatus = restauranteAberto ? "fechado" : "aberto";
     atualizarConfig.mutate(
       { status_atual: novoStatus },
@@ -153,10 +185,7 @@ export default function Dashboard() {
   }
 
   function handleAbrirCaixa() {
-    abrirCaixa.mutate(0, {
-      onSuccess: () => toast.success("Caixa aberto!"),
-      onError: () => toast.error("Erro ao abrir caixa"),
-    });
+    navigate("/caixa");
   }
 
   function formatDate(iso: string | null) {
@@ -185,6 +214,40 @@ export default function Dashboard() {
             >
               Ver Entregas
             </Button>
+          </div>
+        )}
+
+        {/* Alerta: tentou fechar restaurante com caixa aberto */}
+        {alertaCaixaAberto && (
+          <div className="rounded-lg border-2 border-red-500 bg-red-500/15 px-4 py-4 space-y-3 animate-pulse shadow-lg shadow-red-500/20">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/20">
+                <AlertTriangle className="h-6 w-6 text-red-400" />
+              </div>
+              <div>
+                <p className="font-bold text-red-400 text-lg">Caixa ainda está aberto!</p>
+                <p className="text-sm text-red-300/80">
+                  Você precisa fechar o caixa antes de encerrar o expediente do restaurante.
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                size="sm"
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => { setAlertaCaixaAberto(false); navigate("/caixa"); }}
+              >
+                <Vault className="mr-1 h-4 w-4" /> Ir para o Caixa
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                onClick={() => setAlertaCaixaAberto(false)}
+              >
+                Entendi
+              </Button>
+            </div>
           </div>
         )}
 
@@ -270,7 +333,7 @@ export default function Dashboard() {
                 size="sm"
                 className="bg-[var(--cor-primaria)] hover:bg-[var(--cor-primaria)]/90"
                 onClick={handleAbrirCaixa}
-                disabled={abrirCaixa.isPending}
+                disabled={false}
               >
                 <Vault className="mr-1 h-4 w-4" /> Abrir Caixa
               </Button>

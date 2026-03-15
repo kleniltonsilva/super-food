@@ -81,19 +81,22 @@ export default function Caixa() {
   const registrarMov = useRegistrarMovimentacao();
   const fecharCaixa = useFecharCaixa();
 
-  const [valorAbertura, setValorAbertura] = useState("0");
+  const [showAbrir, setShowAbrir] = useState(false);
+  const [valorAbertura, setValorAbertura] = useState("");
   const [showMov, setShowMov] = useState(false);
   const [movTipo, setMovTipo] = useState("entrada");
   const [movValor, setMovValor] = useState("");
   const [movDesc, setMovDesc] = useState("");
   const [showFechar, setShowFechar] = useState(false);
-  const [valorContado, setValorContado] = useState("");
+  const [contadoDinheiro, setContadoDinheiro] = useState("");
+  const [contadoCartao, setContadoCartao] = useState("");
+  const [contadoPix, setContadoPix] = useState("");
 
   const caixaAberto = caixa && caixa.id;
 
   function handleAbrir() {
     abrirCaixa.mutate(Number(valorAbertura) || 0, {
-      onSuccess: () => { toast.success("Caixa aberto!"); setValorAbertura("0"); },
+      onSuccess: () => { toast.success("Caixa aberto!"); setValorAbertura(""); setShowAbrir(false); },
       onError: (err: unknown) => toast.error(extractErrorMessage(err)),
     });
   }
@@ -114,13 +117,17 @@ export default function Caixa() {
     );
   }
 
+  const totalContado = (Number(contadoDinheiro) || 0) + (Number(contadoCartao) || 0) + (Number(contadoPix) || 0);
+
   function handleFechar() {
-    if (!valorContado) { toast.error("Informe o valor contado"); return; }
-    fecharCaixa.mutate(Number(valorContado), {
+    if (totalContado <= 0) { toast.error("Informe os valores contados"); return; }
+    fecharCaixa.mutate(totalContado, {
       onSuccess: (data) => {
         toast.success(`Caixa fechado. Diferença: R$ ${data.diferenca?.toFixed(2)}`);
         setShowFechar(false);
-        setValorContado("");
+        setContadoDinheiro("");
+        setContadoCartao("");
+        setContadoPix("");
       },
       onError: (err: unknown) => toast.error(extractErrorMessage(err)),
     });
@@ -155,23 +162,12 @@ export default function Caixa() {
                 <CardContent className="flex flex-col items-center gap-4 py-12">
                   <Lock className="h-12 w-12 text-[var(--text-muted)]" />
                   <p className="text-lg font-medium text-[var(--text-primary)]">Caixa Fechado</p>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      value={valorAbertura}
-                      onChange={(e) => setValorAbertura(e.target.value)}
-                      className="dark-input w-40"
-                      placeholder="Valor inicial"
-                    />
-                    <Button
-                      className="bg-green-600 hover:bg-green-700"
-                      onClick={handleAbrir}
-                      disabled={abrirCaixa.isPending}
-                    >
-                      <Unlock className="mr-2 h-4 w-4" /> Abrir Caixa
-                    </Button>
-                  </div>
+                  <Button
+                    className="bg-green-600 hover:bg-green-700"
+                    onClick={() => setShowAbrir(true)}
+                  >
+                    <Unlock className="mr-2 h-4 w-4" /> Abrir Caixa
+                  </Button>
                 </CardContent>
               </Card>
             ) : (
@@ -455,34 +451,136 @@ export default function Caixa() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog fechar caixa */}
-      <AlertDialog open={showFechar} onOpenChange={setShowFechar}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Fechar Caixa</AlertDialogTitle>
-            <AlertDialogDescription>
-              Valor esperado: <strong>R$ {valorEsperado.toFixed(2)}</strong>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="px-6 pb-2">
-            <label className="text-sm font-medium text-[var(--text-secondary)]">Valor Contado</label>
-            <Input
-              type="number"
-              step="0.01"
-              value={valorContado}
-              onChange={(e) => setValorContado(e.target.value)}
-              className="dark-input mt-1"
-              placeholder="0.00"
-            />
+      {/* Dialog abrir caixa */}
+      <Dialog open={showAbrir} onOpenChange={setShowAbrir}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Abrir Caixa</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">Troco / Fundo de Caixa (R$)</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={valorAbertura}
+                onChange={(e) => setValorAbertura(e.target.value)}
+                className="dark-input"
+                placeholder="0.00"
+                autoFocus
+              />
+              <p className="text-xs text-[var(--text-muted)]">Quanto de dinheiro tem no caixa para troco?</p>
+            </div>
           </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleFechar} className="bg-red-600 hover:bg-red-700">
-              Fechar Caixa
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAbrir(false)}>Cancelar</Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              onClick={handleAbrir}
+              disabled={abrirCaixa.isPending}
+            >
+              <Unlock className="mr-1 h-4 w-4" /> Abrir Caixa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog fechar caixa */}
+      <Dialog open={showFechar} onOpenChange={setShowFechar}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Fechar Caixa</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-3">
+              <p className="text-sm text-[var(--text-muted)]">Valor esperado pelo sistema</p>
+              <p className="text-xl font-bold text-[var(--text-primary)]">R$ {valorEsperado.toFixed(2)}</p>
+              <div className="mt-2 flex gap-4 text-xs text-[var(--text-muted)]">
+                <span>Dinheiro: <strong className="text-green-400">R$ {Number(caixa?.total_dinheiro || 0).toFixed(2)}</strong></span>
+                <span>Cartão: <strong className="text-blue-400">R$ {Number(caixa?.total_cartao || 0).toFixed(2)}</strong></span>
+                <span>Pix: <strong className="text-purple-400">R$ {Number(caixa?.total_pix || 0).toFixed(2)}</strong></span>
+              </div>
+            </div>
+
+            <p className="text-sm font-medium text-[var(--text-secondary)]">Quanto foi recebido hoje?</p>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-green-500/10">
+                  <Banknote className="h-5 w-5 text-green-400" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-green-400">Dinheiro</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={contadoDinheiro}
+                    onChange={(e) => setContadoDinheiro(e.target.value)}
+                    className="dark-input mt-0.5"
+                    placeholder="0.00"
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/10">
+                  <CreditCard className="h-5 w-5 text-blue-400" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-blue-400">Cartão</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={contadoCartao}
+                    onChange={(e) => setContadoCartao(e.target.value)}
+                    className="dark-input mt-0.5"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10">
+                  <Smartphone className="h-5 w-5 text-purple-400" />
+                </div>
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-purple-400">Pix</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={contadoPix}
+                    onChange={(e) => setContadoPix(e.target.value)}
+                    className="dark-input mt-0.5"
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-3 flex justify-between items-center">
+              <span className="text-sm font-medium text-[var(--text-secondary)]">Total Contado</span>
+              <span className={`text-lg font-bold ${Math.abs(totalContado - valorEsperado) > 0.01 ? "text-amber-400" : "text-green-400"}`}>
+                R$ {totalContado.toFixed(2)}
+              </span>
+            </div>
+
+            {totalContado > 0 && Math.abs(totalContado - valorEsperado) > 0.01 && (
+              <p className={`text-sm font-medium ${totalContado > valorEsperado ? "text-green-400" : "text-red-400"}`}>
+                Diferença: R$ {(totalContado - valorEsperado).toFixed(2)}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowFechar(false)}>Cancelar</Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700"
+              onClick={handleFechar}
+              disabled={fecharCaixa.isPending}
+            >
+              <Lock className="mr-1 h-4 w-4" /> Fechar Caixa
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

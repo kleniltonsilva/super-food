@@ -76,6 +76,7 @@ export async function cadastroMotoboy(payload: {
   nome: string;
   usuario: string;
   telefone: string;
+  cpf?: string;
 }) {
   const { data } = await motoboyApi.post("/auth/motoboy/cadastro", payload);
   return data;
