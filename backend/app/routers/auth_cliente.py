@@ -6,6 +6,7 @@ Router Auth Cliente - Autenticação, perfil, endereços e pedidos do cliente
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
@@ -136,7 +137,11 @@ def registrar_cliente(
     )
 
     db.add(cliente)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Email já cadastrado. Tente fazer login.")
     db.refresh(cliente)
 
     token = criar_token(cliente.id, restaurante.id)
@@ -222,7 +227,11 @@ def registro_pos_pedido(
     )
 
     db.add(cliente)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Email já cadastrado. Tente fazer login.")
 
     # Vincula pedido ao cliente
     if dados.pedido_id:

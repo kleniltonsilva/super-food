@@ -182,14 +182,34 @@ export default function CartSidebar({ open, onOpenChange }: CartSidebarProps) {
                   <p className="text-xs font-bold truncate" style={{ color: theme.colors.textPrimary }}>
                     {item.nome}
                   </p>
+                  {/* Sabores de pizza */}
+                  {item.observacoes && item.observacoes.startsWith("Sabores:") ? (() => {
+                    const saboresStr = (item.observacoes as string).replace("Sabores:", "").split("|")[0].trim();
+                    const sabores = saboresStr.split("/").map((s: string) => s.trim()).filter(Boolean);
+                    return sabores.length > 1 ? (
+                      <div className="space-y-0">
+                        {sabores.map((s: string, si: number) => (
+                          <p key={si} className="text-[10px]" style={{ color: theme.colors.textMuted }}>
+                            1/{sabores.length} {s}
+                          </p>
+                        ))}
+                      </div>
+                    ) : null;
+                  })() : null}
                   {item.variacoes && item.variacoes.length > 0 && (
                     <p className="text-[10px] truncate" style={{ color: theme.colors.textMuted }}>
-                      {item.variacoes.map(v => v.nome).join(", ")}
+                      {item.variacoes.map((v: { id: number; nome: string }) => v.nome).join(", ")}
                     </p>
                   )}
-                  {item.observacoes && (
+                  {item.observacoes && !item.observacoes.startsWith("Sabores:") && (
                     <p className="text-[10px] italic truncate" style={{ color: theme.colors.textMuted }}>
                       {item.observacoes}
+                    </p>
+                  )}
+                  {/* Obs adicional após sabores (ex: "Sabores: X / Y | Sem cebola") */}
+                  {item.observacoes && item.observacoes.startsWith("Sabores:") && item.observacoes.includes("|") && (
+                    <p className="text-[10px] italic truncate" style={{ color: theme.colors.textMuted }}>
+                      {(item.observacoes as string).split("|").slice(1).join("|").trim()}
                     </p>
                   )}
 

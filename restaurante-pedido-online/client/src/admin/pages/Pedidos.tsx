@@ -8,6 +8,7 @@ import {
   useDespacharPedido,
   useDashboard,
   useEntregasAtivas,
+  useConfig,
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,8 @@ export default function Pedidos() {
   const atualizarStatus = useAtualizarStatusPedido();
   const cancelar = useCancelarPedido();
   const despachar = useDespacharPedido();
+  const { data: configData } = useConfig();
+  const modoDespacho = configData?.modo_prioridade_entrega || "rapido_economico";
 
   const pedidos = data?.pedidos || [];
   const entregas = entregasData?.entregas || [];
@@ -128,6 +131,20 @@ export default function Pedidos() {
   );
 
   function handleStatusChange(id: number, status: string) {
+    // Se está tentando colocar em_entrega (despachar), usar o endpoint correto
+    if (status === "em_entrega") {
+      despachar.mutate(
+        { id },
+        {
+          onSuccess: (data) => toast.success(`Pedido #${id} despachado para ${data.motoboy_nome}`),
+          onError: (err: unknown) => {
+            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+            toast.error(detail || "Erro ao despachar");
+          },
+        }
+      );
+      return;
+    }
     atualizarStatus.mutate(
       { id, status },
       {
@@ -171,13 +188,22 @@ export default function Pedidos() {
   function handleDespacharProntos() {
     if (pedidosProntos.length === 0) return;
     let count = 0;
+    let erros = 0;
     for (const p of pedidosProntos) {
-      atualizarStatus.mutate(
-        { id: p.id as number, status: "em_entrega" },
+      despachar.mutate(
+        { id: p.id as number },
         {
-          onSuccess: () => {
+          onSuccess: (data) => {
             count++;
-            if (count === pedidosProntos.length) {
+            if (count + erros === pedidosProntos.length) {
+              toast.success(`${count} pedido(s) despachado(s)${erros > 0 ? ` (${erros} erro(s))` : ""}`);
+            }
+          },
+          onError: (err: unknown) => {
+            erros++;
+            const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+            toast.error(`Pedido #${p.comanda || p.id}: ${detail || "Erro ao despachar"}`);
+            if (count + erros === pedidosProntos.length && count > 0) {
               toast.success(`${count} pedido(s) despachado(s)`);
             }
           },
@@ -217,7 +243,7 @@ export default function Pedidos() {
                 size="sm"
                 className="bg-green-600 hover:bg-green-700"
                 onClick={handleDespacharProntos}
-                disabled={atualizarStatus.isPending}
+                disabled={despachar.isPending}
               >
                 <Send className="mr-1 h-4 w-4" /> Despachar Prontos ({pedidosProntos.length})
               </Button>
@@ -368,6 +394,7 @@ export default function Pedidos() {
               formatDate={formatDate}
               getOrigemBadge={getOrigemBadge}
               getTempoDesde={getTempoDesde}
+              modoDespacho={modoDespacho}
             />
           </TabsContent>
 
@@ -407,6 +434,7 @@ export default function Pedidos() {
               formatDate={formatDate}
               getOrigemBadge={getOrigemBadge}
               getTempoDesde={getTempoDesde}
+              modoDespacho={modoDespacho}
             />
           </TabsContent>
         </Tabs>
@@ -460,6 +488,7 @@ function PedidosTabela({
   formatDate,
   getOrigemBadge,
   getTempoDesde,
+  modoDespacho,
 }: {
   pedidos: Record<string, unknown>[];
   isLoading: boolean;
@@ -469,6 +498,7 @@ function PedidosTabela({
   formatDate: (iso: string | null) => string;
   getOrigemBadge: (p: Record<string, unknown>) => React.ReactNode;
   getTempoDesde: (iso: string | null) => number;
+  modoDespacho: string;
 }) {
   return (
     <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
@@ -582,12 +612,25 @@ function PedidosTabela({
                               nextStatus === "em_entrega" ? <Truck className="mr-2 h-4 w-4" /> :
                               nextStatus === "entregue" ? <CheckCircle className="mr-2 h-4 w-4" /> :
                               <Clock className="mr-2 h-4 w-4" />;
+
+                            // Se é despacho (em_entrega) e modo manual, ir para detalhe
+                            if (nextStatus === "em_entrega" && modoDespacho === "manual") {
+                              return (
+                                <DropdownMenuItem
+                                  key={nextStatus}
+                                  onClick={() => navigate(`/pedidos/${p.id}`)}
+                                >
+                                  {icon} Despachar (selecionar motoboy)
+                                </DropdownMenuItem>
+                              );
+                            }
+
                             return (
                               <DropdownMenuItem
                                 key={nextStatus}
                                 onClick={() => handleStatusChange(p.id as number, nextStatus)}
                               >
-                                {icon} {STATUS_MAP[nextStatus]?.label || nextStatus}
+                                {icon} {nextStatus === "em_entrega" ? "Despachar" : STATUS_MAP[nextStatus]?.label || nextStatus}
                               </DropdownMenuItem>
                             );
                           })}

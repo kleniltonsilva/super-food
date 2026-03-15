@@ -265,6 +265,7 @@ def get_produto_detalhado(
         "promocao": produto.promocao,
         "categoria_id": produto.categoria_id,
         "ingredientes": produto.ingredientes_json or [],
+        "eh_pizza": produto.eh_pizza or False,
         "variacoes_agrupadas": variacoes_agrupadas
     }
 
@@ -618,6 +619,7 @@ def get_pedido_tracking(
         "carrinho_json": pedido.carrinho_json,
         "aceitar_pedido_site_auto": aceitar_auto,
         "aviso_proximo_pedido_auto": primeiro_pedido_concluido,
+        "historico_status": pedido.historico_status or [],
     }
 
 

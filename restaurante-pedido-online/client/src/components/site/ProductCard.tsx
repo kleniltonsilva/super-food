@@ -82,8 +82,8 @@ export default function ProductCard({ produto, emoji, onPizzaBuilderOpen }: Prod
         <div
           className="relative overflow-hidden flex items-center justify-center"
           style={{
-            aspectRatio: isCircular ? undefined : "1",
-            padding: isCircular ? "16px" : undefined,
+            aspectRatio: "1",
+            padding: isCircular ? "6px" : undefined,
             background: theme.isDark ? "rgba(255,255,255,0.04)" : "#f8f8f8",
           }}
         >
@@ -91,10 +91,11 @@ export default function ProductCard({ produto, emoji, onPizzaBuilderOpen }: Prod
             <img
               src={produto.imagem_url}
               alt={produto.nome}
-              className="img-zoom"
+              className={isCircular ? "img-circular-zoom" : "img-zoom"}
               style={{
-                width: isCircular ? "160px" : "100%",
-                height: isCircular ? "160px" : "100%",
+                width: isCircular ? "92%" : "100%",
+                height: isCircular ? "auto" : "100%",
+                aspectRatio: isCircular ? "1" : undefined,
                 objectFit: "cover",
                 borderRadius: isCircular ? "50%" : undefined,
               }}

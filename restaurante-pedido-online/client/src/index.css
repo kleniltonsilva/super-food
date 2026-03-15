@@ -415,8 +415,9 @@
   }
 
   .status-pending {
-    background: rgba(234, 179, 8, 0.15);
-    color: #FACC15;
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   }
 
   .status-confirmed {
@@ -704,6 +705,15 @@
     transform: scale(1.08);
   }
 
+  /* Circular image zoom on hover (pizza cards) */
+  .img-circular-zoom {
+    transition: transform 0.5s ease;
+  }
+
+  .group:hover .img-circular-zoom {
+    transform: scale(1.1);
+  }
+
   /* FAB pulse */
   @keyframes fabPulse {
     0%, 100% { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); }
@@ -814,6 +824,11 @@
   .pb-header-badge-icon {
     width: 22px;
     height: 22px;
+  }
+
+  /* Hidden on desktop, visible on mobile */
+  .pb-header-back {
+    display: none;
   }
 
   .pb-header-close {
@@ -1496,24 +1511,18 @@
     border-top: 1px solid #eee;
   }
 
-  /* Footer mobile (sticky bottom — hidden on desktop) */
-  .pb-footer-mobile {
+  /* ══ Mobile layout — hidden on desktop ══ */
+  .pbm-layout {
     display: none;
-    padding: 12px 16px;
-    border-top: 1px solid #eee;
-    background: #fff;
-    flex-shrink: 0;
   }
 
-  .pb-footer-mobile-inner {
+  /* ══ Desktop layout — visible on desktop ══ */
+  .pbd-layout {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .pb-footer-mobile .pb-qty-row {
-    margin-bottom: 0;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   /* ══ Pizza Paddle ══ */
@@ -1534,12 +1543,9 @@
     position: absolute;
     border-radius: 50%;
     overflow: hidden;
-    border: 4px solid #d4a030;
-    box-shadow:
-      0 6px 20px rgba(0, 0, 0, 0.3),
-      0 2px 8px rgba(0, 0, 0, 0.15),
-      inset 0 0 12px rgba(0, 0, 0, 0.12);
-    background: #F5DEB3;
+    border: none;
+    box-shadow: none;
+    background: transparent;
   }
 
   .pizza-segment {
@@ -1550,7 +1556,7 @@
   }
 
   .pizza-segment--filled {
-    background: #F5DEB3;
+    background: transparent;
   }
 
   .pizza-segment-img {
@@ -1582,25 +1588,22 @@
   .pizza-segment-empty {
     width: 100%;
     height: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: #F5DEB3;
-    gap: 2px;
+    background: transparent;
   }
 
   .pizza-segment-plus {
     font-size: 24px;
     font-weight: 700;
-    color: #c0935a;
+    color: rgba(255,255,255,0.85);
     line-height: 1;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.5);
   }
 
   .pizza-segment-add-label {
     font-size: 10px;
     font-weight: 600;
-    color: #b08040;
+    color: rgba(255,255,255,0.8);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.5);
   }
 
   .pizza-dividers {
@@ -1648,7 +1651,7 @@
   }
 
   /* ══════════════════════════════════════════════════════════
-     PIZZA BUILDER — RESPONSIVIDADE MOBILE
+     PIZZA BUILDER — RESPONSIVIDADE MOBILE (Pills + Overlays)
      ══════════════════════════════════════════════════════════ */
   @media (max-width: 767px) {
     .pizza-builder-overlay {
@@ -1657,69 +1660,573 @@
 
     .pizza-builder-modal {
       border-radius: 0;
-      max-height: 100vh;
-      height: 100vh;
+      max-height: 100dvh;
+      height: 100dvh;
       max-width: 100%;
-    }
-
-    .pb-body {
       display: flex;
       flex-direction: column;
-      overflow-y: auto;
-      padding-bottom: 72px;
+      overflow: hidden;
     }
 
-    .pb-col-center {
-      order: -1;
-      padding: 16px;
+    /* Hide desktop layout, show mobile layout */
+    .pbd-layout { display: none !important; }
+
+    .pbm-layout {
+      display: flex !important;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      padding: 10px 14px 0;
+      gap: 8px;
     }
 
-    .pb-col-center .pizza-paddle {
-      max-width: 220px;
-      margin: 0 auto;
+    /* Header mobile adjustments */
+    .pb-header-close { display: none; }
+
+    .pb-header-back {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.9);
+      padding: 4px;
+      border-radius: 6px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      flex-shrink: 0;
     }
 
-    .pb-col-center .pizza-paddle-board {
-      width: 220px !important;
-      height: 220px !important;
-    }
-
-    .pb-col-center .pizza-paddle-board-img {
-      width: 220px !important;
-      height: 220px !important;
-    }
-
-    .pb-col-left {
-      border-right: none;
-      border-bottom: 1px solid #eee;
-      max-height: none;
-      order: 0;
-    }
-
-    .pb-col-right {
-      border-left: none;
-      border-top: 1px solid #eee;
-      max-height: none;
-      order: 1;
-    }
-
-    .pb-footer-desktop {
-      display: none;
-    }
-
-    .pb-footer-mobile {
-      display: block;
-      position: sticky;
-      bottom: 0;
-      z-index: 10;
-    }
-
-    .pb-sabores-grid {
-      max-height: none;
+    .pb-header-back:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.15);
     }
 
     .pb-header-title {
+      font-size: 0.9rem;
+    }
+
+    /* ═══ PILLS ═══ */
+    .pbm-pill {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 10px 16px;
+      background: #e4002e;
+      color: #fff;
+      border: none;
+      border-radius: 25px;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 600;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      flex-shrink: 0;
+    }
+
+    .pbm-pill:active {
+      transform: scale(0.97);
+    }
+
+    .pbm-pill--action {
+      background: #e4002e;
+    }
+
+    .pbm-pill--selected {
+      background: #b8001e;
+      box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.3);
+    }
+
+    .pbm-pill--half {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+      font-size: 0.75rem;
+    }
+
+    .pbm-pill-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-align: center;
+    }
+
+    .pbm-pill-icon {
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .pbm-pill-arrow {
+      flex-shrink: 0;
+      opacity: 0.7;
+    }
+
+    .pbm-pill-badge {
+      flex-shrink: 0;
+      background: rgba(255, 255, 255, 0.25);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+
+    /* ═══ PILL COUNTER (sabores) ═══ */
+    .pbm-pill-counter {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      width: 100%;
+      background: #e4002e;
+      border-radius: 25px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .pbm-pill-counter-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 40px;
+      color: #fff;
+      border: none;
+      background: rgba(0, 0, 0, 0.15);
+      cursor: pointer;
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .pbm-pill-counter-btn:active {
+      background: rgba(0, 0, 0, 0.3);
+    }
+
+    .pbm-pill-counter-text {
+      flex: 1;
+      text-align: center;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: 0.85rem;
+      color: #fff;
+      letter-spacing: 1px;
+    }
+
+    /* ═══ PIZZA AREA (flex:1 = preenche espaço) ═══ */
+    .pbm-pizza-area {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .pbm-pizza-area .pizza-paddle {
+      max-width: min(60vw, 220px);
+      margin: 0 auto;
+    }
+
+    .pbm-pizza-area .pizza-paddle-board {
+      width: min(60vw, 220px) !important;
+      height: min(60vw, 220px) !important;
+    }
+
+    .pbm-pizza-area .pizza-paddle-board-img {
+      width: min(60vw, 220px) !important;
+      height: min(60vw, 220px) !important;
+    }
+
+    .pbm-pizza-area .pizza-circle {
+      width: 82% !important;
+      height: 82% !important;
+    }
+
+    /* ═══ PREÇO MOBILE ═══ */
+    .pbm-price {
+      text-align: center;
+      font-family: 'Oswald', sans-serif;
       font-size: 0.95rem;
+      color: #666;
+      letter-spacing: 0.5px;
+      flex-shrink: 0;
+    }
+
+    .pbm-price strong {
+      color: #e4002e;
+      font-size: 1.15rem;
+    }
+
+    /* ═══ ACTIONS STACK ═══ */
+    .pbm-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex-shrink: 0;
+      padding-bottom: env(safe-area-inset-bottom, 12px);
+    }
+
+    .pbm-actions-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* ═══ CART ROW (qty + add button) ═══ */
+    .pbm-cart-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .pbm-qty {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: #f0f0f0;
+      border-radius: 25px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .pbm-qty-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border: none;
+      cursor: pointer;
+      color: #fff;
+      transition: opacity 0.15s;
+    }
+
+    .pbm-qty-btn--minus { background: #ff0d0d; border-radius: 25px 0 0 25px; }
+    .pbm-qty-btn--plus { background: #00b400; border-radius: 0 25px 25px 0; }
+    .pbm-qty-btn:active { opacity: 0.8; }
+
+    .pbm-qty-val {
+      width: 32px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 1rem;
+      color: #333;
+    }
+
+    .pbm-add-btn {
+      flex: 1;
+      height: 42px;
+      background: #00b400;
+      border: none;
+      border-bottom: 3px solid #009a00;
+      color: #fff;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+
+    .pbm-add-btn:active:not(:disabled) {
+      transform: scale(0.97);
+    }
+
+    .pbm-add-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* ═══ OVERLAY BOTTOM-SHEET ═══ */
+    .pbm-overlay-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: flex-end;
+      animation: pbmFadeIn 0.2s ease;
+    }
+
+    .pbm-overlay-sheet {
+      width: 100%;
+      max-height: 75vh;
+      background: #fff;
+      border-radius: 20px 20px 0 0;
+      display: flex;
+      flex-direction: column;
+      animation: pbmSlideUp 0.3s ease;
+      box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
+    }
+
+    .pbm-overlay-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-bottom: 1px solid #eee;
+      flex-shrink: 0;
+    }
+
+    .pbm-overlay-title {
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: 1rem;
+      color: #e4002e;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .pbm-overlay-close {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: none;
+      background: #f0f0f0;
+      color: #666;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .pbm-overlay-content {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    /* ═══ PANEL LIST (options inside overlay) ═══ */
+    .pbm-panel-list {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .pbm-panel-option {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 16px;
+      border: none;
+      background: #fff;
+      cursor: pointer;
+      transition: background 0.1s;
+      text-align: left;
+      width: 100%;
+      border-bottom: 1px solid #f5f5f5;
+    }
+
+    .pbm-panel-option:last-child {
+      border-bottom: none;
+    }
+
+    .pbm-panel-option:active {
+      background: #faf5f5;
+    }
+
+    .pbm-panel-option--active {
+      background: #fff0f0;
+    }
+
+    .pbm-panel-option--active .pbm-panel-option-name {
+      color: #e4002e;
+    }
+
+    .pbm-panel-option--disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .pbm-panel-option-info {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pbm-panel-option-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      color: #222;
+      line-height: 1.3;
+    }
+
+    .pbm-panel-option-desc {
+      font-size: 0.75rem;
+      color: #888;
+      line-height: 1.3;
+    }
+
+    /* Sabor thumbnail in panel */
+    .pbm-sabor-thumb {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      overflow: hidden;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #f5f5f5;
+      position: relative;
+    }
+
+    .pbm-sabor-thumb-img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .pbm-sabor-check {
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 180, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 10px;
+    }
+
+    /* Borda emoji */
+    .pbm-borda-emoji {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #f5ebe0;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+
+    /* Panel search */
+    .pbm-panel-search {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid #eee;
+      background: #fafafa;
+    }
+
+    .pbm-panel-search-input {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-size: 0.9rem;
+      color: #333;
+    }
+
+    .pbm-panel-search-input::placeholder {
+      color: #aaa;
+    }
+
+    /* Panel observações */
+    .pbm-panel-obs {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .pbm-panel-textarea {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ddd;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      resize: none;
+      color: #333;
+      background: #fff;
+    }
+
+    .pbm-panel-textarea:focus {
+      outline: none;
+      border-color: #e4002e;
+      box-shadow: 0 0 0 2px rgba(228, 0, 46, 0.1);
+    }
+
+    .pbm-panel-confirm {
+      width: 100%;
+      height: 44px;
+      background: #e4002e;
+      border: none;
+      color: #fff;
+      font-family: 'Oswald', sans-serif;
+      font-weight: 700;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-radius: 25px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+
+    .pbm-panel-confirm:active {
+      opacity: 0.85;
+    }
+
+    /* Panel extras tags */
+    .pbm-panel-extras-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 12px 16px 4px;
+    }
+
+    /* Panel extra item */
+    .pbm-panel-extra-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid #f5f5f5;
+    }
+
+    .pbm-panel-extra-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .pbm-panel-extra-price {
+      font-size: 0.8rem;
+      color: #e4002e;
+      font-weight: 700;
+    }
+
+    .pbm-panel-extra-controls {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .pbm-extra-qty {
+      width: 24px;
+      text-align: center;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #333;
+    }
+
+    /* ═══ ANIMATIONS ═══ */
+    @keyframes pbmFadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes pbmSlideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
     }
   }
 

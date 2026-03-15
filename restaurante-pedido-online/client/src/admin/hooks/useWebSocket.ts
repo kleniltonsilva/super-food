@@ -9,6 +9,7 @@ export type WsEventTipo =
   | "pedido_cancelado"
   | "pedido_despachado"
   | "entrega_atrasada"
+  | "entrega_finalizada"
   | "tempo_ajustado"
   | "motoboy_posicao"
   | "ping";
@@ -180,6 +181,13 @@ export function useWebSocket({
           if (habilitarNotificacaoSistema) {
             notificarSistema("Entrega Atrasada!", "Uma entrega ultrapassou o tempo estimado.");
           }
+          break;
+        case "entrega_finalizada":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.motoboys });
+          if (habilitarSom) tocarSomDespacho();
           break;
         case "tempo_ajustado":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configSite });

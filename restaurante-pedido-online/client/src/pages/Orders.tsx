@@ -25,7 +25,7 @@ const statusLabels: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  pendente: "bg-yellow-500/15 text-yellow-400",
+  pendente: "bg-green-500/15 text-green-400 shadow-sm shadow-black/20",
   confirmado: "bg-blue-500/15 text-blue-400",
   preparando: "bg-orange-500/15 text-orange-400",
   pronto: "bg-green-500/15 text-green-400",

@@ -1,5 +1,5 @@
 import { Route, Switch } from "wouter";
-import { MotoboyAuthProvider } from "@/motoboy/contexts/MotoboyAuthContext";
+import { MotoboyAuthProvider, useMotoboyAuth } from "@/motoboy/contexts/MotoboyAuthContext";
 import MotoboyPrivateRoute from "@/motoboy/components/MotoboyPrivateRoute";
 import MotoboyLogin from "@/motoboy/pages/MotoboyLogin";
 import MotoboyCadastro from "@/motoboy/pages/MotoboyCadastro";
@@ -9,6 +9,7 @@ import MotoboyGanhos from "@/motoboy/pages/MotoboyGanhos";
 import MotoboyPerfil from "@/motoboy/pages/MotoboyPerfil";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useMotoboyWebSocket } from "@/motoboy/hooks/useMotoboyWebSocket";
 
 function MotoboyRouter() {
   return (
@@ -40,11 +41,22 @@ function MotoboyRouter() {
   );
 }
 
+/** Componente interno que ativa WebSocket quando motoboy está logado */
+function MotoboyWebSocket() {
+  const { motoboy, isLoggedIn } = useMotoboyAuth();
+  useMotoboyWebSocket({
+    restauranteId: isLoggedIn && motoboy ? motoboy.restaurante.id : null,
+    motoboyId: isLoggedIn && motoboy ? motoboy.id : null,
+  });
+  return null;
+}
+
 export default function MotoboyApp() {
   return (
     <MotoboyAuthProvider>
       <TooltipProvider>
         <Toaster />
+        <MotoboyWebSocket />
         <MotoboyRouter />
       </TooltipProvider>
     </MotoboyAuthProvider>

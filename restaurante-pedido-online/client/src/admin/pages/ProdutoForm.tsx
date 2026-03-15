@@ -80,6 +80,7 @@ export default function ProdutoForm() {
   const [uploading, setUploading] = useState(false);
   const [variacoes, setVariacoes] = useState<VariacaoLocal[]>([]);
   const [variacoesOriginais, setVariacoesOriginais] = useState<VariacaoLocal[]>([]);
+  const [ehPizza, setEhPizza] = useState(false);
   const [ingredientes, setIngredientes] = useState<string[]>([]);
   const [novoIngrediente, setNovoIngrediente] = useState("");
   const aplicarMaxSabores = useAplicarMaxSabores();
@@ -101,6 +102,7 @@ export default function ProdutoForm() {
       setEstoqueQuantidade(produto.estoque_quantidade ? String(produto.estoque_quantidade) : "");
       setOrdemExibicao(String(produto.ordem_exibicao ?? 0));
       setIngredientes(produto.ingredientes_json || []);
+      setEhPizza(!!produto.eh_pizza);
     }
   }, [isEdit, produto]);
 
@@ -172,6 +174,7 @@ export default function ProdutoForm() {
       estoque_quantidade: !estoqueIlimitado && estoqueQuantidade ? Number(estoqueQuantidade) : null,
       ordem_exibicao: Number(ordemExibicao) || 0,
       ingredientes_json: ingredientes.length > 0 ? ingredientes : null,
+      eh_pizza: ehPizza,
     };
 
     try {
@@ -263,6 +266,14 @@ export default function ProdutoForm() {
                     className="dark-input"
                     placeholder="Nome do produto"
                   />
+                </div>
+
+                <div className="flex items-center justify-between rounded-lg border border-[var(--border-subtle)] p-3">
+                  <div>
+                    <label className="text-sm font-medium text-[var(--text-secondary)]">Este produto é uma pizza?</label>
+                    <p className="text-xs text-[var(--text-muted)]">Ativa o montador de pizza com múltiplos sabores</p>
+                  </div>
+                  <Switch checked={ehPizza} onCheckedChange={setEhPizza} />
                 </div>
 
                 <div className="space-y-1.5">
@@ -486,7 +497,7 @@ export default function ProdutoForm() {
                               placeholder={v.tipo_variacao === "tamanho" ? "Ex: 8 Fatias 35cm" : "Descrição da variação (opcional)"}
                             />
                           </div>
-                          {v.tipo_variacao === "tamanho" && (
+                          {v.tipo_variacao === "tamanho" && ehPizza && (
                             <div className="w-28 space-y-1">
                               <label className="text-xs text-[var(--text-muted)]">Máx Sabores</label>
                               <Input

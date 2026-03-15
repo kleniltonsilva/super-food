@@ -5,7 +5,7 @@ Todos os models com suporte multi-tenant (tenant_id = restaurante_id)
 VERSÃO 2.7: Adiciona schema completo do Site do Cliente (4ª cabeça)
 """
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Index, JSON, Date
+    Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Index, JSON, Date, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime, timedelta
@@ -200,6 +200,7 @@ class Produto(Base):
     estoque_ilimitado = Column(Boolean, default=True)
     estoque_quantidade = Column(Integer, default=0)
     disponivel = Column(Boolean, default=True)
+    eh_pizza = Column(Boolean, default=False)
     criado_em = Column(DateTime, default=datetime.utcnow)
     # Relacionamentos
     restaurante = relationship("Restaurante", back_populates="produtos")
@@ -241,7 +242,7 @@ class Cliente(Base):
     restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
     # Dados pessoais
     nome = Column(String(200), nullable=False)
-    email = Column(String(100), unique=True, index=True)
+    email = Column(String(100), index=True)
     telefone = Column(String(20), nullable=False)
     senha_hash = Column(String(256), nullable=False)
     # Documentos (opcionais)
@@ -260,6 +261,7 @@ class Cliente(Base):
     pedidos = relationship("Pedido", back_populates="cliente")
     carrinhos = relationship("Carrinho", back_populates="cliente", cascade="all, delete-orphan")
     __table_args__ = (
+        UniqueConstraint('email', 'restaurante_id', name='uq_cliente_email_restaurante'),
         Index('idx_cliente_email', 'email'),
         Index('idx_cliente_restaurante', 'restaurante_id', 'ativo'),
         Index('idx_cliente_telefone', 'restaurante_id', 'telefone'),
@@ -493,6 +495,7 @@ class Pedido(Base):
     # Itens
     itens = Column(Text, nullable=False)
     carrinho_json = Column(JSON)  # Cópia dos itens do carrinho
+    historico_status = Column(JSON)  # [{status, timestamp}, ...] — histórico de mudanças
     observacoes = Column(Text)
     # Valores
     valor_total = Column(Float, nullable=False, default=0.0)

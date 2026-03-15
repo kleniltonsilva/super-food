@@ -50,44 +50,92 @@
 
 ## ESTADO ATUAL DO PROJETO
 
-- **Sprint atual:** Sprint 11 — Deploy Fly.io — **EM PROGRESSO**
-- **Tarefa atual:** Deploy concluido! App rodando em https://superfood-api.fly.dev
-- **Status:** Sprint 10 COMPLETO (Streamlit removido, tag v4.0.0). Sprint 11: 11.1-11.4 parcialmente concluidos
-- **Ultima sessao:** 13/03/2026 — Deploy Fly.io com PostgreSQL + Redis + Alembic migrations
-- **Proxima etapa:** 11.4 testes finais, 11.5 dominio, 11.6 monitoramento
+- **Sprint atual:** Sprint 11 — Deploy Fly.io — **~95% COMPLETO**
+- **Tarefa atual:** Deploy funcional com eh_pizza + fix email + montador mobile + dominios_personalizados
+- **Status:** Sprint 10 COMPLETO (tag v4.0.0). Sprint 11: deploy OK, migrations 001-018 rodando
+- **Ultima sessao:** 14/03/2026 — Montador pizza mobile + eh_pizza flag + fix migration PostgreSQL
+- **Proxima etapa:** 11.5 domínio personalizado, 11.6 monitoramento
 - **Bugs conhecidos:** Nenhum critico pendente
+- **Migrations em produção:** 001-018 (última: 018_dominios_personalizados)
 
 ---
 
 ## DEPLOY — COMO SUBIR PARA PRODUÇÃO
 
-**Comando único (na pasta raiz do projeto):**
+### Antes de fazer deploy (OBRIGATÓRIO):
+1. **Ler esta seção inteira** antes de executar qualquer comando
+2. **`npm run check`** — verificar TypeScript sem erros
+3. **`npm run build`** — verificar build sem erros
+4. Se houver **migrations novas**, revisar seguindo as regras de PostgreSQL abaixo
+
+### Comando de deploy:
 ```bash
-~/.fly/bin/fly deploy
+cd /home/pcempresa/Documentos/super-food && ~/.fly/bin/fly deploy
 ```
 
-**O Dockerfile faz tudo automaticamente:**
+### O Dockerfile faz tudo automaticamente:
 1. Build React (Node 20)
 2. Instala deps Python
 3. Na inicialização: `alembic upgrade head` → migrations automáticas
 4. Inicia Gunicorn com 2 workers Uvicorn
 
-**Infraestrutura Fly.io (já configurada):**
+### Infraestrutura Fly.io (já configurada):
 - App: `superfood-api` — https://superfood-api.fly.dev
 - PostgreSQL: `superfood-db` (GRU) — conectado automaticamente via DATABASE_URL
 - Redis: Upstash — conectado via REDIS_URL
 - Secrets: já configurados (SECRET_KEY, SUPER_ADMIN_USER/PASS, MAPBOX_TOKEN, REDIS_URL)
+- Volume: `superfood_uploads` (1GB) montado em `/app/backend/static/uploads`
 
-**Verificar depois do deploy:**
+### Verificar depois do deploy:
 ```bash
 ~/.fly/bin/fly logs --app superfood-api  # ver logs
 curl https://superfood-api.fly.dev/health  # verificar saúde
+~/.fly/bin/fly status --app superfood-api  # status da instância
 ```
 
-**IMPORTANTE — Ambiente local vs produção:**
+### Ambiente local vs produção:
 - Local: SQLite + `create_all` automático (ENVIRONMENT não é "production")
 - Produção: PostgreSQL + Alembic migrations (ENVIRONMENT=production no fly.toml)
 - Para adicionar migration nova: criar arquivo em `migrations/versions/` e rodar `fly deploy`
+
+### REGRAS CRÍTICAS PARA MIGRATIONS (PostgreSQL):
+
+**NUNCA usar try/except em migrations Alembic para PostgreSQL!**
+- Em PostgreSQL, quando um statement SQL falha dentro de uma transação, **toda a transação é abortada**
+- Python `try/except` captura a exceção Python, mas **NÃO recupera a transação PostgreSQL**
+- Todos os statements seguintes falham com `InFailedSqlTransaction`
+
+**SEMPRE usar SQL com `IF EXISTS` / `IF NOT EXISTS`:**
+```python
+# ✅ CORRETO — PostgreSQL-safe
+op.execute("ALTER TABLE x DROP CONSTRAINT IF EXISTS nome_constraint")
+op.execute("DROP INDEX IF EXISTS ix_nome_index")
+op.execute("CREATE INDEX IF NOT EXISTS ix_nome ON tabela (coluna)")
+
+# ❌ ERRADO — Quebra em PostgreSQL
+try:
+    op.drop_constraint('nome', 'tabela', type_='unique')
+except Exception:
+    pass
+```
+
+**Para constraints com lógica condicional, usar bloco DO:**
+```python
+op.execute("""
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'nome') THEN
+            ALTER TABLE tabela ADD CONSTRAINT nome UNIQUE (col1, col2);
+        END IF;
+    END $$;
+""")
+```
+
+**Outras regras de migrations PostgreSQL:**
+- Usar `sa.text('false')` e `sa.text('true')` para server_default (não `'0'`/`'1'`)
+- Usar `sa.Text()` com parênteses (não `sa.Text`)
+- Revision IDs podem ter até 128 chars (env.py cria tabela com VARCHAR(128))
+- **Testar migrations mentalmente contra PostgreSQL** antes de fazer deploy
 
 ---
 

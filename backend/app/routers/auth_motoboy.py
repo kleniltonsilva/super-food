@@ -7,6 +7,7 @@ Sprint 3 da migração v4.0
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
@@ -278,11 +279,16 @@ def cadastro_motoboy(
         nome=nome_limpo,
         usuario=usuario_limpo,
         telefone=telefone_limpo,
+        codigo_acesso=codigo_limpo,
         status='pendente',
         data_solicitacao=datetime.utcnow()
     )
     db.add(solicitacao)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Já existe uma solicitação para este usuário")
 
     return {
         "mensagem": "Solicitação enviada com sucesso! Aguarde aprovação do restaurante.",

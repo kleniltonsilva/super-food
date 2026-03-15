@@ -90,7 +90,7 @@ export function useAtualizarStatusPedido() {
 export function useDespacharPedido() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, motoboy_id }: { id: number; motoboy_id: number }) =>
+    mutationFn: ({ id, motoboy_id }: { id: number; motoboy_id?: number }) =>
       api.despacharPedido(id, motoboy_id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });

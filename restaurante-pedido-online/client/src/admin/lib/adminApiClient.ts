@@ -87,8 +87,9 @@ export async function atualizarStatusPedido(id: number, status: string) {
   return data;
 }
 
-export async function despacharPedido(id: number, motoboy_id: number) {
-  const { data } = await adminApi.post(`/painel/pedidos/${id}/despachar`, { motoboy_id });
+export async function despacharPedido(id: number, motoboy_id?: number) {
+  const body = motoboy_id ? { motoboy_id } : {};
+  const { data } = await adminApi.post(`/painel/pedidos/${id}/despachar`, body);
   return data;
 }
 
@@ -238,7 +239,9 @@ export async function getSolicitacoesMotoboys() {
 }
 
 export async function responderSolicitacao(id: number, payload: { aprovado: boolean }) {
-  const { data } = await adminApi.put(`/painel/motoboys/solicitacoes/${id}`, payload);
+  const { data } = await adminApi.put(`/painel/motoboys/solicitacoes/${id}`, {
+    acao: payload.aprovado ? "aprovar" : "rejeitar",
+  });
   return data;
 }
 

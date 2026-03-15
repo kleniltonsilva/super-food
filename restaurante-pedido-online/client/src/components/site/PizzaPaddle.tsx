@@ -25,26 +25,27 @@ interface PizzaPaddleProps {
 }
 
 function getClipPath(index: number, total: number): string {
+  // Clip-paths com 1% de overlap para eliminar gaps sub-pixel entre segmentos
   if (total === 1) return "circle(50% at 50% 50%)";
   if (total === 2) {
     return index === 0
-      ? "polygon(50% 0%, 0% 0%, 0% 100%, 50% 100%)"
-      : "polygon(50% 0%, 100% 0%, 100% 100%, 50% 100%)";
+      ? "polygon(51% 0%, 0% 0%, 0% 100%, 51% 100%)"
+      : "polygon(49% 0%, 100% 0%, 100% 100%, 49% 100%)";
   }
   if (total === 3) {
     const segments = [
-      "polygon(50% 50%, 50% 0%, 100% 0%, 100% 75%, 50% 50%)",
-      "polygon(50% 50%, 100% 75%, 50% 100%, 0% 100%, 0% 75%)",
-      "polygon(50% 50%, 0% 75%, 0% 0%, 50% 0%)",
+      "polygon(50% 50%, 50% -1%, 101% -1%, 101% 80%, 50% 50%)",
+      "polygon(50% 50%, 101% 78%, 101% 101%, -1% 101%, -1% 78%)",
+      "polygon(50% 50%, -1% 80%, -1% -1%, 50% -1%)",
     ];
     return segments[index] || "";
   }
-  // 4 sabores: quadrantes
+  // 4 sabores: quadrantes com overlap
   const quads = [
-    "polygon(50% 50%, 50% 0%, 0% 0%, 0% 50%)",
-    "polygon(50% 50%, 50% 0%, 100% 0%, 100% 50%)",
-    "polygon(50% 50%, 100% 50%, 100% 100%, 50% 100%)",
-    "polygon(50% 50%, 0% 50%, 0% 100%, 50% 100%)",
+    "polygon(50% 50%, 50% -1%, -1% -1%, -1% 51%)",
+    "polygon(50% 50%, 50% -1%, 101% -1%, 101% 51%)",
+    "polygon(50% 50%, 101% 49%, 101% 101%, 50% 101%)",
+    "polygon(50% 50%, -1% 49%, -1% 101%, 50% 101%)",
   ];
   return quads[index] || "";
 }
@@ -134,35 +135,14 @@ export default function PizzaPaddle({
                 ) : sabor ? (
                   <div className="pizza-segment-fallback" style={{ background: PIZZA_COLORS[i % 4] }}>
                     <span className="text-2xl">{PIZZA_EMOJIS[i % 4]}</span>
-                    <span className="pizza-segment-name">{sabor.nome}</span>
                   </div>
                 ) : (
-                  <div className="pizza-segment-empty">
-                    <span className="pizza-segment-plus">+</span>
-                    <span className="pizza-segment-add-label">Sabor</span>
-                  </div>
+                  <div className="pizza-segment-empty" />
                 )}
               </div>
             );
           })}
 
-          {/* Linhas divisórias */}
-          {dividers.length > 0 && (
-            <svg className="pizza-dividers" viewBox="0 0 100 100" preserveAspectRatio="none">
-              {dividers.map((line, i) => (
-                <line
-                  key={i}
-                  x1={line.x1}
-                  y1={line.y1}
-                  x2={line.x2}
-                  y2={line.y2}
-                  stroke="#8B6914"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              ))}
-            </svg>
-          )}
         </div>
       </div>
 

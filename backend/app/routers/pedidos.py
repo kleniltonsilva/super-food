@@ -66,6 +66,7 @@ def criar_pedido(
         origem="manual",
         tipo_entrega="entrega",
         status='pendente',
+        historico_status=[{"status": "pendente", "timestamp": datetime.utcnow().isoformat()}],
         data_criacao=datetime.utcnow()
     )
     db.add(novo_pedido)

@@ -8,7 +8,7 @@ Endpoints consumidos pelo app React PWA do motoboy.
 Reutiliza funções utilitárias existentes de utils/motoboy_selector.py e utils/calculos.py.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session, joinedload
 from pydantic import BaseModel
 from typing import Optional, List
@@ -204,9 +204,10 @@ def iniciar_entrega(
 
 
 @router.post("/entregas/{entrega_id}/finalizar")
-def finalizar_entrega(
+async def finalizar_entrega(
     entrega_id: int,
     dados: FinalizarEntregaRequest,
+    request: Request,
     current_motoboy: models.Motoboy = Depends(auth.get_current_motoboy),
     db: Session = Depends(database.get_db)
 ):
@@ -230,6 +231,12 @@ def finalizar_entrega(
     if dados.motivo not in motivos_validos:
         raise HTTPException(status_code=400, detail=f"Motivo inválido. Use: {', '.join(motivos_validos)}")
 
+    # Buscar pedido para atualizar historico_status e broadcast
+    pedido = db.query(models.Pedido).filter(
+        models.Pedido.id == entrega.pedido_id,
+        models.Pedido.restaurante_id == current_motoboy.restaurante_id
+    ).first()
+
     # Reutilizar função existente de utils/motoboy_selector.py
     resultado = finalizar_entrega_motoboy(
         entrega_id=entrega_id,
@@ -244,19 +251,34 @@ def finalizar_entrega(
     if not resultado.get('sucesso'):
         raise HTTPException(status_code=400, detail=resultado.get('erro', 'Erro ao finalizar entrega'))
 
-    # Atualizar dados de pagamento real no pedido
-    if dados.forma_pagamento_real:
-        pedido = db.query(models.Pedido).filter(
-            models.Pedido.id == entrega.pedido_id,
-            models.Pedido.restaurante_id == current_motoboy.restaurante_id
-        ).first()
-        if pedido:
+    # Atualizar dados de pagamento real e historico_status no pedido
+    if pedido:
+        if dados.forma_pagamento_real:
             pedido.forma_pagamento_real = dados.forma_pagamento_real
             if dados.valor_pago_dinheiro is not None:
                 pedido.valor_pago_dinheiro = dados.valor_pago_dinheiro
             if dados.valor_pago_cartao is not None:
                 pedido.valor_pago_cartao = dados.valor_pago_cartao
-            db.commit()
+
+        # Registrar status no histórico
+        historico = list(pedido.historico_status or [])
+        historico.append({"status": dados.motivo, "timestamp": datetime.utcnow().isoformat()})
+        pedido.historico_status = historico
+        db.commit()
+
+    # Broadcast para admin: entrega finalizada
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "entrega_finalizada",
+            "dados": {
+                "pedido_id": entrega.pedido_id,
+                "entrega_id": entrega.id,
+                "comanda": pedido.comanda if pedido else None,
+                "motoboy_nome": current_motoboy.nome,
+                "motivo": dados.motivo,
+            }
+        }, current_motoboy.restaurante_id)
 
     return resultado
 

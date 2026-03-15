@@ -7,6 +7,7 @@ import {
   useDespacharPedido,
   useCancelarPedido,
   useMotoboys,
+  useConfig,
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -80,6 +81,9 @@ export default function PedidoDetalhe() {
   const despachar = useDespacharPedido();
   const cancelar = useCancelarPedido();
   const { data: motoboys } = useMotoboys();
+  const { data: configData } = useConfig();
+
+  const modoDespacho = configData?.modo_prioridade_entrega || "rapido_economico";
 
   const [showCancelar, setShowCancelar] = useState(false);
   const [cancelarSenha, setCancelarSenha] = useState("");
@@ -122,17 +126,31 @@ export default function PedidoDetalhe() {
     );
   }
 
-  function handleDespachar() {
+  function handleDespachar(manualMotoboyId?: number) {
     despachar.mutate(
-      { id: pedidoId, motoboy_id: Number(motoboyId) },
+      { id: pedidoId, motoboy_id: manualMotoboyId },
       {
         onSuccess: (data) => {
           toast.success(`Despachado para ${data.motoboy_nome}`);
           setShowDespachar(false);
+          setMotoboyId("");
         },
-        onError: () => toast.error("Erro ao despachar"),
+        onError: (err: unknown) => {
+          const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+          toast.error(detail || "Erro ao despachar");
+        },
       }
     );
+  }
+
+  function handleDespacharClick() {
+    if (modoDespacho === "manual") {
+      // Modo manual: mostrar seleção de motoboy
+      setShowDespachar(true);
+    } else {
+      // Modo automático: despachar direto sem selecionar motoboy
+      handleDespachar();
+    }
   }
 
   const requerSenha = ['entregue', 'pago', 'finalizado'].includes(pedido?.status);
@@ -485,9 +503,11 @@ export default function PedidoDetalhe() {
                 {pedido.status === "pronto" && pedido.tipo_entrega === "entrega" && !pedido.despachado && (
                   <Button
                     className="w-full bg-purple-600 hover:bg-purple-700"
-                    onClick={() => setShowDespachar(true)}
+                    onClick={handleDespacharClick}
+                    disabled={despachar.isPending}
                   >
-                    <Truck className="mr-2 h-4 w-4" /> Despachar
+                    <Truck className="mr-2 h-4 w-4" />
+                    {despachar.isPending ? "Despachando..." : modoDespacho === "manual" ? "Despachar (Manual)" : "Despachar Automático"}
                   </Button>
                 )}
                 {pedido.status === "pronto" && pedido.tipo_entrega !== "entrega" && (
@@ -588,7 +608,7 @@ export default function PedidoDetalhe() {
             </Button>
             <Button
               className="bg-purple-600 hover:bg-purple-700"
-              onClick={handleDespachar}
+              onClick={() => handleDespachar(Number(motoboyId))}
               disabled={!motoboyId || despachar.isPending}
             >
               <Truck className="mr-2 h-4 w-4" /> Despachar

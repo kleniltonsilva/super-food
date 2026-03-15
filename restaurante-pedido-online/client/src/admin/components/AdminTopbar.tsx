@@ -1,4 +1,5 @@
 import { Menu, LogOut, User, ShoppingBag, Bike, DollarSign } from "lucide-react";
+import NotificationBell from "@/admin/components/NotificationBell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -101,6 +102,9 @@ export default function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
             </Button>
           );
         })}
+
+        {/* Notification Bell */}
+        <NotificationBell />
 
         {/* Separator */}
         <div className="mx-2 h-6 w-px bg-[var(--border-subtle)]" />

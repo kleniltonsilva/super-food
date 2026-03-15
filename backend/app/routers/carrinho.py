@@ -514,9 +514,10 @@ async def finalizar_carrinho(
         forma_pagamento=finalizacao.forma_pagamento,
         troco_para=finalizacao.troco_para,
         status='pendente',
+        historico_status=[{"status": "pendente", "timestamp": datetime.utcnow().isoformat()}],
         data_criacao=datetime.utcnow()
     )
-    
+
     db.add(pedido)
 
     # Auto-aceitar pedido do site: se restaurante configurado e cliente tem histórico positivo

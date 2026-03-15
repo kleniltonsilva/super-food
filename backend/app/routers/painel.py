@@ -246,6 +246,7 @@ async def criar_pedido_manual(
         tempo_estimado=dados.tempo_estimado,
         observacoes=dados.observacoes,
         status='pendente',
+        historico_status=[{"status": "pendente", "timestamp": datetime.utcnow().isoformat()}],
         data_criacao=datetime.utcnow()
     )
     db.add(pedido)
@@ -280,6 +281,11 @@ async def atualizar_status_pedido(
         raise HTTPException(404, "Pedido não encontrado")
     pedido.status = dados.status
     pedido.atualizado_em = datetime.utcnow()
+
+    # Registrar histórico de status
+    historico = list(pedido.historico_status or [])
+    historico.append({"status": dados.status, "timestamp": datetime.utcnow().isoformat()})
+    pedido.historico_status = historico
 
     # Auto-lançar venda no caixa quando pedido é entregue
     if dados.status == 'entregue' and pedido.valor_total and pedido.valor_total > 0:
@@ -478,6 +484,28 @@ async def cancelar_pedido(
     pedido.status = 'cancelado'
     pedido.atualizado_em = datetime.utcnow()
 
+    # Registrar histórico de status
+    historico = list(pedido.historico_status or [])
+    historico.append({"status": "cancelado", "timestamp": datetime.utcnow().isoformat()})
+    pedido.historico_status = historico
+
+    # Cancelar entrega associada e liberar motoboy
+    entrega_cancelada = None
+    motoboy_id_cancelado = None
+    entrega = db.query(models.Entrega).filter(
+        models.Entrega.pedido_id == pedido.id,
+        models.Entrega.status.in_(['pendente', 'em_rota'])
+    ).first()
+    if entrega:
+        entrega_cancelada = entrega.id
+        motoboy_id_cancelado = entrega.motoboy_id
+        entrega.status = 'cancelado'
+        entrega.motivo_finalizacao = 'cancelado_restaurante'
+        if entrega.motoboy_id:
+            motoboy = db.query(models.Motoboy).filter(models.Motoboy.id == entrega.motoboy_id).first()
+            if motoboy and motoboy.entregas_pendentes > 0:
+                motoboy.entregas_pendentes -= 1
+
     # Reverter lançamento no caixa se pedido havia sido registrado
     if status_anterior in status_protegidos and pedido.valor_total and pedido.valor_total > 0:
         caixa_aberto = db.query(models.Caixa).filter(
@@ -520,7 +548,12 @@ async def cancelar_pedido(
     if ws:
         await ws.broadcast({
             "tipo": "pedido_cancelado",
-            "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+            "dados": {
+                "pedido_id": pedido.id,
+                "comanda": pedido.comanda,
+                "entrega_id": entrega_cancelada,
+                "motoboy_id": motoboy_id_cancelado,
+            }
         }, rest.id)
 
     return {"id": pedido.id, "status": "cancelado"}
@@ -628,6 +661,24 @@ def diagnostico_tempo(
     tempo_entrega_atual = site_config.tempo_entrega_estimado if site_config else 50
     tempo_retirada_atual = site_config.tempo_retirada_estimado if site_config else 20
     tempo_preparo = config.tempo_medio_preparo if config else 30
+
+    # Se restaurante está fechado, não sugerir ajustes de tempo
+    status_atual = config.status_atual if config else 'fechado'
+    if status_atual == 'fechado':
+        return {
+            "pedidos_ativos": 0,
+            "entregas_ativas": 0,
+            "motoboys_livres": 0,
+            "pedidos_por_motoboy": 0,
+            "tempo_medio_real_min": None,
+            "tempo_entrega_atual": tempo_entrega_atual,
+            "tempo_retirada_atual": tempo_retirada_atual,
+            "tempo_sugerido_entrega": tempo_entrega_atual,
+            "tempo_sugerido_retirada": tempo_retirada_atual,
+            "precisa_aumentar": False,
+            "pode_diminuir": False,
+            "motivo": "Restaurante fechado",
+        }
 
     agora = datetime.utcnow()
 
@@ -878,6 +929,7 @@ class ProdutoRequest(BaseModel):
     estoque_quantidade: Optional[int] = 0
     disponivel: Optional[bool] = True
     ingredientes_json: Optional[list] = None
+    eh_pizza: Optional[bool] = False
 
 
 @router.get("/produtos")
@@ -902,6 +954,7 @@ def listar_produtos(
         "destaque": p.destaque, "promocao": p.promocao,
         "preco_promocional": p.preco_promocional,
         "disponivel": p.disponivel, "ordem_exibicao": p.ordem_exibicao,
+        "eh_pizza": p.eh_pizza or False,
     } for p in prods]
 
 
@@ -926,6 +979,7 @@ def detalhe_produto(
         "disponivel": prod.disponivel, "ordem_exibicao": prod.ordem_exibicao,
         "estoque_ilimitado": prod.estoque_ilimitado, "estoque_quantidade": prod.estoque_quantidade,
         "ingredientes_json": prod.ingredientes_json or [],
+        "eh_pizza": prod.eh_pizza or False,
         "variacoes": [{
             "id": v.id, "tipo_variacao": v.tipo_variacao, "nome": v.nome,
             "descricao": v.descricao, "preco_adicional": v.preco_adicional,
@@ -1400,6 +1454,7 @@ def acao_solicitacao(
             restaurante_id=rest.id, nome=solic.nome, usuario=solic.usuario,
             telefone=solic.telefone, status='ativo', ordem_hierarquia=max_ordem + 1
         )
+        motoboy.set_senha("123456")
         db.add(motoboy)
         solic.status = 'aprovado'
     else:

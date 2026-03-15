@@ -19,16 +19,97 @@ import Bairros from "@/admin/pages/Bairros";
 import Relatorios from "@/admin/pages/Relatorios";
 import Configuracoes from "@/admin/pages/Configuracoes";
 import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { useWebSocket } from "@/admin/hooks/useWebSocket";
+import { useWebSocket, type WsEvent } from "@/admin/hooks/useWebSocket";
+import { NotificationProvider, useNotifications } from "@/admin/contexts/NotificationContext";
+import { useCallback } from "react";
+import { useLocation } from "wouter";
 
-// ─── WebSocket provider (precisa estar dentro do AdminAuthProvider) ────────────
+// ─── WebSocket provider (precisa estar dentro do AdminAuthProvider + NotificationProvider) ──
 function AdminWebSocket() {
   const { restaurante, isLoggedIn } = useAdminAuth();
+  const { addNotification } = useNotifications();
+  const [, navigate] = useLocation();
+
+  const handleEvento = useCallback((evento: WsEvent) => {
+    const dados = evento.dados || {};
+    const comanda = dados.comanda as string | undefined;
+
+    switch (evento.tipo) {
+      case "novo_pedido":
+        addNotification({
+          tipo: "novo_pedido",
+          titulo: `Novo pedido${comanda ? ` #${comanda}` : ""}`,
+          mensagem: "Um novo pedido foi recebido",
+          acao: "/pedidos",
+        });
+        break;
+
+      case "pedido_cancelado":
+        addNotification({
+          tipo: "pedido_cancelado",
+          titulo: `Pedido${comanda ? ` #${comanda}` : ""} cancelado`,
+          mensagem: "O pedido foi cancelado",
+          acao: "/pedidos",
+        });
+        break;
+
+      case "pedido_despachado":
+        addNotification({
+          tipo: "pedido_despachado",
+          titulo: `Pedido${comanda ? ` #${comanda}` : ""} despachado`,
+          mensagem: `Motoboy atribuído`,
+          acao: "/pedidos",
+        });
+        break;
+
+      case "entrega_atrasada": {
+        const tempoDecorrido = dados.tempo_decorrido_min as number | undefined;
+        const tempoEstimado = dados.tempo_estimado_min as number | undefined;
+        addNotification({
+          tipo: "entrega_atrasada",
+          titulo: `Entrega atrasada${comanda ? ` #${comanda}` : ""}`,
+          mensagem: tempoDecorrido && tempoEstimado
+            ? `${tempoDecorrido}min (estimado: ${tempoEstimado}min)`
+            : "Uma entrega ultrapassou o tempo estimado",
+          acao: "/pedidos",
+          dados,
+        });
+        // Toast de 5 segundos com ação
+        toast.warning(
+          `Entrega atrasada${comanda ? ` #${comanda}` : ""}! ${tempoDecorrido ? `${tempoDecorrido}min decorridos` : ""}`,
+          {
+            duration: 5000,
+            action: {
+              label: "Ver entregas",
+              onClick: () => navigate("/pedidos"),
+            },
+          }
+        );
+        break;
+      }
+
+      case "entrega_finalizada": {
+        const motoboyNome = dados.motoboy_nome as string | undefined;
+        const motivo = dados.motivo as string | undefined;
+        const motivoLabel = motivo === "entregue" ? "entregue" : motivo === "cliente_ausente" ? "cliente ausente" : "cancelado pelo cliente";
+        addNotification({
+          tipo: "entrega_finalizada",
+          titulo: `Entrega${comanda ? ` #${comanda}` : ""} finalizada`,
+          mensagem: `${motoboyNome || "Motoboy"} — ${motivoLabel}`,
+          acao: "/pedidos",
+        });
+        break;
+      }
+    }
+  }, [addNotification, navigate]);
+
   useWebSocket({
     restauranteId: isLoggedIn && restaurante ? restaurante.id : null,
     habilitarSom: true,
     habilitarNotificacaoSistema: false,
+    onEvento: handleEvento,
   });
   return null;
 }
@@ -117,11 +198,13 @@ function AdminRouter() {
 export default function AdminApp() {
   return (
     <AdminAuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <AdminWebSocket />
-        <AdminRouter />
-      </TooltipProvider>
+      <NotificationProvider>
+        <TooltipProvider>
+          <Toaster />
+          <AdminWebSocket />
+          <AdminRouter />
+        </TooltipProvider>
+      </NotificationProvider>
     </AdminAuthProvider>
   );
 }

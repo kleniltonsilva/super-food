@@ -1,10 +1,34 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, Check, Clock, Truck, ChefHat, Package, Star } from "lucide-react";
+import { ArrowLeft, Check, Clock, Truck, ChefHat, Package, Star, Wifi } from "lucide-react";
 import { useParams, useLocation } from "wouter";
 import { getTrackingPedido } from "@/lib/apiClient";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useRestaurante } from "@/contexts/RestauranteContext";
+import { useClienteWebSocket } from "@/hooks/useClienteWebSocket";
 import MapTracking from "@/components/MapTracking";
+
+/** Som de atualização de status: tom ascendente de confirmação */
+function tocarSomStatusAtualizado() {
+  try {
+    const ctx = new AudioContext();
+    [523, 659, 784].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "triangle";
+      osc.frequency.value = freq;
+      const t = i * 0.15;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch {
+    // AudioContext não disponível
+  }
+}
 
 interface TrackingData {
   id: number;
@@ -21,6 +45,7 @@ interface TrackingData {
   carrinho_json: any[] | null;
   aceitar_pedido_site_auto: boolean;
   aviso_proximo_pedido_auto: boolean;
+  historico_status: { status: string; timestamp: string }[];
 }
 
 const STATUS_STEPS = [
@@ -45,20 +70,74 @@ function getStepIndex(status: string, steps: typeof STATUS_STEPS): number {
   return idx >= 0 ? idx : 0;
 }
 
+/** Busca timestamp de um status no histórico */
+function getStatusTimestamp(historico: { status: string; timestamp: string }[], status: string): string | null {
+  const entry = historico.find(h => h.status === status);
+  if (!entry) return null;
+  try {
+    return new Date(entry.timestamp).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return null;
+  }
+}
+
+/** Formata sabores de pizza para exibição: "1/3 Margherita 1/3 Calabresa 1/3 Salame" */
+function formatarSaboresPizza(item: any): string[] | null {
+  const obs = item.observacoes as string | null;
+  if (!obs || !obs.startsWith("Sabores:")) return null;
+  const saboresStr = obs.replace("Sabores:", "").split("|")[0].trim();
+  const sabores = saboresStr.split("/").map((s: string) => s.trim()).filter(Boolean);
+  if (sabores.length <= 1) return null;
+  return sabores.map((s: string) => `1/${sabores.length} ${s}`);
+}
+
 export default function OrderTracking() {
   const params = useParams();
   const [, navigate] = useLocation();
   const pedidoId = parseInt(params?.id || "0");
+  const { siteInfo } = useRestaurante();
 
   const [tracking, setTracking] = useState<TrackingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const [wsConectado, setWsConectado] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevStatusRef = useRef<string | null>(null);
 
   // Polling mais rápido quando motoboy está em rota (10s) vs normal (30s)
   const isEmRota = tracking?.status === "em_entrega" && tracking?.motoboy?.latitude != null;
 
+  // Re-fetch tracking data
+  const fetchTracking = useCallback(async () => {
+    if (!pedidoId) return;
+    try {
+      const data = await getTrackingPedido(pedidoId);
+      setTracking(data);
+      setError(null);
+    } catch {
+      // silencioso no polling/WebSocket — erro já tratado no load inicial
+    }
+  }, [pedidoId]);
+
+  // WebSocket: re-fetch imediato quando receber evento relevante
+  useClienteWebSocket({
+    restauranteId: siteInfo?.restaurante_id,
+    onEvento: useCallback((evento: { tipo: string; dados?: Record<string, unknown> }) => {
+      const tipos = ["pedido_atualizado", "pedido_cancelado", "pedido_despachado"];
+      if (tipos.includes(evento.tipo)) {
+        // Verificar se o evento é sobre este pedido (se dados disponíveis)
+        const pedidoEvento = evento.dados?.pedido_id as number | undefined;
+        if (!pedidoEvento || pedidoEvento === pedidoId) {
+          fetchTracking();
+        }
+      }
+      // Detectar conexão ativa
+      setWsConectado(true);
+    }, [pedidoId, fetchTracking]),
+  });
+
+  // Load inicial
   useEffect(() => {
     async function load() {
       try {
@@ -83,21 +162,28 @@ export default function OrderTracking() {
     if (pedidoId) load();
   }, [pedidoId]);
 
-  // Polling dinâmico: 10s quando mapa visível, 30s normal
+  // Som ao mudar de status
+  useEffect(() => {
+    if (!tracking) return;
+    if (prevStatusRef.current && prevStatusRef.current !== tracking.status) {
+      tocarSomStatusAtualizado();
+    }
+    prevStatusRef.current = tracking.status;
+  }, [tracking?.status]);
+
+  // Polling como fallback (30s normal, 10s em rota)
   useEffect(() => {
     if (!pedidoId) return;
     const intervalo = isEmRota ? 10000 : 30000;
 
     intervalRef.current = setInterval(() => {
-      getTrackingPedido(pedidoId)
-        .then(data => { setTracking(data); setError(null); })
-        .catch(() => {});
+      fetchTracking();
     }, intervalo);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [pedidoId, isEmRota]);
+  }, [pedidoId, isEmRota, fetchTracking]);
 
   if (loading) {
     return (
@@ -159,16 +245,16 @@ export default function OrderTracking() {
 
         {/* Aviso: aguardando aceitação do restaurante */}
         {isPendente && !isCancelled && (
-          <Card className="p-4 mb-4 border-yellow-700/40 bg-yellow-900/10">
+          <Card className="p-4 mb-4 border-green-700/40 bg-green-900/10 shadow-sm shadow-black/20">
             <div className="flex items-start gap-3">
-              <Clock className="w-5 h-5 text-yellow-400 mt-0.5 shrink-0" />
+              <Clock className="w-5 h-5 text-green-400 mt-0.5 shrink-0" />
               <div>
-                <p className="text-yellow-300 font-semibold text-sm">Aguardando confirmação do restaurante</p>
-                <p className="text-yellow-400/70 text-xs mt-1">
+                <p className="text-green-300 font-semibold text-sm">Aguardando confirmação do restaurante</p>
+                <p className="text-green-400/70 text-xs mt-1">
                   Seu pedido foi recebido e está na fila. O restaurante irá confirmar em breve.
                 </p>
                 {tracking.aceitar_pedido_site_auto && (
-                  <p className="text-yellow-400/70 text-xs mt-2">
+                  <p className="text-green-400/70 text-xs mt-2">
                     Se este pedido for concluído com sucesso, seus próximos pedidos serão aceitos automaticamente.
                   </p>
                 )}
@@ -179,9 +265,14 @@ export default function OrderTracking() {
 
         {/* Status cancelado */}
         {isCancelled && (
-          <Card className="p-6 mb-6 bg-red-900/20 border-red-800/30">
-            <p className="text-red-400 font-bold text-lg">Pedido Cancelado</p>
-            <p className="text-red-400/70 text-sm">Este pedido foi cancelado pelo restaurante.</p>
+          <Card className="p-6 mb-6 bg-green-900/10 border-green-700/40 shadow-sm shadow-black/20">
+            <p className="font-bold text-lg">
+              <span className="text-green-300" style={{ textShadow: "0 1px 3px rgba(0,0,0,0.3)" }}>Pedido </span>
+              <span className="text-red-500" style={{ textShadow: "0 2px 6px rgba(0,0,0,0.8), 0 0 10px rgba(0,0,0,0.4)" }}>Cancelado</span>
+            </p>
+            <p className="text-green-400 text-sm mt-1" style={{ textShadow: "0 1px 2px rgba(0,0,0,0.3)" }}>
+              Este pedido foi cancelado pelo restaurante.
+            </p>
           </Card>
         )}
 
@@ -235,14 +326,22 @@ export default function OrderTracking() {
                         />
                       )}
                     </div>
-                    {/* Texto */}
+                    {/* Texto + hora */}
                     <div className={`pb-6 ${isCurrent ? "font-bold" : ""}`}>
-                      <p className={`text-sm ${isCompleted ? "" : "text-muted-foreground"}`}>
-                        {step.label}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className={`text-sm ${isCompleted ? "" : "text-muted-foreground"}`}>
+                          {step.label}
+                        </p>
+                        {isCompleted && tracking.historico_status && (() => {
+                          const hora = getStatusTimestamp(tracking.historico_status, step.key);
+                          return hora ? (
+                            <span className="text-[11px] text-muted-foreground font-normal">{hora}</span>
+                          ) : null;
+                        })()}
+                      </div>
                       {/* Sub-texto do step atual */}
                       {isCurrent && step.key === "pendente" && (
-                        <p className="text-xs text-yellow-400/80 mt-1">
+                        <p className="text-xs text-green-400/80 mt-1">
                           Aguardando confirmação do restaurante
                         </p>
                       )}
@@ -288,7 +387,7 @@ export default function OrderTracking() {
             )}
 
             <p className="text-xs text-muted-foreground mt-3 text-center">
-              Posição atualizada a cada 10 segundos
+              Posição atualizada em tempo real
             </p>
           </Card>
         )}
@@ -311,12 +410,29 @@ export default function OrderTracking() {
           <Card className="p-6 mb-6">
             <h2 className="font-bold text-lg mb-3">Itens do Pedido</h2>
             <div className="space-y-2">
-              {tracking.carrinho_json.map((item: any, idx: number) => (
-                <div key={idx} className="flex justify-between text-sm">
-                  <span>{item.quantidade}x {item.nome}</span>
-                  <span className="font-bold">R$ {item.subtotal?.toFixed(2)}</span>
-                </div>
-              ))}
+              {tracking.carrinho_json.map((item: any, idx: number) => {
+                const sabores = formatarSaboresPizza(item);
+                return (
+                  <div key={idx} className="text-sm">
+                    <div className="flex justify-between">
+                      <span>{item.quantidade}x {item.nome}</span>
+                      <span className="font-bold">R$ {item.subtotal?.toFixed(2)}</span>
+                    </div>
+                    {sabores && (
+                      <div className="ml-4 mt-0.5 space-y-0.5">
+                        {sabores.map((s: string, si: number) => (
+                          <p key={si} className="text-xs text-muted-foreground">{s}</p>
+                        ))}
+                      </div>
+                    )}
+                    {item.variacoes && item.variacoes.length > 0 && (
+                      <p className="text-xs text-muted-foreground ml-4 mt-0.5">
+                        {item.variacoes.map((v: any) => v.nome).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <div className="border-t mt-3 pt-3 flex justify-between font-bold">
               <span>Total</span>
@@ -335,8 +451,15 @@ export default function OrderTracking() {
           </Card>
         )}
 
-        <p className="text-xs text-center text-muted-foreground mt-4">
-          Atualizando automaticamente a cada {isEmRota ? "10" : "30"} segundos
+        <p className="text-xs text-center text-muted-foreground mt-4 flex items-center justify-center gap-1.5">
+          {wsConectado ? (
+            <>
+              <Wifi className="w-3 h-3 text-green-500" />
+              Atualização em tempo real ativa
+            </>
+          ) : (
+            <>Atualizando automaticamente a cada {isEmRota ? "10" : "30"} segundos</>
+          )}
         </p>
       </div>
     </div>
