@@ -12,7 +12,10 @@ import logging
 
 from database import models
 from ..database import get_db
-from ..auth import get_rest
+from .. import auth
+
+def get_rest(current_restaurante=Depends(auth.get_current_restaurante)):
+    return current_restaurante
 
 logger = logging.getLogger(__name__)
 

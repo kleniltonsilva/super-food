@@ -45,6 +45,9 @@ websockets>=14.1
 # HTTP Client (Mapbox, APIs externas)
 requests>=2.32.3
 
+# Async HTTP Client (integrações marketplace: iFood, Open Delivery)
+httpx>=0.27.0
+
 # Cálculo de Distâncias
 haversine>=2.8.1
 
