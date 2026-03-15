@@ -237,6 +237,23 @@ export default function Pedidos() {
   }
 
   function getOrigemBadge(p: Record<string, unknown>) {
+    const marketplace = p.marketplace_source as string | undefined;
+    if (marketplace) {
+      const colors: Record<string, string> = {
+        ifood: "bg-red-500/20 text-red-400 border-red-500/30",
+        "99food": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+        rappi: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+        keeta: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+      };
+      const labels: Record<string, string> = {
+        ifood: "iFood", "99food": "99Food", rappi: "Rappi", keeta: "Keeta",
+      };
+      return (
+        <Badge variant="outline" className={`text-[10px] px-1 py-0 ${colors[marketplace] || ""}`}>
+          {labels[marketplace] || marketplace}
+        </Badge>
+      );
+    }
     const origem = p.origem as string;
     if (origem === "site" || origem === "web") {
       return <span title="Site"><Globe className="h-4 w-4 text-blue-400" /></span>;

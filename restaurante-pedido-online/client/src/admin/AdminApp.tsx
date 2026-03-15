@@ -19,6 +19,7 @@ import Bairros from "@/admin/pages/Bairros";
 import Relatorios from "@/admin/pages/Relatorios";
 import Configuracoes from "@/admin/pages/Configuracoes";
 import HistoricoAtrasos from "@/admin/pages/HistoricoAtrasos";
+import Integracoes from "@/admin/pages/Integracoes";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -186,6 +187,10 @@ function AdminRouter() {
 
       <Route path="/historico-atrasos">
         <PrivateRoute><HistoricoAtrasos /></PrivateRoute>
+      </Route>
+
+      <Route path="/integracoes">
+        <PrivateRoute><Integracoes /></PrivateRoute>
       </Route>
 
       <Route path="/configuracoes">

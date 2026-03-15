@@ -17,6 +17,7 @@ import {
   BarChart3,
   Clock,
   Settings,
+  Plug,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,7 @@ const menuItems = [
   { path: "/bairros", label: "Bairros", icon: MapPin },
   { path: "/relatorios", label: "Relatórios", icon: BarChart3 },
   { path: "/historico-atrasos", label: "Atrasos", icon: Clock },
+  { path: "/integracoes", label: "Integrações", icon: Plug },
   { path: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 

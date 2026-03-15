@@ -32,6 +32,8 @@ export const ADMIN_QUERY_KEYS = {
   alertasAtraso: ["admin", "alertas-atraso"] as const,
   sugestoesTempo: ["admin", "sugestoes-tempo"] as const,
   notificacoes: ["admin", "notificacoes"] as const,
+  integracoes: ["admin", "integracoes"] as const,
+  ifoodStatus: ["admin", "integracoes", "ifood", "status"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -731,5 +733,84 @@ export function useAdicionarPedidoMesaRapido() {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
     },
+  });
+}
+
+// ─── Integrações Marketplace ─────────────────────────
+export function useIntegracoes() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.integracoes,
+    queryFn: api.getIntegracoes,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useIFoodStatus() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.ifoodStatus,
+    queryFn: api.getIFoodStatus,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useSetupIFood() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.setupIFood,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
+  });
+}
+
+export function useTestIFood() {
+  return useMutation({ mutationFn: api.testIFood });
+}
+
+export function useToggleIFood() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.toggleIFood,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.ifoodStatus });
+    },
+  });
+}
+
+export function useRemoveIFood() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.removeIFood,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.ifoodStatus });
+    },
+  });
+}
+
+export function useSyncCatalogIFood() {
+  return useMutation({ mutationFn: api.syncCatalogIFood });
+}
+
+export function useSetupOpenDelivery() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.setupOpenDelivery,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
+  });
+}
+
+export function useToggleOpenDelivery() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.toggleOpenDelivery,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
+  });
+}
+
+export function useRemoveOpenDelivery() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.removeOpenDelivery,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
   });
 }

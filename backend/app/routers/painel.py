@@ -160,6 +160,8 @@ def listar_pedidos(
             "valor_total": p.valor_total, "forma_pagamento": p.forma_pagamento,
             "status": p.status, "despachado": p.despachado,
             "data_criacao": p.data_criacao.isoformat() if p.data_criacao else None,
+            "marketplace_source": p.marketplace_source,
+            "marketplace_display_id": p.marketplace_display_id,
         } for p in pedidos]
     }
 
@@ -215,6 +217,9 @@ def detalhe_pedido(
             "quantidade": i.quantidade, "preco_unitario": i.preco_unitario,
             "observacoes": i.observacoes
         } for i in pedido.itens_detalhados],
+        "marketplace_source": pedido.marketplace_source,
+        "marketplace_order_id": pedido.marketplace_order_id,
+        "marketplace_display_id": pedido.marketplace_display_id,
     }
 
 
@@ -368,6 +373,12 @@ async def atualizar_status_pedido(
         }, rest.id)
         if dados.status in ('entregue', 'pronto'):
             await ws.broadcast({"tipo": "tempo_medio_atualizado", "dados": {}}, rest.id)
+
+    # Notificar marketplace se pedido veio de integração
+    if pedido.marketplace_source:
+        im = getattr(request.app.state, 'integration_manager', None)
+        if im:
+            await im.notify_status_change(db, pedido, dados.status)
 
     return {"id": pedido.id, "status": pedido.status}
 
@@ -664,6 +675,9 @@ def get_print_data(
             "endereco": rest.endereco_completo,
         },
         "largura_impressao": config.largura_impressao if config else 80,
+        "marketplace_source": pedido.marketplace_source,
+        "marketplace_display_id": pedido.marketplace_display_id,
+        "pagamento_online": pedido.marketplace_source is not None and pedido.forma_pagamento not in ("Dinheiro", "dinheiro"),
     }
 
 

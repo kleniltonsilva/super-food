@@ -260,9 +260,26 @@ export default function PedidoDetalhe() {
                 Pedido #{pedido.comanda || pedido.id}
               </h2>
               <Badge className={`${st.color} border`}>{st.label}</Badge>
+              {pedido.marketplace_source && (
+                <Badge variant="outline" className={
+                  pedido.marketplace_source === "ifood" ? "bg-red-100 text-red-700 border-red-200" :
+                  pedido.marketplace_source === "99food" ? "bg-yellow-100 text-yellow-700 border-yellow-200" :
+                  pedido.marketplace_source === "rappi" ? "bg-orange-100 text-orange-700 border-orange-200" :
+                  "bg-blue-100 text-blue-700 border-blue-200"
+                }>
+                  {pedido.marketplace_source === "ifood" ? "iFood" :
+                   pedido.marketplace_source === "99food" ? "99Food" :
+                   pedido.marketplace_source === "rappi" ? "Rappi" :
+                   pedido.marketplace_source === "keeta" ? "Keeta" :
+                   pedido.marketplace_source}
+                </Badge>
+              )}
             </div>
             <p className="text-sm text-[var(--text-muted)]">
               {formatDate(pedido.data_criacao)}
+              {pedido.marketplace_display_id && (
+                <span className="ml-2 text-xs">({pedido.marketplace_display_id})</span>
+              )}
             </p>
           </div>
         </div>

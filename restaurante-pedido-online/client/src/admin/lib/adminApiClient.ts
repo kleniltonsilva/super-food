@@ -485,6 +485,64 @@ export async function adicionarPedidoMesaRapido(
 }
 
 // ─── Upload ────────────────────────────────────────────
+// ─── Integrações Marketplace ────────────────────────
+export async function getIntegracoes() {
+  const { data } = await adminApi.get("/painel/integracoes");
+  return data;
+}
+
+export async function setupIFood(payload: { client_id: string; client_secret: string; merchant_id: string }) {
+  const { data } = await adminApi.post("/painel/integracoes/ifood/setup", payload);
+  return data;
+}
+
+export async function testIFood() {
+  const { data } = await adminApi.post("/painel/integracoes/ifood/test");
+  return data;
+}
+
+export async function toggleIFood() {
+  const { data } = await adminApi.put("/painel/integracoes/ifood/toggle");
+  return data;
+}
+
+export async function removeIFood() {
+  const { data } = await adminApi.delete("/painel/integracoes/ifood");
+  return data;
+}
+
+export async function getIFoodStatus() {
+  const { data } = await adminApi.get("/painel/integracoes/ifood/status");
+  return data;
+}
+
+export async function syncCatalogIFood() {
+  const { data } = await adminApi.post("/painel/integracoes/ifood/catalog-sync");
+  return data;
+}
+
+export async function setupOpenDelivery(payload: {
+  marketplace: string;
+  client_id?: string;
+  client_secret?: string;
+  merchant_id?: string;
+  api_base_url?: string;
+  webhook_secret?: string;
+}) {
+  const { data } = await adminApi.post("/painel/integracoes/opendelivery/setup", payload);
+  return data;
+}
+
+export async function toggleOpenDelivery(marketplace: string) {
+  const { data } = await adminApi.put(`/painel/integracoes/opendelivery/${marketplace}/toggle`);
+  return data;
+}
+
+export async function removeOpenDelivery(marketplace: string) {
+  const { data } = await adminApi.delete(`/painel/integracoes/opendelivery/${marketplace}`);
+  return data;
+}
+
 export async function uploadImagem(file: File, tipo: string = "produto") {
   // Obter restaurante_id do localStorage
   const restauranteStr = localStorage.getItem("sf_admin_restaurante");

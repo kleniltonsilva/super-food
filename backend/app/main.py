@@ -20,6 +20,8 @@ init_sentry()
 from .routers import restaurantes, pedidos, site_cliente, carrinho, gps, auth_cliente, auth_restaurante, auth_motoboy, auth_admin, upload, painel
 from .routers import motoboy as motoboy_router
 from .routers import admin as admin_router
+from .routers.integracoes import router as integracoes_router, webhook_router
+from .integrations.manager import integration_manager
 from .database import engine, Base, get_db, SessionLocal
 from . import models
 from .logging_config import setup_logging
@@ -128,6 +130,10 @@ async def lifespan(app: FastAPI):
     # Inicia verificação periódica de entregas atrasadas
     _entrega_task = asyncio.create_task(verificar_entregas_atrasadas(manager))
 
+    # Inicia integration manager (polling marketplaces)
+    integration_manager.set_app(app)
+    await integration_manager.start()
+
     yield
 
     # Shutdown
@@ -141,6 +147,7 @@ async def lifespan(app: FastAPI):
         await manager.stop()
     if hasattr(printer_manager, 'stop'):
         await printer_manager.stop()
+    await integration_manager.stop()
     logger.info("Derekh Food API encerrada")
 
 
@@ -150,9 +157,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Expor WebSocket managers no app.state para uso nos routers
+# Expor WebSocket managers e integration manager no app.state
 app.state.ws_manager = manager
 app.state.printer_manager = printer_manager
+app.state.integration_manager = integration_manager
 
 # ==================== Middlewares ====================
 # Ordem importa: ultimo adicionado = primeiro executado
@@ -252,6 +260,8 @@ app.include_router(auth_admin.router)
 app.include_router(motoboy_router.router)
 app.include_router(admin_router.router)
 app.include_router(painel.router)
+app.include_router(integracoes_router)
+app.include_router(webhook_router)
 
 # ==================== PWA files (manifest, service worker) ====================
 @app.get("/manifest.json")

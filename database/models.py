@@ -537,6 +537,11 @@ class Pedido(Base):
     # Tempo real
     tempo_preparo_real_min = Column(Integer)  # Tempo real de preparo calculado
     mesa_fechada_em = Column(DateTime)        # Quando mesa foi paga/fechada
+    # Marketplace (iFood, 99Food, Rappi, Keeta)
+    marketplace_source = Column(String(30))       # "ifood", "99food", "rappi", "keeta", None
+    marketplace_order_id = Column(String(100))    # ID original do marketplace
+    marketplace_display_id = Column(String(50))   # ID curto para exibição (ex: "iFood #A1B2")
+    marketplace_raw_json = Column(JSON)           # Pedido original completo do marketplace
     # Timestamps
     data_criacao = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -551,6 +556,7 @@ class Pedido(Base):
         Index('idx_pedido_comanda', 'restaurante_id', 'comanda'),
         Index('idx_pedido_cliente', 'cliente_id'),
         Index('idx_pedido_atrasado', 'restaurante_id', 'atrasado'),
+        Index('idx_pedido_marketplace', 'restaurante_id', 'marketplace_source'),
     )
 
 # ==================== ITENS DO PEDIDO ====================
@@ -896,6 +902,56 @@ class DominioPersonalizado(Base):
     __table_args__ = (
         Index('idx_dominio_restaurante', 'restaurante_id'),
         Index('idx_dominio_dominio', 'dominio', unique=True),
+    )
+
+
+# ==================== INTEGRAÇÃO MARKETPLACE ====================
+class IntegracaoMarketplace(Base):
+    """Configuração de integração com marketplace (iFood, 99Food, Rappi, etc)"""
+    __tablename__ = "integracoes_marketplace"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    marketplace = Column(String(30), nullable=False)  # ifood, 99food, rappi, keeta
+    ativo = Column(Boolean, default=False)
+    # Credenciais OAuth
+    client_id = Column(String(200))
+    client_secret = Column(String(200))
+    merchant_id = Column(String(200))
+    # Tokens (renovados automaticamente)
+    access_token = Column(Text)
+    refresh_token = Column(Text)
+    token_expires_at = Column(DateTime)
+    # Configurações extras (JSON)
+    config_json = Column(JSON)
+    # Timestamps
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        UniqueConstraint('restaurante_id', 'marketplace', name='uq_integracao_marketplace'),
+        Index('idx_integracao_restaurante', 'restaurante_id', 'marketplace'),
+        Index('idx_integracao_ativo', 'marketplace', 'ativo'),
+    )
+
+
+class MarketplaceEventLog(Base):
+    """Log de eventos recebidos dos marketplaces (idempotência + debug)"""
+    __tablename__ = "marketplace_event_log"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    marketplace = Column(String(30), nullable=False)
+    event_type = Column(String(50), nullable=False)
+    event_id = Column(String(200), unique=True, nullable=False)  # ID único do evento no marketplace
+    payload_json = Column(JSON)
+    processed = Column(Boolean, default=False)
+    error_message = Column(Text)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_marketplace_event_id', 'event_id', unique=True),
+        Index('idx_marketplace_event_rest', 'restaurante_id', 'marketplace', 'criado_em'),
     )
 
 

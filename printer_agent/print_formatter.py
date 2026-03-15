@@ -117,7 +117,23 @@ def format_full_receipt(data: dict, largura_mm: int = 80, codepage: str = "CP860
     buf += _encode(f" {nome_rest.upper()}\n", codepage)
     buf += BOLD_OFF
     buf += NORMAL_SIZE
+
+    # Badge marketplace (iFood, 99Food, Rappi, Keeta)
+    marketplace = data.get("marketplace_source")
+    if marketplace:
+        buf += BOLD_ON
+        buf += DOUBLE_BOTH
+        buf += _center(f"*** {marketplace.upper()} ***", cols, codepage)
+        buf += NORMAL_SIZE
+        buf += BOLD_OFF
+
     buf += _center(f"Pedido #{data.get('pedido_id', data.get('comanda', '?'))}", cols, codepage)
+
+    # Display ID do marketplace (ex: "iFood #A1B2-C3D4")
+    marketplace_display = data.get("marketplace_display_id")
+    if marketplace_display:
+        buf += _center(marketplace_display, cols, codepage)
+
     if data.get("data_criacao"):
         # Formata data ISO para legível
         from datetime import datetime
@@ -228,7 +244,9 @@ def format_full_receipt(data: dict, largura_mm: int = 80, codepage: str = "CP860
     # ─── Pagamento ───
     buf += _separator(cols)
     pagamento = data.get("forma_pagamento", "Não informado")
-    buf += _line(f"Pagamento: {pagamento.upper()}", cols, codepage)
+    pago_online = marketplace and data.get("pagamento_online", False)
+    sufixo_pag = " (ONLINE - PAGO)" if pago_online else ""
+    buf += _line(f"Pagamento: {pagamento.upper()}{sufixo_pag}", cols, codepage)
     troco = data.get("troco_para")
     if troco and troco > 0:
         buf += _line(f"Troco para: {_format_money(troco)}", cols, codepage)
@@ -281,7 +299,20 @@ def format_sector_receipt(
     buf += _center(setor_labels.get(setor, setor.upper()), cols, codepage)
     buf += BOLD_OFF
     buf += NORMAL_SIZE
+
+    # Badge marketplace
+    marketplace = data.get("marketplace_source")
+    if marketplace:
+        buf += BOLD_ON
+        buf += _center(f"*** {marketplace.upper()} ***", cols, codepage)
+        buf += BOLD_OFF
+
     buf += _center(f"Pedido #{data.get('pedido_id', data.get('comanda', '?'))}", cols, codepage)
+
+    marketplace_display = data.get("marketplace_display_id")
+    if marketplace_display:
+        buf += _center(marketplace_display, cols, codepage)
+
     if data.get("data_criacao"):
         from datetime import datetime
         try:
