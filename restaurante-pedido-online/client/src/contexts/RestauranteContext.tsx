@@ -41,6 +41,9 @@ export interface SiteInfo {
   dias_semana_abertos: string[];
   modo_preco_pizza?: string;
   ingredientes_adicionais_pizza?: Array<{ nome: string; preco: number }>;
+  pedidos_online_ativos: boolean;
+  entregas_ativas: boolean;
+  controle_pedidos_motivo?: string;
 }
 
 interface RestauranteContextType {

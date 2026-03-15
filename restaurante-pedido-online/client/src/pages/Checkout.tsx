@@ -52,7 +52,9 @@ export default function Checkout() {
   const { siteInfo } = useRestaurante();
   const { cliente, isLoggedIn } = useAuth();
 
-  const [deliveryType, setDeliveryType] = useState<DeliveryType>("entrega");
+  const [deliveryType, setDeliveryType] = useState<DeliveryType>(
+    siteInfo?.entregas_ativas === false ? "retirada" : "entrega"
+  );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
 
   // React Query: carrinho (staleTime 30s) e endereços (staleTime 5min)
@@ -229,8 +231,10 @@ export default function Checkout() {
     );
   }
 
-  // Bloquear checkout se restaurante fechado
+  // Bloquear checkout se restaurante fechado ou pedidos online desativados
   const isRestauranteClosed = siteInfo && !siteInfo.status_aberto;
+  const isPedidosDesativados = siteInfo && siteInfo.pedidos_online_ativos === false;
+  const isEntregasDesativadas = siteInfo && siteInfo.entregas_ativas === false;
 
   if (cartItems.length === 0) {
     return (
@@ -325,6 +329,16 @@ export default function Checkout() {
       return;
     }
 
+    if (isPedidosDesativados) {
+      toast.error("Pedidos online estão temporariamente desativados.");
+      return;
+    }
+
+    if (isEntregasDesativadas && deliveryType === "entrega") {
+      toast.error("Entregas estão temporariamente desativadas. Selecione retirada.");
+      return;
+    }
+
     if (siteInfo && siteInfo.pedido_minimo > 0 && subtotal < siteInfo.pedido_minimo) {
       toast.error(`Pedido mínimo: R$ ${siteInfo.pedido_minimo.toFixed(2)}`);
       return;
@@ -413,6 +427,25 @@ export default function Checkout() {
           </div>
         )}
 
+        {isPedidosDesativados && !isRestauranteClosed && (
+          <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+            <p className="font-bold text-amber-400 text-lg mb-1">Pedidos online indisponíveis</p>
+            <p className="text-sm text-amber-300">
+              Pedidos online estão temporariamente desativados.
+              {siteInfo?.controle_pedidos_motivo && <> Motivo: {siteInfo.controle_pedidos_motivo}</>}
+            </p>
+          </div>
+        )}
+
+        {isEntregasDesativadas && !isPedidosDesativados && !isRestauranteClosed && (
+          <div className="mb-6 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
+            <p className="font-bold text-blue-400 text-lg mb-1">Entregas indisponíveis</p>
+            <p className="text-sm text-blue-300">
+              Entregas estão temporariamente desativadas. Apenas retirada no balcão.
+            </p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Formulário */}
           <div className="lg:col-span-2 space-y-5">
@@ -464,22 +497,25 @@ export default function Checkout() {
                 Tipo de Entrega
               </h2>
               <div className="space-y-3">
-                <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-[var(--bg-card-hover)]">
+                <label className={`flex items-center gap-3 p-3 border rounded-lg ${isEntregasDesativadas ? "opacity-50 cursor-not-allowed" : "cursor-pointer hover:bg-[var(--bg-card-hover)]"}`}>
                   <input
                     type="radio"
                     name="delivery"
                     value="entrega"
                     checked={deliveryType === "entrega"}
                     onChange={() => setDeliveryType("entrega")}
+                    disabled={!!isEntregasDesativadas}
                   />
                   <div>
                     <div className="font-bold">Entrega em Casa</div>
                     <div className="text-sm text-muted-foreground">
-                      {calculandoTaxa
-                        ? "Calculando taxa..."
-                        : deliveryFee > 0
-                          ? `Taxa: R$ ${deliveryFee.toFixed(2)} | ${deliveryMsg}`
-                          : `Tempo: ~${siteInfo?.tempo_entrega_estimado || 50} min`}
+                      {isEntregasDesativadas
+                        ? "Entregas temporariamente indisponíveis"
+                        : calculandoTaxa
+                          ? "Calculando taxa..."
+                          : deliveryFee > 0
+                            ? `Taxa: R$ ${deliveryFee.toFixed(2)} | ${deliveryMsg}`
+                            : `Tempo: ~${siteInfo?.tempo_entrega_estimado || 50} min`}
                     </div>
                   </div>
                 </label>
@@ -780,11 +816,11 @@ export default function Checkout() {
 
               <Button
                 onClick={handlePlaceOrder}
-                disabled={isProcessing || !!isRestauranteClosed}
+                disabled={isProcessing || !!isRestauranteClosed || !!isPedidosDesativados}
                 className="w-full py-6 text-lg font-bold text-white disabled:opacity-50"
-                style={{ background: isRestauranteClosed ? undefined : `var(--cor-primaria, #E31A24)` }}
+                style={{ background: (isRestauranteClosed || isPedidosDesativados) ? undefined : `var(--cor-primaria, #E31A24)` }}
               >
-                {isProcessing ? "Processando..." : isRestauranteClosed ? "Restaurante Fechado" : "Confirmar Pedido"}
+                {isProcessing ? "Processando..." : isRestauranteClosed ? "Restaurante Fechado" : isPedidosDesativados ? "Pedidos Indisponíveis" : "Confirmar Pedido"}
               </Button>
 
               <Button variant="outline" className="w-full mt-2" onClick={() => navigate("/cart")} disabled={isProcessing}>

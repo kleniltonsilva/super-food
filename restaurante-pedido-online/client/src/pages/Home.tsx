@@ -229,6 +229,20 @@ export default function Home() {
         </div>
       )}
 
+      {/* Pedidos online desativados */}
+      {siteInfo && !siteInfo.pedidos_online_ativos && (
+        <div className="text-center py-2.5 text-sm font-semibold" style={{ background: "rgba(245, 158, 11, 0.15)", borderBottom: "1px solid rgba(245, 158, 11, 0.3)", color: theme.isDark ? "#FBBF24" : "#92400E" }}>
+          Pedidos online temporariamente indisponíveis{siteInfo.controle_pedidos_motivo ? ` — ${siteInfo.controle_pedidos_motivo}` : ""}
+        </div>
+      )}
+
+      {/* Entregas desativadas */}
+      {siteInfo && siteInfo.pedidos_online_ativos && !siteInfo.entregas_ativas && (
+        <div className="text-center py-2.5 text-sm font-semibold" style={{ background: "rgba(59, 130, 246, 0.1)", borderBottom: "1px solid rgba(59, 130, 246, 0.2)", color: theme.isDark ? "#60A5FA" : "#1E40AF" }}>
+          Entregas temporariamente indisponíveis. Apenas retirada no balcão.
+        </div>
+      )}
+
       {/* ═══════════ Main Content + CartSidebar ═══════════ */}
       <div className="lg:grid lg:grid-cols-[1fr_340px]">
         {/* ── Conteúdo principal ── */}
@@ -341,6 +355,19 @@ export default function Home() {
 
       {/* ═══════════ Footer Temático ═══════════ */}
       <FooterSection />
+
+      {/* ═══════════ WhatsApp FAB ═══════════ */}
+      {siteInfo?.whatsapp_ativo && siteInfo.whatsapp_numero && (
+        <a
+          href={`https://wa.me/${siteInfo.whatsapp_numero.replace(/\D/g, "")}?text=${encodeURIComponent(siteInfo.whatsapp_mensagem_padrao || "Olá!")}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="fixed z-50 w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
+          style={{ bottom: "6rem", right: "1.5rem" }}
+        >
+          <img src="/btn_whatsapp.png" alt="WhatsApp" className="w-14 h-14" />
+        </a>
+      )}
 
       {/* ═══════════ FAB Carrinho (mobile) ═══════════ */}
       <button

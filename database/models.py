@@ -382,6 +382,13 @@ class ConfigRestaurante(Base):
     # Modo de precificação para pizza com múltiplos sabores
     # "mais_caro" = cobra pelo sabor mais caro | "proporcional" = divide proporcionalmente
     modo_preco_pizza = Column(String(20), default='mais_caro')
+    # Horários por dia da semana (JSON string)
+    horarios_por_dia = Column(Text, default=None)
+    # Controle de pedidos online
+    pedidos_online_ativos = Column(Boolean, default=True)
+    entregas_ativas = Column(Boolean, default=True)
+    controle_pedidos_motivo = Column(String(200), default=None)
+    controle_pedidos_ate = Column(DateTime, default=None)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     # Relacionamento
     restaurante = relationship("Restaurante", back_populates="config")

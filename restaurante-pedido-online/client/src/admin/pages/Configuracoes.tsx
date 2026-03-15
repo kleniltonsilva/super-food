@@ -22,11 +22,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Save, Upload, Loader2, AlertTriangle, MapPin } from "lucide-react";
+import { Save, Upload, Loader2, AlertTriangle, MapPin, Copy, Clock } from "lucide-react";
 import InfoTooltip from "@/components/InfoTooltip";
 import { toast } from "sonner";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { autocompleteEndereco } from "@/admin/lib/adminApiClient";
+
+const DIAS_SEMANA = [
+  { key: "segunda", label: "Segunda" },
+  { key: "terca", label: "Terça" },
+  { key: "quarta", label: "Quarta" },
+  { key: "quinta", label: "Quinta" },
+  { key: "sexta", label: "Sexta" },
+  { key: "sabado", label: "Sábado" },
+  { key: "domingo", label: "Domingo" },
+] as const;
+
+type HorarioDia = { ativo: boolean; abertura: string; fechamento: string };
+type HorariosPorDia = Record<string, HorarioDia>;
+
+function criarHorariosPadrao(abertura?: string, fechamento?: string, diasAbertos?: string): HorariosPorDia {
+  const ab = abertura || "18:00";
+  const fe = fechamento || "23:00";
+  const dias = diasAbertos ? diasAbertos.split(",").map(d => d.trim()) : DIAS_SEMANA.map(d => d.key);
+  const result: HorariosPorDia = {};
+  for (const dia of DIAS_SEMANA) {
+    result[dia.key] = { ativo: dias.includes(dia.key), abertura: ab, fechamento: fe };
+  }
+  return result;
+}
 
 export default function Configuracoes() {
   const { data: config, isLoading: loadingConfig, refetch: refetchConfig } = useConfig();
@@ -52,6 +76,19 @@ export default function Configuracoes() {
 
   function handleSaveConfig() {
     const { id, ...payload } = restForm;
+    // Sync horario_abertura/fechamento from horarios_por_dia for backward compatibility
+    const horarios = payload.horarios_por_dia as HorariosPorDia | undefined;
+    if (horarios) {
+      // Use Monday's hours as the general fallback
+      const seg = horarios.segunda;
+      if (seg?.ativo) {
+        payload.horario_abertura = seg.abertura;
+        payload.horario_fechamento = seg.fechamento;
+      }
+      // Build dias_semana_abertos string
+      const diasAtivos = DIAS_SEMANA.filter(d => horarios[d.key]?.ativo).map(d => d.key);
+      payload.dias_semana_abertos = diasAtivos.join(",");
+    }
     atualizarConfig.mutate(payload, {
       onSuccess: () => toast.success("Configurações salvas!"),
       onError: () => toast.error("Erro ao salvar"),
@@ -128,21 +165,84 @@ export default function Configuracoes() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                          Horário Abertura
-                          <InfoTooltip text="Horário de funcionamento exibido no site. Fora do horário, o site mostra 'Fechado' e bloqueia novos pedidos." />
-                        </label>
-                        <Input value={(restForm.horario_abertura as string) || ""} onChange={(e) => updateRest("horario_abertura", e.target.value)} className="dark-input" placeholder="08:00" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                          Horário Fechamento
-                          <InfoTooltip text="Horário em que o site para de aceitar pedidos automaticamente." />
-                        </label>
-                        <Input value={(restForm.horario_fechamento as string) || ""} onChange={(e) => updateRest("horario_fechamento", e.target.value)} className="dark-input" placeholder="23:00" />
-                      </div>
+                    {/* Grade de Horários por Dia da Semana */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        <Clock className="h-4 w-4" />
+                        Horários de Funcionamento
+                        <InfoTooltip text="Configure o horário de abertura e fechamento para cada dia da semana. Dias desativados aparecem como 'Fechado' no site." />
+                      </label>
+                      {(() => {
+                        const horarios: HorariosPorDia = (restForm.horarios_por_dia as HorariosPorDia) ||
+                          criarHorariosPadrao(
+                            restForm.horario_abertura as string,
+                            restForm.horario_fechamento as string,
+                            restForm.dias_semana_abertos as string
+                          );
+
+                        const updateHorario = (diaKey: string, field: keyof HorarioDia, value: unknown) => {
+                          const updated = { ...horarios };
+                          updated[diaKey] = { ...updated[diaKey], [field]: value };
+                          updateRest("horarios_por_dia", updated);
+                        };
+
+                        const aplicarATodos = (diaRef: string) => {
+                          const ref = horarios[diaRef];
+                          if (!ref) return;
+                          const updated = { ...horarios };
+                          for (const dia of DIAS_SEMANA) {
+                            updated[dia.key] = { ...updated[dia.key], abertura: ref.abertura, fechamento: ref.fechamento };
+                          }
+                          updateRest("horarios_por_dia", updated);
+                          toast.success(`Horário de ${DIAS_SEMANA.find(d => d.key === diaRef)?.label} aplicado a todos os dias`);
+                        };
+
+                        return (
+                          <div className="space-y-2">
+                            <div className="grid grid-cols-[1fr_auto_80px_80px_auto] gap-2 items-center text-xs font-medium text-[var(--text-muted)] px-1">
+                              <span>Dia</span>
+                              <span>Ativo</span>
+                              <span>Abertura</span>
+                              <span>Fechamento</span>
+                              <span></span>
+                            </div>
+                            {DIAS_SEMANA.map((dia) => {
+                              const diaH = horarios[dia.key] || { ativo: false, abertura: "", fechamento: "" };
+                              return (
+                                <div key={dia.key} className={`grid grid-cols-[1fr_auto_80px_80px_auto] gap-2 items-center rounded-lg border px-3 py-2 ${diaH.ativo ? "border-[var(--border-subtle)] bg-[var(--bg-card)]" : "border-[var(--border-subtle)] bg-[var(--bg-card)] opacity-50"}`}>
+                                  <span className="text-sm font-medium text-[var(--text-primary)]">{dia.label}</span>
+                                  <Switch
+                                    checked={diaH.ativo}
+                                    onCheckedChange={(v) => updateHorario(dia.key, "ativo", v)}
+                                  />
+                                  <Input
+                                    type="time"
+                                    value={diaH.abertura}
+                                    onChange={(e) => updateHorario(dia.key, "abertura", e.target.value)}
+                                    className="dark-input text-xs h-8"
+                                    disabled={!diaH.ativo}
+                                  />
+                                  <Input
+                                    type="time"
+                                    value={diaH.fechamento}
+                                    onChange={(e) => updateHorario(dia.key, "fechamento", e.target.value)}
+                                    className="dark-input text-xs h-8"
+                                    disabled={!diaH.ativo}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => aplicarATodos(dia.key)}
+                                    className="text-[var(--text-muted)] hover:text-[var(--cor-primaria)] transition-colors"
+                                    title="Aplicar este horário a todos os dias"
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </CardContent>
                 </Card>
@@ -350,6 +450,101 @@ export default function Configuracoes() {
                         </div>
                       )}
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Controle de Pedidos Online */}
+                <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                  <CardHeader>
+                    <CardTitle className="text-[var(--text-primary)]">Controle de Pedidos Online</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Aceitar Pedidos Online
+                        <InfoTooltip text="Quando desativado, nenhum pedido pode ser feito pelo site. O site exibirá aviso de indisponibilidade." />
+                      </label>
+                      <Switch
+                        checked={restForm.pedidos_online_ativos !== false}
+                        onCheckedChange={(v) => updateRest("pedidos_online_ativos", v)}
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Aceitar Entregas
+                        <InfoTooltip text="Quando desativado, apenas retirada no balcão fica disponível. O site bloqueará a opção de entrega." />
+                      </label>
+                      <Switch
+                        checked={restForm.entregas_ativas !== false}
+                        onCheckedChange={(v) => updateRest("entregas_ativas", v)}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Motivo (exibido ao cliente)
+                        <InfoTooltip text="Mensagem opcional exibida no banner de aviso do site quando pedidos ou entregas estiverem desativados." />
+                      </label>
+                      <Input
+                        value={(restForm.controle_pedidos_motivo as string) || ""}
+                        onChange={(e) => updateRest("controle_pedidos_motivo", e.target.value || null)}
+                        className="dark-input"
+                        placeholder="Ex: Estamos em manutenção"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                        Duração
+                        <InfoTooltip text="Indefinido mantém desativado até você reativar manualmente. 'Até data' reativa automaticamente na data/hora especificada." />
+                      </label>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+                          <input
+                            type="radio"
+                            name="duracao_controle"
+                            checked={!restForm.controle_pedidos_ate}
+                            onChange={() => updateRest("controle_pedidos_ate", null)}
+                          />
+                          Indefinido
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-[var(--text-primary)] cursor-pointer">
+                          <input
+                            type="radio"
+                            name="duracao_controle"
+                            checked={!!restForm.controle_pedidos_ate}
+                            onChange={() => {
+                              // Set default: tomorrow same time
+                              const d = new Date();
+                              d.setDate(d.getDate() + 1);
+                              updateRest("controle_pedidos_ate", d.toISOString().slice(0, 16));
+                            }}
+                          />
+                          Até data/hora
+                        </label>
+                        {!!restForm.controle_pedidos_ate && (
+                          <Input
+                            type="datetime-local"
+                            value={typeof restForm.controle_pedidos_ate === "string" ? (restForm.controle_pedidos_ate as string).slice(0, 16) : ""}
+                            onChange={(e) => updateRest("controle_pedidos_ate", e.target.value || null)}
+                            className="dark-input"
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                    {(restForm.pedidos_online_ativos === false || restForm.entregas_ativas === false) && (
+                      <div className="flex items-center gap-2 rounded-md bg-amber-500/10 border border-amber-500/30 px-3 py-2">
+                        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                        <p className="text-xs text-amber-400">
+                          {restForm.pedidos_online_ativos === false
+                            ? "Pedidos online estão desativados. O site exibirá aviso de indisponibilidade."
+                            : "Entregas estão desativadas. Apenas retirada no balcão estará disponível no site."
+                          }
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
 

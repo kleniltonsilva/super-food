@@ -51,7 +51,7 @@ function getPrecoDisplay(produto: Produto): string {
     const min = Math.min(...precos);
     const max = Math.max(...precos);
     if (min === max) return `R$ ${min.toFixed(2)}`;
-    return `R$ ${min.toFixed(2)} ~ R$ ${max.toFixed(2)}`;
+    return `a partir de R$ ${min.toFixed(2)}`;
   }
   if (produto.promocao && produto.preco_promocional) {
     return `R$ ${produto.preco_promocional.toFixed(2)}`;

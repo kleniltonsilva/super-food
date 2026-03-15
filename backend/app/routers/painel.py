@@ -1654,6 +1654,16 @@ def get_config(
         db.commit()
         db.refresh(config)
 
+    import json as _json
+
+    # Parse horarios_por_dia JSON
+    horarios_por_dia = None
+    if config.horarios_por_dia:
+        try:
+            horarios_por_dia = _json.loads(config.horarios_por_dia)
+        except Exception:
+            horarios_por_dia = None
+
     return {
         "id": config.id, "status_atual": config.status_atual,
         "modo_despacho": config.modo_despacho, "raio_entrega_km": config.raio_entrega_km,
@@ -1675,6 +1685,11 @@ def get_config(
         "horario_fechamento": config.horario_fechamento,
         "dias_semana_abertos": config.dias_semana_abertos,
         "modo_preco_pizza": config.modo_preco_pizza,
+        "horarios_por_dia": horarios_por_dia,
+        "pedidos_online_ativos": config.pedidos_online_ativos if config.pedidos_online_ativos is not None else True,
+        "entregas_ativas": config.entregas_ativas if config.entregas_ativas is not None else True,
+        "controle_pedidos_motivo": config.controle_pedidos_motivo,
+        "controle_pedidos_ate": config.controle_pedidos_ate.isoformat() if config.controle_pedidos_ate else None,
         # Localização do restaurante (de Restaurante, não ConfigRestaurante)
         "endereco_completo": rest.endereco_completo,
         "latitude": rest.latitude,
@@ -1698,6 +1713,8 @@ async def atualizar_config(
 
     status_anterior = config.status_atual
 
+    import json as _json
+
     campos_validos = {
         'status_atual', 'modo_despacho', 'raio_entrega_km', 'tempo_medio_preparo',
         'despacho_automatico', 'modo_prioridade_entrega', 'taxa_entrega_base',
@@ -1706,10 +1723,30 @@ async def atualizar_config(
         'permitir_ver_saldo_motoboy', 'permitir_finalizar_fora_raio',
         'distancia_base_motoboy_km', 'aceitar_pedido_site_auto',
         'tolerancia_atraso_min', 'horario_abertura', 'horario_fechamento',
-        'dias_semana_abertos', 'modo_preco_pizza'
+        'dias_semana_abertos', 'modo_preco_pizza',
+        'pedidos_online_ativos', 'entregas_ativas',
+        'controle_pedidos_motivo', 'controle_pedidos_ate'
     }
+
     for campo, valor in dados.items():
-        if campo in campos_validos:
+        if campo == 'horarios_por_dia':
+            # Salvar como JSON string
+            if isinstance(valor, dict):
+                config.horarios_por_dia = _json.dumps(valor)
+            elif valor is None:
+                config.horarios_por_dia = None
+            else:
+                config.horarios_por_dia = str(valor)
+        elif campo == 'controle_pedidos_ate':
+            # Parse ISO datetime string
+            if valor:
+                try:
+                    config.controle_pedidos_ate = datetime.fromisoformat(str(valor).replace('Z', '+00:00'))
+                except (ValueError, TypeError):
+                    config.controle_pedidos_ate = None
+            else:
+                config.controle_pedidos_ate = None
+        elif campo in campos_validos:
             setattr(config, campo, valor)
 
     db.commit()
@@ -1720,8 +1757,9 @@ async def atualizar_config(
 
     # Broadcast WebSocket para o site cliente atualizar em tempo real
     mudou_status = dados.get('status_atual') and dados['status_atual'] != status_anterior
-    mudou_horario = 'horario_abertura' in dados or 'horario_fechamento' in dados
-    if mudou_status or mudou_horario:
+    mudou_horario = 'horario_abertura' in dados or 'horario_fechamento' in dados or 'horarios_por_dia' in dados
+    mudou_pedidos = 'pedidos_online_ativos' in dados or 'entregas_ativas' in dados
+    if mudou_status or mudou_horario or mudou_pedidos:
         ws = getattr(request.app.state, 'ws_manager', None)
         if ws:
             await ws.broadcast({
@@ -1730,6 +1768,9 @@ async def atualizar_config(
                     "status_atual": config.status_atual,
                     "horario_abertura": config.horario_abertura,
                     "horario_fechamento": config.horario_fechamento,
+                    "pedidos_online_ativos": config.pedidos_online_ativos if config.pedidos_online_ativos is not None else True,
+                    "entregas_ativas": config.entregas_ativas if config.entregas_ativas is not None else True,
+                    "controle_pedidos_motivo": config.controle_pedidos_motivo,
                 }
             }, rest.id)
 

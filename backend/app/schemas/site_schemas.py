@@ -32,6 +32,9 @@ class SiteInfoPublic(BaseModel):
     dias_semana_abertos: List[str]
     modo_preco_pizza: Optional[str] = "mais_caro"
     ingredientes_adicionais_pizza: Optional[List[Dict]] = []
+    pedidos_online_ativos: bool = True
+    entregas_ativas: bool = True
+    controle_pedidos_motivo: Optional[str] = None
 
 class CategoriaPublic(BaseModel):
     id: int

@@ -8,12 +8,91 @@ Endpoints para buscar cardápio, validar endereços, etc
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from datetime import datetime
+import json
 import os
 
 from .. import models, database
 from ..schemas import site_schemas
 from ..cache import cache_get, cache_set
 from utils.mapbox_api import autocomplete_address, check_coverage_zone
+
+
+def _calcular_status_aberto(config_rest):
+    """Calcula se o restaurante está aberto considerando horários por dia."""
+    if not config_rest or config_rest.status_atual != 'aberto':
+        return False
+
+    agora = datetime.now()
+    dia_semana_map = {0: 'segunda', 1: 'terca', 2: 'quarta', 3: 'quinta', 4: 'sexta', 5: 'sabado', 6: 'domingo'}
+    dia_atual = dia_semana_map[agora.weekday()]
+
+    if config_rest.horarios_por_dia:
+        try:
+            horarios = json.loads(config_rest.horarios_por_dia)
+        except (json.JSONDecodeError, TypeError):
+            horarios = {}
+        dia_config = horarios.get(dia_atual, {})
+        if not dia_config.get('ativo', False):
+            return False
+        abertura = dia_config.get('abertura', '')
+        fechamento = dia_config.get('fechamento', '')
+    else:
+        # Fallback: horário único
+        if config_rest.dias_semana_abertos:
+            dias = config_rest.dias_semana_abertos.split(',')
+            if dia_atual not in dias:
+                return False
+        abertura = config_rest.horario_abertura or '00:00'
+        fechamento = config_rest.horario_fechamento or '23:59'
+
+    if abertura and fechamento:
+        hora_atual = agora.strftime('%H:%M')
+        return abertura <= hora_atual <= fechamento
+    return True
+
+
+def _get_horario_hoje(config_rest):
+    """Retorna abertura/fechamento do dia atual."""
+    if not config_rest:
+        return "18:00", "23:00"
+
+    agora = datetime.now()
+    dia_semana_map = {0: 'segunda', 1: 'terca', 2: 'quarta', 3: 'quinta', 4: 'sexta', 5: 'sabado', 6: 'domingo'}
+    dia_atual = dia_semana_map[agora.weekday()]
+
+    if config_rest.horarios_por_dia:
+        try:
+            horarios = json.loads(config_rest.horarios_por_dia)
+        except (json.JSONDecodeError, TypeError):
+            horarios = {}
+        dia_config = horarios.get(dia_atual, {})
+        return dia_config.get('abertura', ''), dia_config.get('fechamento', '')
+
+    return config_rest.horario_abertura or '18:00', config_rest.horario_fechamento or '23:00'
+
+
+def _verificar_controle_pedidos(config_rest, db):
+    """Verifica e auto-reativa controle de pedidos se expirou."""
+    if not config_rest:
+        return True, True, None
+
+    pedidos_ativos = config_rest.pedidos_online_ativos if config_rest.pedidos_online_ativos is not None else True
+    entregas_ativas = config_rest.entregas_ativas if config_rest.entregas_ativas is not None else True
+    motivo = config_rest.controle_pedidos_motivo
+
+    # Auto-reativar se controle_pedidos_ate expirou
+    if config_rest.controle_pedidos_ate and config_rest.controle_pedidos_ate <= datetime.now():
+        config_rest.pedidos_online_ativos = True
+        config_rest.entregas_ativas = True
+        config_rest.controle_pedidos_motivo = None
+        config_rest.controle_pedidos_ate = None
+        db.commit()
+        pedidos_ativos = True
+        entregas_ativas = True
+        motivo = None
+
+    return pedidos_ativos, entregas_ativas, motivo
 
 router = APIRouter(prefix="/site", tags=["Site do Cliente"])
 
@@ -52,6 +131,11 @@ def get_site_info(
         models.ConfigRestaurante.restaurante_id == restaurante.id
     ).first()
     
+    # Calcular status e horários usando funções helper
+    horario_abertura, horario_fechamento = _get_horario_hoje(config_rest)
+    status_aberto = _calcular_status_aberto(config_rest)
+    pedidos_online_ativos, entregas_ativas, controle_motivo = _verificar_controle_pedidos(config_rest, db)
+
     result = {
         "restaurante_id": restaurante.id,
         "codigo_acesso": restaurante.codigo_acesso,
@@ -74,12 +158,15 @@ def get_site_info(
         "aceita_pix": site_config.aceita_pix,
         "aceita_vale_refeicao": site_config.aceita_vale_refeicao,
         "aceita_agendamento": site_config.aceita_agendamento,
-        "status_aberto": config_rest.status_atual == 'aberto' if config_rest else False,
-        "horario_abertura": config_rest.horario_abertura if config_rest else "18:00",
-        "horario_fechamento": config_rest.horario_fechamento if config_rest else "23:00",
-        "dias_semana_abertos": config_rest.dias_semana_abertos.split(',') if config_rest else [],
+        "status_aberto": status_aberto,
+        "horario_abertura": horario_abertura,
+        "horario_fechamento": horario_fechamento,
+        "dias_semana_abertos": config_rest.dias_semana_abertos.split(',') if config_rest and config_rest.dias_semana_abertos else [],
         "modo_preco_pizza": config_rest.modo_preco_pizza if config_rest else "mais_caro",
         "ingredientes_adicionais_pizza": site_config.ingredientes_adicionais_pizza or [],
+        "pedidos_online_ativos": pedidos_online_ativos,
+        "entregas_ativas": entregas_ativas,
+        "controle_pedidos_motivo": controle_motivo,
     }
     cache_set(cache_key, result, ttl_seconds=300)  # 5 min
     return result
