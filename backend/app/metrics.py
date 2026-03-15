@@ -1,7 +1,7 @@
 # backend/app/metrics.py
 
 """
-Metricas de Performance - Super Food API
+Metricas de Performance - Derekh Food API
 Contadores in-memory para monitoramento basico
 """
 

@@ -1,5 +1,5 @@
 # =============================================================================
-# Super Food API - Dockerfile Multi-Stage
+# Derekh Food API - Dockerfile Multi-Stage
 # Stage 1: Build React | Stage 2: Python API
 # =============================================================================
 

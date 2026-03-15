@@ -1,6 +1,6 @@
 # ESTRUTURA.md — Arvore de Pastas e Fluxo de Dados
 
-Documento gerado em 10/02/2026. Descreve a estrutura completa do projeto Super Food com descricao de cada pasta/arquivo e diagramas de fluxo de dados.
+Documento gerado em 10/02/2026. Descreve a estrutura completa do projeto Derekh Food com descricao de cada pasta/arquivo e diagramas de fluxo de dados.
 
 ---
 

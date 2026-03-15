@@ -29,7 +29,7 @@ export default function SuperAdminTopbar({ onToggleSidebar }: Props) {
           <Menu className="h-5 w-5" />
         </Button>
         <h1 className="text-lg font-semibold text-white max-sm:hidden">
-          Super Admin - Super Food
+          Super Admin - Derekh Food
         </h1>
       </div>
 

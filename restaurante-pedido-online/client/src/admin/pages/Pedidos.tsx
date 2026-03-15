@@ -9,7 +9,9 @@ import {
   useDashboard,
   useEntregasAtivas,
   useConfig,
+  useMesas,
 } from "@/admin/hooks/useAdminQueries";
+import MesasGrid from "@/admin/components/MesasGrid";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,7 +122,9 @@ export default function Pedidos() {
   const cancelar = useCancelarPedido();
   const despachar = useDespacharPedido();
   const { data: configData } = useConfig();
+  const { data: mesasData } = useMesas();
   const modoDespacho = configData?.modo_prioridade_entrega || "rapido_economico";
+  const mesasAbertas = mesasData?.total_abertas || 0;
 
   const pedidos = data?.pedidos || [];
   const entregas = entregasData?.entregas || [];
@@ -347,6 +351,14 @@ export default function Pedidos() {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="ativos">Ativos</TabsTrigger>
+            <TabsTrigger value="mesas" className="gap-1.5">
+              Mesas
+              {mesasAbertas > 0 && (
+                <Badge className="bg-red-500/20 text-red-400 border-red-500/30 border text-[10px] px-1.5 py-0 ml-1">
+                  {mesasAbertas}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="historico">Histórico</TabsTrigger>
           </TabsList>
 
@@ -396,6 +408,10 @@ export default function Pedidos() {
               getTempoDesde={getTempoDesde}
               modoDespacho={modoDespacho}
             />
+          </TabsContent>
+
+          <TabsContent value="mesas">
+            <MesasGrid />
           </TabsContent>
 
           <TabsContent value="historico">

@@ -18,6 +18,8 @@ import { Loader2, ArrowLeft, CheckCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { tiposRestaurante } from "@/config/themeConfig";
 import InfoTooltip from "@/components/InfoTooltip";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
+import { autocompleteEndereco } from "@/superadmin/lib/superAdminApiClient";
 
 const PLANOS = [
   { nome: "Básico", valor: 199.0, motoboys: 3, descricao: "Ideal para pequenos restaurantes - até 3 motoboys simultâneos" },
@@ -275,11 +277,13 @@ export default function NovoRestaurante() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-300">Endereço Completo *</label>
-                <Textarea
-                  placeholder="Rua Augusta 123, Bairro Centro, São Paulo, SP, Brasil, CEP 01000-000"
+                <AddressAutocomplete
                   value={form.endereco_completo}
-                  onChange={(e) => updateField("endereco_completo", e.target.value)}
+                  onChange={(v) => updateField("endereco_completo", v)}
+                  fetchSuggestions={autocompleteEndereco}
+                  placeholder="Rua Augusta 123, Bairro Centro, São Paulo, SP, Brasil, CEP 01000-000"
                   className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                  multiline
                   rows={2}
                 />
               </div>

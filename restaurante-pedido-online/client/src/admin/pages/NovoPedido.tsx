@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/dialog";
 import { ArrowLeft, Plus, Minus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
+import { autocompleteEndereco } from "@/admin/lib/adminApiClient";
 
 interface ItemVariacao {
   tipo: string;
@@ -45,11 +47,15 @@ export default function NovoPedido() {
   const { data: produtos } = useProdutos();
   const { data: categorias } = useCategorias();
 
-  const [tipoEntrega, setTipoEntrega] = useState("retirada");
-  const [clienteNome, setClienteNome] = useState("");
+  // Parsear ?mesa=X da URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const mesaParam = urlParams.get("mesa");
+
+  const [tipoEntrega, setTipoEntrega] = useState(mesaParam ? "mesa" : "retirada");
+  const [clienteNome, setClienteNome] = useState(mesaParam ? `Mesa ${mesaParam}` : "");
   const [clienteTelefone, setClienteTelefone] = useState("");
   const [enderecoEntrega, setEnderecoEntrega] = useState("");
-  const [numeroMesa, setNumeroMesa] = useState("");
+  const [numeroMesa, setNumeroMesa] = useState(mesaParam || "");
   const [formaPagamento, setFormaPagamento] = useState("");
   const [trocoPara, setTrocoPara] = useState("");
   const [tempoEstimado, setTempoEstimado] = useState("");
@@ -378,11 +384,12 @@ export default function NovoPedido() {
                 {tipoEntrega === "entrega" && (
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-[var(--text-muted)]">Endereço *</label>
-                    <Textarea
+                    <AddressAutocomplete
                       value={enderecoEntrega}
-                      onChange={(e) => setEnderecoEntrega(e.target.value)}
-                      className="dark-input"
+                      onChange={setEnderecoEntrega}
+                      fetchSuggestions={autocompleteEndereco}
                       placeholder="Rua, número, bairro..."
+                      multiline
                       rows={2}
                     />
                   </div>

@@ -1,4 +1,4 @@
-# Super Food - Plataforma SaaS para Gestao de Restaurantes
+# Derekh Food - Plataforma SaaS para Gestao de Restaurantes
 
 **AVISO DE LICENCA - IMPORTANTE**
 Este repositorio NAO e open source. O codigo e PROPRIETARIO E CONFIDENCIAL.
@@ -11,7 +11,7 @@ Sistema multi-tenant completo para gestao de restaurantes com entregas inteligen
 
 ## Visao Geral
 
-O Super Food e composto por **5 aplicacoes principais**, todas em React + FastAPI:
+O Derekh Food e composto por **5 aplicacoes principais**, todas em React + FastAPI:
 
 | Aplicacao | Tecnologia | Rota | Descricao |
 |-----------|------------|------|-----------|

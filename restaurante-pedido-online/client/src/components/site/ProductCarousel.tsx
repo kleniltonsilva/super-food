@@ -30,6 +30,7 @@ interface Produto {
   destaque: boolean;
   promocao: boolean;
   categoria_id: number;
+  eh_pizza?: boolean;
   variacoes: Variacao[];
 }
 

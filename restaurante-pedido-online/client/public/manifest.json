@@ -1,7 +1,7 @@
 {
-  "name": "Super Food Entregador",
+  "name": "Derekh Food Entregador",
   "short_name": "Entregador",
-  "description": "App de entregas Super Food",
+  "description": "App de entregas Derekh Food",
   "start_url": "/entregador",
   "scope": "/entregador",
   "display": "standalone",

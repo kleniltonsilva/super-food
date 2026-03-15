@@ -76,7 +76,7 @@ def main():
     prod_mode = "--prod" in sys.argv
 
     print("=" * 60)
-    print("🍕 SUPER FOOD v4.0 - Sistema de Produção")
+    print("🍕 DEREKH FOOD v4.0 - Sistema de Produção")
     print("=" * 60)
     print()
 

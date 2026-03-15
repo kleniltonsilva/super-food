@@ -1,5 +1,5 @@
 """
-Database Configuration - Super Food API
+Database Configuration - Derekh Food API
 Suporta SQLite (dev) e PostgreSQL (producao)
 """
 from sqlalchemy import create_engine

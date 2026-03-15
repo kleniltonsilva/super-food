@@ -109,7 +109,7 @@ export default function SuperAdminSidebar({ open, onClose }: Props) {
         {/* Footer */}
         <div className="border-t border-gray-800 p-3">
           <p className="text-center text-xs text-gray-500">
-            Super Food v4.0
+            Derekh Food v4.0
           </p>
         </div>
       </aside>

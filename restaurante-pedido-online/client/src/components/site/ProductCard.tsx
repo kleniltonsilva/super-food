@@ -34,6 +34,7 @@ interface Produto {
   destaque: boolean;
   promocao: boolean;
   categoria_id: number;
+  eh_pizza?: boolean;
   variacoes: Variacao[];
 }
 
@@ -61,8 +62,11 @@ function getPrecoDisplay(produto: Produto): string {
 export default function ProductCard({ produto, emoji, onPizzaBuilderOpen }: ProductCardProps) {
   const theme = useRestauranteTheme();
 
-  // Abre o PizzaBuilder para todos os produtos quando é pizzaria
-  const hasPizzaBuilder = !!onPizzaBuilderOpen;
+  // Abre PizzaBuilder apenas para produtos marcados como pizza (eh_pizza flag)
+  const hasPizzaBuilder = !!onPizzaBuilderOpen && (
+    produto.eh_pizza ||
+    produto.variacoes.some(v => (v.max_sabores || 0) > 1)
+  );
 
   const cardStyle: React.CSSProperties = {
     background: theme.colors.cardBg,

@@ -134,7 +134,7 @@ export default function FooterSection() {
         </div>
 
         <div className="mt-8 pt-6 text-center text-xs" style={{ borderTop: `1px solid ${footerBorderColor}`, color: footerMutedColor }}>
-          &copy; {new Date().getFullYear()} {nomeRestaurante} - Powered by Super Food
+          &copy; {new Date().getFullYear()} {nomeRestaurante} - Powered by Derekh Food
         </div>
       </div>
     </footer>

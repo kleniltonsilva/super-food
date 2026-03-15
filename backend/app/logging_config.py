@@ -1,7 +1,7 @@
 # backend/app/logging_config.py
 
 """
-Logging Configuration - Super Food API
+Logging Configuration - Derekh Food API
 Dev: console colorido | Prod: JSON stdout (Docker coleta)
 """
 

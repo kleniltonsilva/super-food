@@ -1,4 +1,4 @@
-# CLAUDE.md — Super Food
+# CLAUDE.md — Derekh Food
 
 ## REGRAS
 

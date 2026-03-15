@@ -1,4 +1,4 @@
-// Service Worker — Super Food Entregador PWA
+// Service Worker — Derekh Food Entregador PWA
 const CACHE_NAME = "sf-entregador-v1";
 const PRECACHE_URLS = [
   "/entregador",

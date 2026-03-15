@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# Super Food - Script de Deploy
+# Derekh Food - Script de Deploy
 # Uso: ./scripts/deploy.sh [dev|prod]
 # =============================================================================
 
@@ -11,7 +11,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_DIR"
 
 echo "========================================="
-echo " Super Food - Deploy ($MODE)"
+echo " Derekh Food - Deploy ($MODE)"
 echo "========================================="
 
 if [ "$MODE" = "prod" ]; then

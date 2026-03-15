@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Seed super admin: {e}")
 
-    logger.info("Super Food API iniciada")
+    logger.info("Derekh Food API iniciada")
 
     # Inicia WebSocket manager (Redis Pub/Sub se disponivel)
     if hasattr(manager, 'start'):
@@ -131,11 +131,11 @@ async def lifespan(app: FastAPI):
             pass
     if hasattr(manager, 'stop'):
         await manager.stop()
-    logger.info("Super Food API encerrada")
+    logger.info("Derekh Food API encerrada")
 
 
 app = FastAPI(
-    title="Super Food API - SaaS Multi-Tenant",
+    title="Derekh Food API - SaaS Multi-Tenant",
     version="4.0.0",
     lifespan=lifespan,
 )

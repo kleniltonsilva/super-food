@@ -1,7 +1,7 @@
 """
 Seed: Criar planos de assinatura padrão.
 
-Super Food SaaS - Sistema de Inicialização de Dados
+Derekh Food SaaS - Sistema de Inicialização de Dados
 
 Planos disponíveis:
 - Básico: Para pequenos restaurantes

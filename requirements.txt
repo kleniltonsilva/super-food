@@ -1,5 +1,5 @@
 # ============================================
-# SUPER FOOD - Dependências do Sistema
+# DEREKH FOOD - Dependências do Sistema
 # Versão: 2.0 (SQLAlchemy Multi-Tenant)
 # ============================================
 

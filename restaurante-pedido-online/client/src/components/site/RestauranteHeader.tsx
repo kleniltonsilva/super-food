@@ -27,6 +27,7 @@ export default function RestauranteHeader({ cartCount, busca, onBuscaChange }: R
   const theme = useRestauranteTheme();
   const { cliente, isLoggedIn, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const nomeRestaurante = siteInfo?.nome_fantasia || "Restaurante";
   const isDark = theme.isDark;
@@ -182,11 +183,58 @@ export default function RestauranteHeader({ cartCount, busca, onBuscaChange }: R
             </Link>
           </div>
 
-          {/* Mobile Menu Button */}
-          <button className="md:hidden" style={{ color: textColor }} onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
-            {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
+          {/* Mobile: Lupa + Menu */}
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              style={{ color: textColor }}
+              onClick={() => { setMobileSearchOpen(!mobileSearchOpen); setMobileMenuOpen(false); }}
+              aria-label="Buscar"
+            >
+              <Search className="w-5 h-5" />
+            </button>
+            <button style={{ color: textColor }} onClick={() => { setMobileMenuOpen(!mobileMenuOpen); setMobileSearchOpen(false); }}>
+              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Search Bar */}
+        {mobileSearchOpen && (
+          <div
+            className="md:hidden px-4 py-2"
+            style={{
+              background: theme.colors.headerBg,
+              borderTop: `1px solid ${isDark ? "rgba(255,255,255,0.08)" : "#e8e8e8"}`,
+            }}
+          >
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: mutedColor }} />
+              <input
+                type="text"
+                value={busca}
+                onChange={e => onBuscaChange(e.target.value)}
+                placeholder="Buscar produto..."
+                autoFocus
+                className="pl-9 pr-9 py-2 text-sm w-full rounded-full focus:outline-none focus:ring-1"
+                style={{
+                  background: inputBg,
+                  border: `1px solid ${inputBorder}`,
+                  color: textColor,
+                  ["--tw-ring-color" as string]: theme.colors.primary,
+                }}
+              />
+              {busca && (
+                <button
+                  className="absolute right-3 top-1/2 -translate-y-1/2"
+                  style={{ color: mutedColor }}
+                  onClick={() => onBuscaChange("")}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (

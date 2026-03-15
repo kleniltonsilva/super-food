@@ -61,7 +61,7 @@ export default function MotoboyLayout({ children, hideNav }: MotoboyLayoutProps)
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Package className="h-5 w-5 text-green-500" />
-            <span className="text-sm font-semibold">Super Food</span>
+            <span className="text-sm font-semibold">Derekh Food</span>
           </div>
           {motoboy && (
             <div className="flex items-center gap-2">

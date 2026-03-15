@@ -12,6 +12,7 @@ export type WsEventTipo =
   | "entrega_finalizada"
   | "tempo_ajustado"
   | "motoboy_posicao"
+  | "mesa_paga"
   | "ping";
 
 export interface WsEvent {
@@ -148,6 +149,7 @@ export function useWebSocket({
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.mesas });
           if (habilitarSom) tocarSomNotificacao();
           if (habilitarNotificacaoSistema) {
             notificarSistema("Novo Pedido!", "Você recebeu um novo pedido.");
@@ -157,6 +159,7 @@ export function useWebSocket({
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.mesas });
           break;
         case "pedido_despachado":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
@@ -170,6 +173,7 @@ export function useWebSocket({
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.entregasAtivas });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.mesas });
           if (habilitarSom) tocarSomCancelamento();
           if (habilitarNotificacaoSistema) {
             notificarSistema("Pedido Cancelado", "Um pedido foi cancelado.");
@@ -192,6 +196,13 @@ export function useWebSocket({
         case "tempo_ajustado":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configSite });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
+          break;
+        case "mesa_paga":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.mesas });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.caixaAtual });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+          if (habilitarSom) tocarSomDespacho();
           break;
         case "motoboy_posicao":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.motoboys });

@@ -72,7 +72,7 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
         <div className="flex flex-col border-b border-[var(--border-subtle)]">
           <div className="flex h-16 items-center justify-between px-4">
             <span className="text-lg font-bold text-[var(--text-primary)] truncate">
-              {restaurante?.nome || "Super Food"}
+              {restaurante?.nome || "Derekh Food"}
             </span>
             <Button
               variant="ghost"
@@ -139,7 +139,7 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
         {/* Footer */}
         <div className="border-t border-[var(--border-subtle)] p-3">
           <p className="text-center text-xs text-[var(--text-muted)]">
-            Super Food v4.0
+            Derekh Food v4.0
           </p>
         </div>
       </aside>

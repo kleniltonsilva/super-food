@@ -26,6 +26,8 @@ import { Save, Upload, Loader2, AlertTriangle, MapPin, Eye, Plus, Trash2 } from 
 import InfoTooltip from "@/components/InfoTooltip";
 import { toast } from "sonner";
 import { getThemeConfig, tiposRestaurante } from "@/config/themeConfig";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
+import { autocompleteEndereco } from "@/admin/lib/adminApiClient";
 
 export default function Configuracoes() {
   const { data: config, isLoading: loadingConfig, refetch: refetchConfig } = useConfig();
@@ -404,11 +406,12 @@ export default function Configuracoes() {
                         Endereço Completo
                         <InfoTooltip text="Endereço do restaurante. Ao geocodificar, converte em coordenadas GPS usadas para calcular distâncias e taxas de entrega." />
                       </label>
-                      <Textarea
+                      <AddressAutocomplete
                         value={(restForm.endereco_completo as string) || ""}
-                        onChange={(e) => updateRest("endereco_completo", e.target.value)}
-                        className="dark-input"
+                        onChange={(v) => updateRest("endereco_completo", v)}
+                        fetchSuggestions={autocompleteEndereco}
                         placeholder="Rua, número, bairro, cidade - UF"
+                        multiline
                         rows={3}
                       />
                     </div>
@@ -520,7 +523,7 @@ export default function Configuracoes() {
                             </div>
                             {/* Mini footer */}
                             <div className="px-3 py-1.5" style={{ background: previewTheme.colors.footerBg, borderTop: previewTheme.footerBorderTop || undefined }}>
-                              <span className="text-[8px]" style={{ color: previewTheme.isDark ? "rgba(255,255,255,0.5)" : previewTheme.colors.textMuted }}>Powered by Super Food</span>
+                              <span className="text-[8px]" style={{ color: previewTheme.isDark ? "rgba(255,255,255,0.5)" : previewTheme.colors.textMuted }}>Powered by Derekh Food</span>
                             </div>
                           </div>
                           <p className="text-[10px] text-[var(--text-muted)]">{previewTheme.mood} — {previewTheme.isDark ? "Tema escuro" : "Tema claro"}</p>

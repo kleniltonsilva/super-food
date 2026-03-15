@@ -1,7 +1,7 @@
 # backend/app/storage.py
 
 """
-Storage Abstraction - Super Food API
+Storage Abstraction - Derekh Food API
 Local filesystem (dev) ou Cloudflare R2/S3 (producao)
 """
 

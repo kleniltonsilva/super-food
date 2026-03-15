@@ -116,6 +116,12 @@ export async function getAnalytics(params?: { periodo?: string }) {
   return data;
 }
 
+// ─── Autocomplete Endereço ─────────────────────────────
+export async function autocompleteEndereco(query: string) {
+  const { data } = await superAdminApi.get("/api/admin/autocomplete-endereco", { params: { query } });
+  return data;
+}
+
 // ─── Inadimplentes ─────────────────────────────────────
 export async function getInadimplentes(dias_tolerancia?: number) {
   const { data } = await superAdminApi.get("/api/admin/inadimplentes", {

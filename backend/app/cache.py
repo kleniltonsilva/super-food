@@ -1,7 +1,7 @@
 # backend/app/cache.py
 
 """
-Redis Cache - Super Food API
+Redis Cache - Derekh Food API
 Best-effort: se Redis cair, app continua funcionando
 """
 

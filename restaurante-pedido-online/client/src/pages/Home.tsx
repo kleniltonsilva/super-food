@@ -46,6 +46,7 @@ interface Produto {
   destaque: boolean;
   promocao: boolean;
   categoria_id: number;
+  eh_pizza?: boolean;
   variacoes: Variacao[];
 }
 
@@ -64,9 +65,6 @@ export default function Home() {
   const [cartOpen, setCartOpen] = useState(false);
   const [pizzaBuilderId, setPizzaBuilderId] = useState<number | null>(null);
   const { needsVerification, confirmAge } = useAgeVerification(siteInfo?.tipo_restaurante || "");
-
-  // Habilita PizzaBuilder apenas para pizzarias
-  const isPizzaria = (siteInfo?.tipo_restaurante || "").toLowerCase().includes("pizza");
 
   // React Query
   const { data: categorias = [], isLoading: loadingCat } = useCategorias();
@@ -311,7 +309,7 @@ export default function Home() {
                   <ProductCarousel
                     produtos={produtos}
                     getEmoji={getEmoji}
-                    onPizzaBuilderOpen={isPizzaria ? setPizzaBuilderId : undefined}
+                    onPizzaBuilderOpen={setPizzaBuilderId}
                   />
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-4">
@@ -320,7 +318,7 @@ export default function Home() {
                         key={produto.id}
                         produto={produto}
                         emoji={getEmoji(produto)}
-                        onPizzaBuilderOpen={isPizzaria ? setPizzaBuilderId : undefined}
+                        onPizzaBuilderOpen={setPizzaBuilderId}
                       />
                     ))}
                   </div>

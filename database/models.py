@@ -1,6 +1,6 @@
 # database/models.py
 """ 
-Database Models - Super Food SaaS
+Database Models - Derekh Food SaaS
 Todos os models com suporte multi-tenant (tenant_id = restaurante_id)
 VERSÃO 2.7: Adiciona schema completo do Site do Cliente (4ª cabeça)
 """

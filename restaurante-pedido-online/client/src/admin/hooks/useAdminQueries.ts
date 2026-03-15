@@ -27,6 +27,7 @@ export const ADMIN_QUERY_KEYS = {
   relatorioProdutos: ["admin", "relatorios", "produtos"] as const,
   entregasAtivas: ["admin", "entregas", "ativas"] as const,
   diagnosticoTempo: ["admin", "entregas", "diagnostico-tempo"] as const,
+  mesas: ["admin", "mesas"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -604,6 +605,51 @@ export function useAjustarTempo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configSite });
+    },
+  });
+}
+
+// ─── Mesas ────────────────────────────────────────────
+export function useMesas() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.mesas,
+    queryFn: api.getMesas,
+    staleTime: 10 * 1000,
+    refetchInterval: 30 * 1000,
+  });
+}
+
+export function usePagarMesa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ numero_mesa, forma_pagamento }: { numero_mesa: string; forma_pagamento?: string }) =>
+      api.pagarMesa(numero_mesa, forma_pagamento),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.mesas });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.caixaAtual });
+    },
+  });
+}
+
+export function useAdicionarPedidoMesa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      numero_mesa,
+      ...payload
+    }: {
+      numero_mesa: string;
+      itens: string;
+      valor_total: number;
+      observacoes?: string;
+      forma_pagamento?: string;
+    }) => api.adicionarPedidoMesa(numero_mesa, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.mesas });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
     },
   });
 }

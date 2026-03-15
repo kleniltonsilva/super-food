@@ -1,7 +1,7 @@
 """
 Seed: Criar super administrador padrão.
 
-Super Food SaaS - Sistema de Inicialização de Dados
+Derekh Food SaaS - Sistema de Inicialização de Dados
 """
 
 import os

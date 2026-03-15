@@ -63,16 +63,18 @@ export const QUERY_KEYS = {
 // =============================================================================
 
 /**
- * Informações do restaurante (nome, logo, cores, horário, etc).
- * staleTime: 60 min — raramente muda, e quando muda não é crítico.
- * gcTime: 120 min — mantém em memória por 2 horas.
+ * Informações do restaurante (nome, logo, cores, horário, status, etc).
+ * staleTime: 2 min — status aberto/fechado precisa refletir rápido.
+ * WebSocket invalida instantaneamente via evento config_atualizada.
+ * refetchInterval: 5 min — fallback caso WebSocket desconecte.
  */
 export function useSiteInfo() {
   return useQuery({
     queryKey: QUERY_KEYS.siteInfo,
     queryFn: getSiteInfo,
-    staleTime: 60 * 60 * 1000,     // 60 min
-    gcTime: 120 * 60 * 1000,       // 120 min
+    staleTime: 2 * 60 * 1000,      // 2 min
+    gcTime: 10 * 60 * 1000,        // 10 min
+    refetchInterval: 5 * 60 * 1000, // 5 min polling fallback
   });
 }
 

@@ -53,7 +53,7 @@ export default function SuperAdminLogin() {
             Super Admin
           </CardTitle>
           <p className="text-sm text-gray-400">
-            Sistema de Gerenciamento - Super Food
+            Sistema de Gerenciamento - Derekh Food
           </p>
         </CardHeader>
         <CardContent>

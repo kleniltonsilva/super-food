@@ -1,5 +1,5 @@
 #!/bin/bash
-# Super Food v4.0 - Script de inicialização
+# Derekh Food v4.0 - Script de inicialização
 # Uso: ./start_services.sh [--api-only|--build-react]
 
 set -e
@@ -15,7 +15,7 @@ pkill -9 -f "uvicorn backend" 2>/dev/null || true
 sleep 2
 
 echo "============================================================"
-echo "   SUPER FOOD v4.0 - Iniciando Sistema"
+echo "   DEREKH FOOD v4.0 - Iniciando Sistema"
 echo "============================================================"
 
 # Build do React (se solicitado ou se não existir)

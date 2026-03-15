@@ -404,6 +404,33 @@ export async function getAnalyticsAvancado(params: { periodo?: string; senha: st
   return data;
 }
 
+// ─── Autocomplete Endereço ─────────────────────────────
+export async function autocompleteEndereco(query: string) {
+  const { data } = await adminApi.get("/painel/autocomplete-endereco", { params: { query } });
+  return data;
+}
+
+// ─── Mesas ────────────────────────────────────────────
+export async function getMesas() {
+  const { data } = await adminApi.get("/painel/mesas");
+  return data;
+}
+
+export async function pagarMesa(numero_mesa: string, forma_pagamento?: string) {
+  const { data } = await adminApi.post(`/painel/mesas/${encodeURIComponent(numero_mesa)}/pagar`, {
+    forma_pagamento,
+  });
+  return data;
+}
+
+export async function adicionarPedidoMesa(
+  numero_mesa: string,
+  payload: { itens: string; valor_total: number; observacoes?: string; forma_pagamento?: string }
+) {
+  const { data } = await adminApi.post(`/painel/mesas/${encodeURIComponent(numero_mesa)}/pedido`, payload);
+  return data;
+}
+
 // ─── Upload ────────────────────────────────────────────
 export async function uploadImagem(file: File, tipo: string = "produto") {
   // Obter restaurante_id do localStorage

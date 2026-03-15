@@ -1683,8 +1683,9 @@ def get_config(
 
 
 @router.put("/config")
-def atualizar_config(
+async def atualizar_config(
     dados: dict,
+    request: Request,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
@@ -1694,6 +1695,8 @@ def atualizar_config(
     if not config:
         config = models.ConfigRestaurante(restaurante_id=rest.id)
         db.add(config)
+
+    status_anterior = config.status_atual
 
     campos_validos = {
         'status_atual', 'modo_despacho', 'raio_entrega_km', 'tempo_medio_preparo',
@@ -1710,6 +1713,26 @@ def atualizar_config(
             setattr(config, campo, valor)
 
     db.commit()
+
+    # Invalidar cache do site para que mudanças reflitam imediatamente
+    from ..cache import cache_delete_pattern
+    cache_delete_pattern(f"site:{rest.codigo_acesso}:*")
+
+    # Broadcast WebSocket para o site cliente atualizar em tempo real
+    mudou_status = dados.get('status_atual') and dados['status_atual'] != status_anterior
+    mudou_horario = 'horario_abertura' in dados or 'horario_fechamento' in dados
+    if mudou_status or mudou_horario:
+        ws = getattr(request.app.state, 'ws_manager', None)
+        if ws:
+            await ws.broadcast({
+                "tipo": "config_atualizada",
+                "dados": {
+                    "status_atual": config.status_atual,
+                    "horario_abertura": config.horario_abertura,
+                    "horario_fechamento": config.horario_fechamento,
+                }
+            }, rest.id)
+
     return {"mensagem": "Configurações atualizadas"}
 
 
@@ -1746,8 +1769,9 @@ def get_site_config(
 
 
 @router.put("/config/site")
-def atualizar_site_config(
+async def atualizar_site_config(
     dados: dict,
+    request: Request,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
@@ -1773,6 +1797,20 @@ def atualizar_site_config(
             setattr(sc, campo, valor)
 
     db.commit()
+
+    # Invalidar cache do site
+    from ..cache import cache_delete_pattern
+    cache_delete_pattern(f"site:{rest.codigo_acesso}:*")
+    cache_delete_pattern(f"cardapio:{rest.codigo_acesso}:*")
+
+    # Broadcast para clientes atualizarem
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "config_atualizada",
+            "dados": {"tipo": "site"}
+        }, rest.id)
+
     return {"mensagem": "Configurações do site atualizadas"}
 
 
@@ -2889,3 +2927,249 @@ def relatorio_analytics(
         # Previsão
         "previsao_proximos_3_meses": previsao_proximos_3_meses,
     }
+
+
+# ============================================================
+# AUTOCOMPLETE ENDEREÇO
+# ============================================================
+
+@router.get("/autocomplete-endereco")
+def painel_autocomplete_endereco(
+    query: str = Query(..., min_length=3),
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Autocomplete de endereço via Mapbox, com proximidade do restaurante."""
+    from utils.mapbox_api import autocomplete_address
+
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+
+    proximity = None
+    if config and config.latitude and config.longitude:
+        proximity = (config.latitude, config.longitude)
+    elif rest.latitude and rest.longitude:
+        proximity = (rest.latitude, rest.longitude)
+
+    sugestoes = autocomplete_address(query, proximity)
+    return {"sugestoes": sugestoes}
+
+
+# ============================================================
+# MESAS — Gerenciamento de mesas presenciais
+# ============================================================
+
+@router.get("/mesas")
+def listar_mesas(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Lista mesas agrupadas por numero_mesa (pedidos tipo_entrega='mesa' das últimas 24h)."""
+    limite = datetime.utcnow() - timedelta(hours=24)
+    pedidos = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.tipo_entrega == 'mesa',
+        models.Pedido.numero_mesa.isnot(None),
+        models.Pedido.numero_mesa != '',
+        models.Pedido.data_criacao >= limite,
+    ).order_by(models.Pedido.data_criacao.asc()).all()
+
+    agrupado: dict = {}
+    for p in pedidos:
+        mesa = p.numero_mesa.strip()
+        if mesa not in agrupado:
+            agrupado[mesa] = []
+        agrupado[mesa].append(p)
+
+    mesas = []
+    for numero, pedidos_mesa in agrupado.items():
+        ativos = [p for p in pedidos_mesa if p.status not in ('entregue', 'cancelado')]
+        pagos = [p for p in pedidos_mesa if p.status == 'entregue']
+        cancelados = [p for p in pedidos_mesa if p.status == 'cancelado']
+
+        # Mesa paga: todos entregues, mostrar por 30min após último
+        if not ativos and pagos:
+            ultimo_pago = max(pagos, key=lambda p: p.atualizado_em or p.data_criacao)
+            ts = ultimo_pago.atualizado_em or ultimo_pago.data_criacao
+            if (datetime.utcnow() - ts).total_seconds() > 1800:
+                continue  # Já passou 30min, não mostrar
+
+        # Se só tem cancelados, não mostrar
+        if not ativos and not pagos:
+            continue
+
+        status = "aberta" if ativos else "paga"
+        valor_total = sum(p.valor_total or 0 for p in pedidos_mesa if p.status != 'cancelado')
+        aberta_desde = min(p.data_criacao for p in pedidos_mesa).isoformat() if pedidos_mesa else None
+
+        mesas.append({
+            "numero_mesa": numero,
+            "status": status,
+            "valor_total": round(valor_total, 2),
+            "aberta_desde": aberta_desde,
+            "pedidos": [
+                {
+                    "id": p.id,
+                    "comanda": p.comanda,
+                    "itens": p.itens,
+                    "valor_total": p.valor_total,
+                    "status": p.status,
+                    "forma_pagamento": p.forma_pagamento,
+                    "observacoes": p.observacoes,
+                    "data_criacao": p.data_criacao.isoformat() if p.data_criacao else None,
+                }
+                for p in pedidos_mesa if p.status != 'cancelado'
+            ],
+        })
+
+    total_abertas = sum(1 for m in mesas if m["status"] == "aberta")
+    total_pagas = sum(1 for m in mesas if m["status"] == "paga")
+
+    return {"mesas": mesas, "total_abertas": total_abertas, "total_pagas": total_pagas}
+
+
+class PagarMesaRequest(BaseModel):
+    forma_pagamento: Optional[str] = None
+
+
+@router.post("/mesas/{numero_mesa}/pagar")
+async def pagar_mesa(
+    numero_mesa: str,
+    dados: PagarMesaRequest,
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Marca todos pedidos ativos da mesa como 'entregue' e lança no caixa."""
+    pedidos_ativos = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.tipo_entrega == 'mesa',
+        models.Pedido.numero_mesa == numero_mesa.strip(),
+        models.Pedido.status.notin_(['entregue', 'cancelado']),
+    ).all()
+
+    if not pedidos_ativos:
+        raise HTTPException(404, "Nenhum pedido ativo nesta mesa")
+
+    caixa_aberto = db.query(models.Caixa).filter(
+        models.Caixa.restaurante_id == rest.id,
+        models.Caixa.status == 'aberto'
+    ).first()
+
+    forma_raw = (dados.forma_pagamento or '').strip().lower()
+    if 'pix' in forma_raw:
+        campo_pgto = 'pix'
+    elif 'cart' in forma_raw or 'credito' in forma_raw or 'debito' in forma_raw or 'cartão' in forma_raw:
+        campo_pgto = 'cartao'
+    elif 'vale' in forma_raw:
+        campo_pgto = 'vale'
+    else:
+        campo_pgto = 'dinheiro'
+
+    valor_total_mesa = 0
+    for pedido in pedidos_ativos:
+        pedido.status = 'entregue'
+        pedido.atualizado_em = datetime.utcnow()
+        if dados.forma_pagamento:
+            pedido.forma_pagamento_real = dados.forma_pagamento
+
+        historico = list(pedido.historico_status or [])
+        historico.append({"status": "entregue", "timestamp": datetime.utcnow().isoformat()})
+        pedido.historico_status = historico
+
+        val = pedido.valor_total or 0
+        valor_total_mesa += val
+
+        # Auto-lançar no caixa
+        if caixa_aberto and val > 0:
+            mov = models.MovimentacaoCaixa(
+                caixa_id=caixa_aberto.id,
+                tipo='venda',
+                valor=val,
+                descricao=f"Mesa {numero_mesa} — Pedido #{pedido.comanda} — {dados.forma_pagamento or 'N/I'}",
+                forma_pagamento=campo_pgto,
+                pedido_id=pedido.id,
+            )
+            db.add(mov)
+            caixa_aberto.total_vendas = (caixa_aberto.total_vendas or 0) + val
+            if campo_pgto == 'dinheiro':
+                caixa_aberto.total_dinheiro = (caixa_aberto.total_dinheiro or 0) + val
+            elif campo_pgto == 'cartao':
+                caixa_aberto.total_cartao = (caixa_aberto.total_cartao or 0) + val
+            elif campo_pgto == 'pix':
+                caixa_aberto.total_pix = (caixa_aberto.total_pix or 0) + val
+            elif campo_pgto == 'vale':
+                caixa_aberto.total_vale = (caixa_aberto.total_vale or 0) + val
+
+    db.commit()
+
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "mesa_paga",
+            "dados": {"numero_mesa": numero_mesa, "valor_total": round(valor_total_mesa, 2)}
+        }, rest.id)
+
+    return {
+        "numero_mesa": numero_mesa,
+        "pedidos_pagos": len(pedidos_ativos),
+        "valor_total": round(valor_total_mesa, 2),
+    }
+
+
+class PedidoMesaRequest(BaseModel):
+    itens: str
+    valor_total: float
+    observacoes: Optional[str] = None
+    forma_pagamento: Optional[str] = None
+
+
+@router.post("/mesas/{numero_mesa}/pedido")
+async def adicionar_pedido_mesa(
+    numero_mesa: str,
+    dados: PedidoMesaRequest,
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Cria um pedido para a mesa especificada."""
+    ultimo = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id
+    ).order_by(desc(models.Pedido.id)).first()
+    proxima_comanda = (int(ultimo.comanda) + 1) if ultimo and ultimo.comanda and str(ultimo.comanda).isdigit() else 1
+
+    mesa = numero_mesa.strip()
+    pedido = models.Pedido(
+        restaurante_id=rest.id,
+        comanda=str(proxima_comanda),
+        tipo='Mesa',
+        origem='manual',
+        tipo_entrega='mesa',
+        cliente_nome=f"Mesa {mesa}",
+        numero_mesa=mesa,
+        itens=dados.itens,
+        valor_total=dados.valor_total,
+        forma_pagamento=dados.forma_pagamento,
+        observacoes=dados.observacoes,
+        status='pendente',
+        historico_status=[{"status": "pendente", "timestamp": datetime.utcnow().isoformat()}],
+        data_criacao=datetime.utcnow()
+    )
+    db.add(pedido)
+    db.commit()
+    db.refresh(pedido)
+
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "novo_pedido",
+            "dados": {
+                "pedido_id": pedido.id,
+                "comanda": pedido.comanda,
+                "cliente_nome": pedido.cliente_nome,
+                "valor_total": pedido.valor_total,
+            }
+        }, rest.id)
+
+    return {"id": pedido.id, "comanda": pedido.comanda, "status": pedido.status}

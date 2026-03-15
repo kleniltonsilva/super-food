@@ -2,7 +2,7 @@
 """
 Ponto de entrada único para inicialização do banco de dados.
 
-Super Food SaaS - Sistema de Inicialização de Dados
+Derekh Food SaaS - Sistema de Inicialização de Dados
 
 Uso via linha de comando:
     python -m database.init              # Inicializa tudo

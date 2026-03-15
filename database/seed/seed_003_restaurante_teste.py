@@ -1,7 +1,7 @@
 """
 Seed: Criar restaurante de teste para desenvolvimento.
 
-Super Food SaaS - Sistema de Inicialização de Dados
+Derekh Food SaaS - Sistema de Inicialização de Dados
 """
 
 from datetime import datetime, timedelta

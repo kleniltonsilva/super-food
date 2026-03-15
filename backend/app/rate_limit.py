@@ -1,7 +1,7 @@
 # backend/app/rate_limit.py
 
 """
-Rate Limiting - Super Food API
+Rate Limiting - Derekh Food API
 Sliding window via Redis INCR + EXPIRE
 Sem Redis = sem rate limiting (gracioso)
 """

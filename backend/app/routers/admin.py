@@ -1026,3 +1026,17 @@ def obter_analytics(
         "motoboys_ociosos": motoboys_ociosos,
         "crescimento_mom": crescimento_mom
     }
+
+
+# ========== Autocomplete Endereço ==========
+
+@router.get("/autocomplete-endereco")
+def admin_autocomplete_endereco(
+    query: str = Query(..., min_length=3),
+    current_admin=Depends(auth.get_current_admin),
+):
+    """Autocomplete de endereço via Mapbox (sem proximidade — super admin)."""
+    from utils.mapbox_api import autocomplete_address
+
+    sugestoes = autocomplete_address(query)
+    return {"sugestoes": sugestoes}
