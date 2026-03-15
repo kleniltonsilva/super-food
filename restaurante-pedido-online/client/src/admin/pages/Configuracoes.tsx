@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Save, Upload, Loader2, AlertTriangle, MapPin, Copy, Clock } from "lucide-react";
+import { Save, Upload, Loader2, AlertTriangle, MapPin, Copy, Clock, Printer } from "lucide-react";
 import InfoTooltip from "@/components/InfoTooltip";
 import { toast } from "sonner";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
@@ -137,6 +137,7 @@ export default function Configuracoes() {
           <TabsList>
             <TabsTrigger value="restaurante">Restaurante</TabsTrigger>
             <TabsTrigger value="site">Site / Cardápio</TabsTrigger>
+            <TabsTrigger value="impressora">Impressora</TabsTrigger>
           </TabsList>
 
           {/* Config Restaurante */}
@@ -821,6 +822,77 @@ export default function Configuracoes() {
                 </div>
               </div>
             )}
+          </TabsContent>
+
+          {/* Config Impressora */}
+          <TabsContent value="impressora">
+            <div className="grid gap-4 max-w-lg">
+              <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                <CardHeader>
+                  <CardTitle className="text-[var(--text-primary)] flex items-center gap-2">
+                    <Printer className="h-5 w-5" /> Impressão de Comandas
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-[var(--text-primary)]">Impressão Automática</div>
+                      <div className="text-xs text-[var(--text-muted)]">Imprime comanda automaticamente ao receber pedido</div>
+                    </div>
+                    <Switch
+                      checked={!!(restForm.impressao_automatica)}
+                      onCheckedChange={(v) => setRestForm({ ...restForm, impressao_automatica: v })}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-[var(--text-secondary)]">Largura da Impressora</label>
+                    <Select
+                      value={String(restForm.largura_impressao || 80)}
+                      onValueChange={(v) => setRestForm({ ...restForm, largura_impressao: Number(v) })}
+                    >
+                      <SelectTrigger className="dark-input">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="80">80mm (padrão)</SelectItem>
+                        <SelectItem value="58">58mm (compacta)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Button
+                    className="w-full bg-[var(--cor-primaria)] hover:bg-[var(--cor-primaria)]/90"
+                    onClick={handleSaveConfig}
+                    disabled={atualizarConfig.isPending}
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {atualizarConfig.isPending ? "Salvando..." : "Salvar"}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                <CardHeader>
+                  <CardTitle className="text-[var(--text-primary)] text-base">Agente de Impressão</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <p className="text-sm text-[var(--text-muted)]">
+                    Para imprimir comandas automaticamente, instale o agente de impressão no computador do restaurante.
+                  </p>
+                  <ol className="text-sm text-[var(--text-secondary)] space-y-1 list-decimal list-inside">
+                    <li>Baixe o <strong>DerekhFood-Impressora.exe</strong></li>
+                    <li>Execute e faça login com o email e senha do restaurante</li>
+                    <li>Selecione a impressora térmica instalada</li>
+                    <li>O agente conectará automaticamente e imprimirá as comandas</li>
+                  </ol>
+                  <div className="rounded-md bg-muted/50 p-3">
+                    <div className="text-xs text-[var(--text-muted)]">Endereço do servidor:</div>
+                    <code className="text-sm font-mono text-[var(--text-primary)]">{window.location.origin}</code>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

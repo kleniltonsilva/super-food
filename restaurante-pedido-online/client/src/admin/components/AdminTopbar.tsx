@@ -1,7 +1,8 @@
-import { Menu, LogOut, User, ShoppingBag, Bike, DollarSign, Clock, ArrowRight } from "lucide-react";
+import { Menu, LogOut, User, ShoppingBag, Bike, DollarSign, Clock, ArrowRight, Printer } from "lucide-react";
 import NotificationBell from "@/admin/components/NotificationBell";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -105,6 +106,9 @@ export default function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
   const { data: pedidos } = usePedidos({ status: "pendente" });
   const { data: caixa } = useCaixaAtual();
   const { data: tempoMedio } = useTempoMedio();
+  const qc = useQueryClient();
+  const printerStatus = qc.getQueryData<Record<string, unknown>>(["printer_status"]);
+  const printerOnline = !!(printerStatus && printerStatus.online);
 
   const pedidosPendentes = Array.isArray(pedidos) ? pedidos.length : 0;
   const caixaAberto = !!(caixa && (caixa as Record<string, unknown>).id);
@@ -198,6 +202,24 @@ export default function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
               )}
             </div>
           </>
+        )}
+
+        {/* Printer Status Indicator */}
+        {printerStatus && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className="relative p-1.5 rounded-md hover:bg-accent transition-colors" title={printerOnline ? "Impressora conectada" : "Impressora desconectada"}>
+                <Printer className="h-4 w-4 text-muted-foreground" />
+                <span className={`absolute top-0.5 right-0.5 h-2 w-2 rounded-full ${printerOnline ? "bg-green-500" : "bg-red-500"}`} />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-48 p-3" align="center">
+              <div className="text-sm font-medium">{printerOnline ? "Impressora Online" : "Impressora Offline"}</div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {printerOnline ? "Agente de impressão conectado" : "Agente de impressão desconectado"}
+              </div>
+            </PopoverContent>
+          </Popover>
         )}
 
         {/* Notification Bell */}

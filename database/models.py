@@ -151,6 +151,7 @@ class CategoriaMenu(Base):
     imagem_url = Column(String(500))
     ordem_exibicao = Column(Integer, default=0)
     ativo = Column(Boolean, default=True)
+    setor_impressao = Column(String(20), default='geral')  # geral, cozinha, bar, caixa
     criado_em = Column(DateTime, default=datetime.utcnow)
     # Relacionamentos
     restaurante = relationship("Restaurante", back_populates="categorias_menu")
@@ -391,6 +392,9 @@ class ConfigRestaurante(Base):
     controle_pedidos_ate = Column(DateTime, default=None)
     # Alerta mesa aberta
     tempo_alerta_mesa_min = Column(Integer, default=60)
+    # Impressão de comandas
+    impressao_automatica = Column(Boolean, default=False)
+    largura_impressao = Column(Integer, default=80)  # 58 ou 80mm
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     # Relacionamento
     restaurante = relationship("Restaurante", back_populates="config")
@@ -516,6 +520,8 @@ class Pedido(Base):
     valor_pago_cartao = Column(Float, default=0.0)
     cupom_desconto = Column(String(50))
     valor_desconto = Column(Float, default=0.0)
+    valor_subtotal = Column(Float, default=0.0)
+    valor_taxa_entrega = Column(Float, default=0.0)
     # Rotas
     distancia_restaurante_km = Column(Float)
     ordem_rota = Column(Integer)

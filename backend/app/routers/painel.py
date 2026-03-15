@@ -29,6 +29,21 @@ def _commit_and_invalidate(db: Session, rest_id: int):
     invalidate_cardapio(rest_id)
 
 
+async def _broadcast_imprimir_pedido(request: Request, db: Session, pedido, rest_id: int):
+    """Envia broadcast de impressão se impressao_automatica está ativa."""
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest_id
+    ).first()
+    if not config or not config.impressao_automatica:
+        return
+    pm = getattr(request.app.state, 'printer_manager', None)
+    if pm:
+        await pm.broadcast({
+            "tipo": "imprimir_pedido",
+            "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+        }, rest_id)
+
+
 # ============================================================
 # 1.2 DASHBOARD / MÉTRICAS
 # ============================================================
@@ -256,6 +271,8 @@ async def criar_pedido_manual(
             "tipo": "novo_pedido",
             "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda, "cliente_nome": pedido.cliente_nome, "valor_total": pedido.valor_total}
         }, rest.id)
+
+    await _broadcast_imprimir_pedido(request, db, pedido, rest.id)
 
     return {"id": pedido.id, "comanda": pedido.comanda, "status": pedido.status}
 
@@ -579,6 +596,78 @@ async def cancelar_pedido(
 
 
 # ============================================================
+# IMPRESSÃO DE COMANDAS
+# ============================================================
+
+@router.get("/pedidos/{pedido_id}/print-data")
+def get_print_data(
+    pedido_id: int,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Retorna dados completos do pedido para impressão, enriquecidos com setor_impressao."""
+    pedido = db.query(models.Pedido).filter(
+        models.Pedido.id == pedido_id, models.Pedido.restaurante_id == rest.id
+    ).first()
+    if not pedido:
+        raise HTTPException(404, "Pedido não encontrado")
+
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+
+    # Enriquecer itens do carrinho com setor_impressao
+    itens_impressao = []
+    carrinho = pedido.carrinho_json or []
+    for item in carrinho:
+        setor = "geral"
+        produto_id = item.get("produto_id") or item.get("id")
+        if produto_id:
+            prod = db.query(models.Produto).filter(models.Produto.id == produto_id).first()
+            if prod and prod.categoria_id:
+                cat = db.query(models.CategoriaMenu).filter(models.CategoriaMenu.id == prod.categoria_id).first()
+                if cat and cat.setor_impressao:
+                    setor = cat.setor_impressao
+        itens_impressao.append({
+            **item,
+            "setor_impressao": setor,
+        })
+
+    # Calcular subtotal e taxa para pedidos antigos (sem os campos)
+    subtotal = getattr(pedido, 'valor_subtotal', 0) or 0
+    taxa_entrega = getattr(pedido, 'valor_taxa_entrega', 0) or 0
+    if subtotal == 0 and pedido.valor_total:
+        # Pedidos antigos: subtotal = total + desconto (taxa embutida)
+        subtotal = (pedido.valor_total or 0) + (pedido.valor_desconto or 0)
+
+    return {
+        "pedido_id": pedido.id,
+        "comanda": pedido.comanda,
+        "data_criacao": pedido.data_criacao.isoformat() if pedido.data_criacao else None,
+        "tipo_entrega": pedido.tipo_entrega,
+        "numero_mesa": pedido.numero_mesa,
+        "cliente_nome": pedido.cliente_nome,
+        "cliente_telefone": pedido.cliente_telefone,
+        "endereco_entrega": pedido.endereco_entrega,
+        "observacoes": pedido.observacoes,
+        "valor_subtotal": subtotal,
+        "valor_taxa_entrega": taxa_entrega,
+        "valor_total": pedido.valor_total,
+        "valor_desconto": pedido.valor_desconto or 0,
+        "forma_pagamento": pedido.forma_pagamento,
+        "troco_para": pedido.troco_para,
+        "itens_texto": pedido.itens,
+        "itens": itens_impressao,
+        "restaurante": {
+            "nome": rest.nome_fantasia or rest.nome,
+            "telefone": rest.telefone,
+            "endereco": rest.endereco_completo,
+        },
+        "largura_impressao": config.largura_impressao if config else 80,
+    }
+
+
+# ============================================================
 # ENTREGAS ATIVAS (tempo real + detecção de atraso)
 # ============================================================
 
@@ -866,6 +955,7 @@ class CategoriaRequest(BaseModel):
     icone: Optional[str] = None
     imagem_url: Optional[str] = None
     ordem_exibicao: Optional[int] = 0
+    setor_impressao: Optional[str] = 'geral'
 
 
 @router.get("/categorias")
@@ -881,6 +971,7 @@ def listar_categorias(
         "id": c.id, "nome": c.nome, "descricao": c.descricao,
         "icone": c.icone, "imagem_url": c.imagem_url,
         "ordem_exibicao": c.ordem_exibicao,
+        "setor_impressao": c.setor_impressao or "geral",
     } for c in cats]
 
 
@@ -894,7 +985,8 @@ def criar_categoria(
         restaurante_id=rest.id,
         nome=dados.nome, descricao=dados.descricao,
         icone=dados.icone, imagem_url=dados.imagem_url,
-        ordem_exibicao=dados.ordem_exibicao
+        ordem_exibicao=dados.ordem_exibicao,
+        setor_impressao=dados.setor_impressao or 'geral',
     )
     db.add(cat)
     _commit_and_invalidate(db, rest.id)
@@ -1734,6 +1826,9 @@ def get_config(
         "entregas_ativas": config.entregas_ativas if config.entregas_ativas is not None else True,
         "controle_pedidos_motivo": config.controle_pedidos_motivo,
         "controle_pedidos_ate": config.controle_pedidos_ate.isoformat() if config.controle_pedidos_ate else None,
+        # Impressão
+        "impressao_automatica": config.impressao_automatica or False,
+        "largura_impressao": config.largura_impressao or 80,
         # Localização do restaurante (de Restaurante, não ConfigRestaurante)
         "endereco_completo": rest.endereco_completo,
         "latitude": rest.latitude,
@@ -1769,7 +1864,8 @@ async def atualizar_config(
         'tolerancia_atraso_min', 'horario_abertura', 'horario_fechamento',
         'dias_semana_abertos', 'modo_preco_pizza',
         'pedidos_online_ativos', 'entregas_ativas',
-        'controle_pedidos_motivo', 'controle_pedidos_ate'
+        'controle_pedidos_motivo', 'controle_pedidos_ate',
+        'impressao_automatica', 'largura_impressao'
     }
 
     for campo, valor in dados.items():
@@ -3297,6 +3393,8 @@ async def adicionar_pedido_mesa(
             }
         }, rest.id)
 
+    await _broadcast_imprimir_pedido(request, db, pedido, rest.id)
+
     return {"id": pedido.id, "comanda": pedido.comanda, "status": pedido.status}
 
 
@@ -3721,5 +3819,7 @@ async def pedido_rapido_mesa(
                 "cliente_nome": pedido.cliente_nome, "valor_total": pedido.valor_total,
             }
         }, rest.id)
+
+    await _broadcast_imprimir_pedido(request, db, pedido, rest.id)
 
     return {"id": pedido.id, "comanda": pedido.comanda, "status": pedido.status, "valor_total": pedido.valor_total}

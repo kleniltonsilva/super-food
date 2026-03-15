@@ -15,6 +15,9 @@ export type WsEventTipo =
   | "motoboy_posicao"
   | "mesa_paga"
   | "config_atualizada"
+  | "printer_status"
+  | "print_ack"
+  | "reimprimir_pedido"
   | "ping";
 
 export interface WsEvent {
@@ -144,7 +147,7 @@ export function useWebSocket({
   const desconectadoIntencionalmente = useRef(false);
 
   const invalidarQueries = useCallback(
-    (tipo: WsEventTipo) => {
+    (tipo: WsEventTipo, dados?: Record<string, unknown>) => {
       switch (tipo) {
         case "novo_pedido":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
@@ -218,6 +221,13 @@ export function useWebSocket({
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.config });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configSite });
           break;
+        case "printer_status":
+          // Armazena status da impressora no query cache para consumo pelo Topbar
+          qc.setQueryData(["printer_status"], dados ?? {});
+          break;
+        case "print_ack":
+          // Apenas repassa via onEvento, sem invalidar queries
+          break;
       }
     },
     [qc, habilitarSom, habilitarNotificacaoSistema]
@@ -242,7 +252,7 @@ export function useWebSocket({
       try {
         const evento: WsEvent = JSON.parse(e.data);
         if (evento.tipo === "ping") return;
-        invalidarQueries(evento.tipo);
+        invalidarQueries(evento.tipo, evento.dados);
         onEvento?.(evento);
       } catch {
         // ignorar mensagens mal-formatadas
@@ -280,5 +290,13 @@ export function useWebSocket({
     };
   }, [conectar]);
 
-  return { tocarSomNotificacao, tocarSomAlerta, tocarSomCancelamento, tocarSomDespacho };
+  const enviarMensagem = useCallback((msg: Record<string, unknown>): boolean => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(msg));
+      return true;
+    }
+    return false;
+  }, []);
+
+  return { tocarSomNotificacao, tocarSomAlerta, tocarSomCancelamento, tocarSomDespacho, enviarMensagem };
 }

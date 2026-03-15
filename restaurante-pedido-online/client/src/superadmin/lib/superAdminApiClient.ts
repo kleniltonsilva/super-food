@@ -147,3 +147,24 @@ export async function getErroDetalheSentry(issueId: string) {
   const { data } = await superAdminApi.get(`/api/admin/erros/${issueId}`);
   return data;
 }
+
+// ─── Domínios Personalizados ─────────────────────────
+export async function getDominiosRestaurante(restauranteId: number) {
+  const { data } = await superAdminApi.get(`/api/admin/restaurantes/${restauranteId}/dominios`);
+  return data;
+}
+
+export async function criarDominioRestaurante(restauranteId: number, payload: { dominio: string }) {
+  const { data } = await superAdminApi.post(`/api/admin/restaurantes/${restauranteId}/dominios`, payload);
+  return data;
+}
+
+export async function verificarDominioDNS(dominioId: number) {
+  const { data } = await superAdminApi.post(`/api/admin/dominios/${dominioId}/verificar`);
+  return data;
+}
+
+export async function deletarDominio(dominioId: number) {
+  const { data } = await superAdminApi.delete(`/api/admin/dominios/${dominioId}`);
+  return data;
+}

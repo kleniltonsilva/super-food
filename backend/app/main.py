@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Depends
+from fastapi import FastAPI, Query, Request, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 from pathlib import Path
 import os, json, time, uuid, logging, asyncio
-from typing import List, Dict
+from typing import List, Dict, Optional
 from contextlib import asynccontextmanager
 
 from .sentry_config import init_sentry
@@ -32,8 +32,9 @@ from .middleware import DomainTenantMiddleware
 setup_logging()
 logger = logging.getLogger("superfood")
 
-# WebSocket Manager (com suporte Redis Pub/Sub)
-manager = create_manager()
+# WebSocket Managers (com suporte Redis Pub/Sub)
+manager = create_manager(channel_prefix="ws:restaurante")
+printer_manager = create_manager(channel_prefix="ws:printer")
 
 
 async def verificar_entregas_atrasadas(ws_manager):
@@ -118,9 +119,11 @@ async def lifespan(app: FastAPI):
 
     logger.info("Derekh Food API iniciada")
 
-    # Inicia WebSocket manager (Redis Pub/Sub se disponivel)
+    # Inicia WebSocket managers (Redis Pub/Sub se disponivel)
     if hasattr(manager, 'start'):
         await manager.start()
+    if hasattr(printer_manager, 'start'):
+        await printer_manager.start()
 
     # Inicia verificação periódica de entregas atrasadas
     _entrega_task = asyncio.create_task(verificar_entregas_atrasadas(manager))
@@ -136,6 +139,8 @@ async def lifespan(app: FastAPI):
             pass
     if hasattr(manager, 'stop'):
         await manager.stop()
+    if hasattr(printer_manager, 'stop'):
+        await printer_manager.stop()
     logger.info("Derekh Food API encerrada")
 
 
@@ -145,8 +150,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Expor WebSocket manager no app.state para uso nos routers
+# Expor WebSocket managers no app.state para uso nos routers
 app.state.ws_manager = manager
+app.state.printer_manager = printer_manager
 
 # ==================== Middlewares ====================
 # Ordem importa: ultimo adicionado = primeiro executado
@@ -337,12 +343,63 @@ async def get_metrics(
 @app.websocket("/ws/{restaurante_id}")
 async def websocket_endpoint(websocket: WebSocket, restaurante_id: int):
     await manager.connect(websocket, restaurante_id)
+    # Notifica admin se printer agent está conectado
+    if printer_manager.has_connections(restaurante_id):
+        await manager.broadcast({"tipo": "printer_status", "dados": {"online": True}}, restaurante_id)
     try:
         while True:
             data = await websocket.receive_text()
-            await manager.broadcast(json.loads(data), restaurante_id)
+            msg = json.loads(data)
+            # Encaminhar reimprimir_pedido para printer_manager
+            if isinstance(msg, dict) and msg.get("tipo") == "reimprimir_pedido":
+                await printer_manager.broadcast(msg, restaurante_id)
+            else:
+                await manager.broadcast(msg, restaurante_id)
     except WebSocketDisconnect:
         manager.disconnect(websocket, restaurante_id)
+
+
+@app.websocket("/ws/printer/{restaurante_id}")
+async def websocket_printer(websocket: WebSocket, restaurante_id: int, token: Optional[str] = Query(None)):
+    """WebSocket para printer agent — auth via JWT na query string"""
+    from jose import JWTError, jwt as jose_jwt
+    from .auth import SECRET_KEY, ALGORITHM
+
+    # Validar JWT
+    if not token:
+        await websocket.close(code=4001, reason="Token obrigatorio")
+        return
+    try:
+        payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_sub": False})
+        sub = int(payload.get("sub"))
+        role = payload.get("role")
+        if role != "restaurante" or sub != restaurante_id:
+            await websocket.close(code=4003, reason="Acesso negado")
+            return
+    except (JWTError, ValueError, TypeError):
+        await websocket.close(code=4001, reason="Token invalido")
+        return
+
+    await printer_manager.connect(websocket, restaurante_id)
+    # Notifica admin WS que impressora conectou
+    await manager.broadcast({"tipo": "printer_status", "dados": {"online": True}}, restaurante_id)
+    logger.info(f"Printer agent conectado: restaurante={restaurante_id}")
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            msg = json.loads(data)
+            tipo = msg.get("tipo") if isinstance(msg, dict) else None
+            if tipo == "print_ack":
+                # Repassa status de impressão para o admin WS
+                await manager.broadcast(msg, restaurante_id)
+            elif tipo == "status":
+                # Agent informando status (impressoras disponíveis, etc)
+                await manager.broadcast({"tipo": "printer_status", "dados": msg.get("dados", {})}, restaurante_id)
+    except WebSocketDisconnect:
+        printer_manager.disconnect(websocket, restaurante_id)
+        await manager.broadcast({"tipo": "printer_status", "dados": {"online": False}}, restaurante_id)
+        logger.info(f"Printer agent desconectado: restaurante={restaurante_id}")
 
 # ==================== SPA React (cliente) ====================
 @app.get("/cliente/{codigo_acesso}", response_class=HTMLResponse)

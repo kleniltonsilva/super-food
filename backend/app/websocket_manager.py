@@ -4,6 +4,8 @@
 WebSocket Manager com suporte a Redis Pub/Sub
 Para multi-worker (Gunicorn) funcionar com WebSocket
 Fallback: sem Redis, funciona como in-memory (single worker)
+
+Suporta channel_prefix para isolar managers (admin vs printer).
 """
 
 import json
@@ -19,13 +21,14 @@ logger = logging.getLogger("superfood.websocket")
 class ConnectionManager:
     """Manager in-memory (single worker) - mantido como fallback"""
 
-    def __init__(self):
+    def __init__(self, channel_prefix: str = "ws:restaurante"):
         self.active_connections: Dict[int, List[WebSocket]] = {}
+        self.channel_prefix = channel_prefix
 
     async def connect(self, websocket: WebSocket, restaurante_id: int):
         await websocket.accept()
         self.active_connections.setdefault(restaurante_id, []).append(websocket)
-        logger.debug(f"WS conectado: restaurante={restaurante_id}")
+        logger.debug(f"WS conectado ({self.channel_prefix}): restaurante={restaurante_id}")
 
     def disconnect(self, websocket: WebSocket, restaurante_id: int):
         if restaurante_id in self.active_connections:
@@ -33,7 +36,7 @@ class ConnectionManager:
                 self.active_connections[restaurante_id].remove(websocket)
             except ValueError:
                 pass
-        logger.debug(f"WS desconectado: restaurante={restaurante_id}")
+        logger.debug(f"WS desconectado ({self.channel_prefix}): restaurante={restaurante_id}")
 
     async def broadcast(self, message: dict, restaurante_id: int):
         dead = []
@@ -48,12 +51,15 @@ class ConnectionManager:
             except (ValueError, KeyError):
                 pass
 
+    def has_connections(self, restaurante_id: int) -> bool:
+        return bool(self.active_connections.get(restaurante_id))
+
 
 class RedisConnectionManager(ConnectionManager):
     """Manager com Redis Pub/Sub para multi-worker"""
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, channel_prefix: str = "ws:restaurante"):
+        super().__init__(channel_prefix)
         self._pubsub_task = None
         self._redis_available = False
 
@@ -61,7 +67,7 @@ class RedisConnectionManager(ConnectionManager):
         """Inicializa subscriber Redis em background"""
         redis_url = os.getenv("REDIS_URL")
         if not redis_url:
-            logger.info("WS Manager: Redis nao configurado, usando in-memory")
+            logger.info(f"WS Manager ({self.channel_prefix}): Redis nao configurado, usando in-memory")
             return
 
         try:
@@ -70,9 +76,9 @@ class RedisConnectionManager(ConnectionManager):
             await self._redis.ping()
             self._redis_available = True
             self._pubsub = self._redis.pubsub()
-            logger.info("WS Manager: Redis Pub/Sub ativo")
+            logger.info(f"WS Manager ({self.channel_prefix}): Redis Pub/Sub ativo")
         except Exception as e:
-            logger.warning(f"WS Manager: Redis indisponivel ({e}), usando in-memory")
+            logger.warning(f"WS Manager ({self.channel_prefix}): Redis indisponivel ({e}), usando in-memory")
             self._redis_available = False
 
     async def start(self):
@@ -89,7 +95,7 @@ class RedisConnectionManager(ConnectionManager):
     async def connect(self, websocket: WebSocket, restaurante_id: int):
         await super().connect(websocket, restaurante_id)
         if self._redis_available:
-            channel = f"ws:restaurante:{restaurante_id}"
+            channel = f"{self.channel_prefix}:{restaurante_id}"
             await self._pubsub.subscribe(channel)
 
     async def broadcast(self, message: dict, restaurante_id: int):
@@ -99,7 +105,7 @@ class RedisConnectionManager(ConnectionManager):
         # Publica no Redis para outros workers
         if self._redis_available:
             try:
-                channel = f"ws:restaurante:{restaurante_id}"
+                channel = f"{self.channel_prefix}:{restaurante_id}"
                 await self._redis.publish(channel, json.dumps(message))
             except Exception as e:
                 logger.warning(f"Redis publish erro: {e}")
@@ -112,10 +118,10 @@ class RedisConnectionManager(ConnectionManager):
                     continue
                 try:
                     channel = msg["channel"]
-                    # Extrai restaurante_id do channel "ws:restaurante:123"
-                    parts = channel.split(":")
-                    if len(parts) == 3:
-                        rid = int(parts[2])
+                    # Extrai restaurante_id do channel "{prefix}:123"
+                    parts = channel.rsplit(":", 1)
+                    if len(parts) == 2:
+                        rid = int(parts[1])
                         data = json.loads(msg["data"])
                         # Envia para conexoes locais deste worker
                         dead = []
@@ -137,9 +143,9 @@ class RedisConnectionManager(ConnectionManager):
             logger.error(f"Redis listener erro fatal: {e}")
 
 
-def create_manager() -> ConnectionManager:
+def create_manager(channel_prefix: str = "ws:restaurante") -> ConnectionManager:
     """Factory: cria manager com Redis se disponivel"""
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
-        return RedisConnectionManager()
-    return ConnectionManager()
+        return RedisConnectionManager(channel_prefix)
+    return ConnectionManager(channel_prefix)

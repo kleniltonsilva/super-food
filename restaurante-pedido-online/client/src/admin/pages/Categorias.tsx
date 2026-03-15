@@ -32,6 +32,14 @@ import {
 import { Plus, GripVertical, Pencil, Trash2, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+
 interface Categoria {
   id: number;
   nome: string;
@@ -39,6 +47,7 @@ interface Categoria {
   icone?: string;
   ordem_exibicao: number;
   ativo?: boolean;
+  setor_impressao?: string;
 }
 
 export default function Categorias() {
@@ -53,6 +62,7 @@ export default function Categorias() {
   const [nome, setNome] = useState("");
   const [icone, setIcone] = useState("");
   const [descricao, setDescricao] = useState("");
+  const [setorImpressao, setSetorImpressao] = useState("geral");
   const [deleteId, setDeleteId] = useState<number | null>(null);
 
   // Drag state
@@ -65,6 +75,7 @@ export default function Categorias() {
     setNome("");
     setIcone("");
     setDescricao("");
+    setSetorImpressao("geral");
     setShowForm(true);
   }
 
@@ -73,6 +84,7 @@ export default function Categorias() {
     setNome(cat.nome);
     setIcone(cat.icone || "");
     setDescricao(cat.descricao || "");
+    setSetorImpressao(cat.setor_impressao || "geral");
     setShowForm(true);
   }
 
@@ -83,6 +95,7 @@ export default function Categorias() {
       nome: nome.trim(),
       icone: icone.trim() || null,
       descricao: descricao.trim() || null,
+      setor_impressao: setorImpressao,
     };
 
     if (editId) {
@@ -260,6 +273,20 @@ export default function Categorias() {
                 placeholder="Descrição da categoria (opcional)"
                 rows={2}
               />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">Setor de Impressão</label>
+              <Select value={setorImpressao} onValueChange={setSetorImpressao}>
+                <SelectTrigger className="dark-input">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="geral">Geral (padrão)</SelectItem>
+                  <SelectItem value="cozinha">Cozinha</SelectItem>
+                  <SelectItem value="bar">Bar / Bebidas</SelectItem>
+                  <SelectItem value="caixa">Caixa</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>

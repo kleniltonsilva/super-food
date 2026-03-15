@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import re, os, logging, requests as http_requests
 import secrets
 import hashlib
+import socket
 
 from .. import models, database, auth
 
@@ -417,6 +418,7 @@ def atualizar_status_restaurante(
     if not restaurante:
         raise HTTPException(status_code=404, detail="Restaurante não encontrado")
 
+    status_anterior = restaurante.status
     restaurante.status = dados.status
     restaurante.ativo = (dados.status == 'ativo')
 
@@ -425,14 +427,46 @@ def atualizar_status_restaurante(
         if not restaurante.data_vencimento or restaurante.data_vencimento < datetime.utcnow():
             restaurante.data_vencimento = datetime.utcnow() + timedelta(days=30)
 
+    # Gerenciar domínios personalizados conforme status
+    dominios = db.query(models.DominioPersonalizado).filter(
+        models.DominioPersonalizado.restaurante_id == restaurante_id
+    ).all()
+
+    dominios_alterados = 0
+    if dominios:
+        if dados.status in ('suspenso', 'cancelado'):
+            # Suspender/cancelar: desativar domínios + remover certificados SSL do Fly.io
+            for d in dominios:
+                if d.ativo:
+                    d.ativo = False
+                    d.ssl_ativo = False
+                    dominios_alterados += 1
+                    # Remover certificado do Fly.io para liberar recursos e impedir acesso
+                    _fly_delete_certificate(d.dominio)
+
+        elif dados.status == 'ativo' and status_anterior in ('suspenso', 'cancelado'):
+            # Reativar: restaurar domínios + re-registrar certificados no Fly.io
+            for d in dominios:
+                if not d.ativo:
+                    d.ativo = True
+                    dominios_alterados += 1
+                    # Re-registrar certificado no Fly.io
+                    _fly_add_certificate(d.dominio)
+
     db.commit()
 
+    msg = f"Status atualizado para '{dados.status}'"
+    if dominios_alterados > 0:
+        acao = "desativado(s)" if dados.status in ('suspenso', 'cancelado') else "reativado(s)"
+        msg += f". {dominios_alterados} domínio(s) {acao}."
+
     return {
-        "mensagem": f"Status atualizado para '{dados.status}'",
+        "mensagem": msg,
         "restaurante_id": restaurante_id,
         "status": dados.status,
         "ativo": restaurante.ativo,
-        "data_vencimento": restaurante.data_vencimento.isoformat() if restaurante.data_vencimento else None
+        "data_vencimento": restaurante.data_vencimento.isoformat() if restaurante.data_vencimento else None,
+        "dominios_alterados": dominios_alterados,
     }
 
 
@@ -1260,3 +1294,259 @@ Por favor, analise este erro e sugira uma correção."""
         "tags": tags,
         "texto_claude": texto_claude,
     }
+
+
+# ========== Domínios Personalizados + Fly.io Certificates API ==========
+
+FLY_API_BASE = "https://api.machines.dev/v1"
+FLY_APP_NAME = "superfood-api"
+
+
+def _fly_headers():
+    """Retorna headers de autenticação para a API do Fly.io."""
+    token = os.getenv("FLY_API_TOKEN", "")
+    if not token:
+        return None
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+
+def _fly_add_certificate(hostname: str) -> dict:
+    """Registra certificado ACME no Fly.io para o hostname."""
+    headers = _fly_headers()
+    if not headers:
+        return {"ok": False, "erro": "FLY_API_TOKEN não configurado"}
+    try:
+        resp = http_requests.post(
+            f"{FLY_API_BASE}/apps/{FLY_APP_NAME}/certificates/acme",
+            headers=headers,
+            json={"hostname": hostname},
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            return {"ok": True, "data": resp.json()}
+        return {"ok": False, "erro": f"Fly.io retornou {resp.status_code}: {resp.text[:200]}"}
+    except http_requests.RequestException as e:
+        return {"ok": False, "erro": str(e)[:200]}
+
+
+def _fly_check_certificate(hostname: str) -> dict:
+    """Verifica status do certificado no Fly.io."""
+    headers = _fly_headers()
+    if not headers:
+        return {"ok": False, "erro": "FLY_API_TOKEN não configurado"}
+    try:
+        resp = http_requests.post(
+            f"{FLY_API_BASE}/apps/{FLY_APP_NAME}/certificates/{hostname}/check",
+            headers=headers,
+            timeout=15,
+        )
+        if resp.status_code == 200:
+            return {"ok": True, "data": resp.json()}
+        return {"ok": False, "erro": f"Fly.io retornou {resp.status_code}: {resp.text[:200]}"}
+    except http_requests.RequestException as e:
+        return {"ok": False, "erro": str(e)[:200]}
+
+
+def _fly_delete_certificate(hostname: str) -> dict:
+    """Remove certificado do Fly.io."""
+    headers = _fly_headers()
+    if not headers:
+        return {"ok": False, "erro": "FLY_API_TOKEN não configurado"}
+    try:
+        resp = http_requests.delete(
+            f"{FLY_API_BASE}/apps/{FLY_APP_NAME}/certificates/{hostname}",
+            headers=headers,
+            timeout=15,
+        )
+        if resp.status_code in (200, 204):
+            return {"ok": True}
+        return {"ok": False, "erro": f"Fly.io retornou {resp.status_code}: {resp.text[:200]}"}
+    except http_requests.RequestException as e:
+        return {"ok": False, "erro": str(e)[:200]}
+
+
+class DominioCreateRequest(BaseModel):
+    dominio: str
+
+
+@router.get("/restaurantes/{restaurante_id}/dominios")
+def listar_dominios_restaurante(
+    restaurante_id: int,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Lista domínios personalizados de um restaurante."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == restaurante_id
+    ).first()
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    dominios = db.query(models.DominioPersonalizado).filter(
+        models.DominioPersonalizado.restaurante_id == restaurante_id
+    ).order_by(models.DominioPersonalizado.criado_em.desc()).all()
+
+    return [
+        {
+            "id": d.id,
+            "dominio": d.dominio,
+            "tipo": d.tipo,
+            "verificado": d.verificado,
+            "dns_verificado_em": d.dns_verificado_em.isoformat() if d.dns_verificado_em else None,
+            "ssl_ativo": d.ssl_ativo,
+            "ativo": d.ativo,
+            "criado_em": d.criado_em.isoformat() if d.criado_em else None,
+        }
+        for d in dominios
+    ]
+
+
+@router.post("/restaurantes/{restaurante_id}/dominios")
+def criar_dominio_restaurante(
+    restaurante_id: int,
+    dados: DominioCreateRequest,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Adiciona domínio personalizado a um restaurante + registra certificado SSL no Fly.io."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == restaurante_id
+    ).first()
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    dominio_limpo = dados.dominio.strip().lower()
+
+    if not dominio_limpo or "." not in dominio_limpo:
+        raise HTTPException(status_code=400, detail="Domínio inválido")
+
+    existente = db.query(models.DominioPersonalizado).filter(
+        models.DominioPersonalizado.dominio == dominio_limpo
+    ).first()
+    if existente:
+        raise HTTPException(status_code=400, detail="Domínio já cadastrado no sistema")
+
+    # Registrar certificado ACME no Fly.io
+    fly_result = _fly_add_certificate(dominio_limpo)
+    fly_msg = None
+    if not fly_result["ok"]:
+        fly_msg = f"Aviso: certificado Fly.io não registrado ({fly_result['erro']}). Tente verificar DNS depois."
+        logger.warning(f"Fly.io cert add falhou para {dominio_limpo}: {fly_result['erro']}")
+
+    dominio = models.DominioPersonalizado(
+        restaurante_id=restaurante_id,
+        dominio=dominio_limpo,
+        tipo="cname",
+    )
+    db.add(dominio)
+    db.commit()
+    db.refresh(dominio)
+
+    return {
+        "id": dominio.id,
+        "dominio": dominio.dominio,
+        "tipo": dominio.tipo,
+        "verificado": dominio.verificado,
+        "ssl_ativo": dominio.ssl_ativo,
+        "ativo": dominio.ativo,
+        "criado_em": dominio.criado_em.isoformat() if dominio.criado_em else None,
+        "fly_certificado": "registrado" if fly_result["ok"] else "pendente",
+        "fly_aviso": fly_msg,
+        "instrucoes": {
+            "tipo": "CNAME",
+            "nome": dominio_limpo.split(".")[0],
+            "valor": "superfood-api.fly.dev",
+            "ttl": 3600,
+            "mensagem": f"Adicione um registro CNAME no DNS do seu domínio apontando para superfood-api.fly.dev",
+        },
+    }
+
+
+@router.post("/dominios/{dominio_id}/verificar")
+def verificar_dns_dominio_admin(
+    dominio_id: int,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Verifica DNS + status do certificado SSL no Fly.io."""
+    dominio = db.query(models.DominioPersonalizado).filter(
+        models.DominioPersonalizado.id == dominio_id,
+    ).first()
+
+    if not dominio:
+        raise HTTPException(status_code=404, detail="Domínio não encontrado")
+
+    # 1. Verificar DNS local via socket
+    dns_ok = False
+    try:
+        result = socket.getaddrinfo(dominio.dominio, 443)
+        if result:
+            dns_ok = True
+    except socket.gaierror:
+        pass
+
+    # 2. Verificar certificado no Fly.io
+    fly_result = _fly_check_certificate(dominio.dominio)
+    ssl_status = "pendente"
+    if fly_result["ok"]:
+        cert_data = fly_result.get("data", {})
+        # Fly.io retorna status do certificado ACME
+        acme = cert_data.get("acme", {})
+        acme_configured = acme.get("configured", False)
+        if acme_configured:
+            ssl_status = "ativo"
+        elif dns_ok:
+            ssl_status = "emitindo"
+    else:
+        # Se não tem cert no Fly.io, tenta registrar agora
+        add_result = _fly_add_certificate(dominio.dominio)
+        if add_result["ok"]:
+            ssl_status = "registrado"
+
+    # 3. Atualizar banco
+    if dns_ok:
+        dominio.verificado = True
+        dominio.dns_verificado_em = datetime.utcnow()
+        dominio.ssl_ativo = ssl_status == "ativo"
+        db.commit()
+        msg = f"DNS configurado! SSL: {ssl_status}."
+        if ssl_status == "ativo":
+            msg = f"DNS + SSL ativos! Site disponível em https://{dominio.dominio}"
+        elif ssl_status == "emitindo":
+            msg = f"DNS OK! Certificado SSL sendo emitido pelo Let's Encrypt. Aguarde alguns minutos."
+        return {"verificado": True, "ssl_status": ssl_status, "mensagem": msg}
+
+    return {
+        "verificado": False,
+        "ssl_status": ssl_status,
+        "mensagem": "DNS ainda não propagou. Configure o CNAME apontando para superfood-api.fly.dev e aguarde até 48h.",
+    }
+
+
+@router.delete("/dominios/{dominio_id}")
+def remover_dominio_admin(
+    dominio_id: int,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Remove domínio personalizado + certificado SSL do Fly.io."""
+    dominio = db.query(models.DominioPersonalizado).filter(
+        models.DominioPersonalizado.id == dominio_id,
+    ).first()
+
+    if not dominio:
+        raise HTTPException(status_code=404, detail="Domínio não encontrado")
+
+    nome = dominio.dominio
+
+    # Remover certificado do Fly.io
+    fly_result = _fly_delete_certificate(nome)
+    if not fly_result["ok"]:
+        logger.warning(f"Fly.io cert delete falhou para {nome}: {fly_result.get('erro', '?')}")
+
+    db.delete(dominio)
+    db.commit()
+    return {"mensagem": f"Domínio {nome} removido com sucesso"}

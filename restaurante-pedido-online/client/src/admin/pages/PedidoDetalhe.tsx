@@ -53,8 +53,11 @@ import {
   Bike,
   AlertTriangle,
   Package,
+  Printer,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useWebSocket } from "@/admin/hooks/useWebSocket";
+import { useAdminAuth } from "@/admin/contexts/AdminAuthContext";
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   pendente: { label: "Pendente", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
@@ -82,6 +85,8 @@ export default function PedidoDetalhe() {
   const cancelar = useCancelarPedido();
   const { data: motoboys } = useMotoboys();
   const { data: configData } = useConfig();
+  const { restaurante } = useAdminAuth();
+  const { enviarMensagem } = useWebSocket({ restauranteId: restaurante?.id ?? null });
 
   const modoDespacho = configData?.modo_prioridade_entrega || "rapido_economico";
 
@@ -528,6 +533,17 @@ export default function PedidoDetalhe() {
                     <CheckCircle className="mr-2 h-4 w-4" /> Confirmar Entrega
                   </Button>
                 )}
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    const ok = enviarMensagem({ tipo: "reimprimir_pedido", dados: { pedido_id: pedidoId } });
+                    if (ok) toast.success("Comando de impressão enviado");
+                    else toast.error("Sem conexão WebSocket");
+                  }}
+                >
+                  <Printer className="mr-2 h-4 w-4" /> Imprimir
+                </Button>
                 {!["cancelado", "recusado", "entregue"].includes(pedido.status) && (
                   <Button
                     variant="outline"

@@ -11,6 +11,10 @@ import {
   getAnalytics,
   getErrosSentry,
   getErroDetalheSentry,
+  getDominiosRestaurante,
+  criarDominioRestaurante,
+  verificarDominioDNS,
+  deletarDominio,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -125,5 +129,46 @@ export function useErroDetalheSentry(issueId: string | null) {
     queryFn: () => getErroDetalheSentry(issueId!),
     enabled: !!issueId,
     staleTime: 60_000,
+  });
+}
+
+// ─── Domínios Personalizados ─────────────────────────
+export function useDominiosRestaurante(restauranteId: number | null) {
+  return useQuery({
+    queryKey: ["superadmin", "dominios", restauranteId],
+    queryFn: () => getDominiosRestaurante(restauranteId!),
+    enabled: !!restauranteId,
+    staleTime: 30_000,
+  });
+}
+
+export function useCriarDominio() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ restauranteId, dominio }: { restauranteId: number; dominio: string }) =>
+      criarDominioRestaurante(restauranteId, { dominio }),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "dominios", variables.restauranteId] });
+    },
+  });
+}
+
+export function useVerificarDominioDNS() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dominioId: number) => verificarDominioDNS(dominioId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "dominios"] });
+    },
+  });
+}
+
+export function useDeletarDominio() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (dominioId: number) => deletarDominio(dominioId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "dominios"] });
+    },
   });
 }

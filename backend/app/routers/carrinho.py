@@ -510,6 +510,8 @@ async def finalizar_carrinho(
         itens="\n".join([f"{item['quantidade']}x {item['nome']}" for item in carrinho.itens_json]),
         carrinho_json=carrinho.itens_json,
         observacoes=finalizacao.observacoes,
+        valor_subtotal=round(carrinho.valor_subtotal, 2),
+        valor_taxa_entrega=round(taxa_entrega, 2),
         valor_total=round(valor_total_final, 2),
         forma_pagamento=finalizacao.forma_pagamento,
         troco_para=finalizacao.troco_para,
@@ -555,6 +557,18 @@ async def finalizar_carrinho(
                 "origem": "site",
             }
         }, pedido.restaurante_id)
+
+    # Broadcast para printer agent (impressão automática)
+    config_rest = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == pedido.restaurante_id
+    ).first()
+    if config_rest and config_rest.impressao_automatica:
+        pm = getattr(request.app.state, 'printer_manager', None)
+        if pm:
+            await pm.broadcast({
+                "tipo": "imprimir_pedido",
+                "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+            }, pedido.restaurante_id)
 
     return {
         "pedido_id": pedido.id,

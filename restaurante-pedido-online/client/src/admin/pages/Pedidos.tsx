@@ -66,8 +66,11 @@ import {
   Smartphone,
   AlertTriangle,
   MapPin,
+  Printer,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useWebSocket } from "@/admin/hooks/useWebSocket";
+import { useAdminAuth } from "@/admin/contexts/AdminAuthContext";
 
 const STATUS_MAP: Record<string, { label: string; color: string }> = {
   pendente: { label: "Pendente", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
@@ -124,6 +127,17 @@ export default function Pedidos() {
   const { data: configData } = useConfig();
   const { data: mesasData } = useMesas();
   const modoDespacho = configData?.modo_prioridade_entrega || "rapido_economico";
+  const { restaurante } = useAdminAuth();
+  const { enviarMensagem } = useWebSocket({ restauranteId: restaurante?.id ?? null });
+
+  const handleImprimir = (pedidoId: number) => {
+    const ok = enviarMensagem({ tipo: "reimprimir_pedido", dados: { pedido_id: pedidoId } });
+    if (ok) {
+      toast.success("Comando de impressão enviado");
+    } else {
+      toast.error("Sem conexão WebSocket — impressão não enviada");
+    }
+  };
   const mesasAbertas = mesasData?.total_abertas || 0;
 
   const pedidos = data?.pedidos || [];
@@ -407,6 +421,7 @@ export default function Pedidos() {
               getOrigemBadge={getOrigemBadge}
               getTempoDesde={getTempoDesde}
               modoDespacho={modoDespacho}
+              onImprimir={handleImprimir}
             />
           </TabsContent>
 
@@ -451,6 +466,7 @@ export default function Pedidos() {
               getOrigemBadge={getOrigemBadge}
               getTempoDesde={getTempoDesde}
               modoDespacho={modoDespacho}
+              onImprimir={handleImprimir}
             />
           </TabsContent>
         </Tabs>
@@ -505,6 +521,7 @@ function PedidosTabela({
   getOrigemBadge,
   getTempoDesde,
   modoDespacho,
+  onImprimir,
 }: {
   pedidos: Record<string, unknown>[];
   isLoading: boolean;
@@ -515,6 +532,7 @@ function PedidosTabela({
   getOrigemBadge: (p: Record<string, unknown>) => React.ReactNode;
   getTempoDesde: (iso: string | null) => number;
   modoDespacho: string;
+  onImprimir: (id: number) => void;
 }) {
   return (
     <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
@@ -609,6 +627,9 @@ function PedidosTabela({
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => navigate(`/pedidos/${p.id}`)}>
                             <Eye className="mr-2 h-4 w-4" /> Ver Detalhes
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => onImprimir(p.id as number)}>
+                            <Printer className="mr-2 h-4 w-4" /> Imprimir
                           </DropdownMenuItem>
                           {(STATUS_FLOW[p.status as string] || []).map((nextStatus) => {
                             if (nextStatus === "cancelado") {
