@@ -1,15 +1,15 @@
 """horarios por dia da semana + controle pedidos online
 
-Revision ID: 019_horarios_controle_pedidos
-Revises: 018_dominios_personalizados
+Revision ID: 020_horarios_controle_pedidos
+Revises: 019_historico_status
 Create Date: 2026-03-15
 """
 from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers
-revision = '019_horarios_controle_pedidos'
-down_revision = '018_dominios_personalizados'
+revision = '020_horarios_controle_pedidos'
+down_revision = '019_historico_status'
 branch_labels = None
 depends_on = None
 
