@@ -51,12 +51,12 @@
 ## ESTADO ATUAL DO PROJETO
 
 - **Sprint atual:** Sprint 11 — Deploy Fly.io — **~95% COMPLETO**
-- **Tarefa atual:** Deploy funcional com eh_pizza + fix email + montador mobile + dominios_personalizados
-- **Status:** Sprint 10 COMPLETO (tag v4.0.0). Sprint 11: deploy OK, migrations 001-018 rodando
-- **Ultima sessao:** 14/03/2026 — Montador pizza mobile + eh_pizza flag + fix migration PostgreSQL
+- **Tarefa atual:** Deploy funcional com tempo real + alertas + mesas + Sentry
+- **Status:** Sprint 10 COMPLETO (tag v4.0.0). Sprint 11: deploy OK, migrations 001-021 rodando
+- **Ultima sessao:** 15/03/2026 — Tempo real topbar + alertas persistentes + mesa simplificada + Sentry + auditoria anti-código
 - **Proxima etapa:** 11.5 domínio personalizado, 11.6 monitoramento
 - **Bugs conhecidos:** Nenhum critico pendente
-- **Migrations em produção:** 001-018 (última: 018_dominios_personalizados)
+- **Migrations em produção:** 001-021 (última: 021_tempo_real_alertas_mesa)
 
 ---
 

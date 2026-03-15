@@ -28,6 +28,10 @@ export const ADMIN_QUERY_KEYS = {
   entregasAtivas: ["admin", "entregas", "ativas"] as const,
   diagnosticoTempo: ["admin", "entregas", "diagnostico-tempo"] as const,
   mesas: ["admin", "mesas"] as const,
+  tempoMedio: ["admin", "tempo-medio"] as const,
+  alertasAtraso: ["admin", "alertas-atraso"] as const,
+  sugestoesTempo: ["admin", "sugestoes-tempo"] as const,
+  notificacoes: ["admin", "notificacoes"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -646,6 +650,82 @@ export function useAdicionarPedidoMesa() {
       observacoes?: string;
       forma_pagamento?: string;
     }) => api.adicionarPedidoMesa(numero_mesa, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.mesas });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+    },
+  });
+}
+
+// ─── Tempo Médio ─────────────────────────────────────
+export function useTempoMedio() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.tempoMedio,
+    queryFn: api.getTempoMedio,
+    staleTime: 15 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+}
+
+// ─── Alertas de Atraso ──────────────────────────────
+export function useAlertasAtraso(periodo?: string, tipo?: string) {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.alertasAtraso, periodo, tipo],
+    queryFn: () => api.getAlertasAtraso({ periodo, tipo }),
+    staleTime: 30 * 1000,
+  });
+}
+
+// ─── Sugestões de Tempo ─────────────────────────────
+export function useSugestoesTempo() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.sugestoesTempo,
+    queryFn: api.getSugestoesTempo,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useRejeitarSugestao() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.rejeitarSugestaoTempo,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.sugestoesTempo });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.diagnosticoTempo });
+    },
+  });
+}
+
+// ─── Notificações ───────────────────────────────────
+export function useNotificacoes() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.notificacoes,
+    queryFn: api.getNotificacoes,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+  });
+}
+
+export function useMarcarNotificacaoLida() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.marcarNotificacaoLida,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.notificacoes }),
+  });
+}
+
+// ─── Pedido Rápido Mesa ─────────────────────────────
+export function useAdicionarPedidoMesaRapido() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      numero_mesa,
+      itens,
+    }: {
+      numero_mesa: string;
+      itens: Array<{ produto_id: number; quantidade: number; observacao?: string; variacoes?: Array<{ nome: string; preco_adicional: number }> }>;
+    }) => api.adicionarPedidoMesaRapido(numero_mesa, { itens }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.mesas });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });

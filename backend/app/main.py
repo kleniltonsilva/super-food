@@ -12,6 +12,11 @@ import os, json, time, uuid, logging, asyncio
 from typing import List, Dict
 from contextlib import asynccontextmanager
 
+from .sentry_config import init_sentry
+
+# Inicializa Sentry ANTES de qualquer import do app (captura erros de inicialização)
+init_sentry()
+
 from .routers import restaurantes, pedidos, site_cliente, carrinho, gps, auth_cliente, auth_restaurante, auth_motoboy, auth_admin, upload, painel
 from .routers import motoboy as motoboy_router
 from .routers import admin as admin_router

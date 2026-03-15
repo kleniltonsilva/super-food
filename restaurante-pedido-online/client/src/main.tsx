@@ -1,3 +1,8 @@
+import { initSentry } from "./lib/sentry";
+
+// Inicializa Sentry ANTES de qualquer render
+initSentry();
+
 import { QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
 import { toast } from "sonner";

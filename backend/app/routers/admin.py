@@ -12,7 +12,7 @@ from sqlalchemy import func, and_, or_, case, cast, Integer, Float, String
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, timedelta
-import re
+import re, os, logging, requests as http_requests
 import secrets
 import hashlib
 
@@ -1040,3 +1040,223 @@ def admin_autocomplete_endereco(
 
     sugestoes = autocomplete_address(query)
     return {"sugestoes": sugestoes}
+
+
+# ========== Sentry — Consultar Erros ==========
+
+logger = logging.getLogger("superfood")
+
+SENTRY_API_BASE = "https://sentry.io/api/0"
+
+
+def _sentry_headers():
+    """Retorna headers de autenticação para a API do Sentry."""
+    token = os.getenv("SENTRY_AUTH_TOKEN", "")
+    if not token:
+        return None
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _sentry_org():
+    return os.getenv("SENTRY_ORG", "derekh-food")
+
+
+def _sentry_project(projeto: str):
+    """Resolve slug do projeto Sentry."""
+    mapping = {
+        "api": os.getenv("SENTRY_PROJECT_API", "derekh-food-api"),
+        "frontend": os.getenv("SENTRY_PROJECT_FRONTEND", "derekh-food-frontend"),
+    }
+    return mapping.get(projeto, projeto)
+
+
+@router.get("/erros")
+def listar_erros_sentry(
+    projeto: str = Query("api", regex="^(api|frontend)$"),
+    periodo: str = Query("24h", regex="^(1h|24h|7d|30d)$"),
+    status_filtro: str = Query("todos", regex="^(todos|unresolved|resolved|ignored)$"),
+    current_admin=Depends(auth.get_current_admin),
+):
+    """Lista issues do Sentry com filtros de projeto, período e status."""
+    headers = _sentry_headers()
+    if not headers:
+        raise HTTPException(status_code=503, detail="SENTRY_AUTH_TOKEN não configurado")
+
+    org = _sentry_org()
+    project_slug = _sentry_project(projeto)
+
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    delta_map = {"1h": timedelta(hours=1), "24h": timedelta(hours=24), "7d": timedelta(days=7), "30d": timedelta(days=30)}
+    delta = delta_map.get(periodo, timedelta(hours=24))
+
+    # Query de status
+    query_map = {
+        "todos": "",
+        "unresolved": "is:unresolved",
+        "resolved": "is:resolved",
+        "ignored": "is:ignored",
+    }
+    query = query_map.get(status_filtro, "")
+
+    params = {
+        "sort": "date",
+        "limit": 50,
+        "start": (now - delta).strftime("%Y-%m-%dT%H:%M:%S"),
+        "end": now.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    if query:
+        params["query"] = query
+
+    try:
+        resp = http_requests.get(
+            f"{SENTRY_API_BASE}/projects/{org}/{project_slug}/issues/",
+            headers=headers,
+            params=params,
+            timeout=10,
+        )
+        resp.raise_for_status()
+        issues = resp.json()
+    except http_requests.RequestException as e:
+        logger.warning(f"Sentry API erro: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao consultar Sentry: {str(e)[:200]}")
+
+    resultado = []
+    for issue in issues:
+        metadata = issue.get("metadata", {})
+        resultado.append({
+            "id": issue.get("id"),
+            "titulo": issue.get("title", ""),
+            "culprit": issue.get("culprit", ""),
+            "tipo": metadata.get("type", issue.get("type", "")),
+            "valor": metadata.get("value", ""),
+            "arquivo": metadata.get("filename", ""),
+            "funcao": metadata.get("function", ""),
+            "contagem": issue.get("count", 0),
+            "usuarios_afetados": issue.get("userCount", 0),
+            "primeira_vez": issue.get("firstSeen"),
+            "ultima_vez": issue.get("lastSeen"),
+            "nivel": issue.get("level", "error"),
+            "status": issue.get("status", "unresolved"),
+            "link": issue.get("permalink", ""),
+        })
+
+    # Contadores por status (para as tabs)
+    contadores = {"total": len(resultado), "unresolved": 0, "resolved": 0, "ignored": 0}
+    for e in resultado:
+        s = e["status"]
+        if s in contadores:
+            contadores[s] += 1
+
+    return {
+        "erros": resultado,
+        "contadores": contadores,
+        "projeto": projeto,
+        "periodo": periodo,
+        "status_filtro": status_filtro,
+    }
+
+
+@router.get("/erros/{issue_id}")
+def detalhe_erro_sentry(
+    issue_id: str,
+    current_admin=Depends(auth.get_current_admin),
+):
+    """Retorna detalhes de um issue do Sentry com texto formatado para copiar no Claude."""
+    headers = _sentry_headers()
+    if not headers:
+        raise HTTPException(status_code=503, detail="SENTRY_AUTH_TOKEN não configurado")
+
+    org = _sentry_org()
+
+    try:
+        # Busca detalhes do issue
+        issue_resp = http_requests.get(
+            f"{SENTRY_API_BASE}/issues/{issue_id}/",
+            headers=headers,
+            timeout=10,
+        )
+        issue_resp.raise_for_status()
+        issue = issue_resp.json()
+
+        # Busca último evento do issue (com stack trace completo)
+        event_resp = http_requests.get(
+            f"{SENTRY_API_BASE}/issues/{issue_id}/events/latest/",
+            headers=headers,
+            timeout=10,
+        )
+        event_resp.raise_for_status()
+        event = event_resp.json()
+    except http_requests.RequestException as e:
+        logger.warning(f"Sentry API erro: {e}")
+        raise HTTPException(status_code=502, detail=f"Erro ao consultar Sentry: {str(e)[:200]}")
+
+    # Extrai stack trace formatado
+    stack_frames = []
+    exceptions = event.get("entries", [])
+    for entry in exceptions:
+        if entry.get("type") == "exception":
+            for exc_value in entry.get("data", {}).get("values", []):
+                exc_type = exc_value.get("type", "Exception")
+                exc_msg = exc_value.get("value", "")
+                stack_frames.append(f"## {exc_type}: {exc_msg}\n")
+
+                for frame in exc_value.get("stacktrace", {}).get("frames", []):
+                    filename = frame.get("filename", "?")
+                    lineno = frame.get("lineNo", "?")
+                    func_name = frame.get("function", "?")
+                    context_line = frame.get("context_line", "").strip()
+
+                    stack_frames.append(f"  File \"{filename}\", line {lineno}, in {func_name}")
+                    if context_line:
+                        stack_frames.append(f"    {context_line}")
+
+    stack_text = "\n".join(stack_frames) if stack_frames else "Stack trace não disponível"
+
+    # Tags relevantes
+    tags = {t["key"]: t["value"] for t in event.get("tags", [])}
+
+    # Monta texto formatado para copiar no Claude Code
+    texto_claude = f"""## Erro Sentry — {issue.get('title', 'Sem título')}
+
+**Projeto:** {issue.get('project', {}).get('slug', '?')}
+**Ambiente:** {tags.get('environment', '?')}
+**Nível:** {issue.get('level', 'error')}
+**Primeira vez:** {issue.get('firstSeen', '?')}
+**Última vez:** {issue.get('lastSeen', '?')}
+**Ocorrências:** {issue.get('count', 0)}
+**Usuários afetados:** {issue.get('userCount', 0)}
+
+### Tags
+{chr(10).join(f'- {k}: {v}' for k, v in tags.items() if k in ('app_type', 'browser', 'os', 'url', 'restaurante_codigo', 'restaurante_nome', 'restaurante_id', 'environment', 'server_name'))}
+
+### Stack Trace
+```
+{stack_text}
+```
+
+### Contexto do Evento
+- **URL:** {event.get('request', {}).get('url', 'N/A')}
+- **Método:** {event.get('request', {}).get('method', 'N/A')}
+- **User-Agent:** {tags.get('browser', 'N/A')}
+
+Por favor, analise este erro e sugira uma correção."""
+
+    return {
+        "issue": {
+            "id": issue.get("id"),
+            "titulo": issue.get("title"),
+            "culprit": issue.get("culprit"),
+            "nivel": issue.get("level"),
+            "contagem": issue.get("count"),
+            "usuarios_afetados": issue.get("userCount"),
+            "primeira_vez": issue.get("firstSeen"),
+            "ultima_vez": issue.get("lastSeen"),
+            "link": issue.get("permalink"),
+            "projeto": issue.get("project", {}).get("slug"),
+        },
+        "stack_trace": stack_text,
+        "tags": tags,
+        "texto_claude": texto_claude,
+    }

@@ -7,6 +7,7 @@ import {
   PlusCircle,
   CreditCard,
   AlertTriangle,
+  Bug,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ const menuItems = [
   { path: "/restaurantes/novo", label: "Novo Restaurante", icon: PlusCircle },
   { path: "/planos", label: "Planos", icon: CreditCard },
   { path: "/inadimplentes", label: "Inadimplentes", icon: AlertTriangle },
+  { path: "/erros", label: "Erros (Sentry)", icon: Bug },
 ];
 
 export default function SuperAdminSidebar({ open, onClose }: Props) {

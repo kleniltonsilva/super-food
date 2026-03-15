@@ -11,6 +11,8 @@ import {
   useEntregasAtivas,
   useDiagnosticoTempo,
   useAjustarTempo,
+  useAlertasAtraso,
+  useMesas,
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -74,6 +76,11 @@ export default function Dashboard() {
   const totalAtrasadas = entregasData?.total_atrasadas ?? 0;
   const totalAtivas = entregasData?.total_ativas ?? 0;
   const modoDespacho = config?.modo_prioridade_entrega || "rapido_economico";
+  const { data: alertasData } = useAlertasAtraso("hoje");
+  const { data: mesasData } = useMesas();
+  const totalAlertasHoje = alertasData?.resumo?.total ?? 0;
+  const mediaAtrasoHoje = alertasData?.resumo?.media_atraso_min ?? 0;
+  const totalMesasAbertas = mesasData?.total_abertas ?? 0;
 
   // Estado do modal de ajuste de tempo
   const [mostrarAjusteTempo, setMostrarAjusteTempo] = useState(false);
@@ -390,6 +397,48 @@ export default function Dashboard() {
             valueColor={caixaAberto ? "text-green-400" : "text-red-400"}
           />
         </div>
+
+        {/* Cards extras: Atrasos + Mesas */}
+        {(totalAlertasHoje > 0 || totalMesasAbertas > 0) && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {totalAlertasHoje > 0 && (
+              <Card
+                className="border-red-500/20 bg-red-500/5 cursor-pointer hover:bg-red-500/10 transition-colors"
+                onClick={() => navigate("/historico-atrasos")}
+              >
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-red-500/20 p-2.5">
+                      <AlertTriangle className="h-5 w-5 text-red-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-[var(--text-muted)]">Atrasos Hoje</p>
+                      <p className="text-xl font-bold text-red-400">{totalAlertasHoje}</p>
+                      {mediaAtrasoHoje > 0 && (
+                        <p className="text-xs text-[var(--text-muted)]">Média: {mediaAtrasoHoje}min</p>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {totalMesasAbertas > 0 && (
+              <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-blue-500/20 p-2.5">
+                      <Store className="h-5 w-5 text-blue-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-[var(--text-muted)]">Mesas Abertas</p>
+                      <p className="text-xl font-bold text-blue-400">{totalMesasAbertas}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        )}
 
         {/* Gráfico e Pedidos Recentes */}
         <div className="grid gap-4 lg:grid-cols-2">

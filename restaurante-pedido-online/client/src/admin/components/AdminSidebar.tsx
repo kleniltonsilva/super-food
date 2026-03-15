@@ -15,6 +15,7 @@ import {
   MapPin,
   Map,
   BarChart3,
+  Clock,
   Settings,
   X,
 } from "lucide-react";
@@ -38,6 +39,7 @@ const menuItems = [
   { path: "/fidelidade", label: "Fidelidade", icon: Star },
   { path: "/bairros", label: "Bairros", icon: MapPin },
   { path: "/relatorios", label: "Relatórios", icon: BarChart3 },
+  { path: "/historico-atrasos", label: "Atrasos", icon: Clock },
   { path: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 

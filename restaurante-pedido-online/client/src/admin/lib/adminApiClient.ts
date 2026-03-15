@@ -1,4 +1,5 @@
 import axios from "axios";
+import { sentryBreadcrumbFromAxiosError } from "@/lib/sentry";
 
 const adminApi = axios.create({
   baseURL: "/",
@@ -27,6 +28,10 @@ adminApi.interceptors.response.use(
           new StorageEvent("storage", { key: "sf_admin_token", newValue: null })
         );
       }
+    }
+    // Breadcrumb Sentry para erros 5xx
+    if (err.response?.status >= 500) {
+      sentryBreadcrumbFromAxiosError("admin", err.config?.method || "get", err.config?.url || "", err.response.status);
     }
     return Promise.reject(err);
   }
@@ -428,6 +433,54 @@ export async function adicionarPedidoMesa(
   payload: { itens: string; valor_total: number; observacoes?: string; forma_pagamento?: string }
 ) {
   const { data } = await adminApi.post(`/painel/mesas/${encodeURIComponent(numero_mesa)}/pedido`, payload);
+  return data;
+}
+
+// ─── Tempo Médio ──────────────────────────────────────
+export async function getTempoMedio() {
+  const { data } = await adminApi.get("/painel/tempo-medio");
+  return data;
+}
+
+// ─── Alertas de Atraso ────────────────────────────────
+export async function getAlertasAtraso(params?: { periodo?: string; tipo?: string }) {
+  const { data } = await adminApi.get("/painel/alertas-atraso", { params });
+  return data;
+}
+
+// ─── Sugestões de Tempo ──────────────────────────────
+export async function getSugestoesTempo() {
+  const { data } = await adminApi.get("/painel/sugestoes-tempo/historico");
+  return data;
+}
+
+export async function rejeitarSugestaoTempo(payload: {
+  tipo: string;
+  valor_antes: number;
+  valor_sugerido: number;
+  motivo?: string;
+}) {
+  const { data } = await adminApi.post("/painel/sugestoes-tempo/rejeitar", payload);
+  return data;
+}
+
+// ─── Notificações ────────────────────────────────────
+export async function getNotificacoes() {
+  const { data } = await adminApi.get("/painel/notificacoes");
+  return data;
+}
+
+export async function marcarNotificacaoLida(id: number) {
+  const { data } = await adminApi.put(`/painel/notificacoes/${id}/lida`);
+  return data;
+}
+
+// ─── Pedido Rápido Mesa ──────────────────────────────
+export async function adicionarPedidoMesaRapido(
+  numero_mesa: string,
+  payload: { itens: Array<{ produto_id: number; quantidade: number; observacao?: string; variacoes?: Array<{ nome: string; preco_adicional: number }> }> }
+) {
+  const { data } = await adminApi.post(`/painel/mesas/${encodeURIComponent(numero_mesa)}/pedido-rapido`, payload);
   return data;
 }
 

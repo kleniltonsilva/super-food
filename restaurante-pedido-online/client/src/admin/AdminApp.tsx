@@ -18,6 +18,7 @@ import Fidelidade from "@/admin/pages/Fidelidade";
 import Bairros from "@/admin/pages/Bairros";
 import Relatorios from "@/admin/pages/Relatorios";
 import Configuracoes from "@/admin/pages/Configuracoes";
+import HistoricoAtrasos from "@/admin/pages/HistoricoAtrasos";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -181,6 +182,10 @@ function AdminRouter() {
 
       <Route path="/relatorios">
         <PrivateRoute><Relatorios /></PrivateRoute>
+      </Route>
+
+      <Route path="/historico-atrasos">
+        <PrivateRoute><HistoricoAtrasos /></PrivateRoute>
       </Route>
 
       <Route path="/configuracoes">

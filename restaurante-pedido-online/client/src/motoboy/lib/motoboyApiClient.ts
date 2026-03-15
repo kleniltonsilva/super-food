@@ -1,4 +1,5 @@
 import axios from "axios";
+import { sentryBreadcrumbFromAxiosError } from "@/lib/sentry";
 
 const motoboyApi = axios.create({
   baseURL: "/",
@@ -41,6 +42,10 @@ motoboyApi.interceptors.response.use(
           new StorageEvent("storage", { key: "sf_motoboy_token", newValue: null })
         );
       }
+    }
+    // Breadcrumb Sentry para erros 5xx
+    if (err.response?.status >= 500) {
+      sentryBreadcrumbFromAxiosError("motoboy", err.config?.method || "get", err.config?.url || "", err.response.status);
     }
     return Promise.reject(err);
   }

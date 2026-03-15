@@ -1,4 +1,5 @@
 import axios from "axios";
+import { sentryBreadcrumbFromAxiosError } from "./sentry";
 
 // Codigo do restaurante injetado pelo servidor
 function getCodigoAcesso(): string {
@@ -65,6 +66,10 @@ api.interceptors.response.use(
           newValue: null,
         }));
       }
+    }
+    // Breadcrumb Sentry para erros 5xx
+    if (error.response?.status >= 500) {
+      sentryBreadcrumbFromAxiosError("site", error.config?.method || "get", error.config?.url || "", error.response.status);
     }
     return Promise.reject(error);
   }

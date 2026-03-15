@@ -44,6 +44,7 @@ import {
   Truck,
 } from "lucide-react";
 import { toast } from "sonner";
+import MesaProductPicker from "@/admin/components/MesaProductPicker";
 
 interface PedidoMesa {
   id: number;
@@ -126,6 +127,8 @@ export default function MesasGrid() {
   const [abrirMesaDialogOpen, setAbrirMesaDialogOpen] = useState(false);
   const [novaMesaNumero, setNovaMesaNumero] = useState("");
   const [cancelarId, setCancelarId] = useState<number | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerMesa, setPickerMesa] = useState("");
 
   const mesas: Mesa[] = data?.mesas || [];
   const totalAbertas: number = data?.total_abertas || 0;
@@ -372,11 +375,21 @@ export default function MesasGrid() {
                   variant="outline"
                   className="border-[var(--border-subtle)]"
                   onClick={() => {
+                    setPickerMesa(mesaSelecionada.numero_mesa);
+                    setPickerOpen(true);
+                  }}
+                >
+                  <Plus className="mr-1 h-4 w-4" /> Adicionar Itens
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-[var(--border-subtle)]"
+                  onClick={() => {
                     setMesaSelecionada(null);
                     navigate(`/pedidos/novo?mesa=${encodeURIComponent(mesaSelecionada.numero_mesa)}`);
                   }}
                 >
-                  <Plus className="mr-1 h-4 w-4" /> Adicionar Pedido
+                  Pedido Completo
                 </Button>
                 {mesaSelecionada.status === "aberta" && (
                   <Button
@@ -482,6 +495,13 @@ export default function MesasGrid() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Product Picker para mesa */}
+      <MesaProductPicker
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        numeroMesa={pickerMesa}
+      />
     </div>
   );
 }

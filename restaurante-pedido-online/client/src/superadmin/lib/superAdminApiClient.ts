@@ -1,4 +1,5 @@
 import axios from "axios";
+import { sentryBreadcrumbFromAxiosError } from "@/lib/sentry";
 
 const superAdminApi = axios.create({
   baseURL: "/",
@@ -27,6 +28,10 @@ superAdminApi.interceptors.response.use(
           new StorageEvent("storage", { key: "sf_superadmin_token", newValue: null })
         );
       }
+    }
+    // Breadcrumb Sentry para erros 5xx
+    if (err.response?.status >= 500) {
+      sentryBreadcrumbFromAxiosError("superadmin", err.config?.method || "get", err.config?.url || "", err.response.status);
     }
     return Promise.reject(err);
   }
@@ -127,5 +132,18 @@ export async function getInadimplentes(dias_tolerancia?: number) {
   const { data } = await superAdminApi.get("/api/admin/inadimplentes", {
     params: dias_tolerancia !== undefined ? { dias_tolerancia } : undefined,
   });
+  return data;
+}
+
+// ─── Erros Sentry ─────────────────────────────────────
+export async function getErrosSentry(projeto: string = "api", periodo: string = "24h", statusFiltro: string = "todos") {
+  const { data } = await superAdminApi.get("/api/admin/erros", {
+    params: { projeto, periodo, status_filtro: statusFiltro },
+  });
+  return data;
+}
+
+export async function getErroDetalheSentry(issueId: string) {
+  const { data } = await superAdminApi.get(`/api/admin/erros/${issueId}`);
   return data;
 }

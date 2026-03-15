@@ -11,8 +11,10 @@ export type WsEventTipo =
   | "entrega_atrasada"
   | "entrega_finalizada"
   | "tempo_ajustado"
+  | "tempo_medio_atualizado"
   | "motoboy_posicao"
   | "mesa_paga"
+  | "config_atualizada"
   | "ping";
 
 export interface WsEvent {
@@ -206,6 +208,15 @@ export function useWebSocket({
           break;
         case "motoboy_posicao":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.motoboys });
+          break;
+        case "tempo_medio_atualizado":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.tempoMedio });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.alertasAtraso });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.notificacoes });
+          break;
+        case "config_atualizada":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.config });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configSite });
           break;
       }
     },

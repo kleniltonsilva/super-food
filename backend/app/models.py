@@ -62,6 +62,10 @@ from database.models import (
 
     # Domínios
     DominioPersonalizado,
+
+    # Tempo Real / Alertas
+    AlertaAtraso,
+    SugestaoTempo,
 )
 
 # Para compatibilidade com imports existentes
@@ -95,4 +99,6 @@ __all__ = [
     'Combo',
     'ComboItem',
     'DominioPersonalizado',
+    'AlertaAtraso',
+    'SugestaoTempo',
 ]

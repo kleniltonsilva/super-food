@@ -9,7 +9,7 @@ Todos os endpoints requerem auth JWT do restaurante.
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, and_, or_, desc
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime, timedelta, date
 
@@ -224,10 +224,7 @@ async def criar_pedido_manual(
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
-    ultimo = db.query(models.Pedido).filter(
-        models.Pedido.restaurante_id == rest.id
-    ).order_by(desc(models.Pedido.id)).first()
-    proxima_comanda = (int(ultimo.comanda) + 1) if ultimo and ultimo.comanda and str(ultimo.comanda).isdigit() else 1
+    proxima_comanda = _gerar_proxima_comanda(db, rest.id)
 
     pedido = models.Pedido(
         restaurante_id=rest.id,
@@ -279,13 +276,33 @@ async def atualizar_status_pedido(
     ).first()
     if not pedido:
         raise HTTPException(404, "Pedido não encontrado")
+    agora = datetime.utcnow()
     pedido.status = dados.status
-    pedido.atualizado_em = datetime.utcnow()
+    pedido.atualizado_em = agora
 
     # Registrar histórico de status
     historico = list(pedido.historico_status or [])
-    historico.append({"status": dados.status, "timestamp": datetime.utcnow().isoformat()})
+    historico.append({"status": dados.status, "timestamp": agora.isoformat()})
     pedido.historico_status = historico
+
+    # Auto-calcular tempo_preparo_real_min quando muda para 'pronto'
+    if dados.status == 'pronto' and pedido.historico_status:
+        ts_pendente = None
+        for h in pedido.historico_status:
+            if h.get("status") == "pendente":
+                ts_pendente = h.get("timestamp")
+                break
+        if ts_pendente:
+            try:
+                dt_pendente = datetime.fromisoformat(ts_pendente)
+                delta = (agora - dt_pendente).total_seconds() / 60
+                pedido.tempo_preparo_real_min = int(delta)
+            except (ValueError, TypeError):
+                pass
+
+    # Criar alerta de atraso quando pedido é entregue/finalizado
+    if dados.status == 'entregue':
+        _verificar_e_criar_alerta_atraso(db, rest, pedido)
 
     # Auto-lançar venda no caixa quando pedido é entregue
     if dados.status == 'entregue' and pedido.valor_total and pedido.valor_total > 0:
@@ -332,6 +349,8 @@ async def atualizar_status_pedido(
             "tipo": "pedido_atualizado",
             "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda, "status": pedido.status}
         }, rest.id)
+        if dados.status in ('entregue', 'pronto'):
+            await ws.broadcast({"tipo": "tempo_medio_atualizado", "dados": {}}, rest.id)
 
     return {"id": pedido.id, "status": pedido.status}
 
@@ -767,16 +786,20 @@ def diagnostico_tempo(
     }
 
 
+class AjustarTempoRequest(BaseModel):
+    tempo_entrega_estimado: Optional[int] = None
+    tempo_retirada_estimado: Optional[int] = None
+
+
 @router.post("/entregas/ajustar-tempo")
 async def ajustar_tempo_automatico(
-    dados: dict,
+    dados: AjustarTempoRequest,
     request: Request,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
     """
     Aplica ajuste de tempo de entrega/retirada sugerido pelo diagnóstico.
-    Body: { tempo_entrega_estimado: int, tempo_retirada_estimado: int }
     """
     site_config = db.query(models.SiteConfig).filter(
         models.SiteConfig.restaurante_id == rest.id
@@ -785,13 +808,34 @@ async def ajustar_tempo_automatico(
         site_config = models.SiteConfig(restaurante_id=rest.id)
         db.add(site_config)
 
-    tempo_entrega = dados.get('tempo_entrega_estimado')
-    tempo_retirada = dados.get('tempo_retirada_estimado')
+    tempo_entrega = dados.tempo_entrega_estimado
+    tempo_retirada = dados.tempo_retirada_estimado
+
+    # Validar limites razoáveis (1 a 300 minutos)
+    for val, nome in [(tempo_entrega, 'entrega'), (tempo_retirada, 'retirada')]:
+        if val is not None and (val < 1 or val > 300):
+            raise HTTPException(400, f"Tempo de {nome} deve ser entre 1 e 300 minutos")
 
     if tempo_entrega is not None:
+        valor_antes_ent = site_config.tempo_entrega_estimado
         site_config.tempo_entrega_estimado = int(tempo_entrega)
+        if valor_antes_ent != int(tempo_entrega):
+            db.add(models.SugestaoTempo(
+                restaurante_id=rest.id, tipo='entrega',
+                valor_antes=valor_antes_ent, valor_sugerido=int(tempo_entrega),
+                aceita=True, motivo='Aceito via diagnóstico automático',
+                respondido_em=datetime.utcnow(),
+            ))
     if tempo_retirada is not None:
+        valor_antes_ret = site_config.tempo_retirada_estimado
         site_config.tempo_retirada_estimado = int(tempo_retirada)
+        if valor_antes_ret != int(tempo_retirada):
+            db.add(models.SugestaoTempo(
+                restaurante_id=rest.id, tipo='retirada',
+                valor_antes=valor_antes_ret, valor_sugerido=int(tempo_retirada),
+                aceita=True, motivo='Aceito via diagnóstico automático',
+                respondido_em=datetime.utcnow(),
+            ))
 
     db.commit()
 
@@ -1078,10 +1122,10 @@ def listar_variacoes(
     ).first()
     if not prod:
         raise HTTPException(404, "Produto não encontrado")
-    vars = db.query(models.VariacaoProduto).filter(
-        models.VariacaoProduto.produto_id == prod_id,
-        models.VariacaoProduto.ativo == True
-    ).order_by(models.VariacaoProduto.ordem).all()
+    vars = db.query(models.VariacaoProdutoProduto).filter(
+        models.VariacaoProdutoProduto.produto_id == prod_id,
+        models.VariacaoProdutoProduto.ativo == True
+    ).order_by(models.VariacaoProdutoProduto.ordem).all()
     return [{
         "id": v.id, "tipo_variacao": v.tipo_variacao, "nome": v.nome,
         "descricao": v.descricao, "preco_adicional": v.preco_adicional,
@@ -1100,7 +1144,7 @@ def criar_variacao(
     ).first()
     if not prod:
         raise HTTPException(404, "Produto não encontrado")
-    var = models.VariacaoProduto(produto_id=prod_id, **dados.model_dump())
+    var = models.VariacaoProdutoProduto(produto_id=prod_id, **dados.model_dump())
     db.add(var)
     db.commit()
     db.refresh(var)
@@ -1120,13 +1164,13 @@ def aplicar_max_sabores_em_massa(
 ):
     """Aplica max_sabores a TODAS as variações de tamanho com o mesmo nome no restaurante"""
     # Subquery necessária porque PostgreSQL não suporta UPDATE com JOIN direto
-    ids_variacoes = db.query(models.VariacaoProduto.id).join(models.Produto).filter(
+    ids_variacoes = db.query(models.VariacaoProdutoProduto.id).join(models.Produto).filter(
         models.Produto.restaurante_id == rest.id,
-        models.VariacaoProduto.tipo_variacao == "tamanho",
-        models.VariacaoProduto.nome == dados.nome_tamanho,
+        models.VariacaoProdutoProduto.tipo_variacao == "tamanho",
+        models.VariacaoProdutoProduto.nome == dados.nome_tamanho,
     ).subquery()
-    total = db.query(models.VariacaoProduto).filter(
-        models.VariacaoProduto.id.in_(ids_variacoes)
+    total = db.query(models.VariacaoProdutoProduto).filter(
+        models.VariacaoProdutoProduto.id.in_(ids_variacoes)
     ).update({"max_sabores": dados.max_sabores}, synchronize_session=False)
     db.commit()
     return {"mensagem": f"Atualizado {total} variações '{dados.nome_tamanho}' para {dados.max_sabores} sabores", "total": total}
@@ -1138,8 +1182,8 @@ def editar_variacao(
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
-    var = db.query(models.VariacaoProduto).join(models.Produto).filter(
-        models.VariacaoProduto.id == var_id,
+    var = db.query(models.VariacaoProdutoProduto).join(models.Produto).filter(
+        models.VariacaoProdutoProduto.id == var_id,
         models.Produto.restaurante_id == rest.id
     ).first()
     if not var:
@@ -1156,8 +1200,8 @@ def desativar_variacao(
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
-    var = db.query(models.VariacaoProduto).join(models.Produto).filter(
-        models.VariacaoProduto.id == var_id,
+    var = db.query(models.VariacaoProdutoProduto).join(models.Produto).filter(
+        models.VariacaoProdutoProduto.id == var_id,
         models.Produto.restaurante_id == rest.id
     ).first()
     if not var:
@@ -3042,13 +3086,20 @@ def listar_mesas(
 
         status = "aberta" if ativos else "paga"
         valor_total = sum(p.valor_total or 0 for p in pedidos_mesa if p.status != 'cancelado')
-        aberta_desde = min(p.data_criacao for p in pedidos_mesa).isoformat() if pedidos_mesa else None
+        data_mais_antiga = min(p.data_criacao for p in pedidos_mesa) if pedidos_mesa else None
+        aberta_desde = data_mais_antiga.isoformat() if data_mais_antiga else None
+        tempo_aberta_min = int((datetime.utcnow() - data_mais_antiga).total_seconds() / 60) if data_mais_antiga else 0
+        total_itens = sum(
+            len((p.itens or '').split('\n')) for p in pedidos_mesa if p.status != 'cancelado' and p.itens
+        )
 
         mesas.append({
             "numero_mesa": numero,
             "status": status,
             "valor_total": round(valor_total, 2),
             "aberta_desde": aberta_desde,
+            "tempo_aberta_min": tempo_aberta_min,
+            "total_itens": total_itens,
             "pedidos": [
                 {
                     "id": p.id,
@@ -3109,15 +3160,21 @@ async def pagar_mesa(
         campo_pgto = 'dinheiro'
 
     valor_total_mesa = 0
+    agora = datetime.utcnow()
     for pedido in pedidos_ativos:
         pedido.status = 'entregue'
-        pedido.atualizado_em = datetime.utcnow()
+        pedido.atualizado_em = agora
+        pedido.mesa_fechada_em = agora
         if dados.forma_pagamento:
             pedido.forma_pagamento_real = dados.forma_pagamento
 
         historico = list(pedido.historico_status or [])
-        historico.append({"status": "entregue", "timestamp": datetime.utcnow().isoformat()})
+        historico.append({"status": "entregue", "timestamp": agora.isoformat()})
         pedido.historico_status = historico
+
+        # Calcular tempo_preparo_real_min se ainda não foi calculado
+        if pedido.tempo_preparo_real_min is None and pedido.data_criacao:
+            pedido.tempo_preparo_real_min = int((agora - pedido.data_criacao).total_seconds() / 60)
 
         val = pedido.valor_total or 0
         valor_total_mesa += val
@@ -3143,6 +3200,34 @@ async def pagar_mesa(
             elif campo_pgto == 'vale':
                 caixa_aberto.total_vale = (caixa_aberto.total_vale or 0) + val
 
+    # Verificar se mesa ficou aberta demais → criar alerta
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+    limite_mesa_min = (config.tempo_alerta_mesa_min if config else 60) or 60
+    primeiro_pedido = min(pedidos_ativos, key=lambda p: p.data_criacao)
+    tempo_total = int((agora - primeiro_pedido.data_criacao).total_seconds() / 60)
+    if tempo_total > limite_mesa_min:
+        atraso_min = tempo_total - limite_mesa_min
+        alerta = models.AlertaAtraso(
+            restaurante_id=rest.id,
+            pedido_id=primeiro_pedido.id,
+            tipo_alerta='atraso_mesa',
+            tipo_pedido='mesa',
+            tempo_estimado_min=limite_mesa_min,
+            tempo_real_min=tempo_total,
+            atraso_min=atraso_min,
+        )
+        db.add(alerta)
+        notif_mesa = models.Notificacao(
+            restaurante_id=rest.id,
+            tipo='alerta_atraso',
+            titulo=f'Mesa {numero_mesa} ficou aberta {tempo_total}min',
+            mensagem=f'Limite: {limite_mesa_min}min, atraso: {atraso_min}min',
+            dados_json={"numero_mesa": numero_mesa, "atraso_min": atraso_min, "tipo_pedido": "mesa"},
+        )
+        db.add(notif_mesa)
+
     db.commit()
 
     ws = getattr(request.app.state, 'ws_manager', None)
@@ -3151,6 +3236,7 @@ async def pagar_mesa(
             "tipo": "mesa_paga",
             "dados": {"numero_mesa": numero_mesa, "valor_total": round(valor_total_mesa, 2)}
         }, rest.id)
+        await ws.broadcast({"tipo": "tempo_medio_atualizado", "dados": {}}, rest.id)
 
     return {
         "numero_mesa": numero_mesa,
@@ -3175,12 +3261,10 @@ async def adicionar_pedido_mesa(
     db: Session = Depends(database.get_db)
 ):
     """Cria um pedido para a mesa especificada."""
-    ultimo = db.query(models.Pedido).filter(
-        models.Pedido.restaurante_id == rest.id
-    ).order_by(desc(models.Pedido.id)).first()
-    proxima_comanda = (int(ultimo.comanda) + 1) if ultimo and ultimo.comanda and str(ultimo.comanda).isdigit() else 1
-
     mesa = numero_mesa.strip()
+    agora = datetime.utcnow()
+    proxima_comanda = _gerar_proxima_comanda(db, rest.id)
+
     pedido = models.Pedido(
         restaurante_id=rest.id,
         comanda=str(proxima_comanda),
@@ -3194,8 +3278,8 @@ async def adicionar_pedido_mesa(
         forma_pagamento=dados.forma_pagamento,
         observacoes=dados.observacoes,
         status='pendente',
-        historico_status=[{"status": "pendente", "timestamp": datetime.utcnow().isoformat()}],
-        data_criacao=datetime.utcnow()
+        historico_status=[{"status": "pendente", "timestamp": agora.isoformat()}],
+        data_criacao=agora,
     )
     db.add(pedido)
     db.commit()
@@ -3214,3 +3298,428 @@ async def adicionar_pedido_mesa(
         }, rest.id)
 
     return {"id": pedido.id, "comanda": pedido.comanda, "status": pedido.status}
+
+
+# ============================================================
+# HELPER: Gerar próxima comanda de forma segura
+# ============================================================
+
+def _gerar_proxima_comanda(db: Session, restaurante_id: int) -> int:
+    """Gera próxima comanda usando o último pedido por ID + lock para evitar duplicatas."""
+    ultimo = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == restaurante_id,
+    ).order_by(desc(models.Pedido.id)).with_for_update().first()
+    if ultimo and ultimo.comanda and str(ultimo.comanda).isdigit():
+        return int(ultimo.comanda) + 1
+    return 1
+
+
+# ============================================================
+# HELPER: Verificar e criar alerta de atraso
+# ============================================================
+
+def _verificar_e_criar_alerta_atraso(db: Session, rest: models.Restaurante, pedido: models.Pedido):
+    """Cria AlertaAtraso + Notificacao se pedido finalizou com atraso."""
+    site_config = db.query(models.SiteConfig).filter(
+        models.SiteConfig.restaurante_id == rest.id
+    ).first()
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+
+    tipo = pedido.tipo_entrega or ''
+    tempo_real = pedido.tempo_preparo_real_min
+    tempo_configurado = None
+
+    if tipo == 'entrega' and site_config:
+        tempo_configurado = site_config.tempo_entrega_estimado
+        entrega = pedido.entrega
+        if entrega and entrega.delivery_started_at and entrega.delivery_finished_at:
+            tempo_delivery = int((entrega.delivery_finished_at - entrega.delivery_started_at).total_seconds() / 60)
+            tempo_real = (tempo_real or 0) + tempo_delivery
+    elif tipo == 'retirada' and site_config:
+        tempo_configurado = site_config.tempo_retirada_estimado
+    elif tipo == 'mesa' and config:
+        tempo_configurado = config.tempo_medio_preparo
+
+    if tempo_real is None or tempo_configurado is None:
+        return
+
+    tolerancia = (config.tolerancia_atraso_min if config else 10) or 10
+    atraso = tempo_real - tempo_configurado
+    if atraso <= tolerancia:
+        return
+
+    alerta = models.AlertaAtraso(
+        restaurante_id=rest.id,
+        pedido_id=pedido.id,
+        tipo_alerta=f'atraso_{tipo}',
+        tipo_pedido=tipo,
+        tempo_estimado_min=tempo_configurado,
+        tempo_real_min=tempo_real,
+        atraso_min=atraso,
+    )
+    db.add(alerta)
+
+    notif = models.Notificacao(
+        restaurante_id=rest.id,
+        tipo='alerta_atraso',
+        titulo=f'Atraso no pedido #{pedido.comanda}',
+        mensagem=f'Pedido #{pedido.comanda} ({tipo}) levou {tempo_real}min (estimado: {tempo_configurado}min, atraso: {atraso}min)',
+        dados_json={"pedido_id": pedido.id, "atraso_min": atraso, "tipo_pedido": tipo},
+    )
+    db.add(notif)
+
+
+# ============================================================
+# TEMPO MÉDIO — Configurado vs Real
+# ============================================================
+
+@router.get("/tempo-medio")
+def get_tempo_medio(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Retorna comparação Configurado vs Real para entrega, retirada e mesa."""
+    site_config = db.query(models.SiteConfig).filter(
+        models.SiteConfig.restaurante_id == rest.id
+    ).first()
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+
+    resultado = {}
+
+    # ── Entrega ──
+    conf_entrega = (site_config.tempo_entrega_estimado if site_config else 50) or 50
+    pedidos_entrega = db.query(models.Pedido).options(
+        joinedload(models.Pedido.entrega)
+    ).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.tipo_entrega == 'entrega',
+        models.Pedido.status == 'entregue',
+        models.Pedido.tempo_preparo_real_min.isnot(None),
+    ).order_by(desc(models.Pedido.atualizado_em)).limit(5).all()
+
+    if pedidos_entrega:
+        tempos = []
+        for p in pedidos_entrega:
+            t = p.tempo_preparo_real_min or 0
+            if p.entrega and p.entrega.delivery_started_at and p.entrega.delivery_finished_at:
+                t += int((p.entrega.delivery_finished_at - p.entrega.delivery_started_at).total_seconds() / 60)
+            tempos.append(t)
+        media = int(sum(tempos) / len(tempos))
+        resultado["entrega"] = {
+            "configurado_min": conf_entrega, "real_min": media,
+            "base_pedidos": len(tempos),
+            "status": _calcular_status_tempo(conf_entrega, media),
+        }
+    else:
+        resultado["entrega"] = {
+            "configurado_min": conf_entrega, "real_min": None,
+            "base_pedidos": 0, "status": "sem_dados",
+        }
+
+    # ── Retirada ──
+    conf_retirada = (site_config.tempo_retirada_estimado if site_config else 20) or 20
+    pedidos_retirada = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.tipo_entrega == 'retirada',
+        models.Pedido.status == 'entregue',
+        models.Pedido.tempo_preparo_real_min.isnot(None),
+    ).order_by(desc(models.Pedido.atualizado_em)).limit(5).all()
+
+    if pedidos_retirada:
+        media_ret = int(sum(p.tempo_preparo_real_min for p in pedidos_retirada) / len(pedidos_retirada))
+        resultado["retirada"] = {
+            "configurado_min": conf_retirada, "real_min": media_ret,
+            "base_pedidos": len(pedidos_retirada),
+            "status": _calcular_status_tempo(conf_retirada, media_ret),
+        }
+    else:
+        resultado["retirada"] = {
+            "configurado_min": conf_retirada, "real_min": None,
+            "base_pedidos": 0, "status": "sem_dados",
+        }
+
+    # ── Mesa ──
+    conf_mesa = (config.tempo_medio_preparo if config else 30) or 30
+    pedidos_mesa = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.tipo_entrega == 'mesa',
+        models.Pedido.status.in_(['pronto', 'entregue']),
+        models.Pedido.tempo_preparo_real_min.isnot(None),
+    ).order_by(desc(models.Pedido.atualizado_em)).limit(5).all()
+
+    if pedidos_mesa:
+        media_mesa = int(sum(p.tempo_preparo_real_min for p in pedidos_mesa) / len(pedidos_mesa))
+        resultado["mesa"] = {
+            "configurado_min": conf_mesa, "real_min": media_mesa,
+            "base_pedidos": len(pedidos_mesa),
+            "status": _calcular_status_tempo(conf_mesa, media_mesa),
+        }
+    else:
+        resultado["mesa"] = {
+            "configurado_min": conf_mesa, "real_min": None,
+            "base_pedidos": 0, "status": "sem_dados",
+        }
+
+    return resultado
+
+
+def _calcular_status_tempo(configurado: int, real: int) -> str:
+    diff = real - configurado
+    if diff <= 0:
+        return "otimo"
+    elif diff <= 5:
+        return "ok"
+    elif diff <= 15:
+        return "atencao"
+    else:
+        return "critico"
+
+
+# ============================================================
+# ALERTAS DE ATRASO — Persistentes
+# ============================================================
+
+@router.get("/alertas-atraso")
+def get_alertas_atraso(
+    periodo: str = Query("hoje", pattern="^(hoje|7d|30d)$"),
+    tipo: str = Query("todos", pattern="^(entrega|retirada|mesa|todos)$"),
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    agora = datetime.utcnow()
+    if periodo == "hoje":
+        inicio = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif periodo == "7d":
+        inicio = agora - timedelta(days=7)
+    else:
+        inicio = agora - timedelta(days=30)
+
+    query = db.query(models.AlertaAtraso).filter(
+        models.AlertaAtraso.restaurante_id == rest.id,
+        models.AlertaAtraso.criado_em >= inicio,
+    )
+    if tipo != "todos":
+        query = query.filter(models.AlertaAtraso.tipo_pedido == tipo)
+
+    alertas = query.order_by(desc(models.AlertaAtraso.criado_em)).limit(100).all()
+
+    items = [
+        {
+            "id": a.id, "pedido_id": a.pedido_id,
+            "tipo_alerta": a.tipo_alerta, "tipo_pedido": a.tipo_pedido,
+            "tempo_estimado_min": a.tempo_estimado_min,
+            "tempo_real_min": a.tempo_real_min,
+            "atraso_min": a.atraso_min, "resolvido": a.resolvido,
+            "criado_em": a.criado_em.isoformat() if a.criado_em else None,
+        }
+        for a in alertas
+    ]
+    total_atraso = sum(a.atraso_min or 0 for a in alertas)
+    media_atraso = int(total_atraso / len(alertas)) if alertas else 0
+    maior_atraso = max((a.atraso_min or 0) for a in alertas) if alertas else 0
+
+    return {
+        "alertas": items,
+        "resumo": {"total": len(alertas), "media_atraso_min": media_atraso, "maior_atraso_min": maior_atraso},
+    }
+
+
+# ============================================================
+# SUGESTÕES DE TEMPO — Histórico + Rejeitar
+# ============================================================
+
+@router.get("/sugestoes-tempo/historico")
+def get_sugestoes_tempo_historico(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    sugestoes = db.query(models.SugestaoTempo).filter(
+        models.SugestaoTempo.restaurante_id == rest.id,
+    ).order_by(desc(models.SugestaoTempo.criado_em)).limit(50).all()
+
+    aceitas = sum(1 for s in sugestoes if s.aceita is True)
+    rejeitadas = sum(1 for s in sugestoes if s.aceita is False)
+
+    return {
+        "sugestoes": [
+            {
+                "id": s.id, "tipo": s.tipo,
+                "valor_antes": s.valor_antes, "valor_sugerido": s.valor_sugerido,
+                "aceita": s.aceita, "motivo": s.motivo,
+                "criado_em": s.criado_em.isoformat() if s.criado_em else None,
+                "respondido_em": s.respondido_em.isoformat() if s.respondido_em else None,
+            }
+            for s in sugestoes
+        ],
+        "estatisticas": {"total": len(sugestoes), "aceitas": aceitas, "rejeitadas": rejeitadas},
+    }
+
+
+class RejeitarSugestaoRequest(BaseModel):
+    tipo: str
+    valor_antes: int
+    valor_sugerido: int
+    motivo: Optional[str] = None
+
+
+@router.post("/sugestoes-tempo/rejeitar")
+def rejeitar_sugestao_tempo(
+    dados: RejeitarSugestaoRequest,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    sugestao = models.SugestaoTempo(
+        restaurante_id=rest.id, tipo=dados.tipo,
+        valor_antes=dados.valor_antes, valor_sugerido=dados.valor_sugerido,
+        aceita=False, motivo=dados.motivo or 'Rejeitado pelo operador',
+        respondido_em=datetime.utcnow(),
+    )
+    db.add(sugestao)
+    db.commit()
+    return {"id": sugestao.id, "mensagem": "Sugestão rejeitada registrada"}
+
+
+# ============================================================
+# NOTIFICAÇÕES — CRUD
+# ============================================================
+
+@router.get("/notificacoes")
+def listar_notificacoes(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    notifs = db.query(models.Notificacao).filter(
+        models.Notificacao.restaurante_id == rest.id,
+    ).order_by(desc(models.Notificacao.data_criacao)).limit(50).all()
+
+    nao_lidas = sum(1 for n in notifs if not n.lida)
+
+    return {
+        "notificacoes": [
+            {
+                "id": n.id, "tipo": n.tipo, "titulo": n.titulo,
+                "mensagem": n.mensagem, "lida": n.lida,
+                "dados_json": n.dados_json,
+                "data_criacao": n.data_criacao.isoformat() if n.data_criacao else None,
+            }
+            for n in notifs
+        ],
+        "nao_lidas": nao_lidas,
+    }
+
+
+@router.put("/notificacoes/{notif_id}/lida")
+def marcar_notificacao_lida(
+    notif_id: int,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    notif = db.query(models.Notificacao).filter(
+        models.Notificacao.id == notif_id,
+        models.Notificacao.restaurante_id == rest.id,
+    ).first()
+    if not notif:
+        raise HTTPException(404, "Notificação não encontrada")
+    notif.lida = True
+    db.commit()
+    return {"id": notif.id, "lida": True}
+
+
+# ============================================================
+# PEDIDO RÁPIDO PARA MESA — Picker inline
+# ============================================================
+
+class PedidoRapidoMesaItem(BaseModel):
+    produto_id: int
+    quantidade: int = Field(default=1, ge=1, le=100)
+    observacao: Optional[str] = None
+    variacoes: Optional[List[dict]] = None
+
+
+class PedidoRapidoMesaRequest(BaseModel):
+    itens: List[PedidoRapidoMesaItem]
+
+
+@router.post("/mesas/{numero_mesa}/pedido-rapido")
+async def pedido_rapido_mesa(
+    numero_mesa: str,
+    dados: PedidoRapidoMesaRequest,
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Endpoint simplificado para adicionar itens a mesa."""
+    mesa = numero_mesa.strip()
+    if not dados.itens:
+        raise HTTPException(400, "Nenhum item informado")
+
+    agora = datetime.utcnow()
+    linhas_itens = []
+    valor_total = 0.0
+    for item in dados.itens:
+        prod = db.query(models.Produto).filter(
+            models.Produto.id == item.produto_id,
+            models.Produto.restaurante_id == rest.id,
+        ).first()
+        if not prod:
+            raise HTTPException(404, f"Produto {item.produto_id} não encontrado")
+        if prod.disponivel is False:
+            raise HTTPException(400, f"Produto '{prod.nome}' está indisponível")
+        preco = prod.preco * item.quantidade
+        desc_variacoes = ""
+        if item.variacoes:
+            for v in item.variacoes:
+                # Validar variação contra banco de dados
+                var_id = v.get("variacao_id")
+                if var_id:
+                    var_db = db.query(models.VariacaoProduto).filter(
+                        models.VariacaoProduto.id == var_id,
+                        models.VariacaoProduto.produto_id == prod.id,
+                    ).first()
+                    if var_db:
+                        preco += (var_db.preco_adicional or 0) * item.quantidade
+                        desc_variacoes += f" ({var_db.nome})"
+                    else:
+                        raise HTTPException(404, f"Variação {var_id} não encontrada para '{prod.nome}'")
+                else:
+                    preco += (v.get("preco_adicional", 0) or 0) * item.quantidade
+                    desc_variacoes += f" ({v.get('nome', '')})"
+        valor_total += preco
+        obs = f" - {item.observacao}" if item.observacao else ""
+        linhas_itens.append(f"{item.quantidade}x {prod.nome}{desc_variacoes}{obs}")
+
+    if valor_total <= 0:
+        raise HTTPException(400, "Valor total deve ser maior que zero")
+
+    proxima_comanda = _gerar_proxima_comanda(db, rest.id)
+
+    pedido = models.Pedido(
+        restaurante_id=rest.id,
+        comanda=str(proxima_comanda),
+        tipo='Mesa', origem='mesa', tipo_entrega='mesa',
+        cliente_nome=f"Mesa {mesa}", numero_mesa=mesa,
+        itens="\n".join(linhas_itens),
+        valor_total=round(valor_total, 2),
+        status='pendente',
+        historico_status=[{"status": "pendente", "timestamp": agora.isoformat()}],
+        data_criacao=agora,
+    )
+    db.add(pedido)
+    db.commit()
+    db.refresh(pedido)
+
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "novo_pedido",
+            "dados": {
+                "pedido_id": pedido.id, "comanda": pedido.comanda,
+                "cliente_nome": pedido.cliente_nome, "valor_total": pedido.valor_total,
+            }
+        }, rest.id)
+
+    return {"id": pedido.id, "comanda": pedido.comanda, "status": pedido.status, "valor_total": pedido.valor_total}

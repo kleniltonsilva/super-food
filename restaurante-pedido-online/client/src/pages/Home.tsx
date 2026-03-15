@@ -363,7 +363,7 @@ export default function Home() {
           target="_blank"
           rel="noopener noreferrer"
           className="fixed z-50 w-14 h-14 rounded-full flex items-center justify-center shadow-lg hover:scale-110 transition-transform"
-          style={{ bottom: "6rem", right: "1.5rem" }}
+          style={{ bottom: "6rem", left: "1.5rem" }}
         >
           <img src="/btn_whatsapp.png" alt="WhatsApp" className="w-14 h-14" />
         </a>

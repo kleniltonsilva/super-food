@@ -7,6 +7,7 @@ import GerenciarRestaurantes from "@/superadmin/pages/GerenciarRestaurantes";
 import NovoRestaurante from "@/superadmin/pages/NovoRestaurante";
 import GerenciarPlanos from "@/superadmin/pages/GerenciarPlanos";
 import Inadimplentes from "@/superadmin/pages/Inadimplentes";
+import ErrosSentry from "@/superadmin/pages/ErrosSentry";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -29,6 +30,10 @@ function SuperAdminRouter() {
 
       <Route path="/inadimplentes">
         <SuperAdminPrivateRoute><Inadimplentes /></SuperAdminPrivateRoute>
+      </Route>
+
+      <Route path="/erros">
+        <SuperAdminPrivateRoute><ErrosSentry /></SuperAdminPrivateRoute>
       </Route>
 
       {/* Dashboard */}

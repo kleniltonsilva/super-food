@@ -59,6 +59,9 @@ redis>=5.0.0
 # Storage S3/R2 (Cloudflare R2)
 boto3>=1.34.0
 
+# Monitoramento de erros (Sentry)
+sentry-sdk[fastapi]>=2.0.0
+
 # Logging JSON (producao)
 python-json-logger>=2.0.7
 

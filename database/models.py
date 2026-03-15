@@ -389,6 +389,8 @@ class ConfigRestaurante(Base):
     entregas_ativas = Column(Boolean, default=True)
     controle_pedidos_motivo = Column(String(200), default=None)
     controle_pedidos_ate = Column(DateTime, default=None)
+    # Alerta mesa aberta
+    tempo_alerta_mesa_min = Column(Integer, default=60)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     # Relacionamento
     restaurante = relationship("Restaurante", back_populates="config")
@@ -526,6 +528,9 @@ class Pedido(Base):
     status = Column(String(50), default='pendente')
     tempo_estimado = Column(Integer)
     despachado = Column(Boolean, default=False)
+    # Tempo real
+    tempo_preparo_real_min = Column(Integer)  # Tempo real de preparo calculado
+    mesa_fechada_em = Column(DateTime)        # Quando mesa foi paga/fechada
     # Timestamps
     data_criacao = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -684,6 +689,7 @@ class Notificacao(Base):
     titulo = Column(String(200), nullable=False)
     mensagem = Column(Text, nullable=False)
     lida = Column(Boolean, default=False)
+    dados_json = Column(JSON, nullable=True)  # Dados extras para notificação
     data_criacao = Column(DateTime, default=datetime.utcnow)
     # Relacionamentos
     restaurante = relationship("Restaurante", back_populates="notificacoes")
@@ -884,4 +890,47 @@ class DominioPersonalizado(Base):
     __table_args__ = (
         Index('idx_dominio_restaurante', 'restaurante_id'),
         Index('idx_dominio_dominio', 'dominio', unique=True),
+    )
+
+
+# ==================== ALERTAS DE ATRASO ====================
+class AlertaAtraso(Base):
+    """Alertas persistentes de atraso em pedidos"""
+    __tablename__ = "alertas_atraso"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
+    tipo_alerta = Column(String(30), nullable=False)  # atraso_entrega, atraso_retirada, atraso_mesa
+    tipo_pedido = Column(String(20), nullable=False)   # entrega, retirada, mesa
+    tempo_estimado_min = Column(Integer)
+    tempo_real_min = Column(Integer)
+    atraso_min = Column(Integer)
+    resolvido = Column(Boolean, default=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    resolvido_em = Column(DateTime)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    pedido = relationship("Pedido")
+    __table_args__ = (
+        Index('idx_alerta_atraso_rest_data', 'restaurante_id', 'criado_em'),
+    )
+
+
+# ==================== SUGESTÕES DE TEMPO ====================
+class SugestaoTempo(Base):
+    """Histórico de sugestões de ajuste de tempo aceitas/rejeitadas"""
+    __tablename__ = "sugestoes_tempo"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    tipo = Column(String(20), nullable=False)  # entrega, retirada, mesa
+    valor_antes = Column(Integer)
+    valor_sugerido = Column(Integer)
+    aceita = Column(Boolean)
+    motivo = Column(Text)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    respondido_em = Column(DateTime)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_sugestao_tempo_rest_data', 'restaurante_id', 'criado_em'),
     )

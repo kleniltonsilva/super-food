@@ -9,6 +9,8 @@ import {
   atualizarPlano,
   getInadimplentes,
   getAnalytics,
+  getErrosSentry,
+  getErroDetalheSentry,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -105,5 +107,23 @@ export function useInadimplentes(dias_tolerancia?: number) {
     queryKey: ["superadmin", "inadimplentes", dias_tolerancia],
     queryFn: () => getInadimplentes(dias_tolerancia),
     staleTime: 30_000,
+  });
+}
+
+// ─── Erros Sentry ─────────────────────────────────────
+export function useErrosSentry(projeto: string = "api", periodo: string = "24h", statusFiltro: string = "todos") {
+  return useQuery({
+    queryKey: ["superadmin", "erros-sentry", projeto, periodo, statusFiltro],
+    queryFn: () => getErrosSentry(projeto, periodo, statusFiltro),
+    staleTime: 30_000,
+  });
+}
+
+export function useErroDetalheSentry(issueId: string | null) {
+  return useQuery({
+    queryKey: ["superadmin", "erro-detalhe-sentry", issueId],
+    queryFn: () => getErroDetalheSentry(issueId!),
+    enabled: !!issueId,
+    staleTime: 60_000,
   });
 }

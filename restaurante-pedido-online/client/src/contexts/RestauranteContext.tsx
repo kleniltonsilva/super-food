@@ -11,6 +11,7 @@
 import React, { createContext, useContext, useEffect, useMemo } from "react";
 import { useSiteInfo } from "@/hooks/useQueries";
 import { getThemeConfig, themeToCSSVars, type ThemeConfig } from "@/config/themeConfig";
+import { setSentryRestaurante } from "@/lib/sentry";
 
 // Tipos baseados na resposta da API /site/{codigo_acesso}
 export interface SiteInfo {
@@ -67,6 +68,13 @@ export function RestauranteProvider({ children }: { children: React.ReactNode })
   const theme = useMemo(() => {
     return getThemeConfig(siteInfo?.tipo_restaurante || "restaurante");
   }, [siteInfo?.tipo_restaurante]);
+
+  // Seta tags do restaurante no Sentry para rastreamento de erros
+  useEffect(() => {
+    if (siteInfo) {
+      setSentryRestaurante(codigoAcesso, siteInfo.nome_fantasia, siteInfo.restaurante_id);
+    }
+  }, [siteInfo, codigoAcesso]);
 
   // Aplica CSS variables do tema ao :root sempre que siteInfo ou tema mudam.
   // Cores customizadas do restaurante (API) sempre têm prioridade sobre o preset.
