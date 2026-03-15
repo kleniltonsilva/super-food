@@ -22,10 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Save, Upload, Loader2, AlertTriangle, MapPin, Eye, Plus, Trash2 } from "lucide-react";
+import { Save, Upload, Loader2, AlertTriangle, MapPin } from "lucide-react";
 import InfoTooltip from "@/components/InfoTooltip";
 import { toast } from "sonner";
-import { getThemeConfig, tiposRestaurante } from "@/config/themeConfig";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { autocompleteEndereco } from "@/admin/lib/adminApiClient";
 
@@ -469,100 +468,12 @@ export default function Configuracoes() {
               <Skeleton className="h-96 w-full" />
             ) : (
               <div className="grid gap-4 lg:grid-cols-2">
-                {/* Aparência */}
+                {/* Logo e Banner */}
                 <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
                   <CardHeader>
-                    <CardTitle className="text-[var(--text-primary)]">Aparência</CardTitle>
+                    <CardTitle className="text-[var(--text-primary)]">Logo e Banner</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                        Tipo de Restaurante
-                        <InfoTooltip text="Define o tema visual completo do site (cores, fontes, layout dos cards, header, footer). A mudança é instantânea para o cliente." />
-                      </label>
-                      <Select value={(siteForm.tipo_restaurante as string) || "restaurante"} onValueChange={(v) => updateSite("tipo_restaurante", v)}>
-                        <SelectTrigger className="dark-input"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {tiposRestaurante.map((t) => (
-                            <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {/* Preview do tema selecionado */}
-                    {(() => {
-                      const previewTheme = getThemeConfig((siteForm.tipo_restaurante as string) || "restaurante");
-                      const prim = (siteForm.tema_cor_primaria as string) || previewTheme.colors.primary;
-                      const sec = (siteForm.tema_cor_secundaria as string) || previewTheme.colors.secondary;
-                      return (
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                            <Eye className="w-3.5 h-3.5" />
-                            Preview do Tema: {previewTheme.label}
-                          </label>
-                          <div className="rounded-lg overflow-hidden border border-[var(--border-subtle)]" style={{ background: previewTheme.colors.bodyBg }}>
-                            {/* Mini header */}
-                            <div className="px-3 py-2 flex items-center justify-between" style={{ background: previewTheme.colors.headerBg }}>
-                              <span className="text-xs font-bold" style={{ color: previewTheme.isDark || previewTheme.headerStyle === "dark" ? "#fff" : previewTheme.colors.textPrimary, fontFamily: previewTheme.fonts.heading }}>{(siteForm.nome_fantasia as string) || "Seu Restaurante"}</span>
-                              <div className="w-4 h-4 rounded-full" style={{ background: prim }} />
-                            </div>
-                            {/* Mini banner */}
-                            <div className="h-8" style={{ background: `linear-gradient(135deg, ${prim}, ${sec})` }} />
-                            {/* Mini cards */}
-                            <div className="p-2 flex gap-2">
-                              {[1, 2, 3].map(i => (
-                                <div key={i} className="flex-1 rounded-md overflow-hidden" style={{ background: previewTheme.colors.cardBg, border: `1px solid ${previewTheme.colors.cardBorder}`, borderRadius: previewTheme.cardRadius }}>
-                                  <div className="h-6" style={{ background: previewTheme.isDark ? "rgba(255,255,255,0.04)" : "#eee" }} />
-                                  <div className="p-1">
-                                    <div className="h-1.5 rounded-full w-3/4 mb-1" style={{ background: previewTheme.colors.textMuted, opacity: 0.3 }} />
-                                    <div className="h-2 rounded-full w-1/2" style={{ background: previewTheme.colors.priceColor }} />
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                            {/* Mini footer */}
-                            <div className="px-3 py-1.5" style={{ background: previewTheme.colors.footerBg, borderTop: previewTheme.footerBorderTop || undefined }}>
-                              <span className="text-[8px]" style={{ color: previewTheme.isDark ? "rgba(255,255,255,0.5)" : previewTheme.colors.textMuted }}>Powered by Derekh Food</span>
-                            </div>
-                          </div>
-                          <p className="text-[10px] text-[var(--text-muted)]">{previewTheme.mood} — {previewTheme.isDark ? "Tema escuro" : "Tema claro"}</p>
-                        </div>
-                      );
-                    })()}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                          Cor Primária
-                          <InfoTooltip text="Sobrescreve a cor primária do tema selecionado. Use o seletor de cor ou insira um código hex (#ff6600)." />
-                        </label>
-                        <div className="flex gap-2">
-                          <input
-                            type="color"
-                            value={(siteForm.tema_cor_primaria as string) || "#ff6600"}
-                            onChange={(e) => updateSite("tema_cor_primaria", e.target.value)}
-                            className="h-9 w-9 cursor-pointer rounded border-0"
-                          />
-                          <Input value={(siteForm.tema_cor_primaria as string) || ""} onChange={(e) => updateSite("tema_cor_primaria", e.target.value)} className="dark-input" />
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                          Cor Secundária
-                          <InfoTooltip text="Sobrescreve a cor secundária do tema. Usada em fundos, bordas e elementos de destaque." />
-                        </label>
-                        <div className="flex gap-2">
-                          <input
-                            type="color"
-                            value={(siteForm.tema_cor_secundaria as string) || "#333333"}
-                            onChange={(e) => updateSite("tema_cor_secundaria", e.target.value)}
-                            className="h-9 w-9 cursor-pointer rounded border-0"
-                          />
-                          <Input value={(siteForm.tema_cor_secundaria as string) || ""} onChange={(e) => updateSite("tema_cor_secundaria", e.target.value)} className="dark-input" />
-                        </div>
-                      </div>
-                    </div>
-
                     {/* Logo */}
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
@@ -678,86 +589,6 @@ export default function Configuracoes() {
                         <Switch checked={!!siteForm.aceita_vale_refeicao} onCheckedChange={(v) => updateSite("aceita_vale_refeicao", v)} />
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-
-                {/* Ingredientes Adicionais Pizza */}
-                <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] lg:col-span-2">
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-[var(--text-primary)] flex items-center gap-1.5">
-                        Ingredientes Adicionais (Pizza)
-                        <InfoTooltip text="Lista de ingredientes extras disponíveis no montador de pizza. O cliente pode adicionar qualquer um destes ao montar sua pizza, cada um com seu preço adicional." />
-                      </CardTitle>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const lista = ((siteForm.ingredientes_adicionais_pizza as Array<{nome: string; preco: number}>) || []);
-                          updateSite("ingredientes_adicionais_pizza", [...lista, { nome: "", preco: 0 }]);
-                        }}
-                      >
-                        <Plus className="mr-1 h-4 w-4" /> Adicionar
-                      </Button>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {(() => {
-                      const lista = ((siteForm.ingredientes_adicionais_pizza as Array<{nome: string; preco: number}>) || []);
-                      if (lista.length === 0) {
-                        return (
-                          <p className="text-sm text-[var(--text-muted)]">
-                            Nenhum ingrediente adicional cadastrado. Adicione ingredientes como Bacon, Champignon, Cheddar, etc.
-                          </p>
-                        );
-                      }
-                      return (
-                        <div className="space-y-2">
-                          <div className="grid grid-cols-[1fr_100px_40px] gap-2 text-xs font-medium text-[var(--text-muted)] px-1">
-                            <span>Nome</span>
-                            <span>Preço (R$)</span>
-                            <span></span>
-                          </div>
-                          {lista.map((ing, idx) => (
-                            <div key={idx} className="grid grid-cols-[1fr_100px_40px] gap-2 items-center">
-                              <Input
-                                value={ing.nome}
-                                onChange={(e) => {
-                                  const next = [...lista];
-                                  next[idx] = { ...next[idx], nome: e.target.value };
-                                  updateSite("ingredientes_adicionais_pizza", next);
-                                }}
-                                className="dark-input h-9 text-sm"
-                                placeholder="Ex: Bacon"
-                              />
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={ing.preco}
-                                onChange={(e) => {
-                                  const next = [...lista];
-                                  next[idx] = { ...next[idx], preco: Number(e.target.value) };
-                                  updateSite("ingredientes_adicionais_pizza", next);
-                                }}
-                                className="dark-input h-9 text-sm"
-                                placeholder="0.00"
-                              />
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                className="text-red-400"
-                                onClick={() => {
-                                  const next = lista.filter((_, i) => i !== idx);
-                                  updateSite("ingredientes_adicionais_pizza", next);
-                                }}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
                   </CardContent>
                 </Card>
 
