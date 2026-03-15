@@ -1119,10 +1119,14 @@ def aplicar_max_sabores_em_massa(
     db: Session = Depends(database.get_db)
 ):
     """Aplica max_sabores a TODAS as variações de tamanho com o mesmo nome no restaurante"""
-    total = db.query(models.VariacaoProduto).join(models.Produto).filter(
+    # Subquery necessária porque PostgreSQL não suporta UPDATE com JOIN direto
+    ids_variacoes = db.query(models.VariacaoProduto.id).join(models.Produto).filter(
         models.Produto.restaurante_id == rest.id,
         models.VariacaoProduto.tipo_variacao == "tamanho",
         models.VariacaoProduto.nome == dados.nome_tamanho,
+    ).subquery()
+    total = db.query(models.VariacaoProduto).filter(
+        models.VariacaoProduto.id.in_(ids_variacoes)
     ).update({"max_sabores": dados.max_sabores}, synchronize_session=False)
     db.commit()
     return {"mensagem": f"Atualizado {total} variações '{dados.nome_tamanho}' para {dados.max_sabores} sabores", "total": total}
