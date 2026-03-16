@@ -21,7 +21,7 @@ O Derekh Food e composto por **5 aplicacoes principais**, todas em React + FastA
 | **App Motoboy (PWA)** | React 19 | `/entregador` | App mobile para entregadores com GPS |
 | **Site Cliente** | React 19 | `/cliente/{codigo}` | Pedido online com 8 layouts tematicos |
 
-**Versao atual: 4.0.0 (13/03/2026) — Em producao: https://superfood-api.fly.dev**
+**Versao atual: 4.0.0 (16/03/2026) — Em producao: https://superfood-api.fly.dev**
 
 ### Stack Tecnologica
 
@@ -29,7 +29,7 @@ O Derekh Food e composto por **5 aplicacoes principais**, todas em React + FastA
 |--------|-----------|
 | Backend API | Python 3.12+ / FastAPI / Uvicorn |
 | ORM | SQLAlchemy 2.0+ |
-| Migrations | Alembic (12 migrations) |
+| Migrations | Alembic (26 migrations) |
 | Banco (dev) | SQLite |
 | Banco (prod) | PostgreSQL 16+ / PgBouncer |
 | Frontend | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
@@ -184,7 +184,7 @@ super-food/
 │       ├── storage.py          # Abstração storage (Local / R2)
 │       ├── cache.py            # Redis cache helper
 │       ├── rate_limit.py       # Rate limiting (Redis sliding window)
-│       ├── routers/            # 10 arquivos de rotas (80+ endpoints)
+│       ├── routers/            # 13 arquivos de rotas (100+ endpoints)
 │       │   ├── auth_restaurante.py  # Auth JWT restaurante
 │       │   ├── auth_cliente.py      # Auth cliente
 │       │   ├── auth_motoboy.py      # Auth motoboy
@@ -193,8 +193,17 @@ super-food/
 │       │   ├── site_cliente.py      # Rotas site publico
 │       │   ├── carrinho.py          # Carrinho/checkout
 │       │   ├── upload.py            # Upload imagens (JWT + Pillow)
+│       │   ├── integracoes.py        # Integracoes marketplace (iFood, Open Delivery)
+│       │   ├── billing.py            # Billing restaurante (assinatura/pagamento)
+│       │   ├── billing_admin.py      # Billing super admin (config, dashboard, acoes)
+│       │   ├── billing_webhooks.py   # Webhook Asaas (pagamentos)
 │       │   ├── pedidos.py           # Pedidos legado
 │       │   └── motoboys.py          # GPS motoboys
+│       ├── billing/            # Sistema de cobranca Asaas (PIX + Boleto)
+│       │   ├── asaas_client.py      # httpx async (sandbox/prod)
+│       │   ├── billing_service.py   # Logica trial/plano/pagamento/suspensao
+│       │   └── billing_tasks.py     # Task periodica (30min) + polling
+│       ├── integrations/       # iFood + Open Delivery clients
 │       ├── schemas/            # Pydantic schemas
 │       └── utils/              # Despacho, menus, templates
 │
@@ -205,7 +214,7 @@ super-food/
 │   ├── init.py                 # Funcoes de inicializacao
 │   └── seed/                   # Seeds (super admin, planos, restaurante, etc)
 │
-├── migrations/                 # Alembic (12 migrations)
+├── migrations/                 # Alembic (26 migrations)
 │   └── versions/
 │
 ├── restaurante-pedido-online/  # FRONTEND REACT (todas as SPAs)
@@ -299,7 +308,7 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 ## Funcionalidades Principais
 
 ### API FastAPI (Backend)
-- API REST completa com 80+ endpoints documentados (Swagger/ReDoc)
+- API REST completa com 100+ endpoints documentados (Swagger/ReDoc)
 - WebSockets para notificacoes em tempo real por restaurante
 - Servindo 4 React SPAs em producao (admin, motoboy, superadmin, site cliente)
 - Upload de imagens com resize automatico (WebP)
@@ -328,6 +337,9 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 - Gestao de restaurantes (CRUD, ativar/desativar)
 - Controle de planos de assinatura (Basico, Essencial, Avancado, Premium)
 - Gestao de inadimplencia com tolerancia configuravel
+- **Billing/Assinatura**: dashboard MRR, config trial/suspensao, audit log, acoes por restaurante
+- **Integracoes**: credenciais plataforma (iFood, Open Delivery) por restaurante
+- **Dominios personalizados**: SSL automatico via Fly.io Certificates API
 
 ### Painel Restaurante (20+ Paginas)
 - Dashboard com metricas + entregas ativas + alertas de atraso
@@ -546,6 +558,10 @@ Todas as configuracoes do painel restaurante possuem tooltips (icone ℹ️) com
 | `/motoboy` | auth_motoboy.py | 8 | Entregas, status, estatisticas, ganhos |
 | `/api/gps` | motoboys.py | 3 | Update GPS, motoboys online, historico |
 | `/api/upload` | upload.py | 1 | Upload imagem (resize + WebP) |
+| `/painel/billing` | billing.py | 5 | Status, planos, selecionar plano, faturas, PIX |
+| `/api/admin/billing` | billing_admin.py | 9 | Config, dashboard MRR, audit log, acoes restaurante |
+| `/webhooks/asaas` | billing_webhooks.py | 1 | Webhook Asaas (pagamentos) |
+| `/painel/integracoes` | integracoes.py | 6 | Connect/disconnect iFood, Open Delivery |
 | `/ws/{id}` | main.py | 1 | WebSocket por restaurante |
 | `/health` | main.py | 3 | Health check (live, ready, full) |
 
@@ -555,6 +571,9 @@ Todas as configuracoes do painel restaurante possuem tooltips (icone ℹ️) com
 - `GET /painel/entregas/ativas` — Entregas em andamento com tempo real
 - `GET /painel/entregas/diagnostico-tempo` — Diagnostico de tempos de entrega
 - `POST /painel/entregas/ajustar-tempo` — Ajuste automatico de tempos
+- `GET /painel/billing/status` — Status billing do restaurante
+- `POST /painel/billing/selecionar-plano` — Selecionar/trocar plano
+- `GET /api/admin/billing/dashboard` — Dashboard MRR + KPIs billing
 
 Documentacao completa: http://localhost:8000/docs
 
@@ -707,11 +726,14 @@ services:
 
 ## Changelog
 
-### v4.0.0 (13/03/2026) — Mega Migracao React + Deploy Fly.io
+### v4.0.0 (16/03/2026) — Mega Migracao React + Deploy Fly.io
 
 - **Deploy em producao** — Fly.io GRU (Sao Paulo), PostgreSQL + Upstash Redis
 - **Sprint 10 completo** — Streamlit 100% removido, sistema 100% React
 - **Alembic em producao** — migrations automaticas no startup do Docker
+- **Sprint 13** — Integracao iFood + Open Delivery (marketplace)
+- **Sprint 14** — Credenciais plataforma (Super Admin) + refatoracao integracoes
+- **Sprint 15** — Sistema de Billing/Assinatura com Asaas (PIX + Boleto): trial, planos, pagamento, suspensao, reativacao, webhook idempotente, audit log, dashboard MRR
 
 ### v4.0.0-rc (11/03/2026) — Mega Migracao React + Features Avancadas
 - **100% React** — Zero Streamlit. Todas 4 aplicacoes em React 19 + TypeScript
@@ -764,10 +786,11 @@ services:
   - Sprint 9: 8 layouts tematicos por tipo de restaurante
   - Sprint 10: Aposentar Streamlit (remover dependencias) ✅
   - Sprint 11: Deploy Fly.io (producao GRU) ✅
-- [ ] Fase 12: Integracao iFood
-- [ ] Fase 13: Recuperacao de senha por SMS
-- [ ] Fase 14: Push notifications nativas
-- [ ] Fase 15: App nativo (React Native ou Capacitor)
+- [x] Fase 12: Integracao iFood + Open Delivery ✅
+- [x] Fase 13: Sistema de Billing/Assinatura (Asaas) ✅
+- [ ] Fase 14: Recuperacao de senha por SMS
+- [ ] Fase 15: Push notifications nativas
+- [ ] Fase 16: App nativo (React Native ou Capacitor)
 
 ---
 

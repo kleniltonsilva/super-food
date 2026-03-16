@@ -9,6 +9,8 @@ import GerenciarPlanos from "@/superadmin/pages/GerenciarPlanos";
 import Inadimplentes from "@/superadmin/pages/Inadimplentes";
 import ErrosSentry from "@/superadmin/pages/ErrosSentry";
 import IntegracoesPlatforma from "@/superadmin/pages/IntegracoesPlatforma";
+import BillingDashboard from "@/superadmin/pages/BillingDashboard";
+import ConfigBilling from "@/superadmin/pages/ConfigBilling";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -39,6 +41,14 @@ function SuperAdminRouter() {
 
       <Route path="/integracoes">
         <SuperAdminPrivateRoute><IntegracoesPlatforma /></SuperAdminPrivateRoute>
+      </Route>
+
+      <Route path="/billing/config">
+        <SuperAdminPrivateRoute><ConfigBilling /></SuperAdminPrivateRoute>
+      </Route>
+
+      <Route path="/billing">
+        <SuperAdminPrivateRoute><BillingDashboard /></SuperAdminPrivateRoute>
       </Route>
 
       {/* Dashboard */}

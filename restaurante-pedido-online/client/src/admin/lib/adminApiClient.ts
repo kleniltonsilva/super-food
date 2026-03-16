@@ -484,6 +484,32 @@ export async function adicionarPedidoMesaRapido(
   return data;
 }
 
+// ─── Billing ────────────────────────────────────────────
+export async function getBillingStatus() {
+  const { data } = await adminApi.get("/painel/billing/status");
+  return data;
+}
+
+export async function getFaturas(params?: Record<string, unknown>) {
+  const { data } = await adminApi.get("/painel/billing/faturas", { params });
+  return data;
+}
+
+export async function getFaturaPix(faturaId: number) {
+  const { data } = await adminApi.get(`/painel/billing/faturas/${faturaId}/pix`);
+  return data;
+}
+
+export async function selecionarPlano(payload: { plano: string; ciclo: string; billing_type: string }) {
+  const { data } = await adminApi.post("/painel/billing/selecionar-plano", payload);
+  return data;
+}
+
+export async function getPlanosDisponiveis() {
+  const { data } = await adminApi.get("/painel/billing/planos");
+  return data;
+}
+
 // ─── Upload ────────────────────────────────────────────
 // ─── Integrações Marketplace ────────────────────────
 export async function getIntegracoes() {

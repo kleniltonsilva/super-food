@@ -20,6 +20,8 @@ import Relatorios from "@/admin/pages/Relatorios";
 import Configuracoes from "@/admin/pages/Configuracoes";
 import HistoricoAtrasos from "@/admin/pages/HistoricoAtrasos";
 import Integracoes from "@/admin/pages/Integracoes";
+import Billing from "@/admin/pages/Billing";
+import SelecionarPlano from "@/admin/pages/SelecionarPlano";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -191,6 +193,14 @@ function AdminRouter() {
 
       <Route path="/integracoes">
         <PrivateRoute><Integracoes /></PrivateRoute>
+      </Route>
+
+      <Route path="/billing/planos">
+        <PrivateRoute><SelecionarPlano /></PrivateRoute>
+      </Route>
+
+      <Route path="/billing">
+        <PrivateRoute><Billing /></PrivateRoute>
       </Route>
 
       <Route path="/configuracoes">

@@ -71,6 +71,14 @@ from database.models import (
     # Tempo Real / Alertas
     AlertaAtraso,
     SugestaoTempo,
+
+    # Billing / Asaas
+    ConfigBilling,
+    AsaasCliente,
+    AsaasAssinatura,
+    AsaasPagamento,
+    AsaasEventLog,
+    BillingAuditLog,
 )
 
 # Para compatibilidade com imports existentes
@@ -109,4 +117,10 @@ __all__ = [
     'MarketplaceEventLog',
     'AlertaAtraso',
     'SugestaoTempo',
+    'ConfigBilling',
+    'AsaasCliente',
+    'AsaasAssinatura',
+    'AsaasPagamento',
+    'AsaasEventLog',
+    'BillingAuditLog',
 ]

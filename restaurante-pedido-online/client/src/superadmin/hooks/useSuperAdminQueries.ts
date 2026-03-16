@@ -20,6 +20,16 @@ import {
   deletarCredencialPlataforma,
   toggleCredencialPlataforma,
   getStatusIntegracoes,
+  getBillingConfig,
+  atualizarBillingConfig,
+  getBillingDashboard,
+  getBillingAuditLog,
+  iniciarTrialRestaurante,
+  estenderTrialRestaurante,
+  reativarRestauranteBilling,
+  migrarRestauranteAsaas,
+  atualizarPlanoRestaurante,
+  cancelarAssinaturaRestaurante,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -224,5 +234,107 @@ export function useStatusIntegracoes() {
     queryKey: ["superadmin", "status-integracoes"],
     queryFn: getStatusIntegracoes,
     staleTime: 30_000,
+  });
+}
+
+// ─── Billing ────────────────────────────────────────────
+export function useBillingConfig() {
+  return useQuery({
+    queryKey: ["superadmin", "billing-config"],
+    queryFn: getBillingConfig,
+    staleTime: 60_000,
+  });
+}
+
+export function useAtualizarBillingConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: atualizarBillingConfig,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "billing-config"] });
+    },
+  });
+}
+
+export function useBillingDashboard() {
+  return useQuery({
+    queryKey: ["superadmin", "billing-dashboard"],
+    queryFn: getBillingDashboard,
+    staleTime: 30_000,
+  });
+}
+
+export function useBillingAuditLog(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: ["superadmin", "billing-audit", params],
+    queryFn: () => getBillingAuditLog(params),
+    staleTime: 30_000,
+  });
+}
+
+export function useIniciarTrial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: iniciarTrialRestaurante,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "billing-dashboard"] });
+    },
+  });
+}
+
+export function useEstenderTrial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dias }: { id: number; dias: number }) => estenderTrialRestaurante(id, dias),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "billing-dashboard"] });
+    },
+  });
+}
+
+export function useReativarBilling() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: reativarRestauranteBilling,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "billing-dashboard"] });
+    },
+  });
+}
+
+export function useMigrarAsaas() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: migrarRestauranteAsaas,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "billing-dashboard"] });
+    },
+  });
+}
+
+export function useAtualizarPlanoAdmin() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: { plano: string; ciclo?: string; valor_override?: number } }) =>
+      atualizarPlanoRestaurante(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "billing-dashboard"] });
+    },
+  });
+}
+
+export function useCancelarAssinatura() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: cancelarAssinaturaRestaurante,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "billing-dashboard"] });
+    },
   });
 }

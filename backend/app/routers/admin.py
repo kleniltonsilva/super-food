@@ -38,6 +38,9 @@ class RestauranteListItem(BaseModel):
     data_vencimento: Optional[datetime] = None
     total_pedidos: int = 0
     total_motoboys: int = 0
+    billing_status: Optional[str] = None
+    trial_fim: Optional[datetime] = None
+    dias_vencido: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -60,6 +63,8 @@ class RestauranteCreateRequest(BaseModel):
     criar_site: bool = True
     tipo_restaurante: str = "geral"
     whatsapp: Optional[str] = None
+    # Billing
+    iniciar_trial: bool = True
 
 
 class RestauranteUpdateRequest(BaseModel):
@@ -231,6 +236,9 @@ def listar_restaurantes(
             data_vencimento=r.data_vencimento,
             total_pedidos=total_pedidos,
             total_motoboys=total_motoboys,
+            billing_status=r.billing_status,
+            trial_fim=r.trial_fim,
+            dias_vencido=r.dias_vencido,
         ))
 
     return resultado
@@ -239,7 +247,7 @@ def listar_restaurantes(
 # --- 132: POST /admin/restaurantes ---
 
 @router.post("/restaurantes")
-def criar_restaurante(
+async def criar_restaurante(
     dados: RestauranteCreateRequest,
     current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db)
@@ -334,6 +342,16 @@ def criar_restaurante(
             logging.getLogger(__name__).warning(f"Seed produtos padrão falhou: {e}")
             db.rollback()
             db.refresh(restaurante)
+
+    # Iniciar trial se solicitado
+    if dados.iniciar_trial:
+        try:
+            from ..billing.billing_service import iniciar_trial
+            await iniciar_trial(restaurante.id, db, admin_id=current_admin.id)
+            db.refresh(restaurante)
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"Erro ao iniciar trial: {e}")
 
     return {
         **RestauranteDetalhe.model_validate(restaurante).model_dump(),

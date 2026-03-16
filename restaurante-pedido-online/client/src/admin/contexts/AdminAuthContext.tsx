@@ -9,6 +9,10 @@ export interface Restaurante {
   tipo_restaurante?: string;
   logo_url?: string;
   codigo_acesso?: string;
+  billing_status?: string;
+  trial_fim?: string;
+  billing_bloqueado?: boolean;
+  dias_vencido?: number;
 }
 
 interface AdminAuthContextType {

@@ -34,6 +34,9 @@ export const ADMIN_QUERY_KEYS = {
   notificacoes: ["admin", "notificacoes"] as const,
   integracoes: ["admin", "integracoes"] as const,
   ifoodStatus: ["admin", "integracoes", "ifood", "status"] as const,
+  billingStatus: ["admin", "billing", "status"] as const,
+  faturas: ["admin", "billing", "faturas"] as const,
+  planosDisponiveis: ["admin", "billing", "planos"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -810,5 +813,41 @@ export function useDisconnectMarketplace() {
   return useMutation({
     mutationFn: api.disconnectMarketplace,
     onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
+  });
+}
+
+// ─── Billing ────────────────────────────────────────────
+export function useBillingStatus() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.billingStatus,
+    queryFn: api.getBillingStatus,
+    staleTime: 30_000,
+  });
+}
+
+export function useFaturas(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.faturas, params],
+    queryFn: () => api.getFaturas(params),
+    staleTime: 30_000,
+  });
+}
+
+export function usePlanosDisponiveis() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.planosDisponiveis,
+    queryFn: api.getPlanosDisponiveis,
+    staleTime: 60_000,
+  });
+}
+
+export function useSelecionarPlano() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.selecionarPlano,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.billingStatus });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.faturas });
+    },
   });
 }

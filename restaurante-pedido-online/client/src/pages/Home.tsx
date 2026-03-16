@@ -215,8 +215,25 @@ export default function Home() {
       {/* ═══════════ Hero Banner ═══════════ */}
       <HeroBanner />
 
+      {/* Restaurante suspenso por billing */}
+      {siteInfo && siteInfo.billing_suspenso && (
+        <div className="text-center py-6 px-4">
+          <div
+            className="max-w-md mx-auto rounded-xl p-6"
+            style={{ background: "rgba(239, 68, 68, 0.1)", border: "1px solid rgba(239, 68, 68, 0.3)" }}
+          >
+            <p className="text-lg font-bold" style={{ color: theme.isDark ? "#F87171" : "#DC2626" }}>
+              Restaurante temporariamente fechado
+            </p>
+            <p className="text-sm mt-2" style={{ color: theme.isDark ? "#9CA3AF" : "#6B7280" }}>
+              Estamos resolvendo uma questão administrativa. Voltaremos em breve!
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Status do restaurante */}
-      {siteInfo && !siteInfo.status_aberto && (
+      {siteInfo && !siteInfo.billing_suspenso && !siteInfo.status_aberto && (
         <div
           className="text-center py-2.5 text-sm font-semibold"
           style={{

@@ -23,6 +23,16 @@ def get_rest(current_restaurante=Depends(auth.get_current_restaurante)):
     return current_restaurante
 
 
+def verificar_billing_ativo(rest: models.Restaurante = Depends(get_rest)):
+    """Bloqueia operações quando billing suspenso/cancelado. Retorna 403."""
+    if rest.billing_status in ("suspended_billing", "canceled_billing"):
+        raise HTTPException(
+            status_code=403,
+            detail="Assinatura suspensa ou cancelada. Regularize seu pagamento para continuar.",
+        )
+    return rest
+
+
 def _commit_and_invalidate(db: Session, rest_id: int):
     """Commit + invalida cache do cardapio (para mutacoes em produtos/categorias/combos)"""
     db.commit()
@@ -241,7 +251,7 @@ class PedidoManualRequest(BaseModel):
 async def criar_pedido_manual(
     dados: PedidoManualRequest,
     request: Request,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_billing_ativo),
     db: Session = Depends(database.get_db)
 ):
     proxima_comanda = _gerar_proxima_comanda(db, rest.id)
@@ -391,7 +401,7 @@ class DespachoRequest(BaseModel):
 async def despachar_pedido(
     pedido_id: int, dados: DespachoRequest,
     request: Request,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_billing_ativo),
     db: Session = Depends(database.get_db)
 ):
     pedido = db.query(models.Pedido).filter(

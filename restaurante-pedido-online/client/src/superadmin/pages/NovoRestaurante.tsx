@@ -42,6 +42,7 @@ interface FormData {
   criar_site: boolean;
   tipo_restaurante: string;
   whatsapp: string;
+  iniciar_trial: boolean;
 }
 
 export default function NovoRestaurante() {
@@ -62,6 +63,7 @@ export default function NovoRestaurante() {
     criar_site: true,
     tipo_restaurante: "geral",
     whatsapp: "",
+    iniciar_trial: true,
   });
 
   const [resultado, setResultado] = useState<{
@@ -126,7 +128,8 @@ export default function NovoRestaurante() {
         criar_site: form.criar_site,
         tipo_restaurante: form.tipo_restaurante,
         whatsapp: form.whatsapp.trim() || undefined,
-      },
+        iniciar_trial: form.iniciar_trial,
+      } as any,
       {
         onSuccess: (data) => {
           toast.success("Restaurante criado com sucesso!");
@@ -178,7 +181,7 @@ export default function NovoRestaurante() {
                 setForm({
                   nome_fantasia: "", razao_social: "", cnpj: "", email: "", telefone: "",
                   endereco_completo: "", cidade: "", estado: "", cep: "",
-                  plano: "Básico", criar_site: true, tipo_restaurante: "geral", whatsapp: "",
+                  plano: "Básico", criar_site: true, tipo_restaurante: "geral", whatsapp: "", iniciar_trial: true,
                 });
               }}
             >
@@ -398,6 +401,23 @@ export default function NovoRestaurante() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Billing — Trial */}
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+            <div className="flex items-center gap-3">
+              <Checkbox
+                id="iniciar_trial"
+                checked={form.iniciar_trial}
+                onCheckedChange={(v) => updateField("iniciar_trial", !!v)}
+              />
+              <label htmlFor="iniciar_trial" className="text-sm font-medium text-gray-300 cursor-pointer">
+                Iniciar período de teste (trial) de 20 dias
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-2 ml-7">
+              Se marcado, o restaurante terá acesso ao plano Premium durante o trial. Após o período, precisará escolher um plano pago.
+            </p>
           </div>
 
           {/* Submit */}

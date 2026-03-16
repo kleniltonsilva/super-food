@@ -54,6 +54,10 @@ class RestauranteMeResponse(BaseModel):
     status: Optional[str] = None
     criado_em: Optional[datetime] = None
     data_vencimento: Optional[datetime] = None
+    billing_status: Optional[str] = None
+    trial_fim: Optional[datetime] = None
+    dias_vencido: Optional[int] = None
+    plano_ciclo: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -83,10 +87,14 @@ def login_restaurante(
     db: Session = Depends(database.get_db)
 ):
     """Login do restaurante por email + senha. Retorna JWT + dados."""
+    # Restaurante suspenso por billing PODE fazer login (para ver tela de pagamento)
     restaurante = db.query(models.Restaurante).filter(
         models.Restaurante.email == dados.email.strip().lower(),
-        models.Restaurante.ativo == True
     ).first()
+
+    # Bloqueia apenas restaurantes desativados manualmente (não por billing)
+    if restaurante and not restaurante.ativo and restaurante.billing_status not in ("suspended_billing", "canceled_billing"):
+        restaurante = None
 
     if not restaurante or not restaurante.verificar_senha(dados.senha):
         raise HTTPException(
@@ -99,6 +107,8 @@ def login_restaurante(
         expires_delta=RESTAURANTE_TOKEN_EXPIRE,
     )
 
+    billing_bloqueado = restaurante.billing_status in ("suspended_billing", "canceled_billing")
+
     return RestauranteLoginResponse(
         access_token=token,
         restaurante={
@@ -109,6 +119,10 @@ def login_restaurante(
             "codigo_acesso": restaurante.codigo_acesso,
             "plano": restaurante.plano,
             "ativo": restaurante.ativo,
+            "billing_status": restaurante.billing_status,
+            "trial_fim": restaurante.trial_fim.isoformat() if restaurante.trial_fim else None,
+            "billing_bloqueado": billing_bloqueado,
+            "dias_vencido": restaurante.dias_vencido or 0,
         }
     )
 
@@ -125,6 +139,7 @@ def me_restaurante(
     )
     data = RestauranteMeResponse.model_validate(current_restaurante).model_dump()
     data["refreshed_token"] = new_token
+    data["billing_bloqueado"] = current_restaurante.billing_status in ("suspended_billing", "canceled_billing")
     return data
 
 

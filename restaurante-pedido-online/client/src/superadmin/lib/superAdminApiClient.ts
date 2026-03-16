@@ -199,3 +199,54 @@ export async function getStatusIntegracoes() {
   const { data } = await superAdminApi.get("/api/admin/integracoes/status");
   return data;
 }
+
+// ─── Billing ────────────────────────────────────────────
+export async function getBillingConfig() {
+  const { data } = await superAdminApi.get("/api/admin/billing/config");
+  return data;
+}
+
+export async function atualizarBillingConfig(payload: Record<string, unknown>) {
+  const { data } = await superAdminApi.put("/api/admin/billing/config", payload);
+  return data;
+}
+
+export async function getBillingDashboard() {
+  const { data } = await superAdminApi.get("/api/admin/billing/dashboard");
+  return data;
+}
+
+export async function getBillingAuditLog(params?: Record<string, unknown>) {
+  const { data } = await superAdminApi.get("/api/admin/billing/audit-log", { params });
+  return data;
+}
+
+export async function iniciarTrialRestaurante(restauranteId: number) {
+  const { data } = await superAdminApi.post(`/api/admin/billing/restaurantes/${restauranteId}/iniciar-trial`);
+  return data;
+}
+
+export async function estenderTrialRestaurante(restauranteId: number, dias: number) {
+  const { data } = await superAdminApi.post(`/api/admin/billing/restaurantes/${restauranteId}/estender-trial`, { dias });
+  return data;
+}
+
+export async function reativarRestauranteBilling(restauranteId: number) {
+  const { data } = await superAdminApi.post(`/api/admin/billing/restaurantes/${restauranteId}/reativar`);
+  return data;
+}
+
+export async function migrarRestauranteAsaas(restauranteId: number) {
+  const { data } = await superAdminApi.post(`/api/admin/billing/restaurantes/${restauranteId}/migrar-asaas`);
+  return data;
+}
+
+export async function atualizarPlanoRestaurante(restauranteId: number, payload: { plano: string; ciclo?: string; valor_override?: number }) {
+  const { data } = await superAdminApi.put(`/api/admin/billing/restaurantes/${restauranteId}/plano`, payload);
+  return data;
+}
+
+export async function cancelarAssinaturaRestaurante(restauranteId: number) {
+  const { data } = await superAdminApi.post(`/api/admin/billing/restaurantes/${restauranteId}/cancelar`);
+  return data;
+}

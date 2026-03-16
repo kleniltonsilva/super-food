@@ -112,10 +112,23 @@ def get_site_info(
     # Busca restaurante
     restaurante = db.query(models.Restaurante).filter(
         models.Restaurante.codigo_acesso == codigo_acesso.upper(),
-        models.Restaurante.ativo == True
     ).first()
-    
+
     if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    # Restaurante suspenso por billing: retorna info mínima com flag
+    if not restaurante.ativo and restaurante.billing_status in ("suspended_billing", "canceled_billing"):
+        return {
+            "restaurante_id": restaurante.id,
+            "codigo_acesso": restaurante.codigo_acesso,
+            "nome_fantasia": restaurante.nome_fantasia,
+            "billing_suspenso": True,
+            "status_aberto": False,
+            "pedidos_online_ativos": False,
+        }
+
+    if not restaurante.ativo:
         raise HTTPException(status_code=404, detail="Restaurante não encontrado")
     
     # Busca config do site

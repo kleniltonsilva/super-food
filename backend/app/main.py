@@ -21,6 +21,10 @@ from .routers import restaurantes, pedidos, site_cliente, carrinho, gps, auth_cl
 from .routers import motoboy as motoboy_router
 from .routers import admin as admin_router
 from .routers.integracoes import router as integracoes_router, webhook_router
+from .routers import billing as billing_router
+from .routers import billing_admin as billing_admin_router
+from .routers import billing_webhooks as billing_webhooks_router
+from .billing.billing_tasks import verificar_billing_periodico
 from .integrations.manager import integration_manager
 from .database import engine, Base, get_db, SessionLocal
 from . import models
@@ -98,12 +102,13 @@ async def verificar_entregas_atrasadas(ws_manager):
 
 
 _entrega_task = None
+_billing_task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown da aplicacao"""
-    global _entrega_task
+    global _entrega_task, _billing_task
     # Startup
     environment = os.getenv("ENVIRONMENT", "development")
     if environment == "production":
@@ -130,6 +135,9 @@ async def lifespan(app: FastAPI):
     # Inicia verificação periódica de entregas atrasadas
     _entrega_task = asyncio.create_task(verificar_entregas_atrasadas(manager))
 
+    # Inicia task periódica de billing
+    _billing_task = asyncio.create_task(verificar_billing_periodico(manager))
+
     # Inicia integration manager (polling marketplaces)
     integration_manager.set_app(app)
     await integration_manager.start()
@@ -141,6 +149,12 @@ async def lifespan(app: FastAPI):
         _entrega_task.cancel()
         try:
             await _entrega_task
+        except asyncio.CancelledError:
+            pass
+    if _billing_task:
+        _billing_task.cancel()
+        try:
+            await _billing_task
         except asyncio.CancelledError:
             pass
     if hasattr(manager, 'stop'):
@@ -262,6 +276,9 @@ app.include_router(admin_router.router)
 app.include_router(painel.router)
 app.include_router(integracoes_router)
 app.include_router(webhook_router)
+app.include_router(billing_router.router)
+app.include_router(billing_admin_router.router)
+app.include_router(billing_webhooks_router.router)
 
 # ==================== PWA files (manifest, service worker) ====================
 @app.get("/manifest.json")

@@ -64,6 +64,10 @@ class Restaurante(Base):
     status = Column(String(20), default='ativo')
     criado_em = Column(DateTime, default=datetime.utcnow)
     data_vencimento = Column(DateTime)
+    billing_status = Column(String(30), default='manual')  # manual, trial, active, overdue, suspended_billing, canceled_billing
+    dias_vencido = Column(Integer, default=0)
+    trial_fim = Column(DateTime)
+    plano_ciclo = Column(String(20), default='MONTHLY')  # MONTHLY, YEARLY
     # Relacionamentos
     config = relationship("ConfigRestaurante", back_populates="restaurante", uselist=False, cascade="all, delete-orphan")
     site_config = relationship("SiteConfig", back_populates="restaurante", uselist=False, cascade="all, delete-orphan")
@@ -1010,4 +1014,136 @@ class SugestaoTempo(Base):
     restaurante = relationship("Restaurante")
     __table_args__ = (
         Index('idx_sugestao_tempo_rest_data', 'restaurante_id', 'criado_em'),
+    )
+
+
+# ==================== BILLING — CONFIG GLOBAL ====================
+class ConfigBilling(Base):
+    """Configurações globais de billing (1 row, gerenciada pelo Super Admin)"""
+    __tablename__ = "config_billing"
+    id = Column(Integer, primary_key=True, index=True)
+    trial_dias = Column(Integer, default=20)
+    trial_plano = Column(String(50), default='Premium')
+    dias_lembrete_antes = Column(Integer, default=5)
+    dias_suspensao = Column(Integer, default=2)
+    dias_aviso_cancelamento = Column(Integer, default=5)
+    dias_cancelamento = Column(Integer, default=15)
+    dias_preservacao_dados = Column(Integer, default=90)
+    desconto_anual_percentual = Column(Float, default=20.0)
+    asaas_webhook_token = Column(String(200))
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ==================== BILLING — ASAAS CLIENTE ====================
+class AsaasCliente(Base):
+    """Vínculo restaurante ↔ Asaas customer"""
+    __tablename__ = "asaas_clientes"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), unique=True, nullable=False)
+    asaas_customer_id = Column(String(100), unique=True, nullable=False)
+    nome = Column(String(200))
+    cpf_cnpj = Column(String(20))
+    email = Column(String(100))
+    telefone = Column(String(20))
+    sincronizado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_asaas_cliente_restaurante', 'restaurante_id'),
+        Index('idx_asaas_cliente_customer', 'asaas_customer_id'),
+    )
+
+
+# ==================== BILLING — ASAAS ASSINATURA ====================
+class AsaasAssinatura(Base):
+    """Assinatura recorrente no Asaas"""
+    __tablename__ = "asaas_assinaturas"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    asaas_subscription_id = Column(String(100), unique=True)
+    plano = Column(String(50), nullable=False)
+    valor = Column(Float, nullable=False)
+    ciclo = Column(String(20), default='MONTHLY')  # MONTHLY, YEARLY
+    billing_type = Column(String(20), default='PIX')  # PIX, BOLETO
+    status = Column(String(20), default='ACTIVE')  # ACTIVE, INACTIVE, EXPIRED
+    proximo_vencimento = Column(DateTime)
+    desconto_percentual = Column(Float, default=0.0)
+    em_trial = Column(Boolean, default=False)
+    trial_fim = Column(DateTime)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_asaas_assinatura_restaurante', 'restaurante_id'),
+        Index('idx_asaas_assinatura_status', 'status'),
+    )
+
+
+# ==================== BILLING — ASAAS PAGAMENTO ====================
+class AsaasPagamento(Base):
+    """Faturas/pagamentos individuais do Asaas"""
+    __tablename__ = "asaas_pagamentos"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    asaas_payment_id = Column(String(100), unique=True, nullable=False)
+    asaas_subscription_id = Column(String(100))
+    valor = Column(Float, nullable=False)
+    valor_liquido = Column(Float)
+    billing_type = Column(String(20))  # PIX, BOLETO
+    status = Column(String(30), default='PENDING')  # PENDING, RECEIVED, CONFIRMED, OVERDUE, REFUNDED, DELETED
+    data_vencimento = Column(DateTime)
+    data_pagamento = Column(DateTime)
+    pix_qr_code = Column(Text)
+    pix_copia_cola = Column(Text)
+    boleto_url = Column(String(500))
+    invoice_url = Column(String(500))
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_asaas_pagamento_restaurante', 'restaurante_id'),
+        Index('idx_asaas_pagamento_status', 'status'),
+        Index('idx_asaas_pagamento_vencimento', 'data_vencimento'),
+    )
+
+
+# ==================== BILLING — ASAAS EVENT LOG ====================
+class AsaasEventLog(Base):
+    """Log de eventos webhook do Asaas (idempotência)"""
+    __tablename__ = "asaas_event_log"
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String(200), unique=True, nullable=False)
+    event_type = Column(String(50), nullable=False)
+    asaas_payment_id = Column(String(100))
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="SET NULL"))
+    payload_json = Column(JSON)
+    processed = Column(Boolean, default=False)
+    error_message = Column(Text)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_asaas_event_id', 'event_id', unique=True),
+        Index('idx_asaas_event_type', 'event_type', 'criado_em'),
+    )
+
+
+# ==================== BILLING — AUDIT LOG ====================
+class BillingAuditLog(Base):
+    """Trilha de auditoria de ações de billing"""
+    __tablename__ = "billing_audit_log"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="SET NULL"))
+    acao = Column(String(50), nullable=False)  # trial_started, payment_received, suspended, reactivated, canceled, plan_changed, etc.
+    detalhes = Column(JSON)
+    admin_id = Column(Integer)
+    automatico = Column(Boolean, default=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_billing_audit_restaurante', 'restaurante_id', 'criado_em'),
+        Index('idx_billing_audit_acao', 'acao', 'criado_em'),
     )

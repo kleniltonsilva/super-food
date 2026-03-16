@@ -22,11 +22,12 @@
 ## ESTADO ATUAL DO PROJETO
 
 - **Versao:** 4.0.0 (tag v4.0.0)
-- **Sprint atual:** Sprint 14 — Refatoração integrações marketplace (credenciais plataforma)
+- **Sprint atual:** Sprint 15 — Sistema de Billing/Assinatura com Asaas (implementado)
 - **Ultima sessao:** 16/03/2026
 - **Migrations em produção:** 001-025 (última: 025_platform_credentials)
+- **Migration pendente deploy:** 026_billing_asaas (6 tabelas + 4 colunas em restaurantes)
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** domínio próprio, alertas downtime, testar integrações com conta real
+- **Pendente:** deploy migration 026, set secrets Asaas, domínio próprio, alertas downtime
 
 ---
 
@@ -54,7 +55,7 @@ cd /home/pcempresa/Documentos/super-food && ~/.fly/bin/fly deploy
 - PostgreSQL: `superfood-db` — flycast:5432
 - Redis: Upstash — fly-superfood-redis.upstash.io:6379
 - Volume: `superfood_uploads` (1GB) em `/app/backend/static/uploads`
-- Secrets: SECRET_KEY, SUPER_ADMIN_*, MAPBOX_TOKEN, REDIS_URL, SENTRY_*, FLY_API_TOKEN, STORAGE_BACKEND
+- Secrets: SECRET_KEY, SUPER_ADMIN_*, MAPBOX_TOKEN, REDIS_URL, SENTRY_*, FLY_API_TOKEN, STORAGE_BACKEND, ASAAS_API_KEY, ASAAS_ENVIRONMENT
 
 ### Verificar depois do deploy:
 ```bash
@@ -103,10 +104,17 @@ super-food/
 │   │   ├── admin.py         # Super Admin /api/admin/* + credenciais plataforma
 │   │   ├── carrinho.py      # Carrinho/checkout cliente
 │   │   ├── site_cliente.py  # Site público
+│   │   ├── billing.py       # Billing restaurante (/painel/billing/*)
+│   │   ├── billing_admin.py # Billing super admin (/api/admin/billing/*)
+│   │   ├── billing_webhooks.py # Webhook Asaas (/webhooks/asaas)
 │   │   ├── auth_restaurante.py / auth_cliente.py / upload.py / motoboys.py
 │   ├── models.py            # Re-exporta models de database/models.py
 │   ├── database.py          # Config BD SQLite/PostgreSQL
 │   ├── auth.py              # JWT helpers
+│   ├── billing/             # Sistema de cobrança Asaas
+│   │   ├── asaas_client.py  # httpx async client (sandbox/prod)
+│   │   ├── billing_service.py # Lógica trial/plano/pagamento/suspensão
+│   │   └── billing_tasks.py # Task periódica (30min) + polling fallback
 │   ├── integrations/        # iFood + Open Delivery clients
 │   │   ├── ifood/           # client.py, mapper.py, status_machine.py, catalog_sync.py
 │   │   ├── opendelivery/    # client.py, mapper.py
@@ -121,7 +129,7 @@ super-food/
 │   └── components/          # shadcn/ui compartilhados
 ├── database/models.py       # SQLAlchemy ORM models (source of truth)
 ├── printer_agent/           # Agent impressão Windows (ESC/POS)
-├── migrations/versions/     # Alembic 001-025
+├── migrations/versions/     # Alembic 001-026
 └── requirements.txt
 ```
 
@@ -148,7 +156,8 @@ super-food/
 | 11 | Deploy Fly.io produção | ✅ 12-15/03 |
 | 12 | Migração R2 | ⏳ Quando volume >700MB |
 | 13 | iFood + Open Delivery (implementação inicial) | ✅ 15/03 |
-| 14 | Refatoração integrações (credenciais plataforma) | 🔄 Em andamento |
+| 14 | Refatoração integrações (credenciais plataforma) | ✅ 16/03 |
+| 15 | Billing/Assinatura Asaas (PIX+Boleto) | ✅ 16/03 |
 
 ---
 
@@ -162,9 +171,8 @@ super-food/
 - Cloudflare R2 bucket + secrets + `STORAGE_BACKEND=r2` + migrar imagens
 - Código pronto em `storage.py` (R2StorageBackend)
 
-### Sprint 14 — Arquitetura Integrações Marketplace
-- **Modelo:** CredencialPlataforma (Super Admin) + IntegracaoMarketplace (por restaurante, só autorização)
-- **iFood:** userCode + authorization_code flow (1 credencial Derekh Food)
-- **Open Delivery:** webhook authorization (1 credencial por marketplace)
-- **Super Admin:** CRUD credenciais em /api/admin/integracoes/plataformas
-- **Restaurante:** connect/disconnect flow (sem inserir credenciais)
+### Sprint 15 — Deploy Billing
+- Set secrets: `fly secrets set ASAAS_API_KEY=... ASAAS_ENVIRONMENT=sandbox`
+- Deploy: `~/.fly/bin/fly deploy` (migration 026 roda automaticamente)
+- Testar fluxo sandbox: trial → plano → pagamento → overdue → suspensão → reativação
+- Trocar `ASAAS_ENVIRONMENT=production` quando pronto

@@ -18,6 +18,7 @@ import {
   Clock,
   Settings,
   Plug,
+  CreditCard,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ const menuItems = [
   { path: "/relatorios", label: "Relatórios", icon: BarChart3 },
   { path: "/historico-atrasos", label: "Atrasos", icon: Clock },
   { path: "/integracoes", label: "Integrações", icon: Plug },
+  { path: "/billing", label: "Assinatura", icon: CreditCard },
   { path: "/configuracoes", label: "Configurações", icon: Settings },
 ];
 
