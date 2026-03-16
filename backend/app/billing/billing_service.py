@@ -142,58 +142,61 @@ async def selecionar_plano(
     else:
         proximo_vencimento = datetime.utcnow() + timedelta(days=1)
 
-    # Atualizar restaurante
+    # Atualizar plano/limites do restaurante (status será atualizado após Asaas)
     restaurante.plano = plano
     restaurante.plano_ciclo = ciclo
     restaurante.valor_plano = plano_info["valor"]
     restaurante.limite_motoboys = plano_info["limite_motoboys"]
-    if restaurante.billing_status in ("manual", "trial"):
-        restaurante.billing_status = "active"
     restaurante.data_vencimento = proximo_vencimento
 
     # Criar assinatura no Asaas
     asaas_sub_id = None
     if asaas_client.configured:
+        # Validar CPF/CNPJ antes de chamar Asaas
+        if not restaurante.cnpj:
+            raise ValueError(
+                "CPF/CNPJ é obrigatório para ativar cobrança. "
+                "Preencha em Configurações antes de selecionar um plano."
+            )
+
         asaas_cli = db.query(models.AsaasCliente).filter(
             models.AsaasCliente.restaurante_id == restaurante_id
         ).first()
 
-        # Customer não existe — criar on-demand (falha silenciosa no iniciar_trial)
+        # Customer não existe — criar on-demand
         if not asaas_cli:
-            try:
-                asaas_data = await asaas_client.criar_cliente(
-                    name=restaurante.nome_fantasia or restaurante.nome,
-                    cpf_cnpj=restaurante.cnpj or "",
-                    email=restaurante.email,
-                    phone=restaurante.telefone or "",
-                )
-                asaas_cli = models.AsaasCliente(
-                    restaurante_id=restaurante.id,
-                    asaas_customer_id=asaas_data["id"],
-                    nome=restaurante.nome_fantasia or restaurante.nome,
-                    cpf_cnpj=restaurante.cnpj,
-                    email=restaurante.email,
-                    telefone=restaurante.telefone,
-                )
-                db.add(asaas_cli)
-                db.flush()
-                logger.info(f"Customer Asaas criado on-demand para restaurante {restaurante_id}")
-            except Exception as e:
-                logger.warning(f"Erro ao criar customer Asaas on-demand para restaurante {restaurante_id}: {e}")
+            asaas_data = await asaas_client.criar_cliente(
+                name=restaurante.nome_fantasia or restaurante.nome,
+                cpf_cnpj=restaurante.cnpj,
+                email=restaurante.email or "",
+                phone=restaurante.telefone or "",
+            )
+            asaas_cli = models.AsaasCliente(
+                restaurante_id=restaurante.id,
+                asaas_customer_id=asaas_data["id"],
+                nome=restaurante.nome_fantasia or restaurante.nome,
+                cpf_cnpj=restaurante.cnpj,
+                email=restaurante.email,
+                telefone=restaurante.telefone,
+            )
+            db.add(asaas_cli)
+            db.flush()
+            logger.info(f"Customer Asaas criado on-demand para restaurante {restaurante_id}")
 
-        if asaas_cli:
-            try:
-                sub_data = await asaas_client.criar_assinatura(
-                    customer_id=asaas_cli.asaas_customer_id,
-                    billing_type=billing_type,
-                    value=valor if ciclo == "MONTHLY" else round(valor / 12, 2),
-                    cycle=ciclo,
-                    next_due_date=proximo_vencimento.strftime("%Y-%m-%d"),
-                    description=f"Derekh Food - Plano {plano} ({ciclo})",
-                )
-                asaas_sub_id = sub_data.get("id")
-            except Exception as e:
-                logger.warning(f"Erro ao criar assinatura Asaas: {e}")
+        # Criar assinatura — se falhar, propaga o erro (não ativa silenciosamente)
+        sub_data = await asaas_client.criar_assinatura(
+            customer_id=asaas_cli.asaas_customer_id,
+            billing_type=billing_type,
+            value=valor if ciclo == "MONTHLY" else round(valor / 12, 2),
+            cycle=ciclo,
+            next_due_date=proximo_vencimento.strftime("%Y-%m-%d"),
+            description=f"Derekh Food - Plano {plano} ({ciclo})",
+        )
+        asaas_sub_id = sub_data.get("id")
+
+    # Status só muda para "active" APÓS Asaas ter sucesso (ou não estar configurado)
+    if restaurante.billing_status in ("manual", "trial"):
+        restaurante.billing_status = "active"
 
     # Salvar assinatura local
     assinatura_existente = db.query(models.AsaasAssinatura).filter(

@@ -68,6 +68,8 @@ async def endpoint_selecionar_plano(
         return resultado
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao comunicar com gateway de pagamento: {e}")
 
 
 @router.get("/faturas")
