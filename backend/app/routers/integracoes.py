@@ -277,6 +277,134 @@ async def sync_catalog_ifood(
 
 
 # ─── Open Delivery Setup ────────────────────────────
+@router.post("/ifood/test-order")
+async def test_order_ifood(
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(get_db),
+):
+    """Gerar pedido de teste simulando iFood (apenas para lojas de teste)."""
+    integ = db.query(models.IntegracaoMarketplace).filter(
+        models.IntegracaoMarketplace.restaurante_id == rest.id,
+        models.IntegracaoMarketplace.marketplace == "ifood",
+    ).first()
+    if not integ or not integ.ativo:
+        raise HTTPException(400, "Integração iFood não está ativa")
+
+    import uuid
+    from datetime import datetime
+    order_id = f"test-{uuid.uuid4().hex[:12]}"
+    fake_event = {
+        "id": f"evt-{uuid.uuid4().hex[:8]}",
+        "code": "PLACED",
+        "orderId": order_id,
+        "order": {
+            "id": order_id,
+            "displayId": f"TST-{uuid.uuid4().hex[:4].upper()}",
+            "createdAt": datetime.utcnow().isoformat() + "Z",
+            "type": "DELIVERY",
+            "merchant": {"id": integ.merchant_id, "name": rest.nome},
+            "customer": {
+                "name": "Cliente Teste iFood",
+                "phone": {"number": "41999998888"},
+            },
+            "items": [
+                {
+                    "id": "test-item-1",
+                    "name": "Pizza Margherita Grande",
+                    "quantity": 1,
+                    "unitPrice": 42.90,
+                    "totalPrice": 42.90,
+                    "subItems": [
+                        {"name": "Borda Recheada Catupiry", "quantity": 1, "unitPrice": 8.00, "totalPrice": 8.00}
+                    ],
+                    "observations": "Sem cebola",
+                },
+                {
+                    "id": "test-item-2",
+                    "name": "Coca-Cola 2L",
+                    "quantity": 2,
+                    "unitPrice": 12.00,
+                    "totalPrice": 24.00,
+                    "subItems": [],
+                    "observations": "",
+                },
+            ],
+            "payments": {
+                "methods": [{"method": "CREDIT", "type": "ONLINE", "value": 79.90}]
+            },
+            "total": {
+                "subTotal": 74.90,
+                "deliveryFee": 5.00,
+                "benefits": 0,
+                "orderAmount": 79.90,
+            },
+            "deliveryAddress": {
+                "streetName": "Rua Brasil",
+                "streetNumber": "234",
+                "neighborhood": "Centro",
+                "city": "Curitiba",
+                "state": "PR",
+                "postalCode": "80000-000",
+                "complement": "Apto 12",
+                "reference": "Próximo à praça",
+                "coordinates": {"latitude": -25.4284, "longitude": -49.2733},
+            },
+        },
+    }
+
+    # Processar diretamente pelo manager
+    integration_manager = getattr(request.app.state, 'integration_manager', None)
+    if integration_manager:
+        client = integration_manager.get_client("ifood", rest.id)
+        if client:
+            await integration_manager._process_events(client, [fake_event])
+            return {"success": True, "order_id": order_id, "mensagem": "Pedido de teste criado com sucesso"}
+
+    # Fallback: processar inline se manager não disponível
+    from ..integrations.ifood.mapper import ifood_order_to_pedido
+    from .painel import _gerar_proxima_comanda
+    pedido_data = ifood_order_to_pedido(fake_event["order"], rest.id)
+    comanda = _gerar_proxima_comanda(db, rest.id)
+
+    pedido = models.Pedido(
+        restaurante_id=rest.id,
+        comanda=comanda,
+        tipo=pedido_data.get("tipo", "delivery"),
+        origem="marketplace",
+        tipo_entrega=pedido_data.get("tipo_entrega", "entrega"),
+        cliente_nome=pedido_data.get("cliente_nome", "Cliente Teste iFood"),
+        cliente_telefone=pedido_data.get("cliente_telefone"),
+        endereco_entrega=pedido_data.get("endereco_entrega"),
+        latitude_entrega=pedido_data.get("latitude_entrega"),
+        longitude_entrega=pedido_data.get("longitude_entrega"),
+        itens=pedido_data.get("itens_texto", "Pedido teste iFood"),
+        carrinho_json=pedido_data.get("carrinho_json", []),
+        observacoes=pedido_data.get("observacoes"),
+        valor_total=pedido_data.get("valor_total", 0),
+        valor_subtotal=pedido_data.get("valor_subtotal", 0),
+        valor_taxa_entrega=pedido_data.get("valor_taxa_entrega", 0),
+        forma_pagamento=pedido_data.get("forma_pagamento"),
+        status="pendente",
+        marketplace_source="ifood",
+        marketplace_order_id=order_id,
+        marketplace_display_id=pedido_data.get("marketplace_display_id"),
+        marketplace_raw_json=fake_event["order"],
+    )
+    db.add(pedido)
+    db.commit()
+
+    # Broadcast novo_pedido
+    ws_manager = getattr(request.app.state, 'ws_manager', None)
+    if ws_manager:
+        await ws_manager.broadcast({
+            "tipo": "novo_pedido",
+            "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+        }, rest.id)
+
+    return {"success": True, "order_id": order_id, "pedido_id": pedido.id, "comanda": comanda, "mensagem": "Pedido de teste criado (fallback)"}
+
+
 @router.post("/opendelivery/setup")
 async def setup_opendelivery(
     dados: OpenDeliverySetupRequest,
