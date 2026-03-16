@@ -1563,7 +1563,7 @@ class CredencialPlataformaRequest(BaseModel):
 
 @router.get("/integracoes/plataformas")
 def listar_credenciais_plataforma(
-    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Listar todas as credenciais de plataforma configuradas."""
@@ -1595,7 +1595,7 @@ def listar_credenciais_plataforma(
 @router.post("/integracoes/plataformas")
 def salvar_credencial_plataforma(
     payload: CredencialPlataformaRequest,
-    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Criar ou atualizar credencial de plataforma para um marketplace."""
@@ -1639,7 +1639,7 @@ def salvar_credencial_plataforma(
 def atualizar_credencial_plataforma(
     marketplace: str,
     payload: CredencialPlataformaRequest,
-    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Atualizar credencial de plataforma existente."""
@@ -1669,7 +1669,7 @@ def atualizar_credencial_plataforma(
 @router.delete("/integracoes/plataformas/{marketplace}")
 def deletar_credencial_plataforma(
     marketplace: str,
-    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Remover credencial de plataforma. Restaurantes conectados serão desconectados."""
@@ -1696,7 +1696,7 @@ def deletar_credencial_plataforma(
 @router.put("/integracoes/plataformas/{marketplace}/toggle")
 def toggle_credencial_plataforma(
     marketplace: str,
-    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Ativar/desativar credencial de plataforma."""
@@ -1726,7 +1726,7 @@ def toggle_credencial_plataforma(
 
 @router.get("/integracoes/status")
 def status_global_integracoes(
-    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Status global de todas as integrações (restaurantes conectados, erros recentes)."""
