@@ -99,12 +99,19 @@ def ifood_order_to_pedido(ifood_order: dict, restaurante_id: int) -> Optional[Di
             carrinho_json.append(cart_item)
             itens_texto_parts.append(f"{qtd}x {nome}")
 
-        # Valores
-        valor_total = ifood_order.get("totalPrice", 0) or 0
-        valor_subtotal = ifood_order.get("subTotal", valor_total) or valor_total
+        # Valores — suportar ambos formatos (totalPrice no root OU total.orderAmount)
+        total_obj = ifood_order.get("total", {}) or {}
+        valor_total = ifood_order.get("totalPrice") or total_obj.get("orderAmount") or 0
+        valor_subtotal = ifood_order.get("subTotal") or total_obj.get("subTotal") or valor_total
         delivery_fee = ifood_order.get("deliveryFee", {})
-        valor_taxa = delivery_fee.get("value", 0) if isinstance(delivery_fee, dict) else float(delivery_fee or 0)
-        valor_desconto = ifood_order.get("benefits", {}).get("value", 0) if isinstance(ifood_order.get("benefits"), dict) else 0
+        if isinstance(delivery_fee, dict):
+            valor_taxa = delivery_fee.get("value", 0) or 0
+        else:
+            valor_taxa = float(delivery_fee or 0)
+        if not valor_taxa:
+            valor_taxa = total_obj.get("deliveryFee", 0) or 0
+        benefits = ifood_order.get("benefits", {})
+        valor_desconto = benefits.get("value", 0) if isinstance(benefits, dict) else (total_obj.get("benefits", 0) or 0)
 
         # Pagamento
         payments = ifood_order.get("payments", {})
