@@ -136,8 +136,8 @@ class ConfigWindow:
             try:
                 client = ApiClient(server, "")
                 result = client.login(email, senha)
-                if result and result.get("token"):
-                    self.config["token"] = result["token"]
+                if result and (result.get("access_token") or result.get("token")):
+                    self.config["token"] = result.get("access_token") or result["token"]
                     self.config["restaurante_id"] = result.get("restaurante", {}).get("id")
                     self.config["server_url"] = server
                     self._root.after(0, lambda: self._login_status.set(
