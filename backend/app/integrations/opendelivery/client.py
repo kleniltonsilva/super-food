@@ -19,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 # Mapeamento de status Open Delivery ↔ Derekh
 DEREKH_TO_OD = {
-    "em_preparo": "CONFIRMED",
+    "em_preparo": "PREPARING",
     "pronto": "READY_FOR_PICKUP",
     "em_entrega": "DISPATCHED",
-    "entregue": "CONCLUDED",
+    "entregue": "DELIVERED",
     "cancelado": "CANCELLED",
 }
 
@@ -30,10 +30,24 @@ OD_TO_DEREKH = {
     "CREATED": "pendente",
     "PLACED": "pendente",
     "CONFIRMED": "em_preparo",
+    "PREPARING": "em_preparo",
     "READY_FOR_PICKUP": "pronto",
+    "PICKED_UP": "em_entrega",
     "DISPATCHED": "em_entrega",
+    "DELIVERED": "entregue",
     "CONCLUDED": "entregue",
     "CANCELLED": "cancelado",
+    "CANCELLATION_REQUESTED": "cancelado",
+}
+
+# Endpoints individuais por ação (spec Open Delivery real)
+STATUS_ENDPOINT_MAP = {
+    "CONFIRMED": "confirm",
+    "PREPARING": "preparing",
+    "READY_FOR_PICKUP": "readyForPickup",
+    "DISPATCHED": "dispatch",
+    "DELIVERED": "delivered",
+    "CANCELLED": "requestCancellation",
 }
 
 
@@ -144,29 +158,38 @@ class OpenDeliveryClient(MarketplaceClient):
 
     async def update_order_status(self, marketplace_order_id: str, new_status: str,
                                    reason: Optional[str] = None) -> bool:
-        """Enviar atualização de status ao marketplace."""
+        """Enviar atualização de status ao marketplace via endpoints individuais."""
         if not self.api_base_url or not self.access_token:
             self._log("warning", "Sem API base URL — status não enviado")
             return False
 
-        try:
-            body = {"status": new_status}
-            if reason:
-                body["reason"] = reason
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
 
-            resp = await self._http.put(
-                f"{self.api_base_url}/orders/{marketplace_order_id}/status",
-                headers={
-                    "Authorization": f"Bearer {self.access_token}",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-            )
+        try:
+            # Se está indo para PREPARING, confirmar primeiro (são 2 ações na spec)
+            if new_status == "PREPARING":
+                confirm_url = f"{self.api_base_url}/v1/orders/{marketplace_order_id}/confirm"
+                confirm_resp = await self._http.post(confirm_url, headers=headers)
+                if confirm_resp.status_code not in (200, 202, 204):
+                    self._log("warning", f"Auto-confirm falhou: {confirm_resp.status_code}")
+
+            action = STATUS_ENDPOINT_MAP.get(new_status)
+            if not action:
+                self._log("warning", f"Status {new_status} sem endpoint mapeado")
+                return False
+
+            url = f"{self.api_base_url}/v1/orders/{marketplace_order_id}/{action}"
+            body = {"reason": reason} if reason and new_status == "CANCELLED" else None
+
+            resp = await self._http.post(url, headers=headers, json=body)
             if resp.status_code in (200, 202, 204):
-                self._log("info", f"Status {new_status} enviado para pedido {marketplace_order_id}")
+                self._log("info", f"Status {new_status} ({action}) enviado para pedido {marketplace_order_id}")
                 return True
             else:
-                self._log("error", f"Erro status update: {resp.status_code}")
+                self._log("error", f"Erro status update {action}: {resp.status_code}")
                 return False
         except Exception as e:
             self._log("error", f"Erro ao enviar status: {e}")

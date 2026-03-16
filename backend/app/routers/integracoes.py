@@ -1,13 +1,16 @@
 """
 Router de Integrações com Marketplaces (iFood, Open Delivery).
-Endpoints para setup, status, webhook e catalog sync.
+Modelo SaaS: credenciais na plataforma (Super Admin), restaurante apenas autoriza.
+
+Fluxo iFood: connect → gera userCode → restaurante digita no portal → polling → authorized
+Fluxo Open Delivery: connect → gera URL autorização → restaurante clica → webhook confirma
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 from typing import Optional
+from datetime import datetime
 import logging
 
 from database import models
@@ -22,164 +25,220 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/painel/integracoes", tags=["Integrações Marketplace"])
 
 
-# ─── Schemas ────────────────────────────────
-class IFoodSetupRequest(BaseModel):
-    client_id: str
-    client_secret: str
-    merchant_id: str
-
-
-class OpenDeliverySetupRequest(BaseModel):
-    marketplace: str  # 99food, rappi, keeta
-    client_id: Optional[str] = None
-    client_secret: Optional[str] = None
-    merchant_id: Optional[str] = None
-    api_base_url: Optional[str] = None
-    webhook_secret: Optional[str] = None
-
-
-# ─── Listar integrações ────────────────────────────
+# ─── Listar marketplaces disponíveis + status do restaurante ────────────
 @router.get("")
 def listar_integracoes(
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(get_db),
 ):
-    """Lista todas as integrações do restaurante."""
+    """Lista marketplaces disponíveis (com credencial configurada pelo Super Admin) + status do restaurante."""
+    # Buscar credenciais da plataforma ativas
+    creds = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.ativo == True,
+    ).all()
+
+    # Buscar integrações do restaurante
     integracoes = db.query(models.IntegracaoMarketplace).filter(
         models.IntegracaoMarketplace.restaurante_id == rest.id,
     ).all()
+    integ_map = {i.marketplace: i for i in integracoes}
 
     result = []
-    for integ in integracoes:
+    for cred in creds:
+        integ = integ_map.get(cred.marketplace)
         result.append({
-            "id": integ.id,
-            "marketplace": integ.marketplace,
-            "ativo": integ.ativo,
-            "merchant_id": integ.merchant_id,
-            "has_credentials": bool(integ.client_id and integ.client_secret),
-            "token_expires_at": integ.token_expires_at.isoformat() if integ.token_expires_at else None,
-            "criado_em": integ.criado_em.isoformat() if integ.criado_em else None,
-            "atualizado_em": integ.atualizado_em.isoformat() if integ.atualizado_em else None,
+            "marketplace": cred.marketplace,
+            "disponivel": True,
+            "conectado": integ.authorization_status == 'authorized' if integ else False,
+            "ativo": integ.ativo if integ else False,
+            "authorization_status": integ.authorization_status if integ else None,
+            "merchant_id": integ.merchant_id if integ else None,
+            "authorized_at": integ.authorized_at.isoformat() if integ and integ.authorized_at else None,
+            "token_expires_at": integ.token_expires_at.isoformat() if integ and integ.token_expires_at else None,
         })
 
     return result
 
 
-# ─── iFood Setup ────────────────────────────
-@router.post("/ifood/setup")
-async def setup_ifood(
-    dados: IFoodSetupRequest,
+# ─── iFood: Iniciar fluxo de autorização (gera userCode) ────────────
+@router.post("/ifood/connect")
+async def connect_ifood(
     request: Request,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(get_db),
 ):
-    """Configurar integração com iFood."""
-    # Verificar se já existe
+    """Iniciar fluxo de autorização iFood via userCode.
+    Retorna um código que o restaurante deve digitar no Portal do Parceiro iFood.
+    """
+    # Verificar se a plataforma tem credenciais iFood
+    cred = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.marketplace == "ifood",
+        models.CredencialPlataforma.ativo == True,
+    ).first()
+    if not cred:
+        raise HTTPException(400, "iFood não está disponível. Contate o administrador da plataforma.")
+
+    # Verificar se já está autorizado
     integ = db.query(models.IntegracaoMarketplace).filter(
         models.IntegracaoMarketplace.restaurante_id == rest.id,
         models.IntegracaoMarketplace.marketplace == "ifood",
     ).first()
 
-    if integ:
-        integ.client_id = dados.client_id
-        integ.client_secret = dados.client_secret
-        integ.merchant_id = dados.merchant_id
-    else:
+    if integ and integ.authorization_status == 'authorized':
+        raise HTTPException(400, "Restaurante já está conectado ao iFood. Desconecte primeiro para reconectar.")
+
+    # Gerar userCode via API iFood
+    from ..integrations.ifood.client import IFoodClient
+    client = IFoodClient(
+        integracao_id=integ.id if integ else 0,
+        restaurante_id=rest.id,
+        config={
+            "client_id": cred.client_id,
+            "client_secret": cred.client_secret,
+        },
+    )
+
+    try:
+        await client.start()
+        user_code_data = await client.generate_user_code()
+        await client.stop()
+    except Exception as e:
+        await client.stop()
+        raise HTTPException(500, f"Erro ao gerar código de autorização: {str(e)}")
+
+    if not user_code_data:
+        raise HTTPException(500, "Falha ao gerar código de autorização iFood")
+
+    # Criar ou atualizar integração com status pending
+    if not integ:
         integ = models.IntegracaoMarketplace(
             restaurante_id=rest.id,
             marketplace="ifood",
-            client_id=dados.client_id,
-            client_secret=dados.client_secret,
-            merchant_id=dados.merchant_id,
             ativo=False,
+            authorization_status='pending',
+            config_json={
+                "user_code": user_code_data.get("userCode"),
+                "verification_url": user_code_data.get("verificationUrl"),
+                "verification_url_complete": user_code_data.get("verificationUrlComplete"),
+                "authorization_code_verifier": user_code_data.get("authorizationCodeVerifier"),
+                "expires_in": user_code_data.get("expiresIn", 600),
+            },
         )
         db.add(integ)
+    else:
+        integ.authorization_status = 'pending'
+        integ.config_json = {
+            **(integ.config_json or {}),
+            "user_code": user_code_data.get("userCode"),
+            "verification_url": user_code_data.get("verificationUrl"),
+            "verification_url_complete": user_code_data.get("verificationUrlComplete"),
+            "authorization_code_verifier": user_code_data.get("authorizationCodeVerifier"),
+            "expires_in": user_code_data.get("expiresIn", 600),
+        }
 
     db.commit()
     db.refresh(integ)
 
     return {
-        "id": integ.id,
-        "marketplace": "ifood",
-        "merchant_id": integ.merchant_id,
-        "ativo": integ.ativo,
-        "mensagem": "Credenciais iFood salvas. Use /test para testar a conexão.",
+        "user_code": user_code_data.get("userCode"),
+        "verification_url": user_code_data.get("verificationUrlComplete") or user_code_data.get("verificationUrl"),
+        "expires_in": user_code_data.get("expiresIn", 600),
+        "mensagem": "Digite este código no Portal do Parceiro iFood para autorizar.",
     }
 
 
-@router.post("/ifood/test")
-async def test_ifood(
+# ─── iFood: Verificar status de autorização (polling frontend) ────────────
+@router.get("/ifood/auth-status")
+async def ifood_auth_status(
+    request: Request,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(get_db),
 ):
-    """Testar conexão com iFood (verifica OAuth2)."""
+    """Verifica se o restaurante já autorizou via userCode no iFood.
+    O frontend faz polling neste endpoint até receber authorized=true.
+    """
     integ = db.query(models.IntegracaoMarketplace).filter(
         models.IntegracaoMarketplace.restaurante_id == rest.id,
         models.IntegracaoMarketplace.marketplace == "ifood",
     ).first()
 
     if not integ:
-        raise HTTPException(404, "Integração iFood não configurada")
+        return {"status": "not_found", "authorized": False}
+
+    if integ.authorization_status == 'authorized':
+        return {"status": "authorized", "authorized": True, "merchant_id": integ.merchant_id}
+
+    if integ.authorization_status != 'pending':
+        return {"status": integ.authorization_status, "authorized": False}
+
+    # Tentar verificar autorização via API iFood
+    config = integ.config_json or {}
+    authorization_code_verifier = config.get("authorization_code_verifier")
+    user_code = config.get("user_code")
+
+    if not authorization_code_verifier or not user_code:
+        return {"status": "pending", "authorized": False, "mensagem": "Código expirado. Gere um novo."}
+
+    cred = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.marketplace == "ifood",
+        models.CredencialPlataforma.ativo == True,
+    ).first()
+    if not cred:
+        return {"status": "error", "authorized": False, "mensagem": "Credenciais da plataforma não disponíveis"}
 
     from ..integrations.ifood.client import IFoodClient
     client = IFoodClient(
         integracao_id=integ.id,
         restaurante_id=rest.id,
         config={
-            "client_id": integ.client_id,
-            "client_secret": integ.client_secret,
-            "merchant_id": integ.merchant_id,
+            "client_id": cred.client_id,
+            "client_secret": cred.client_secret,
         },
     )
 
     try:
         await client.start()
-        auth_ok = await client.authenticate()
+        token_data = await client.exchange_authorization_code(
+            user_code=user_code,
+            authorization_code_verifier=authorization_code_verifier,
+        )
         await client.stop()
-
-        if auth_ok:
-            return {"success": True, "mensagem": "Conexão com iFood OK! Credenciais válidas."}
-        else:
-            return {"success": False, "mensagem": "Falha na autenticação. Verifique client_id e client_secret."}
     except Exception as e:
         await client.stop()
-        return {"success": False, "mensagem": f"Erro ao conectar: {str(e)}"}
+        logger.debug(f"Autorização iFood pendente para rest {rest.id}: {e}")
+        return {"status": "pending", "authorized": False}
+
+    if token_data:
+        # Autorização concedida!
+        integ.authorization_status = 'authorized'
+        integ.authorized_at = datetime.utcnow()
+        integ.access_token = token_data.get("accessToken")
+        integ.refresh_token = token_data.get("refreshToken")
+        if token_data.get("expiresIn"):
+            from datetime import timedelta
+            integ.token_expires_at = datetime.utcnow() + timedelta(seconds=token_data["expiresIn"])
+        if token_data.get("merchantId"):
+            integ.merchant_id = token_data["merchantId"]
+        integ.ativo = True
+        db.commit()
+
+        return {
+            "status": "authorized",
+            "authorized": True,
+            "merchant_id": integ.merchant_id,
+            "mensagem": "Autorização concedida! iFood conectado com sucesso.",
+        }
+
+    return {"status": "pending", "authorized": False}
 
 
-@router.put("/ifood/toggle")
-async def toggle_ifood(
-    request: Request,
+# ─── iFood: Desconectar ────────────
+@router.post("/ifood/disconnect")
+async def disconnect_ifood(
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(get_db),
 ):
-    """Ativar/desativar integração iFood."""
-    integ = db.query(models.IntegracaoMarketplace).filter(
-        models.IntegracaoMarketplace.restaurante_id == rest.id,
-        models.IntegracaoMarketplace.marketplace == "ifood",
-    ).first()
-
-    if not integ:
-        raise HTTPException(404, "Integração iFood não configurada")
-
-    if not integ.client_id or not integ.client_secret:
-        raise HTTPException(400, "Configure as credenciais antes de ativar")
-
-    integ.ativo = not integ.ativo
-    db.commit()
-
-    return {
-        "ativo": integ.ativo,
-        "mensagem": f"iFood {'ativado' if integ.ativo else 'desativado'}. "
-                    f"{'O polling de pedidos será iniciado em até 30 segundos.' if integ.ativo else ''}",
-    }
-
-
-@router.delete("/ifood")
-async def remover_ifood(
-    rest: models.Restaurante = Depends(get_rest),
-    db: Session = Depends(get_db),
-):
-    """Remover integração iFood."""
+    """Desconectar restaurante do iFood (revogar autorização)."""
     integ = db.query(models.IntegracaoMarketplace).filter(
         models.IntegracaoMarketplace.restaurante_id == rest.id,
         models.IntegracaoMarketplace.marketplace == "ifood",
@@ -188,12 +247,17 @@ async def remover_ifood(
     if not integ:
         raise HTTPException(404, "Integração iFood não encontrada")
 
-    db.delete(integ)
+    integ.ativo = False
+    integ.authorization_status = 'revoked'
+    integ.access_token = None
+    integ.refresh_token = None
+    integ.token_expires_at = None
     db.commit()
 
-    return {"mensagem": "Integração iFood removida"}
+    return {"mensagem": "iFood desconectado. Pedidos do iFood não serão mais recebidos."}
 
 
+# ─── iFood: Status ────────────
 @router.get("/ifood/status")
 async def status_ifood(
     request: Request,
@@ -216,7 +280,7 @@ async def status_ifood(
     ).order_by(models.MarketplaceEventLog.criado_em.desc()).first()
 
     # Pedidos marketplace hoje
-    from datetime import datetime, timedelta
+    from datetime import timedelta
     hoje_inicio = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     pedidos_hoje = db.query(models.Pedido).filter(
         models.Pedido.restaurante_id == rest.id,
@@ -224,7 +288,7 @@ async def status_ifood(
         models.Pedido.data_criacao >= hoje_inicio,
     ).count()
 
-    # Verificar se o manager tem o client ativo
+    # Verificar polling ativo
     integration_manager = getattr(request.app.state, 'integration_manager', None)
     polling_ativo = False
     if integration_manager:
@@ -234,6 +298,7 @@ async def status_ifood(
     return {
         "configurado": True,
         "ativo": integ.ativo,
+        "authorization_status": integ.authorization_status,
         "merchant_id": integ.merchant_id,
         "token_valido": integ.token_expires_at > datetime.utcnow() if integ.token_expires_at else False,
         "token_expira_em": integ.token_expires_at.isoformat() if integ.token_expires_at else None,
@@ -247,7 +312,37 @@ async def status_ifood(
     }
 
 
-# ─── Catalog Sync (iFood) ────────────────────────────
+# ─── Toggle ativo/inativo (qualquer marketplace) ────────────
+@router.put("/{marketplace}/toggle")
+async def toggle_integracao(
+    marketplace: str,
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(get_db),
+):
+    """Ativar/desativar integração (mantém autorização)."""
+    integ = db.query(models.IntegracaoMarketplace).filter(
+        models.IntegracaoMarketplace.restaurante_id == rest.id,
+        models.IntegracaoMarketplace.marketplace == marketplace,
+    ).first()
+
+    if not integ:
+        raise HTTPException(404, f"Integração {marketplace} não encontrada")
+
+    if integ.authorization_status != 'authorized':
+        raise HTTPException(400, "Conecte ao marketplace primeiro antes de ativar")
+
+    integ.ativo = not integ.ativo
+    db.commit()
+
+    return {
+        "ativo": integ.ativo,
+        "mensagem": f"{marketplace} {'ativado' if integ.ativo else 'desativado'}. "
+                    f"{'O polling será iniciado em até 30s.' if integ.ativo else ''}",
+    }
+
+
+# ─── Catalog Sync (iFood) ────────────
 @router.post("/ifood/catalog-sync")
 async def sync_catalog_ifood(
     rest: models.Restaurante = Depends(get_rest),
@@ -263,7 +358,7 @@ async def sync_catalog_ifood(
         raise HTTPException(400, "Integração iFood não está ativa")
 
     if not integ.access_token:
-        raise HTTPException(400, "Token iFood não disponível. Teste a conexão primeiro.")
+        raise HTTPException(400, "Token iFood não disponível. Reconecte ao iFood.")
 
     from ..integrations.ifood.catalog_sync import sync_catalog_to_ifood
     result = await sync_catalog_to_ifood(
@@ -276,7 +371,7 @@ async def sync_catalog_ifood(
     return result
 
 
-# ─── Open Delivery Setup ────────────────────────────
+# ─── iFood: Test Order (para lojas de teste) ────────────
 @router.post("/ifood/test-order")
 async def test_order_ifood(
     request: Request,
@@ -292,7 +387,6 @@ async def test_order_ifood(
         raise HTTPException(400, "Integração iFood não está ativa")
 
     import uuid
-    from datetime import datetime
     order_id = f"test-{uuid.uuid4().hex[:12]}"
     fake_event = {
         "id": f"evt-{uuid.uuid4().hex[:8]}",
@@ -394,7 +488,6 @@ async def test_order_ifood(
     db.add(pedido)
     db.commit()
 
-    # Broadcast novo_pedido
     ws_manager = getattr(request.app.state, 'ws_manager', None)
     if ws_manager:
         await ws_manager.broadcast({
@@ -405,69 +498,71 @@ async def test_order_ifood(
     return {"success": True, "order_id": order_id, "pedido_id": pedido.id, "comanda": comanda, "mensagem": "Pedido de teste criado (fallback)"}
 
 
-@router.post("/opendelivery/setup")
-async def setup_opendelivery(
-    dados: OpenDeliverySetupRequest,
+# ─── Open Delivery: Conectar marketplace ────────────
+@router.post("/{marketplace}/connect")
+async def connect_opendelivery(
+    marketplace: str,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(get_db),
 ):
-    """Configurar integração Open Delivery (99Food, Rappi, Keeta)."""
-    if dados.marketplace not in ("99food", "rappi", "keeta"):
-        raise HTTPException(400, "Marketplace não suportado. Use: 99food, rappi, keeta")
+    """Conectar restaurante a um marketplace Open Delivery (99food, keeta)."""
+    if marketplace == "rappi":
+        raise HTTPException(400, "Rappi usa API proprietária e ainda não é suportado. Em breve!")
+    if marketplace not in ("99food", "keeta"):
+        raise HTTPException(400, "Marketplace não suportado. Use: 99food, keeta")
 
+    # Verificar credencial da plataforma
+    cred = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.marketplace == marketplace,
+        models.CredencialPlataforma.ativo == True,
+    ).first()
+    if not cred:
+        raise HTTPException(400, f"{marketplace} não está disponível. Contate o administrador da plataforma.")
+
+    # Verificar se já está conectado
     integ = db.query(models.IntegracaoMarketplace).filter(
         models.IntegracaoMarketplace.restaurante_id == rest.id,
-        models.IntegracaoMarketplace.marketplace == dados.marketplace,
+        models.IntegracaoMarketplace.marketplace == marketplace,
     ).first()
 
-    config_json = {}
-    if dados.api_base_url:
-        config_json["api_base_url"] = dados.api_base_url
-    if dados.webhook_secret:
-        config_json["webhook_secret"] = dados.webhook_secret
+    if integ and integ.authorization_status == 'authorized':
+        raise HTTPException(400, f"Já conectado ao {marketplace}. Desconecte primeiro.")
 
-    if integ:
-        if dados.client_id:
-            integ.client_id = dados.client_id
-        if dados.client_secret:
-            integ.client_secret = dados.client_secret
-        if dados.merchant_id:
-            integ.merchant_id = dados.merchant_id
-        if config_json:
-            integ.config_json = config_json
-    else:
+    webhook_url = f"https://superfood-api.fly.dev/webhooks/opendelivery/{rest.id}"
+
+    # Criar ou atualizar integração com status pending
+    if not integ:
         integ = models.IntegracaoMarketplace(
             restaurante_id=rest.id,
-            marketplace=dados.marketplace,
-            client_id=dados.client_id,
-            client_secret=dados.client_secret,
-            merchant_id=dados.merchant_id,
-            config_json=config_json,
+            marketplace=marketplace,
             ativo=False,
+            authorization_status='pending',
+            config_json={"webhook_url": webhook_url},
         )
         db.add(integ)
+    else:
+        integ.authorization_status = 'pending'
+        integ.config_json = {**(integ.config_json or {}), "webhook_url": webhook_url}
 
     db.commit()
     db.refresh(integ)
 
     return {
-        "id": integ.id,
-        "marketplace": dados.marketplace,
-        "ativo": integ.ativo,
-        "webhook_url": f"/webhooks/opendelivery/{rest.id}",
-        "mensagem": f"Integração {dados.marketplace} configurada. "
-                    f"Configure o webhook no painel do marketplace: "
-                    f"https://superfood-api.fly.dev/webhooks/opendelivery/{rest.id}",
+        "marketplace": marketplace,
+        "webhook_url": webhook_url,
+        "mensagem": f"Configure o webhook no painel do {marketplace}: {webhook_url}. "
+                    f"Quando o marketplace enviar o evento de autorização, a conexão será confirmada automaticamente.",
     }
 
 
-@router.put("/opendelivery/{marketplace}/toggle")
-async def toggle_opendelivery(
+# ─── Desconectar qualquer marketplace ────────────
+@router.post("/{marketplace}/disconnect")
+async def disconnect_marketplace(
     marketplace: str,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(get_db),
 ):
-    """Ativar/desativar integração Open Delivery."""
+    """Desconectar restaurante de qualquer marketplace."""
     integ = db.query(models.IntegracaoMarketplace).filter(
         models.IntegracaoMarketplace.restaurante_id == rest.id,
         models.IntegracaoMarketplace.marketplace == marketplace,
@@ -476,31 +571,14 @@ async def toggle_opendelivery(
     if not integ:
         raise HTTPException(404, f"Integração {marketplace} não encontrada")
 
-    integ.ativo = not integ.ativo
+    integ.ativo = False
+    integ.authorization_status = 'revoked'
+    integ.access_token = None
+    integ.refresh_token = None
+    integ.token_expires_at = None
     db.commit()
 
-    return {"ativo": integ.ativo, "mensagem": f"{marketplace} {'ativado' if integ.ativo else 'desativado'}"}
-
-
-@router.delete("/opendelivery/{marketplace}")
-async def remover_opendelivery(
-    marketplace: str,
-    rest: models.Restaurante = Depends(get_rest),
-    db: Session = Depends(get_db),
-):
-    """Remover integração Open Delivery."""
-    integ = db.query(models.IntegracaoMarketplace).filter(
-        models.IntegracaoMarketplace.restaurante_id == rest.id,
-        models.IntegracaoMarketplace.marketplace == marketplace,
-    ).first()
-
-    if not integ:
-        raise HTTPException(404, f"Integração {marketplace} não encontrada")
-
-    db.delete(integ)
-    db.commit()
-
-    return {"mensagem": f"Integração {marketplace} removida"}
+    return {"mensagem": f"{marketplace} desconectado com sucesso"}
 
 
 # ─── Webhook Open Delivery (SEM auth JWT — marketplace envia diretamente) ────
@@ -516,7 +594,6 @@ async def webhook_opendelivery(
     """Endpoint webhook para receber eventos de marketplaces Open Delivery.
     Este endpoint NÃO requer autenticação JWT — é chamado diretamente pelo marketplace.
     """
-    # Verificar se restaurante existe
     rest = db.query(models.Restaurante).filter(
         models.Restaurante.id == restaurante_id,
         models.Restaurante.ativo == True,
@@ -530,14 +607,11 @@ async def webhook_opendelivery(
     except Exception:
         raise HTTPException(400, "Payload JSON inválido")
 
-    # Identificar qual marketplace está enviando
-    # (Pode vir no header, no payload, ou inferido da integração ativa)
+    # Identificar marketplace
     marketplace = payload.get("marketplace") or payload.get("source")
     if not marketplace:
-        # Tentar inferir pela integração ativa
         integracoes = db.query(models.IntegracaoMarketplace).filter(
             models.IntegracaoMarketplace.restaurante_id == restaurante_id,
-            models.IntegracaoMarketplace.ativo == True,
             models.IntegracaoMarketplace.marketplace.in_(["99food", "rappi", "keeta"]),
         ).all()
         if len(integracoes) == 1:
@@ -545,22 +619,47 @@ async def webhook_opendelivery(
         else:
             marketplace = "opendelivery"
 
-    # Verificar assinatura HMAC (se configurado)
+    # Verificar assinatura HMAC (header X-App-Signature, chave = client_secret da plataforma)
     integ = db.query(models.IntegracaoMarketplace).filter(
         models.IntegracaoMarketplace.restaurante_id == restaurante_id,
         models.IntegracaoMarketplace.marketplace == marketplace,
     ).first()
 
-    if integ and integ.config_json and integ.config_json.get("webhook_secret"):
+    cred_plat = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.marketplace == marketplace,
+        models.CredencialPlataforma.ativo == True,
+    ).first()
+
+    signature = request.headers.get("X-App-Signature", "")
+    if signature and cred_plat and cred_plat.client_secret:
         from ..integrations.opendelivery.client import OpenDeliveryClient
-        signature = request.headers.get("X-Webhook-Signature", "")
-        if not OpenDeliveryClient.verify_webhook_signature(body, signature, integ.config_json["webhook_secret"]):
+        if not OpenDeliveryClient.verify_webhook_signature(body, signature, cred_plat.client_secret):
             raise HTTPException(401, "Assinatura do webhook inválida")
 
-    # Construir evento normalizado
+    # Evento de autorização — confirmar conexão do restaurante
+    event_type = payload.get("type") or payload.get("event_type") or payload.get("code", "")
+    if event_type in ("AUTHORIZED", "MERCHANT_AUTHORIZED", "authorization"):
+        if integ and integ.authorization_status == 'pending':
+            integ.authorization_status = 'authorized'
+            integ.authorized_at = datetime.utcnow()
+            integ.ativo = True
+            # Extrair merchantId do payload ou headers
+            merchant_id = (
+                payload.get("merchantId")
+                or payload.get("merchant_id")
+                or request.headers.get("X-App-MerchantId")
+            )
+            if merchant_id:
+                integ.merchant_id = merchant_id
+            db.commit()
+            logger.info(f"Restaurante {restaurante_id} autorizado no {marketplace} via webhook")
+        from fastapi.responses import Response
+        return Response(status_code=200)
+
+    # Evento normal — encaminhar para integration manager
     event = {
         "id": payload.get("id") or payload.get("eventId") or payload.get("event_id", ""),
-        "type": payload.get("type") or payload.get("event_type") or payload.get("code", "newOrder"),
+        "type": event_type,
         "order": payload.get("order") or payload.get("data") or payload,
         "orderId": (
             payload.get("orderId")
@@ -570,12 +669,11 @@ async def webhook_opendelivery(
         "marketplace": marketplace,
     }
 
-    # Encaminhar para o integration manager
     integration_manager = getattr(request.app.state, 'integration_manager', None)
     if integration_manager:
         client = integration_manager.get_client(marketplace, restaurante_id)
         if client and hasattr(client, 'receive_webhook_event'):
             client.receive_webhook_event(event)
 
-    # Sempre retornar 200 para o marketplace não reenviar
-    return JSONResponse(status_code=200, content={"status": "received"})
+    from fastapi.responses import Response
+    return Response(status_code=200)

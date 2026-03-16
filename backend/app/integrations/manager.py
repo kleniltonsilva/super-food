@@ -75,11 +75,21 @@ class IntegrationManager:
                 break
 
     async def _refresh_clients(self):
-        """Carrega/atualiza clientes baseado nas integrações ativas no banco."""
+        """Carrega/atualiza clientes baseado nas integrações ativas no banco.
+        Busca credenciais da plataforma (CredencialPlataforma) + tokens por restaurante (IntegracaoMarketplace).
+        """
         db: Session = SessionLocal()
         try:
+            # Buscar credenciais da plataforma ativas
+            creds = db.query(models.CredencialPlataforma).filter(
+                models.CredencialPlataforma.ativo == True
+            ).all()
+            cred_map = {c.marketplace: c for c in creds}
+
+            # Buscar integrações autorizadas e ativas
             integracoes = db.query(models.IntegracaoMarketplace).filter(
-                models.IntegracaoMarketplace.ativo == True
+                models.IntegracaoMarketplace.ativo == True,
+                models.IntegracaoMarketplace.authorization_status == 'authorized',
             ).all()
 
             active_keys = set()
@@ -88,7 +98,13 @@ class IntegrationManager:
                 active_keys.add(key)
 
                 if key not in self._clients:
-                    client = self._create_client(integ)
+                    # Verificar se existe credencial da plataforma para este marketplace
+                    cred = cred_map.get(integ.marketplace)
+                    if not cred:
+                        logger.debug(f"IntegrationManager: sem credencial plataforma para {integ.marketplace}")
+                        continue
+
+                    client = self._create_client(integ, cred)
                     if client:
                         try:
                             auth_ok = await client.authenticate()
@@ -113,11 +129,11 @@ class IntegrationManager:
         finally:
             db.close()
 
-    def _create_client(self, integ: models.IntegracaoMarketplace):
-        """Factory: cria o client correto baseado no tipo de marketplace."""
+    def _create_client(self, integ: models.IntegracaoMarketplace, cred: models.CredencialPlataforma):
+        """Factory: cria o client correto. Credenciais vêm da plataforma, tokens do restaurante."""
         config = {
-            "client_id": integ.client_id,
-            "client_secret": integ.client_secret,
+            "client_id": cred.client_id,
+            "client_secret": cred.client_secret,
             "merchant_id": integ.merchant_id,
             "access_token": integ.access_token,
             "refresh_token": integ.refresh_token,
@@ -132,7 +148,11 @@ class IntegrationManager:
                 restaurante_id=integ.restaurante_id,
                 config=config,
             )
-        elif integ.marketplace in ("99food", "rappi", "keeta"):
+        elif integ.marketplace == "rappi":
+            # Rappi usa API proprietária, não Open Delivery — ainda não suportado
+            logger.warning(f"IntegrationManager: Rappi usa API proprietária, client não disponível ainda")
+            return None
+        elif integ.marketplace in ("99food", "keeta"):
             from .opendelivery.client import OpenDeliveryClient
             return OpenDeliveryClient(
                 integracao_id=integ.id,

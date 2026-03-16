@@ -63,6 +63,11 @@ from database.models import (
     # Domínios
     DominioPersonalizado,
 
+    # Marketplace
+    CredencialPlataforma,
+    IntegracaoMarketplace,
+    MarketplaceEventLog,
+
     # Tempo Real / Alertas
     AlertaAtraso,
     SugestaoTempo,
@@ -99,6 +104,9 @@ __all__ = [
     'Combo',
     'ComboItem',
     'DominioPersonalizado',
+    'CredencialPlataforma',
+    'IntegracaoMarketplace',
+    'MarketplaceEventLog',
     'AlertaAtraso',
     'SugestaoTempo',
 ]

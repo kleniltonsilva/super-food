@@ -753,22 +753,28 @@ export function useIFoodStatus() {
   });
 }
 
-export function useSetupIFood() {
+export function useConnectIFood() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.setupIFood,
+    mutationFn: api.connectIFood,
     onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
   });
 }
 
-export function useTestIFood() {
-  return useMutation({ mutationFn: api.testIFood });
+export function useIFoodAuthStatus() {
+  return useQuery({
+    queryKey: ["admin", "integracoes", "ifood", "auth-status"] as const,
+    queryFn: api.getIFoodAuthStatus,
+    staleTime: 5 * 1000,
+    refetchInterval: 5 * 1000,
+    enabled: false,
+  });
 }
 
-export function useToggleIFood() {
+export function useDisconnectIFood() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.toggleIFood,
+    mutationFn: api.disconnectIFood,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.ifoodStatus });
@@ -776,10 +782,10 @@ export function useToggleIFood() {
   });
 }
 
-export function useRemoveIFood() {
+export function useToggleIntegracao() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.removeIFood,
+    mutationFn: api.toggleIntegracao,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.ifoodStatus });
@@ -791,26 +797,18 @@ export function useSyncCatalogIFood() {
   return useMutation({ mutationFn: api.syncCatalogIFood });
 }
 
-export function useSetupOpenDelivery() {
+export function useConnectOpenDelivery() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.setupOpenDelivery,
+    mutationFn: api.connectOpenDelivery,
     onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
   });
 }
 
-export function useToggleOpenDelivery() {
+export function useDisconnectMarketplace() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.toggleOpenDelivery,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
-  });
-}
-
-export function useRemoveOpenDelivery() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: api.removeOpenDelivery,
+    mutationFn: api.disconnectMarketplace,
     onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.integracoes }),
   });
 }

@@ -40,8 +40,8 @@ def opendelivery_order_to_pedido(
         return None
 
     try:
-        # Cliente
-        customer = od_order.get("customer", {})
+        # Cliente (spec usa "consumer", fallback "customer")
+        customer = od_order.get("consumer") or od_order.get("customer", {})
         cliente_nome = customer.get("name", f"Cliente {marketplace_name}")
         cliente_telefone = customer.get("phone") or customer.get("phoneNumber")
 
@@ -110,8 +110,8 @@ def opendelivery_order_to_pedido(
         valor_taxa = total.get("deliveryFee", 0) or 0
         valor_desconto = total.get("discount", 0) or 0
 
-        # Pagamento
-        payments = od_order.get("payments", [])
+        # Pagamento (spec usa "payment" singular, fallback "payments" plural)
+        payments = od_order.get("payments") or ([od_order["payment"]] if od_order.get("payment") else [])
         forma_pagamento = "Online"
         pagamento_online = True
         if payments:
@@ -128,8 +128,8 @@ def opendelivery_order_to_pedido(
             forma_pagamento = type_map.get(pay_type, pay_type)
             pagamento_online = pay.get("prepaid", True) if isinstance(pay, dict) else True
 
-        # Display ID
-        display_id = od_order.get("displayId") or od_order.get("shortId", "")
+        # Display ID (spec usa "orderDisplayId", fallback "displayId"/"shortId")
+        display_id = od_order.get("orderDisplayId") or od_order.get("displayId") or od_order.get("shortId", "")
         display_name = MARKETPLACE_DISPLAY_NAMES.get(marketplace_name, marketplace_name.title())
         marketplace_display_id = f"{display_name} #{display_id}" if display_id else None
 

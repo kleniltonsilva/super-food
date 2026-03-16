@@ -1,17 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import AdminLayout from "@/admin/components/AdminLayout";
 import {
   useIntegracoes,
   useIFoodStatus,
-  useSetupIFood,
-  useTestIFood,
-  useToggleIFood,
-  useRemoveIFood,
+  useConnectIFood,
+  useDisconnectIFood,
+  useToggleIntegracao,
   useSyncCatalogIFood,
-  useSetupOpenDelivery,
-  useToggleOpenDelivery,
-  useRemoveOpenDelivery,
+  useConnectOpenDelivery,
+  useDisconnectMarketplace,
 } from "@/admin/hooks/useAdminQueries";
+import { getIFoodAuthStatus } from "@/admin/lib/adminApiClient";
 import {
   Card,
   CardContent,
@@ -19,7 +18,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -40,151 +38,110 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plug, Wifi, WifiOff, RefreshCw, Trash2, TestTube, Upload, ExternalLink } from "lucide-react";
+import { Plug, Wifi, WifiOff, Upload, Link2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 
-// Marketplace configs
-const MARKETPLACES = [
-  {
-    id: "ifood",
-    nome: "iFood",
-    descricao: "Receba pedidos do iFood automaticamente. Polling a cada 30s.",
-    cor: "bg-red-500",
-    corBadge: "bg-red-100 text-red-700 border-red-200",
-    tipo: "ifood",
-  },
-  {
-    id: "99food",
-    nome: "99Food",
-    descricao: "Integração via Open Delivery (ABRASEL). Receba pedidos via webhook.",
-    cor: "bg-yellow-500",
-    corBadge: "bg-yellow-100 text-yellow-700 border-yellow-200",
-    tipo: "opendelivery",
-  },
-  {
-    id: "rappi",
-    nome: "Rappi",
-    descricao: "Integração via Open Delivery (ABRASEL). Receba pedidos via webhook.",
-    cor: "bg-orange-500",
-    corBadge: "bg-orange-100 text-orange-700 border-orange-200",
-    tipo: "opendelivery",
-  },
-  {
-    id: "keeta",
-    nome: "Keeta",
-    descricao: "Integração via Open Delivery (ABRASEL). Receba pedidos via webhook.",
-    cor: "bg-blue-500",
-    corBadge: "bg-blue-100 text-blue-700 border-blue-200",
-    tipo: "opendelivery",
-  },
-];
+const MARKETPLACE_META: Record<string, { nome: string; cor: string; tipo: string }> = {
+  ifood: { nome: "iFood", cor: "bg-red-500", tipo: "ifood" },
+  "99food": { nome: "99Food", cor: "bg-yellow-500", tipo: "opendelivery" },
+  rappi: { nome: "Rappi", cor: "bg-orange-500", tipo: "proprietario" },
+  keeta: { nome: "Keeta", cor: "bg-blue-500", tipo: "opendelivery" },
+};
+
+interface IntegracaoItem {
+  marketplace: string;
+  disponivel: boolean;
+  conectado: boolean;
+  ativo: boolean;
+  authorization_status: string | null;
+  merchant_id: string | null;
+  authorized_at: string | null;
+  token_expires_at: string | null;
+}
 
 export default function Integracoes() {
   const { data: integracoes, isLoading } = useIntegracoes();
   const { data: ifoodStatus } = useIFoodStatus();
-  const setupIFood = useSetupIFood();
-  const testIFood = useTestIFood();
-  const toggleIFood = useToggleIFood();
-  const removeIFood = useRemoveIFood();
+  const connectIFood = useConnectIFood();
+  const disconnectIFood = useDisconnectIFood();
+  const toggleIntegracao = useToggleIntegracao();
   const syncCatalog = useSyncCatalogIFood();
-  const setupOD = useSetupOpenDelivery();
-  const toggleOD = useToggleOpenDelivery();
-  const removeOD = useRemoveOpenDelivery();
+  const connectOD = useConnectOpenDelivery();
+  const disconnectMk = useDisconnectMarketplace();
 
-  const [showSetup, setShowSetup] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
+  const [userCodeDialog, setUserCodeDialog] = useState<{ code: string; url: string } | null>(null);
+  const [pollingAuth, setPollingAuth] = useState(false);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Form state
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [merchantId, setMerchantId] = useState("");
-  const [apiBaseUrl, setApiBaseUrl] = useState("");
-  const [webhookSecret, setWebhookSecret] = useState("");
+  const integsList: IntegracaoItem[] = Array.isArray(integracoes) ? integracoes : [];
 
-  const integsList = Array.isArray(integracoes) ? integracoes : [];
+  // Polling para autorização iFood (a cada 5s enquanto ativo)
+  useEffect(() => {
+    if (!pollingAuth) return;
+
+    pollingRef.current = setInterval(async () => {
+      try {
+        const res = await getIFoodAuthStatus();
+        if (res.authorized) {
+          setPollingAuth(false);
+          setUserCodeDialog(null);
+          toast.success(res.mensagem || "iFood conectado com sucesso!");
+        }
+      } catch {
+        // Silenciar erros de polling
+      }
+    }, 5000);
+
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [pollingAuth]);
 
   function getInteg(marketplaceId: string) {
-    return integsList.find((i: Record<string, unknown>) => i.marketplace === marketplaceId);
+    return integsList.find((i) => i.marketplace === marketplaceId);
   }
 
-  function handleSetup(marketplaceId: string) {
-    const existing = getInteg(marketplaceId);
-    setClientId((existing?.client_id as string) || "");
-    setClientSecret("");
-    setMerchantId((existing?.merchant_id as string) || "");
-    setApiBaseUrl("");
-    setWebhookSecret("");
-    setShowSetup(marketplaceId);
-  }
-
-  async function handleSaveSetup() {
-    if (!showSetup) return;
-    const mp = MARKETPLACES.find((m) => m.id === showSetup);
-    if (!mp) return;
+  async function handleConnect(marketplaceId: string) {
+    const meta = MARKETPLACE_META[marketplaceId];
+    if (!meta) return;
 
     try {
-      if (mp.tipo === "ifood") {
-        await setupIFood.mutateAsync({ client_id: clientId, client_secret: clientSecret, merchant_id: merchantId });
+      if (meta.tipo === "ifood") {
+        const res = await connectIFood.mutateAsync();
+        setUserCodeDialog({ code: res.user_code, url: res.verification_url });
+        setPollingAuth(true);
       } else {
-        await setupOD.mutateAsync({
-          marketplace: showSetup,
-          client_id: clientId || undefined,
-          client_secret: clientSecret || undefined,
-          merchant_id: merchantId || undefined,
-          api_base_url: apiBaseUrl || undefined,
-          webhook_secret: webhookSecret || undefined,
-        });
+        const res = await connectOD.mutateAsync(marketplaceId);
+        toast.success(res.mensagem || `Webhook configurado para ${meta.nome}`);
       }
-      toast.success(`${mp.nome} configurado com sucesso`);
-      setShowSetup(null);
     } catch {
-      toast.error("Erro ao salvar configuração");
+      toast.error(`Erro ao conectar ${meta.nome}`);
     }
   }
 
   async function handleToggle(marketplaceId: string) {
-    const mp = MARKETPLACES.find((m) => m.id === marketplaceId);
-    if (!mp) return;
     try {
-      if (mp.tipo === "ifood") {
-        const res = await toggleIFood.mutateAsync();
-        toast.success(res.mensagem || `${mp.nome} ${res.ativo ? "ativado" : "desativado"}`);
-      } else {
-        const res = await toggleOD.mutateAsync(marketplaceId);
-        toast.success(res.mensagem || `${mp.nome} ${res.ativo ? "ativado" : "desativado"}`);
-      }
+      const res = await toggleIntegracao.mutateAsync(marketplaceId);
+      toast.success(res.mensagem || `${marketplaceId} alternado`);
     } catch {
       toast.error("Erro ao alternar integração");
     }
   }
 
-  async function handleDelete() {
-    if (!deleteTarget) return;
-    const mp = MARKETPLACES.find((m) => m.id === deleteTarget);
-    if (!mp) return;
+  async function handleDisconnect() {
+    if (!disconnectTarget) return;
+    const meta = MARKETPLACE_META[disconnectTarget];
     try {
-      if (mp.tipo === "ifood") {
-        await removeIFood.mutateAsync();
+      if (disconnectTarget === "ifood") {
+        await disconnectIFood.mutateAsync();
       } else {
-        await removeOD.mutateAsync(deleteTarget);
+        await disconnectMk.mutateAsync(disconnectTarget);
       }
-      toast.success(`${mp.nome} removido`);
-      setDeleteTarget(null);
+      toast.success(`${meta?.nome || disconnectTarget} desconectado`);
+      setDisconnectTarget(null);
     } catch {
-      toast.error("Erro ao remover integração");
-    }
-  }
-
-  async function handleTest() {
-    try {
-      const res = await testIFood.mutateAsync();
-      if (res.success) {
-        toast.success(res.mensagem);
-      } else {
-        toast.error(res.mensagem);
-      }
-    } catch {
-      toast.error("Erro ao testar conexão");
+      toast.error("Erro ao desconectar");
     }
   }
 
@@ -207,12 +164,12 @@ export default function Integracoes() {
         <div>
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Integrações</h1>
           <p className="text-sm text-[var(--text-muted)]">
-            Conecte seu restaurante aos principais marketplaces de delivery
+            Conecte seu restaurante aos marketplaces de delivery
           </p>
         </div>
 
-        {/* iFood Status Card (se configurado) */}
-        {ifoodStatus?.configurado && (
+        {/* iFood Status Card (se conectado) */}
+        {ifoodStatus?.configurado && ifoodStatus?.authorization_status === "authorized" && (
           <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2 text-[var(--text-primary)]">
@@ -256,171 +213,176 @@ export default function Integracoes() {
         )}
 
         {/* Marketplace Cards */}
-        <div className="grid gap-4 md:grid-cols-2">
-          {MARKETPLACES.map((mp) => {
-            const integ = getInteg(mp.id);
-            const isConfigured = !!integ;
-            const isActive = integ?.ativo === true;
+        {isLoading ? (
+          <p className="text-[var(--text-muted)]">Carregando marketplaces...</p>
+        ) : integsList.length === 0 ? (
+          <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+            <CardContent className="py-8 text-center">
+              <Plug className="h-12 w-12 text-[var(--text-muted)] mx-auto mb-3" />
+              <p className="text-[var(--text-muted)]">
+                Nenhum marketplace disponível. O administrador da plataforma precisa configurar as credenciais primeiro.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            {integsList.map((integ) => {
+              const meta = MARKETPLACE_META[integ.marketplace] || {
+                nome: integ.marketplace,
+                cor: "bg-gray-500",
+                tipo: "opendelivery",
+              };
+              const isConnected = integ.conectado;
+              const isActive = integ.ativo;
 
-            return (
-              <Card key={mp.id} className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-lg ${mp.cor} flex items-center justify-center`}>
-                        <Plug className="h-5 w-5 text-white" />
+              return (
+                <Card key={integ.marketplace} className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-lg ${meta.cor} flex items-center justify-center`}>
+                          <Plug className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base text-[var(--text-primary)]">{meta.nome}</CardTitle>
+                          <p className="text-xs text-[var(--text-muted)]">
+                            {meta.tipo === "ifood" ? "API Proprietária" : meta.tipo === "proprietario" ? "API Proprietária — Em breve" : "Open Delivery (ABRASEL)"}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <CardTitle className="text-base text-[var(--text-primary)]">{mp.nome}</CardTitle>
-                        <p className="text-xs text-[var(--text-muted)]">
-                          {mp.tipo === "ifood" ? "API Proprietária" : "Open Delivery (ABRASEL)"}
-                        </p>
-                      </div>
+                      {isConnected && (
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className={isActive ? "bg-green-100 text-green-700 border-green-200" : ""}>
+                            {isActive ? "Ativo" : "Inativo"}
+                          </Badge>
+                          <Switch checked={isActive} onCheckedChange={() => handleToggle(integ.marketplace)} />
+                        </div>
+                      )}
                     </div>
-                    {isConfigured && (
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className={isActive ? "bg-green-100 text-green-700 border-green-200" : ""}>
-                          {isActive ? "Ativo" : "Inativo"}
-                        </Badge>
-                        <Switch checked={isActive} onCheckedChange={() => handleToggle(mp.id)} />
+                  </CardHeader>
+                  <CardContent>
+                    {isConnected ? (
+                      <div className="mb-3 space-y-1">
+                        <p className="text-xs text-[var(--text-muted)] flex items-center gap-1">
+                          <Link2 className="h-3 w-3 text-green-500" />
+                          Conectado
+                          {integ.merchant_id && (
+                            <span> — Merchant: <code className="bg-[var(--bg-subtle)] px-1 rounded">{integ.merchant_id}</code></span>
+                          )}
+                        </p>
+                        {integ.authorized_at && (
+                          <p className="text-xs text-[var(--text-muted)]">
+                            Autorizado em: {new Date(integ.authorized_at).toLocaleDateString("pt-BR")}
+                          </p>
+                        )}
                       </div>
+                    ) : integ.authorization_status === "pending" ? (
+                      <p className="text-xs text-yellow-600 mb-3">Autorização pendente...</p>
+                    ) : (
+                      <p className="text-sm text-[var(--text-secondary)] mb-3">Não conectado</p>
                     )}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-[var(--text-secondary)] mb-4">{mp.descricao}</p>
-                  {isConfigured && integ?.merchant_id && (
-                    <p className="text-xs text-[var(--text-muted)] mb-3">
-                      Merchant ID: <code className="bg-[var(--bg-subtle)] px-1 rounded">{integ.merchant_id as string}</code>
-                    </p>
-                  )}
-                  <Separator className="mb-3" />
-                  <div className="flex gap-2 flex-wrap">
-                    <Button size="sm" variant="outline" onClick={() => handleSetup(mp.id)}>
-                      {isConfigured ? "Editar" : "Configurar"}
-                    </Button>
-                    {isConfigured && mp.tipo === "ifood" && (
-                      <>
+
+                    <Separator className="mb-3" />
+                    <div className="flex gap-2 flex-wrap">
+                      {!isConnected ? (
+                        meta.tipo === "proprietario" ? (
+                          <Button size="sm" disabled>
+                            <Link2 className="mr-1 h-3 w-3" />
+                            Em breve
+                          </Button>
+                        ) : (
                         <Button
                           size="sm"
-                          variant="outline"
-                          onClick={handleTest}
-                          disabled={testIFood.isPending}
+                          onClick={() => handleConnect(integ.marketplace)}
+                          disabled={connectIFood.isPending || connectOD.isPending}
                         >
-                          <TestTube className="mr-1 h-3 w-3" />
-                          {testIFood.isPending ? "Testando..." : "Testar"}
+                          <Link2 className="mr-1 h-3 w-3" />
+                          {connectIFood.isPending || connectOD.isPending ? "Conectando..." : "Conectar"}
                         </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={handleSyncCatalog}
-                          disabled={syncCatalog.isPending || !isActive}
-                        >
-                          <Upload className="mr-1 h-3 w-3" />
-                          {syncCatalog.isPending ? "Sincronizando..." : "Sync Cardápio"}
-                        </Button>
-                      </>
-                    )}
-                    {isConfigured && mp.tipo === "opendelivery" && (
-                      <div className="flex items-center gap-1 text-xs text-[var(--text-muted)]">
-                        <ExternalLink className="h-3 w-3" />
-                        Webhook: /webhooks/opendelivery/{"{id}"}
-                      </div>
-                    )}
-                    {isConfigured && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-red-500 hover:text-red-700"
-                        onClick={() => setDeleteTarget(mp.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                        )
+                      ) : (
+                        <>
+                          {integ.marketplace === "ifood" && isActive && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={handleSyncCatalog}
+                              disabled={syncCatalog.isPending}
+                            >
+                              <Upload className="mr-1 h-3 w-3" />
+                              {syncCatalog.isPending ? "Sincronizando..." : "Sync Cardápio"}
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-500 hover:text-red-700"
+                            onClick={() => setDisconnectTarget(integ.marketplace)}
+                          >
+                            <Unlink className="mr-1 h-3 w-3" />
+                            Desconectar
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Setup Dialog */}
-      <Dialog open={!!showSetup} onOpenChange={() => setShowSetup(null)}>
+      {/* userCode Dialog (iFood) */}
+      <Dialog open={!!userCodeDialog} onOpenChange={() => { setUserCodeDialog(null); setPollingAuth(false); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>
-              Configurar {MARKETPLACES.find((m) => m.id === showSetup)?.nome}
-            </DialogTitle>
+            <DialogTitle>Conectar ao iFood</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            {showSetup === "ifood" ? (
-              <>
-                <div>
-                  <label className="text-sm font-medium">Client ID</label>
-                  <Input value={clientId} onChange={(e) => setClientId(e.target.value)} placeholder="Seu client_id do iFood" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Client Secret</label>
-                  <Input
-                    type="password"
-                    value={clientSecret}
-                    onChange={(e) => setClientSecret(e.target.value)}
-                    placeholder="Seu client_secret do iFood"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Merchant ID</label>
-                  <Input value={merchantId} onChange={(e) => setMerchantId(e.target.value)} placeholder="ID do seu restaurante no iFood" />
-                </div>
-              </>
-            ) : (
-              <>
-                <div>
-                  <label className="text-sm font-medium">Client ID (opcional)</label>
-                  <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Client Secret (opcional)</label>
-                  <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Merchant ID (opcional)</label>
-                  <Input value={merchantId} onChange={(e) => setMerchantId(e.target.value)} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">API Base URL (opcional)</label>
-                  <Input value={apiBaseUrl} onChange={(e) => setApiBaseUrl(e.target.value)} placeholder="https://api.marketplace.com" />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Webhook Secret (opcional)</label>
-                  <Input value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder="Para validação HMAC" />
-                </div>
-              </>
+          <div className="space-y-4">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Digite o código abaixo no <strong>Portal do Parceiro iFood</strong> para autorizar este restaurante:
+            </p>
+            <div className="bg-[var(--bg-subtle)] rounded-lg p-6 text-center">
+              <p className="text-4xl font-mono font-bold tracking-widest text-[var(--text-primary)]">
+                {userCodeDialog?.code}
+              </p>
+            </div>
+            <p className="text-xs text-[var(--text-muted)]">
+              {pollingAuth && "Aguardando autorização... Verificando a cada 5 segundos."}
+            </p>
+            {userCodeDialog?.url && (
+              <a
+                href={userCodeDialog.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-center text-sm text-blue-500 hover:underline"
+              >
+                Abrir Portal do Parceiro iFood
+              </a>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowSetup(null)}>Cancelar</Button>
-            <Button onClick={handleSaveSetup} disabled={setupIFood.isPending || setupOD.isPending}>
-              {setupIFood.isPending || setupOD.isPending ? "Salvando..." : "Salvar"}
+            <Button variant="outline" onClick={() => { setUserCodeDialog(null); setPollingAuth(false); }}>
+              Cancelar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+      {/* Disconnect Confirmation */}
+      <AlertDialog open={!!disconnectTarget} onOpenChange={() => setDisconnectTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remover integração?</AlertDialogTitle>
+            <AlertDialogTitle>Desconectar {MARKETPLACE_META[disconnectTarget || ""]?.nome}?</AlertDialogTitle>
             <AlertDialogDescription>
-              Todas as credenciais serão apagadas. Os pedidos já recebidos não serão afetados.
+              Pedidos deste marketplace não serão mais recebidos. Pedidos já existentes não serão afetados.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
-              Remover
+            <AlertDialogAction onClick={handleDisconnect} className="bg-red-600 hover:bg-red-700">
+              Desconectar
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

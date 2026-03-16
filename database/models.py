@@ -905,23 +905,38 @@ class DominioPersonalizado(Base):
     )
 
 
-# ==================== INTEGRAÇÃO MARKETPLACE ====================
+# ==================== CREDENCIAIS PLATAFORMA (Super Admin) ====================
+class CredencialPlataforma(Base):
+    """Credencial da plataforma Derekh Food por marketplace (1 por marketplace, gerenciada pelo Super Admin)"""
+    __tablename__ = "credenciais_plataforma"
+    id = Column(Integer, primary_key=True, index=True)
+    marketplace = Column(String(30), unique=True, nullable=False)  # ifood, 99food, rappi, keeta
+    client_id = Column(String(200))
+    client_secret = Column(String(500))
+    ativo = Column(Boolean, default=True)
+    config_json = Column(JSON)  # configs extras por marketplace
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ==================== INTEGRAÇÃO MARKETPLACE (por restaurante) ====================
 class IntegracaoMarketplace(Base):
-    """Configuração de integração com marketplace (iFood, 99Food, Rappi, etc)"""
+    """Autorização de um restaurante em um marketplace (tokens por restaurante, credenciais na plataforma)"""
     __tablename__ = "integracoes_marketplace"
     id = Column(Integer, primary_key=True, index=True)
     restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
     marketplace = Column(String(30), nullable=False)  # ifood, 99food, rappi, keeta
     ativo = Column(Boolean, default=False)
-    # Credenciais OAuth
-    client_id = Column(String(200))
-    client_secret = Column(String(200))
+    # Merchant ID no marketplace
     merchant_id = Column(String(200))
-    # Tokens (renovados automaticamente)
+    # Status de autorização
+    authorization_status = Column(String(20), default='pending')  # pending, authorized, revoked
+    authorized_at = Column(DateTime)
+    # Tokens POR RESTAURANTE (renovados automaticamente)
     access_token = Column(Text)
     refresh_token = Column(Text)
     token_expires_at = Column(DateTime)
-    # Configurações extras (JSON)
+    # Configurações extras (JSON) — webhook_secret, api_base_url, etc
     config_json = Column(JSON)
     # Timestamps
     criado_em = Column(DateTime, default=datetime.utcnow)

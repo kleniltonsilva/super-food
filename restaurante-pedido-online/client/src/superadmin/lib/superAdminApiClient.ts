@@ -168,3 +168,34 @@ export async function deletarDominio(dominioId: number) {
   const { data } = await superAdminApi.delete(`/api/admin/dominios/${dominioId}`);
   return data;
 }
+
+// ─── Credenciais Plataforma (Integrações Marketplace) ──
+export async function getCredenciaisPlataforma() {
+  const { data } = await superAdminApi.get("/api/admin/integracoes/plataformas");
+  return data;
+}
+
+export async function salvarCredencialPlataforma(payload: {
+  marketplace: string;
+  client_id: string;
+  client_secret: string;
+  config_json?: Record<string, unknown>;
+}) {
+  const { data } = await superAdminApi.post("/api/admin/integracoes/plataformas", payload);
+  return data;
+}
+
+export async function deletarCredencialPlataforma(marketplace: string) {
+  const { data } = await superAdminApi.delete(`/api/admin/integracoes/plataformas/${marketplace}`);
+  return data;
+}
+
+export async function toggleCredencialPlataforma(marketplace: string) {
+  const { data } = await superAdminApi.put(`/api/admin/integracoes/plataformas/${marketplace}/toggle`);
+  return data;
+}
+
+export async function getStatusIntegracoes() {
+  const { data } = await superAdminApi.get("/api/admin/integracoes/status");
+  return data;
+}

@@ -8,6 +8,7 @@ import {
   CreditCard,
   AlertTriangle,
   Bug,
+  Plug,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ const menuItems = [
   { path: "/restaurantes/novo", label: "Novo Restaurante", icon: PlusCircle },
   { path: "/planos", label: "Planos", icon: CreditCard },
   { path: "/inadimplentes", label: "Inadimplentes", icon: AlertTriangle },
+  { path: "/integracoes", label: "Integrações", icon: Plug },
   { path: "/erros", label: "Erros (Sentry)", icon: Bug },
 ];
 

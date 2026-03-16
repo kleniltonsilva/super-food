@@ -1550,3 +1550,215 @@ def remover_dominio_admin(
     db.delete(dominio)
     db.commit()
     return {"mensagem": f"Domínio {nome} removido com sucesso"}
+
+
+# ========== Credenciais Plataforma (Integrações Marketplace) ==========
+
+class CredencialPlataformaRequest(BaseModel):
+    marketplace: str  # ifood, 99food, rappi, keeta
+    client_id: str
+    client_secret: str
+    config_json: Optional[dict] = None
+
+
+@router.get("/integracoes/plataformas")
+def listar_credenciais_plataforma(
+    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    db: Session = Depends(database.get_db),
+):
+    """Listar todas as credenciais de plataforma configuradas."""
+    creds = db.query(models.CredencialPlataforma).all()
+
+    resultado = []
+    for c in creds:
+        # Contar restaurantes conectados neste marketplace
+        connected = db.query(func.count(models.IntegracaoMarketplace.id)).filter(
+            models.IntegracaoMarketplace.marketplace == c.marketplace,
+            models.IntegracaoMarketplace.authorization_status == 'authorized',
+        ).scalar() or 0
+
+        resultado.append({
+            "id": c.id,
+            "marketplace": c.marketplace,
+            "client_id": c.client_id,
+            "has_secret": bool(c.client_secret),
+            "ativo": c.ativo,
+            "config_json": c.config_json,
+            "restaurantes_conectados": connected,
+            "criado_em": c.criado_em.isoformat() if c.criado_em else None,
+            "atualizado_em": c.atualizado_em.isoformat() if c.atualizado_em else None,
+        })
+
+    return resultado
+
+
+@router.post("/integracoes/plataformas")
+def salvar_credencial_plataforma(
+    payload: CredencialPlataformaRequest,
+    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    db: Session = Depends(database.get_db),
+):
+    """Criar ou atualizar credencial de plataforma para um marketplace."""
+    cred = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.marketplace == payload.marketplace
+    ).first()
+
+    if cred:
+        cred.client_id = payload.client_id
+        cred.client_secret = payload.client_secret
+        if payload.config_json is not None:
+            cred.config_json = payload.config_json
+        cred.atualizado_em = datetime.utcnow()
+        msg = f"Credencial {payload.marketplace} atualizada"
+    else:
+        cred = models.CredencialPlataforma(
+            marketplace=payload.marketplace,
+            client_id=payload.client_id,
+            client_secret=payload.client_secret,
+            ativo=True,
+            config_json=payload.config_json,
+            criado_em=datetime.utcnow(),
+            atualizado_em=datetime.utcnow(),
+        )
+        db.add(cred)
+        msg = f"Credencial {payload.marketplace} criada"
+
+    db.commit()
+    db.refresh(cred)
+
+    return {
+        "id": cred.id,
+        "marketplace": cred.marketplace,
+        "client_id": cred.client_id,
+        "ativo": cred.ativo,
+        "mensagem": msg,
+    }
+
+
+@router.put("/integracoes/plataformas/{marketplace}")
+def atualizar_credencial_plataforma(
+    marketplace: str,
+    payload: CredencialPlataformaRequest,
+    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    db: Session = Depends(database.get_db),
+):
+    """Atualizar credencial de plataforma existente."""
+    cred = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.marketplace == marketplace
+    ).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail=f"Credencial {marketplace} não encontrada")
+
+    cred.client_id = payload.client_id
+    cred.client_secret = payload.client_secret
+    if payload.config_json is not None:
+        cred.config_json = payload.config_json
+    cred.atualizado_em = datetime.utcnow()
+    db.commit()
+    db.refresh(cred)
+
+    return {
+        "id": cred.id,
+        "marketplace": cred.marketplace,
+        "client_id": cred.client_id,
+        "ativo": cred.ativo,
+        "mensagem": f"Credencial {marketplace} atualizada",
+    }
+
+
+@router.delete("/integracoes/plataformas/{marketplace}")
+def deletar_credencial_plataforma(
+    marketplace: str,
+    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    db: Session = Depends(database.get_db),
+):
+    """Remover credencial de plataforma. Restaurantes conectados serão desconectados."""
+    cred = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.marketplace == marketplace
+    ).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail=f"Credencial {marketplace} não encontrada")
+
+    # Desativar integrações de restaurantes neste marketplace
+    db.query(models.IntegracaoMarketplace).filter(
+        models.IntegracaoMarketplace.marketplace == marketplace,
+    ).update({
+        "ativo": False,
+        "authorization_status": "revoked",
+    })
+
+    db.delete(cred)
+    db.commit()
+
+    return {"mensagem": f"Credencial {marketplace} removida e restaurantes desconectados"}
+
+
+@router.put("/integracoes/plataformas/{marketplace}/toggle")
+def toggle_credencial_plataforma(
+    marketplace: str,
+    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    db: Session = Depends(database.get_db),
+):
+    """Ativar/desativar credencial de plataforma."""
+    cred = db.query(models.CredencialPlataforma).filter(
+        models.CredencialPlataforma.marketplace == marketplace
+    ).first()
+    if not cred:
+        raise HTTPException(status_code=404, detail=f"Credencial {marketplace} não encontrada")
+
+    cred.ativo = not cred.ativo
+    cred.atualizado_em = datetime.utcnow()
+
+    # Se desativando, desativar todas as integrações de restaurantes
+    if not cred.ativo:
+        db.query(models.IntegracaoMarketplace).filter(
+            models.IntegracaoMarketplace.marketplace == marketplace,
+        ).update({"ativo": False})
+
+    db.commit()
+
+    return {
+        "marketplace": cred.marketplace,
+        "ativo": cred.ativo,
+        "mensagem": f"{marketplace} {'ativado' if cred.ativo else 'desativado'}",
+    }
+
+
+@router.get("/integracoes/status")
+def status_global_integracoes(
+    admin: models.SuperAdmin = Depends(auth.get_current_superadmin),
+    db: Session = Depends(database.get_db),
+):
+    """Status global de todas as integrações (restaurantes conectados, erros recentes)."""
+    creds = db.query(models.CredencialPlataforma).all()
+
+    resultado = []
+    for c in creds:
+        connected = db.query(func.count(models.IntegracaoMarketplace.id)).filter(
+            models.IntegracaoMarketplace.marketplace == c.marketplace,
+            models.IntegracaoMarketplace.authorization_status == 'authorized',
+            models.IntegracaoMarketplace.ativo == True,
+        ).scalar() or 0
+
+        pending = db.query(func.count(models.IntegracaoMarketplace.id)).filter(
+            models.IntegracaoMarketplace.marketplace == c.marketplace,
+            models.IntegracaoMarketplace.authorization_status == 'pending',
+        ).scalar() or 0
+
+        # Erros recentes (últimas 24h)
+        erros = db.query(func.count(models.MarketplaceEventLog.id)).filter(
+            models.MarketplaceEventLog.marketplace == c.marketplace,
+            models.MarketplaceEventLog.processed == False,
+            models.MarketplaceEventLog.error_message.isnot(None),
+            models.MarketplaceEventLog.criado_em >= datetime.utcnow() - timedelta(hours=24),
+        ).scalar() or 0
+
+        resultado.append({
+            "marketplace": c.marketplace,
+            "credencial_ativa": c.ativo,
+            "restaurantes_conectados": connected,
+            "restaurantes_pendentes": pending,
+            "erros_24h": erros,
+        })
+
+    return resultado

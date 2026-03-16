@@ -1,6 +1,12 @@
 """
 Cliente iFood — Merchant API v2.
-OAuth2 client_credentials + polling de eventos a cada 30s.
+OAuth2 client_credentials (plataforma) + authorization_code (restaurante) + polling de eventos a cada 30s.
+
+Fluxo de autorização:
+1. Plataforma gera userCode via POST /authentication/v1.0/oauth/userCode
+2. Restaurante digita userCode no Portal do Parceiro iFood
+3. Plataforma faz polling com authorizationCodeVerifier
+4. Quando autorizado, troca por access_token + refresh_token via authorization_code grant
 """
 
 import asyncio
@@ -21,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 IFOOD_API_BASE = "https://merchant-api.ifood.com.br"
 IFOOD_AUTH_URL = f"{IFOOD_API_BASE}/authentication/v1.0/oauth/token"
+IFOOD_USER_CODE_URL = f"{IFOOD_API_BASE}/authentication/v1.0/oauth/userCode"
 IFOOD_EVENTS_URL = f"{IFOOD_API_BASE}/order/v1.0/events:polling"
 IFOOD_ACK_URL = f"{IFOOD_API_BASE}/order/v1.0/events/acknowledgment"
 IFOOD_ORDER_URL = f"{IFOOD_API_BASE}/order/v1.0/orders"
@@ -53,7 +60,7 @@ class IFoodClient(MarketplaceClient):
         self._log("info", "iFood client parado")
 
     async def authenticate(self) -> bool:
-        """Autenticar via OAuth2 client_credentials."""
+        """Autenticar via refresh_token (merchant) ou client_credentials (plataforma)."""
         if not self.client_id or not self.client_secret:
             self._log("error", "client_id ou client_secret não configurados")
             return False
@@ -69,6 +76,48 @@ class IFoodClient(MarketplaceClient):
                 self._log("debug", "Token ainda válido, reutilizando")
                 return True
 
+        # Se tem refresh_token, usar refresh_token grant (token de merchant — acesso completo)
+        if self.config.get("refresh_token"):
+            if await self._refresh_merchant_token():
+                return True
+            # Se refresh falhou, tentar client_credentials como fallback
+
+        # Fallback: client_credentials (token de plataforma — acesso limitado)
+        return await self._authenticate_client_credentials()
+
+    async def _refresh_merchant_token(self) -> bool:
+        """Renovar token do merchant via refresh_token grant."""
+        try:
+            resp = await self._http.post(IFOOD_AUTH_URL, data={
+                "grantType": "refresh_token",
+                "clientId": self.client_id,
+                "clientSecret": self.client_secret,
+                "refreshToken": self.config.get("refresh_token"),
+            })
+
+            if resp.status_code == 200:
+                data = resp.json()
+                self.access_token = data.get("accessToken")
+                expires_in = data.get("expiresIn", 3600)
+                self.token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
+
+                # Atualizar refresh_token se retornar um novo
+                if data.get("refreshToken"):
+                    self.config["refresh_token"] = data["refreshToken"]
+
+                await self._save_token(data)
+                self._log("info", f"Token merchant renovado via refresh_token (expira em {expires_in}s)")
+                return True
+            else:
+                self._log("warning", f"Falha refresh_token: {resp.status_code} - {resp.text}")
+                return False
+
+        except Exception as e:
+            self._log("error", f"Erro ao renovar token merchant: {e}")
+            return False
+
+    async def _authenticate_client_credentials(self) -> bool:
+        """Autenticar via OAuth2 client_credentials (token de plataforma)."""
         try:
             resp = await self._http.post(IFOOD_AUTH_URL, data={
                 "grantType": "client_credentials",
@@ -82,20 +131,18 @@ class IFoodClient(MarketplaceClient):
                 expires_in = data.get("expiresIn", 3600)
                 self.token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in)
 
-                # Salvar token no banco
-                await self._save_token()
-
-                self._log("info", f"Autenticado com sucesso (expira em {expires_in}s)")
+                await self._save_token(data)
+                self._log("info", f"Autenticado via client_credentials (expira em {expires_in}s)")
                 return True
             else:
-                self._log("error", f"Falha auth: {resp.status_code} - {resp.text}")
+                self._log("error", f"Falha auth client_credentials: {resp.status_code} - {resp.text}")
                 return False
 
         except Exception as e:
-            self._log("error", f"Erro ao autenticar: {e}")
+            self._log("error", f"Erro ao autenticar client_credentials: {e}")
             return False
 
-    async def _save_token(self):
+    async def _save_token(self, token_data: dict = None):
         """Persiste o token no banco de dados."""
         from ...database import SessionLocal
         from database import models
@@ -107,6 +154,9 @@ class IFoodClient(MarketplaceClient):
             if integ:
                 integ.access_token = self.access_token
                 integ.token_expires_at = self.token_expires_at
+                # Persistir novo refresh_token se disponível
+                if token_data and token_data.get("refreshToken"):
+                    integ.refresh_token = token_data["refreshToken"]
                 db.commit()
         except Exception as e:
             db.rollback()
@@ -232,6 +282,70 @@ class IFoodClient(MarketplaceClient):
         except Exception as e:
             self._log("error", f"Erro ao atualizar status: {e}")
             return False
+
+    async def generate_user_code(self) -> Optional[Dict[str, Any]]:
+        """Gerar userCode para fluxo de autorização do restaurante.
+        Retorna: userCode, verificationUrl, verificationUrlComplete, authorizationCodeVerifier, expiresIn
+        """
+        if not self.client_id or not self.client_secret:
+            self._log("error", "client_id ou client_secret não configurados para gerar userCode")
+            return None
+
+        if not self._http:
+            self._http = httpx.AsyncClient(timeout=30)
+
+        try:
+            resp = await self._http.post(IFOOD_USER_CODE_URL, data={
+                "clientId": self.client_id,
+            })
+
+            if resp.status_code == 200:
+                data = resp.json()
+                self._log("info", f"userCode gerado: {data.get('userCode')}")
+                return data
+            else:
+                self._log("error", f"Falha ao gerar userCode: {resp.status_code} - {resp.text}")
+                return None
+
+        except Exception as e:
+            self._log("error", f"Erro ao gerar userCode: {e}")
+            return None
+
+    async def exchange_authorization_code(self, user_code: str, authorization_code_verifier: str) -> Optional[Dict[str, Any]]:
+        """Trocar userCode + authorizationCodeVerifier por access_token + refresh_token.
+        No device flow do iFood, authorizationCode = userCode (código curto que o restaurante digita).
+        Retorna: accessToken, refreshToken, expiresIn, merchantId (se disponível)
+        """
+        if not self.client_id or not self.client_secret:
+            self._log("error", "client_id ou client_secret não configurados")
+            return None
+
+        if not self._http:
+            self._http = httpx.AsyncClient(timeout=30)
+
+        try:
+            resp = await self._http.post(IFOOD_AUTH_URL, data={
+                "grantType": "authorization_code",
+                "clientId": self.client_id,
+                "clientSecret": self.client_secret,
+                "authorizationCode": user_code,
+                "authorizationCodeVerifier": authorization_code_verifier,
+            })
+
+            if resp.status_code == 200:
+                data = resp.json()
+                self._log("info", "authorization_code trocado por token com sucesso")
+                return data
+            elif resp.status_code == 400:
+                # Ainda não autorizado pelo restaurante
+                return None
+            else:
+                self._log("debug", f"Troca authorization_code: {resp.status_code}")
+                return None
+
+        except Exception as e:
+            self._log("error", f"Erro ao trocar authorization_code: {e}")
+            return None
 
     async def confirm_order(self, order_id: str) -> bool:
         """Confirmar recebimento de um pedido no iFood."""

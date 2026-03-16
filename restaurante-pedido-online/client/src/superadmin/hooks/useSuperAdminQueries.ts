@@ -15,6 +15,11 @@ import {
   criarDominioRestaurante,
   verificarDominioDNS,
   deletarDominio,
+  getCredenciaisPlataforma,
+  salvarCredencialPlataforma,
+  deletarCredencialPlataforma,
+  toggleCredencialPlataforma,
+  getStatusIntegracoes,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -170,5 +175,54 @@ export function useDeletarDominio() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["superadmin", "dominios"] });
     },
+  });
+}
+
+// ─── Credenciais Plataforma (Integrações Marketplace) ──
+export function useCredenciaisPlataforma() {
+  return useQuery({
+    queryKey: ["superadmin", "credenciais-plataforma"],
+    queryFn: getCredenciaisPlataforma,
+    staleTime: 30_000,
+  });
+}
+
+export function useSalvarCredencial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: salvarCredencialPlataforma,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "credenciais-plataforma"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "status-integracoes"] });
+    },
+  });
+}
+
+export function useDeletarCredencial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: deletarCredencialPlataforma,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "credenciais-plataforma"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "status-integracoes"] });
+    },
+  });
+}
+
+export function useToggleCredencial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: toggleCredencialPlataforma,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "credenciais-plataforma"] });
+    },
+  });
+}
+
+export function useStatusIntegracoes() {
+  return useQuery({
+    queryKey: ["superadmin", "status-integracoes"],
+    queryFn: getStatusIntegracoes,
+    staleTime: 30_000,
   });
 }

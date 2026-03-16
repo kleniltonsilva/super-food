@@ -491,23 +491,18 @@ export async function getIntegracoes() {
   return data;
 }
 
-export async function setupIFood(payload: { client_id: string; client_secret: string; merchant_id: string }) {
-  const { data } = await adminApi.post("/painel/integracoes/ifood/setup", payload);
+export async function connectIFood() {
+  const { data } = await adminApi.post("/painel/integracoes/ifood/connect");
   return data;
 }
 
-export async function testIFood() {
-  const { data } = await adminApi.post("/painel/integracoes/ifood/test");
+export async function getIFoodAuthStatus() {
+  const { data } = await adminApi.get("/painel/integracoes/ifood/auth-status");
   return data;
 }
 
-export async function toggleIFood() {
-  const { data } = await adminApi.put("/painel/integracoes/ifood/toggle");
-  return data;
-}
-
-export async function removeIFood() {
-  const { data } = await adminApi.delete("/painel/integracoes/ifood");
+export async function disconnectIFood() {
+  const { data } = await adminApi.post("/painel/integracoes/ifood/disconnect");
   return data;
 }
 
@@ -516,30 +511,23 @@ export async function getIFoodStatus() {
   return data;
 }
 
+export async function toggleIntegracao(marketplace: string) {
+  const { data } = await adminApi.put(`/painel/integracoes/${marketplace}/toggle`);
+  return data;
+}
+
 export async function syncCatalogIFood() {
   const { data } = await adminApi.post("/painel/integracoes/ifood/catalog-sync");
   return data;
 }
 
-export async function setupOpenDelivery(payload: {
-  marketplace: string;
-  client_id?: string;
-  client_secret?: string;
-  merchant_id?: string;
-  api_base_url?: string;
-  webhook_secret?: string;
-}) {
-  const { data } = await adminApi.post("/painel/integracoes/opendelivery/setup", payload);
+export async function connectOpenDelivery(marketplace: string) {
+  const { data } = await adminApi.post(`/painel/integracoes/${marketplace}/connect`);
   return data;
 }
 
-export async function toggleOpenDelivery(marketplace: string) {
-  const { data } = await adminApi.put(`/painel/integracoes/opendelivery/${marketplace}/toggle`);
-  return data;
-}
-
-export async function removeOpenDelivery(marketplace: string) {
-  const { data } = await adminApi.delete(`/painel/integracoes/opendelivery/${marketplace}`);
+export async function disconnectMarketplace(marketplace: string) {
+  const { data } = await adminApi.post(`/painel/integracoes/${marketplace}/disconnect`);
   return data;
 }
 
