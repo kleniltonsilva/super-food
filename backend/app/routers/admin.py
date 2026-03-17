@@ -19,6 +19,38 @@ import socket
 
 from .. import models, database, auth
 
+
+def _validar_cpf_cnpj(valor: str) -> bool:
+    """Valida CPF (11 dígitos) ou CNPJ (14 dígitos) por dígitos verificadores."""
+    digits = re.sub(r'\D', '', valor)
+    if len(digits) == 11:
+        if len(set(digits)) == 1:
+            return False
+        soma = sum(int(digits[i]) * (10 - i) for i in range(9))
+        resto = soma % 11
+        d1 = 0 if resto < 2 else 11 - resto
+        if int(digits[9]) != d1:
+            return False
+        soma = sum(int(digits[i]) * (11 - i) for i in range(10))
+        resto = soma % 11
+        d2 = 0 if resto < 2 else 11 - resto
+        return int(digits[10]) == d2
+    if len(digits) == 14:
+        if len(set(digits)) == 1:
+            return False
+        pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+        soma = sum(int(digits[i]) * pesos1[i] for i in range(12))
+        resto = soma % 11
+        d1 = 0 if resto < 2 else 11 - resto
+        if int(digits[12]) != d1:
+            return False
+        pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+        soma = sum(int(digits[i]) * pesos2[i] for i in range(13))
+        resto = soma % 11
+        d2 = 0 if resto < 2 else 11 - resto
+        return int(digits[13]) == d2
+    return False
+
 router = APIRouter(prefix="/api/admin", tags=["Super Admin"])
 
 
@@ -27,8 +59,13 @@ router = APIRouter(prefix="/api/admin", tags=["Super Admin"])
 class RestauranteListItem(BaseModel):
     id: int
     nome_fantasia: str
+    razao_social: Optional[str] = None
+    cnpj: Optional[str] = None
     email: str
     telefone: str
+    endereco_completo: Optional[str] = None
+    cidade: Optional[str] = None
+    estado: Optional[str] = None
     plano: str
     valor_plano: float
     status: Optional[str] = None
@@ -225,8 +262,13 @@ def listar_restaurantes(
         resultado.append(RestauranteListItem(
             id=r.id,
             nome_fantasia=r.nome_fantasia,
+            razao_social=r.razao_social,
+            cnpj=r.cnpj,
             email=r.email,
             telefone=r.telefone,
+            endereco_completo=r.endereco_completo,
+            cidade=r.cidade,
+            estado=r.estado,
             plano=r.plano,
             valor_plano=r.valor_plano,
             status=r.status,
@@ -266,8 +308,10 @@ async def criar_restaurante(
     if dados.cnpj and dados.cnpj.strip():
         cnpj_limpo = re.sub(r'\D', '', dados.cnpj.strip())
         if cnpj_limpo:
-            if len(cnpj_limpo) != 14:
-                raise HTTPException(status_code=400, detail="CNPJ deve ter 14 dígitos")
+            if len(cnpj_limpo) not in (11, 14):
+                raise HTTPException(status_code=400, detail="CPF deve ter 11 dígitos ou CNPJ 14 dígitos")
+            if not _validar_cpf_cnpj(cnpj_limpo):
+                raise HTTPException(status_code=400, detail="CPF/CNPJ inválido — dígitos verificadores incorretos")
             existe_cnpj = db.query(models.Restaurante).filter(
                 models.Restaurante.cnpj == cnpj_limpo
             ).first()
@@ -390,16 +434,20 @@ def atualizar_restaurante(
             raise HTTPException(status_code=400, detail="Email já cadastrado em outro restaurante")
         campos["email"] = email_limpo
 
-    # Validar CNPJ único se mudou
+    # Validar CPF/CNPJ se mudou
     if "cnpj" in campos and campos["cnpj"]:
         cnpj_limpo = re.sub(r'\D', '', campos["cnpj"].strip())
         if cnpj_limpo:
+            if len(cnpj_limpo) not in (11, 14):
+                raise HTTPException(status_code=400, detail="CPF deve ter 11 dígitos ou CNPJ 14 dígitos")
+            if not _validar_cpf_cnpj(cnpj_limpo):
+                raise HTTPException(status_code=400, detail="CPF/CNPJ inválido — dígitos verificadores incorretos")
             existe = db.query(models.Restaurante).filter(
                 models.Restaurante.cnpj == cnpj_limpo,
                 models.Restaurante.id != restaurante_id
             ).first()
             if existe:
-                raise HTTPException(status_code=400, detail="CNPJ já cadastrado em outro restaurante")
+                raise HTTPException(status_code=400, detail="CPF/CNPJ já cadastrado em outro restaurante")
             campos["cnpj"] = cnpj_limpo
         else:
             campos["cnpj"] = None

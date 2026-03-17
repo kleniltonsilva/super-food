@@ -96,8 +96,8 @@ export default function NovoRestaurante() {
     }
     if (form.cnpj.trim()) {
       const cnpjDigits = form.cnpj.replace(/\D/g, "");
-      if (cnpjDigits.length !== 14) {
-        erros.push("CNPJ deve ter 14 dígitos");
+      if (cnpjDigits.length !== 11 && cnpjDigits.length !== 14) {
+        erros.push("CPF deve ter 11 dígitos ou CNPJ 14 dígitos");
       }
     }
     return erros;

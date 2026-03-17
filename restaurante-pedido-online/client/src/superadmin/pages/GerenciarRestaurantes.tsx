@@ -58,6 +58,8 @@ import { cn } from "@/lib/utils";
 interface Restaurante {
   id: number;
   nome_fantasia: string;
+  razao_social?: string;
+  cnpj?: string;
   email: string;
   telefone: string;
   plano: string;
@@ -69,6 +71,44 @@ interface Restaurante {
   data_vencimento: string | null;
   total_pedidos: number;
   total_motoboys: number;
+  endereco_completo?: string;
+  cidade?: string;
+  estado?: string;
+}
+
+function validarCpfCnpj(valor: string): boolean {
+  const digits = valor.replace(/\D/g, "");
+  if (digits.length === 11) {
+    // Validar CPF
+    if (/^(\d)\1{10}$/.test(digits)) return false;
+    let soma = 0;
+    for (let i = 0; i < 9; i++) soma += parseInt(digits[i]) * (10 - i);
+    let resto = soma % 11;
+    const d1 = resto < 2 ? 0 : 11 - resto;
+    if (parseInt(digits[9]) !== d1) return false;
+    soma = 0;
+    for (let i = 0; i < 10; i++) soma += parseInt(digits[i]) * (11 - i);
+    resto = soma % 11;
+    const d2 = resto < 2 ? 0 : 11 - resto;
+    return parseInt(digits[10]) === d2;
+  }
+  if (digits.length === 14) {
+    // Validar CNPJ
+    if (/^(\d)\1{13}$/.test(digits)) return false;
+    const pesos1 = [5,4,3,2,9,8,7,6,5,4,3,2];
+    let soma = 0;
+    for (let i = 0; i < 12; i++) soma += parseInt(digits[i]) * pesos1[i];
+    let resto = soma % 11;
+    const d1 = resto < 2 ? 0 : 11 - resto;
+    if (parseInt(digits[12]) !== d1) return false;
+    const pesos2 = [6,5,4,3,2,9,8,7,6,5,4,3,2];
+    soma = 0;
+    for (let i = 0; i < 13; i++) soma += parseInt(digits[i]) * pesos2[i];
+    resto = soma % 11;
+    const d2 = resto < 2 ? 0 : 11 - resto;
+    return parseInt(digits[13]) === d2;
+  }
+  return false;
 }
 
 function formatDate(dateStr: string | null) {
@@ -147,8 +187,13 @@ export default function GerenciarRestaurantes() {
   function openEdit(r: Restaurante) {
     setEditForm({
       nome_fantasia: r.nome_fantasia,
+      razao_social: r.razao_social || "",
+      cnpj: r.cnpj || "",
       email: r.email,
       telefone: r.telefone,
+      endereco_completo: r.endereco_completo || "",
+      cidade: r.cidade || "",
+      estado: r.estado || "",
       plano: r.plano,
     });
     setEditModal(r);
@@ -156,10 +201,23 @@ export default function GerenciarRestaurantes() {
 
   function handleSaveEdit() {
     if (!editModal) return;
+
+    // Validar CPF/CNPJ se preenchido
+    const cnpjDigits = editForm.cnpj?.replace(/\D/g, "") || "";
+    if (cnpjDigits && !validarCpfCnpj(cnpjDigits)) {
+      toast.error("CPF/CNPJ inválido. Verifique os dígitos.");
+      return;
+    }
+
     const payload: Record<string, unknown> = {};
     if (editForm.nome_fantasia !== editModal.nome_fantasia) payload.nome_fantasia = editForm.nome_fantasia;
+    if (editForm.razao_social !== (editModal.razao_social || "")) payload.razao_social = editForm.razao_social || null;
+    if (cnpjDigits !== (editModal.cnpj || "")) payload.cnpj = cnpjDigits || null;
     if (editForm.email !== editModal.email) payload.email = editForm.email;
     if (editForm.telefone !== editModal.telefone) payload.telefone = editForm.telefone;
+    if (editForm.endereco_completo !== (editModal.endereco_completo || "")) payload.endereco_completo = editForm.endereco_completo || null;
+    if (editForm.cidade !== (editModal.cidade || "")) payload.cidade = editForm.cidade || null;
+    if (editForm.estado !== (editModal.estado || "")) payload.estado = editForm.estado || null;
     if (editForm.plano !== editModal.plano) payload.plano = editForm.plano;
 
     if (Object.keys(payload).length === 0) {
@@ -375,35 +433,101 @@ export default function GerenciarRestaurantes() {
 
       {/* Modal Editar */}
       <Dialog open={!!editModal} onOpenChange={(open) => !open && setEditModal(null)}>
-        <DialogContent className="border-gray-800 bg-gray-900 text-white sm:max-w-md">
+        <DialogContent className="border-gray-800 bg-gray-900 text-white sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Restaurante</DialogTitle>
+            {editModal && (
+              <p className="text-xs text-gray-500">Código: {editModal.codigo_acesso}</p>
+            )}
           </DialogHeader>
           <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Nome Fantasia</label>
-              <Input
-                value={editForm.nome_fantasia || ""}
-                onChange={(e) => setEditForm({ ...editForm, nome_fantasia: e.target.value })}
-                className="border-gray-700 bg-gray-800 text-white"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Nome Fantasia</label>
+                <Input
+                  value={editForm.nome_fantasia || ""}
+                  onChange={(e) => setEditForm({ ...editForm, nome_fantasia: e.target.value })}
+                  className="border-gray-700 bg-gray-800 text-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Razão Social</label>
+                <Input
+                  value={editForm.razao_social || ""}
+                  onChange={(e) => setEditForm({ ...editForm, razao_social: e.target.value })}
+                  className="border-gray-700 bg-gray-800 text-white"
+                  placeholder="Opcional"
+                />
+              </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Email</label>
+              <label className="text-sm font-medium text-gray-300">CPF/CNPJ</label>
               <Input
-                type="email"
-                value={editForm.email || ""}
-                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                className="border-gray-700 bg-gray-800 text-white"
+                value={editForm.cnpj || ""}
+                onChange={(e) => setEditForm({ ...editForm, cnpj: e.target.value })}
+                className={cn(
+                  "border-gray-700 bg-gray-800 text-white",
+                  editForm.cnpj && editForm.cnpj.replace(/\D/g, "").length >= 11 && !validarCpfCnpj(editForm.cnpj)
+                    ? "border-red-500 focus-visible:ring-red-500"
+                    : editForm.cnpj && validarCpfCnpj(editForm.cnpj)
+                      ? "border-green-500 focus-visible:ring-green-500"
+                      : ""
+                )}
+                placeholder="CPF (11 dígitos) ou CNPJ (14 dígitos)"
               />
+              {editForm.cnpj && editForm.cnpj.replace(/\D/g, "").length >= 11 && (
+                <p className={cn("text-xs", validarCpfCnpj(editForm.cnpj) ? "text-green-400" : "text-red-400")}>
+                  {validarCpfCnpj(editForm.cnpj) ? "CPF/CNPJ válido" : "CPF/CNPJ inválido"}
+                </p>
+              )}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Email</label>
+                <Input
+                  type="email"
+                  value={editForm.email || ""}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className="border-gray-700 bg-gray-800 text-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Telefone</label>
+                <Input
+                  value={editForm.telefone || ""}
+                  onChange={(e) => setEditForm({ ...editForm, telefone: e.target.value })}
+                  className="border-gray-700 bg-gray-800 text-white"
+                />
+              </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Telefone</label>
+              <label className="text-sm font-medium text-gray-300">Endereço</label>
               <Input
-                value={editForm.telefone || ""}
-                onChange={(e) => setEditForm({ ...editForm, telefone: e.target.value })}
+                value={editForm.endereco_completo || ""}
+                onChange={(e) => setEditForm({ ...editForm, endereco_completo: e.target.value })}
                 className="border-gray-700 bg-gray-800 text-white"
+                placeholder="Rua, número, bairro"
               />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Cidade</label>
+                <Input
+                  value={editForm.cidade || ""}
+                  onChange={(e) => setEditForm({ ...editForm, cidade: e.target.value })}
+                  className="border-gray-700 bg-gray-800 text-white"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-300">Estado</label>
+                <Input
+                  value={editForm.estado || ""}
+                  onChange={(e) => setEditForm({ ...editForm, estado: e.target.value })}
+                  className="border-gray-700 bg-gray-800 text-white"
+                  placeholder="UF"
+                  maxLength={2}
+                />
+              </div>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-gray-300">Plano</label>
