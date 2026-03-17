@@ -156,8 +156,8 @@ export default function IntegracoesPlatforma() {
     <SuperAdminLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Integrações da Plataforma</h1>
-          <p className="text-sm text-gray-400">
+          <h1 className="text-2xl font-bold text-[var(--sa-text-primary)]">Integrações da Plataforma</h1>
+          <p className="text-sm text-[var(--sa-text-muted)]">
             Configure as credenciais de API por marketplace. Restaurantes se conectam sem inserir credenciais.
           </p>
         </div>
@@ -166,26 +166,26 @@ export default function IntegracoesPlatforma() {
         {statusList.length > 0 && (
           <div className="grid gap-3 md:grid-cols-4">
             {statusList.map((s) => (
-              <Card key={s.marketplace} className="border-gray-800 bg-gray-900">
+              <Card key={s.marketplace} className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
                 <CardContent className="pt-4 pb-4">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium text-white capitalize">{s.marketplace}</span>
-                    <Badge variant="outline" className={s.credencial_ativa ? "border-green-500 text-green-400" : "border-gray-600 text-gray-500"}>
+                    <span className="text-sm font-medium text-[var(--sa-text-primary)] capitalize">{s.marketplace}</span>
+                    <Badge variant="outline" className={s.credencial_ativa ? "border-green-500 text-green-400" : "border-[var(--sa-border-input)] text-[var(--sa-text-dimmed)]"}>
                       {s.credencial_ativa ? "Ativa" : "Inativa"}
                     </Badge>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <div>
                       <p className="text-lg font-bold text-green-400">{s.restaurantes_conectados}</p>
-                      <p className="text-[10px] text-gray-500">Conectados</p>
+                      <p className="text-[10px] text-[var(--sa-text-dimmed)]">Conectados</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-yellow-400">{s.restaurantes_pendentes}</p>
-                      <p className="text-[10px] text-gray-500">Pendentes</p>
+                      <p className="text-[10px] text-[var(--sa-text-dimmed)]">Pendentes</p>
                     </div>
                     <div>
                       <p className="text-lg font-bold text-red-400">{s.erros_24h}</p>
-                      <p className="text-[10px] text-gray-500">Erros 24h</p>
+                      <p className="text-[10px] text-[var(--sa-text-dimmed)]">Erros 24h</p>
                     </div>
                   </div>
                 </CardContent>
@@ -202,21 +202,21 @@ export default function IntegracoesPlatforma() {
             const isActive = cred?.ativo === true;
 
             return (
-              <Card key={mp.id} className="border-gray-800 bg-gray-900">
+              <Card key={mp.id} className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className={`w-10 h-10 rounded-lg ${mp.cor} flex items-center justify-center`}>
-                        <Plug className="h-5 w-5 text-white" />
+                        <Plug className="h-5 w-5 text-[var(--sa-text-primary)]" />
                       </div>
                       <div>
-                        <CardTitle className="text-base text-white">{mp.nome}</CardTitle>
-                        <p className="text-xs text-gray-400">{mp.descricao}</p>
+                        <CardTitle className="text-base text-[var(--sa-text-primary)]">{mp.nome}</CardTitle>
+                        <p className="text-xs text-[var(--sa-text-muted)]">{mp.descricao}</p>
                       </div>
                     </div>
                     {isConfigured && (
                       <div className="flex items-center gap-2">
-                        <Badge variant="outline" className={isActive ? "border-green-500 text-green-400" : "border-gray-600 text-gray-500"}>
+                        <Badge variant="outline" className={isActive ? "border-green-500 text-green-400" : "border-[var(--sa-border-input)] text-[var(--sa-text-dimmed)]"}>
                           {isActive ? "Ativa" : "Inativa"}
                         </Badge>
                         <Switch checked={isActive} onCheckedChange={() => handleToggle(mp.id)} />
@@ -227,22 +227,22 @@ export default function IntegracoesPlatforma() {
                 <CardContent>
                   {isConfigured && (
                     <div className="mb-3 space-y-1">
-                      <p className="text-xs text-gray-400">
-                        Client ID: <code className="bg-gray-800 px-1 rounded text-gray-300">{cred.client_id}</code>
+                      <p className="text-xs text-[var(--sa-text-muted)]">
+                        Client ID: <code className="bg-[var(--sa-bg-hover)] px-1 rounded text-[var(--sa-text-secondary)]">{cred.client_id}</code>
                       </p>
-                      <p className="text-xs text-gray-400">
-                        Secret: <code className="bg-gray-800 px-1 rounded text-gray-300">{cred.has_secret ? "••••••••" : "Não configurado"}</code>
+                      <p className="text-xs text-[var(--sa-text-muted)]">
+                        Secret: <code className="bg-[var(--sa-bg-hover)] px-1 rounded text-[var(--sa-text-secondary)]">{cred.has_secret ? "••••••••" : "Não configurado"}</code>
                       </p>
                       {cred.restaurantes_conectados > 0 && (
-                        <p className="text-xs text-gray-400 flex items-center gap-1">
+                        <p className="text-xs text-[var(--sa-text-muted)] flex items-center gap-1">
                           <Store className="h-3 w-3" /> {cred.restaurantes_conectados} restaurante(s) conectado(s)
                         </p>
                       )}
                     </div>
                   )}
-                  <Separator className="mb-3 bg-gray-800" />
+                  <Separator className="mb-3 bg-[var(--sa-bg-hover)]" />
                   <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="border-gray-700 text-gray-300 hover:bg-gray-800" onClick={() => handleSetup(mp.id)}>
+                    <Button size="sm" variant="outline" className="border-[var(--sa-border-input)] text-[var(--sa-text-secondary)] hover:bg-[var(--sa-bg-hover)]" onClick={() => handleSetup(mp.id)}>
                       {isConfigured ? "Editar" : "Configurar"}
                     </Button>
                     {isConfigured && (
@@ -263,11 +263,11 @@ export default function IntegracoesPlatforma() {
         </div>
 
         {/* Info box */}
-        <Card className="border-gray-800 bg-gray-900/50">
+        <Card className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]/50">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
-              <div className="text-sm text-gray-400">
+              <div className="text-sm text-[var(--sa-text-muted)]">
                 <p className="font-medium text-amber-400 mb-1">Como funciona</p>
                 <ul className="space-y-1 list-disc list-inside">
                   <li>Configure as credenciais de cada marketplace aqui (1 vez por marketplace).</li>
@@ -283,39 +283,39 @@ export default function IntegracoesPlatforma() {
 
       {/* Setup Dialog */}
       <Dialog open={!!showSetup} onOpenChange={() => setShowSetup(null)}>
-        <DialogContent className="bg-gray-900 border-gray-800">
+        <DialogContent className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <DialogHeader>
-            <DialogTitle className="text-white">
+            <DialogTitle className="text-[var(--sa-text-primary)]">
               Configurar {MARKETPLACES.find((m) => m.id === showSetup)?.nome}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="text-sm font-medium text-gray-300">Client ID</label>
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Client ID</label>
               <Input
                 value={clientId}
                 onChange={(e) => setClientId(e.target.value)}
                 placeholder="Client ID da plataforma"
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
               />
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-300">Client Secret</label>
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Client Secret</label>
               <Input
                 type="password"
                 value={clientSecret}
                 onChange={(e) => setClientSecret(e.target.value)}
                 placeholder="Client Secret da plataforma"
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
               />
               {getCred(showSetup || "")?.has_secret && (
-                <p className="text-xs text-gray-500 mt-1">Deixe em branco para manter o secret atual (não implementado — sempre insira).</p>
+                <p className="text-xs text-[var(--sa-text-dimmed)] mt-1">Deixe em branco para manter o secret atual (não implementado — sempre insira).</p>
               )}
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" className="border-gray-700 text-gray-300" onClick={() => setShowSetup(null)}>Cancelar</Button>
-            <Button onClick={handleSave} disabled={salvarCredencial.isPending} className="bg-amber-600 hover:bg-amber-700">
+            <Button variant="outline" className="border-[var(--sa-border-input)] text-[var(--sa-text-secondary)]" onClick={() => setShowSetup(null)}>Cancelar</Button>
+            <Button onClick={handleSave} disabled={salvarCredencial.isPending} className="bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)]">
               {salvarCredencial.isPending ? "Salvando..." : "Salvar"}
             </Button>
           </DialogFooter>
@@ -324,15 +324,15 @@ export default function IntegracoesPlatforma() {
 
       {/* Delete Confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
-        <AlertDialogContent className="bg-gray-900 border-gray-800">
+        <AlertDialogContent className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-white">Remover credencial {deleteTarget}?</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-400">
+            <AlertDialogTitle className="text-[var(--sa-text-primary)]">Remover credencial {deleteTarget}?</AlertDialogTitle>
+            <AlertDialogDescription className="text-[var(--sa-text-muted)]">
               Todos os restaurantes conectados a este marketplace serão desconectados automaticamente.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-gray-700 text-gray-300">Cancelar</AlertDialogCancel>
+            <AlertDialogCancel className="border-[var(--sa-border-input)] text-[var(--sa-text-secondary)]">Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
               Remover
             </AlertDialogAction>

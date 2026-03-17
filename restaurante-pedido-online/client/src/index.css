@@ -135,6 +135,114 @@
 }
 
 /* ══════════════════════════════════════════
+   ADMIN LIGHT MODE
+   Ativado via classe `admin-light` no <html>
+   ══════════════════════════════════════════ */
+:root.admin-light {
+  --bg-base: #f5f5f5;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f0f0f0;
+  --text-primary: #1a1a1a;
+  --text-secondary: #555555;
+  --text-muted: #888888;
+  --border-subtle: rgba(0, 0, 0, 0.10);
+  --shadow-card: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  /* Shadcn overrides */
+  --background: #f5f5f5;
+  --foreground: #1a1a1a;
+  --card: #ffffff;
+  --card-foreground: #1a1a1a;
+  --popover: #ffffff;
+  --popover-foreground: #1a1a1a;
+  --secondary: #f0f0f0;
+  --secondary-foreground: #555555;
+  --muted: #f0f0f0;
+  --muted-foreground: #888888;
+  --accent: #f0f0f0;
+  --accent-foreground: #1a1a1a;
+  --border: rgba(0, 0, 0, 0.12);
+  --input: rgba(0, 0, 0, 0.06);
+
+  /* Sidebar */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1a1a1a;
+  --sidebar-accent: #f0f0f0;
+  --sidebar-accent-foreground: #1a1a1a;
+  --sidebar-border: rgba(0, 0, 0, 0.10);
+}
+
+/* ══════════════════════════════════════════
+   SUPER ADMIN — CSS VARIABLES
+   Dark (padrão) e Light (via .sa-light)
+   ══════════════════════════════════════════ */
+.superadmin {
+  --sa-bg-base: #030712;
+  --sa-bg-surface: #111827;
+  --sa-bg-hover: #1f2937;
+  --sa-border: #1f2937;
+  --sa-border-input: #374151;
+  --sa-text-primary: #ffffff;
+  --sa-text-secondary: #d1d5db;
+  --sa-text-muted: #9ca3af;
+  --sa-text-dimmed: #6b7280;
+  --sa-accent: #d97706;
+  --sa-accent-hover: #b45309;
+  --sa-accent-bg: rgba(245, 158, 11, 0.2);
+  --sa-accent-text: #fbbf24;
+
+  /* Shadcn overrides dentro do Super Admin */
+  --background: #030712;
+  --foreground: #ffffff;
+  --card: #111827;
+  --card-foreground: #e5e7eb;
+  --popover: #1f2937;
+  --popover-foreground: #e5e7eb;
+  --secondary: #1f2937;
+  --secondary-foreground: #d1d5db;
+  --muted: #1f2937;
+  --muted-foreground: #9ca3af;
+  --accent: #1f2937;
+  --accent-foreground: #ffffff;
+  --border: #1f2937;
+  --input: #374151;
+}
+
+.superadmin.sa-light {
+  --sa-bg-base: #f8fafc;
+  --sa-bg-surface: #ffffff;
+  --sa-bg-hover: #f1f5f9;
+  --sa-border: #e2e8f0;
+  --sa-border-input: #cbd5e1;
+  --sa-text-primary: #0f172a;
+  --sa-text-secondary: #475569;
+  --sa-text-muted: #64748b;
+  --sa-text-dimmed: #94a3b8;
+  --sa-accent: #d97706;
+  --sa-accent-hover: #b45309;
+  --sa-accent-bg: rgba(245, 158, 11, 0.1);
+  --sa-accent-text: #b45309;
+
+  /* Shadcn overrides light */
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #475569;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+}
+
+/* ══════════════════════════════════════════
    BASE LAYER
    ══════════════════════════════════════════ */
 @layer base {

@@ -52,23 +52,23 @@ export default function SuperAdminSidebar({ open, onClose }: Props) {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed top-0 left-0 z-50 flex h-full w-64 flex-col border-r border-gray-800 bg-gray-900 transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0",
+          "fixed top-0 left-0 z-50 flex h-full w-64 flex-col border-r border-[var(--sa-border)] bg-[var(--sa-bg-surface)] transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0",
           open ? "translate-x-0" : "-translate-x-full"
         )}
       >
         {/* Header */}
-        <div className="flex flex-col border-b border-gray-800">
+        <div className="flex flex-col border-b border-[var(--sa-border)]">
           <div className="flex h-16 items-center justify-between px-4">
             <div className="flex items-center gap-2">
               <span className="text-xl">👑</span>
-              <span className="text-lg font-bold text-white truncate">
+              <span className="text-lg font-bold text-[var(--sa-text-primary)] truncate">
                 Super Admin
               </span>
             </div>
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden text-gray-400 hover:text-white"
+              className="lg:hidden text-[var(--sa-text-muted)] hover:text-[var(--sa-text-primary)]"
               onClick={onClose}
             >
               <X className="h-5 w-5" />
@@ -76,8 +76,8 @@ export default function SuperAdminSidebar({ open, onClose }: Props) {
           </div>
           {admin && (
             <div className="flex items-center gap-2 px-4 pb-3">
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-medium text-amber-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--sa-accent-bg)] px-2.5 py-0.5 text-xs font-medium text-[var(--sa-accent-text)]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[var(--sa-accent-text)]" />
                 {admin.usuario}
               </span>
             </div>
@@ -99,8 +99,8 @@ export default function SuperAdminSidebar({ open, onClose }: Props) {
                     className={cn(
                       "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                       isActive
-                        ? "bg-amber-600 text-white"
-                        : "text-gray-400 hover:bg-gray-800 hover:text-white"
+                        ? "bg-[var(--sa-accent)] text-white"
+                        : "text-[var(--sa-text-muted)] hover:bg-[var(--sa-bg-hover)] hover:text-[var(--sa-text-primary)]"
                     )}
                   >
                     <item.icon className="h-5 w-5 shrink-0" />
@@ -113,8 +113,8 @@ export default function SuperAdminSidebar({ open, onClose }: Props) {
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-gray-800 p-3">
-          <p className="text-center text-xs text-gray-500">
+        <div className="border-t border-[var(--sa-border)] p-3">
+          <p className="text-center text-xs text-[var(--sa-text-dimmed)]">
             Derekh Food v4.0
           </p>
         </div>

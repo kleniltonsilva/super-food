@@ -67,30 +67,30 @@ export default function ConfigBilling() {
   return (
     <SuperAdminLayout>
       <div className="space-y-6 max-w-3xl">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-[var(--sa-text-primary)] flex items-center gap-2">
           <Settings className="h-6 w-6" /> Configuração de Billing
         </h1>
 
         {/* Trial */}
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <CardHeader>
-            <CardTitle className="text-white text-lg">Período de Teste</CardTitle>
+            <CardTitle className="text-[var(--sa-text-primary)] text-lg">Período de Teste</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-sm text-gray-400">Dias de trial</label>
+                <label className="text-sm text-[var(--sa-text-muted)]">Dias de trial</label>
                 <Input
                   type="number"
                   value={form.trial_dias}
                   onChange={(e) => setForm({ ...form, trial_dias: parseInt(e.target.value) || 0 })}
-                  className="bg-gray-800 border-gray-700 text-white"
+                  className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm text-gray-400">Plano do trial</label>
+                <label className="text-sm text-[var(--sa-text-muted)]">Plano do trial</label>
                 <Select value={form.trial_plano} onValueChange={(v) => setForm({ ...form, trial_plano: v })}>
-                  <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                  <SelectTrigger className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -103,58 +103,58 @@ export default function ConfigBilling() {
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-sm text-gray-400">Dias de aviso antes do fim do trial</label>
+              <label className="text-sm text-[var(--sa-text-muted)]">Dias de aviso antes do fim do trial</label>
               <Input
                 type="number"
                 value={form.dias_lembrete_antes}
                 onChange={(e) => setForm({ ...form, dias_lembrete_antes: parseInt(e.target.value) || 0 })}
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
               />
             </div>
           </CardContent>
         </Card>
 
         {/* Inadimplência */}
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <CardHeader>
-            <CardTitle className="text-white text-lg">Regras de Inadimplência</CardTitle>
+            <CardTitle className="text-[var(--sa-text-primary)] text-lg">Regras de Inadimplência</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1">
-                <label className="text-sm text-gray-400">Dias até suspensão (após vencimento)</label>
+                <label className="text-sm text-[var(--sa-text-muted)]">Dias até suspensão (após vencimento)</label>
                 <Input
                   type="number"
                   value={form.dias_suspensao}
                   onChange={(e) => setForm({ ...form, dias_suspensao: parseInt(e.target.value) || 0 })}
-                  className="bg-gray-800 border-gray-700 text-white"
+                  className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm text-gray-400">Dias de aviso antes do cancelamento</label>
+                <label className="text-sm text-[var(--sa-text-muted)]">Dias de aviso antes do cancelamento</label>
                 <Input
                   type="number"
                   value={form.dias_aviso_cancelamento}
                   onChange={(e) => setForm({ ...form, dias_aviso_cancelamento: parseInt(e.target.value) || 0 })}
-                  className="bg-gray-800 border-gray-700 text-white"
+                  className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm text-gray-400">Dias até cancelamento (após suspensão)</label>
+                <label className="text-sm text-[var(--sa-text-muted)]">Dias até cancelamento (após suspensão)</label>
                 <Input
                   type="number"
                   value={form.dias_cancelamento}
                   onChange={(e) => setForm({ ...form, dias_cancelamento: parseInt(e.target.value) || 0 })}
-                  className="bg-gray-800 border-gray-700 text-white"
+                  className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-sm text-gray-400">Dias de preservação de dados</label>
+                <label className="text-sm text-[var(--sa-text-muted)]">Dias de preservação de dados</label>
                 <Input
                   type="number"
                   value={form.dias_preservacao_dados}
                   onChange={(e) => setForm({ ...form, dias_preservacao_dados: parseInt(e.target.value) || 0 })}
-                  className="bg-gray-800 border-gray-700 text-white"
+                  className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
                 />
               </div>
             </div>
@@ -162,34 +162,34 @@ export default function ConfigBilling() {
         </Card>
 
         {/* Preços */}
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <CardHeader>
-            <CardTitle className="text-white text-lg">Descontos</CardTitle>
+            <CardTitle className="text-[var(--sa-text-primary)] text-lg">Descontos</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
-              <label className="text-sm text-gray-400">Desconto anual (%)</label>
+              <label className="text-sm text-[var(--sa-text-muted)]">Desconto anual (%)</label>
               <Input
                 type="number"
                 step="0.1"
                 value={form.desconto_anual_percentual}
                 onChange={(e) => setForm({ ...form, desconto_anual_percentual: parseFloat(e.target.value) || 0 })}
-                className="bg-gray-800 border-gray-700 text-white max-w-xs"
+                className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)] max-w-xs"
               />
             </div>
           </CardContent>
         </Card>
 
         {/* Asaas */}
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <CardHeader>
-            <CardTitle className="text-white text-lg flex items-center gap-2">
+            <CardTitle className="text-[var(--sa-text-primary)] text-lg flex items-center gap-2">
               <Shield className="h-5 w-5" /> Asaas
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400">Ambiente:</span>
+              <span className="text-sm text-[var(--sa-text-muted)]">Ambiente:</span>
               <Badge className={config?.asaas_environment === "production" ? "bg-green-500/20 text-green-400" : "bg-yellow-500/20 text-yellow-400"}>
                 {config?.asaas_environment === "production" ? "Produção" : "Sandbox"}
               </Badge>
@@ -199,22 +199,22 @@ export default function ConfigBilling() {
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm text-gray-400">Webhook Token (para validar webhooks recebidos)</label>
+              <label className="text-sm text-[var(--sa-text-muted)]">Webhook Token (para validar webhooks recebidos)</label>
               <Input
                 value={form.asaas_webhook_token}
                 onChange={(e) => setForm({ ...form, asaas_webhook_token: e.target.value })}
-                className="bg-gray-800 border-gray-700 text-white"
+                className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
                 placeholder="Token secreto"
               />
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm text-gray-400">URL do Webhook (copie e configure no Asaas)</label>
+              <label className="text-sm text-[var(--sa-text-muted)]">URL do Webhook (copie e configure no Asaas)</label>
               <div className="flex gap-2">
                 <Input
                   readOnly
                   value={`${window.location.origin}/webhooks/asaas`}
-                  className="bg-gray-800 border-gray-700 text-gray-300"
+                  className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-secondary)]"
                 />
                 <Button variant="outline" size="icon" onClick={copyWebhookUrl}>
                   <Copy className="h-4 w-4" />
@@ -224,7 +224,7 @@ export default function ConfigBilling() {
           </CardContent>
         </Card>
 
-        <Button onClick={handleSave} disabled={atualizarConfig.isPending} className="bg-amber-600 hover:bg-amber-700">
+        <Button onClick={handleSave} disabled={atualizarConfig.isPending} className="bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)]">
           <Save className="h-4 w-4 mr-2" />
           {atualizarConfig.isPending ? "Salvando..." : "Salvar Configuração"}
         </Button>

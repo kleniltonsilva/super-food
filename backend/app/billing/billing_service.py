@@ -142,10 +142,13 @@ async def selecionar_plano(
     else:
         proximo_vencimento = datetime.utcnow() + timedelta(days=1)
 
+    # Capturar estado antes de mudar
+    was_trial = restaurante.billing_status == "trial"
+
     # Atualizar plano/limites do restaurante (status será atualizado após Asaas)
     restaurante.plano = plano
     restaurante.plano_ciclo = ciclo
-    restaurante.valor_plano = plano_info["valor"]
+    restaurante.valor_plano = valor  # valor por ciclo: mensal ou anual total
     restaurante.limite_motoboys = plano_info["limite_motoboys"]
     restaurante.data_vencimento = proximo_vencimento
 
@@ -184,10 +187,11 @@ async def selecionar_plano(
             logger.info(f"Customer Asaas criado on-demand para restaurante {restaurante_id}")
 
         # Criar assinatura — se falhar, propaga o erro (não ativa silenciosamente)
+        # valor já é o preço correto por ciclo: mensal para MONTHLY, anual total para YEARLY
         sub_data = await asaas_client.criar_assinatura(
             customer_id=asaas_cli.asaas_customer_id,
             billing_type=billing_type,
-            value=valor if ciclo == "MONTHLY" else round(valor / 12, 2),
+            value=valor,
             cycle=ciclo,
             next_due_date=proximo_vencimento.strftime("%Y-%m-%d"),
             description=f"Derekh Food - Plano {plano} ({ciclo})",
@@ -206,7 +210,7 @@ async def selecionar_plano(
 
     if assinatura_existente:
         assinatura_existente.plano = plano
-        assinatura_existente.valor = valor if ciclo == "YEARLY" else plano_info["valor"]
+        assinatura_existente.valor = valor
         assinatura_existente.ciclo = ciclo
         assinatura_existente.billing_type = billing_type
         assinatura_existente.proximo_vencimento = proximo_vencimento
@@ -218,13 +222,13 @@ async def selecionar_plano(
             restaurante_id=restaurante_id,
             asaas_subscription_id=asaas_sub_id,
             plano=plano,
-            valor=valor if ciclo == "YEARLY" else plano_info["valor"],
+            valor=valor,
             ciclo=ciclo,
             billing_type=billing_type,
             status="ACTIVE",
             proximo_vencimento=proximo_vencimento,
             desconto_percentual=desconto,
-            em_trial=restaurante.billing_status == "trial",
+            em_trial=was_trial,
             trial_fim=restaurante.trial_fim,
         )
         db.add(nova_assinatura)
@@ -478,6 +482,13 @@ async def migrar_restaurante_asaas(restaurante_id: int, db: Session, admin_id: O
     plano = restaurante.plano or "Básico"
     plano_info = PLANOS.get(plano, PLANOS["Básico"])
     ciclo = restaurante.plano_ciclo or "MONTHLY"
+    config = _get_config(db)
+
+    # Calcular valor por ciclo
+    valor_assinatura = plano_info["valor"]
+    if ciclo == "YEARLY":
+        desconto = config.desconto_anual_percentual
+        valor_assinatura = round(plano_info["valor"] * 12 * (1 - desconto / 100), 2)
 
     proximo_vencimento = datetime.utcnow() + timedelta(days=1)
 
@@ -485,10 +496,10 @@ async def migrar_restaurante_asaas(restaurante_id: int, db: Session, admin_id: O
         sub_data = await asaas_client.criar_assinatura(
             customer_id=asaas_cli_existente.asaas_customer_id,
             billing_type="PIX",
-            value=plano_info["valor"],
+            value=valor_assinatura,
             cycle=ciclo,
             next_due_date=proximo_vencimento.strftime("%Y-%m-%d"),
-            description=f"Derekh Food - Plano {plano}",
+            description=f"Derekh Food - Plano {plano} ({ciclo})",
         )
         asaas_sub_id = sub_data.get("id")
     except Exception as e:

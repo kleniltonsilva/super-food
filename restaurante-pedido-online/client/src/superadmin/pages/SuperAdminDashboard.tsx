@@ -64,12 +64,12 @@ interface MiniCardProps {
 
 function MiniCard({ label, value, icon: Icon, color, subtitle }: MiniCardProps) {
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+    <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-4">
       <div className="flex items-center justify-between">
         <div className="min-w-0">
-          <p className="text-xs text-gray-400 truncate">{label}</p>
-          <p className="mt-0.5 text-xl font-bold text-white truncate">{value}</p>
-          {subtitle && <p className="mt-0.5 text-[11px] text-gray-500 truncate">{subtitle}</p>}
+          <p className="text-xs text-[var(--sa-text-muted)] truncate">{label}</p>
+          <p className="mt-0.5 text-xl font-bold text-[var(--sa-text-primary)] truncate">{value}</p>
+          {subtitle && <p className="mt-0.5 text-[11px] text-[var(--sa-text-dimmed)] truncate">{subtitle}</p>}
         </div>
         <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${color}`}>
           <Icon className="h-5 w-5 text-white" />
@@ -147,14 +147,14 @@ export default function SuperAdminDashboard() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-2xl font-bold text-white">Dashboard Analytics</h2>
+          <h2 className="text-2xl font-bold text-[var(--sa-text-primary)]">Dashboard Analytics</h2>
           <div className="flex gap-2">
             {["7d", "30d", "90d"].map((p) => (
               <Button
                 key={p}
                 size="sm"
                 variant={periodo === p ? "default" : "outline"}
-                className={periodo === p ? "bg-amber-600 hover:bg-amber-700 text-white" : "border-gray-700 text-gray-300 hover:bg-gray-800"}
+                className={periodo === p ? "bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)] text-white" : "border-[var(--sa-border-input)] text-[var(--sa-text-secondary)] hover:bg-[var(--sa-bg-hover)]"}
                 onClick={() => setPeriodo(p)}
               >
                 {p === "7d" ? "7 dias" : p === "30d" ? "30 dias" : "90 dias"}
@@ -165,7 +165,7 @@ export default function SuperAdminDashboard() {
 
         {/* Cards Faturamento */}
         <div>
-          <h3 className="mb-3 text-sm font-medium text-gray-400 uppercase tracking-wider">Faturamento Real</h3>
+          <h3 className="mb-3 text-sm font-medium text-[var(--sa-text-muted)] uppercase tracking-wider">Faturamento Real</h3>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MiniCard label="Hoje" value={fmt(a.faturamento_hoje)} icon={DollarSign} color="bg-green-600" />
             <MiniCard label="Semana" value={fmt(a.faturamento_semana)} icon={DollarSign} color="bg-green-600" />
@@ -176,7 +176,7 @@ export default function SuperAdminDashboard() {
 
         {/* Cards Pedidos */}
         <div>
-          <h3 className="mb-3 text-sm font-medium text-gray-400 uppercase tracking-wider">Pedidos</h3>
+          <h3 className="mb-3 text-sm font-medium text-[var(--sa-text-muted)] uppercase tracking-wider">Pedidos</h3>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <MiniCard label="Pedidos Hoje" value={a.pedidos_hoje ?? 0} icon={ShoppingBag} color="bg-purple-600" subtitle={`${a.cancelamentos_hoje ?? 0} cancelados`} />
             <MiniCard label="Pedidos Mês" value={a.pedidos_mes ?? 0} icon={ShoppingBag} color="bg-purple-600" subtitle={`${a.cancelamentos_mes ?? 0} cancelados`} />
@@ -200,9 +200,9 @@ export default function SuperAdminDashboard() {
 
         {/* TOP 5 Restaurantes */}
         {topRest.length > 0 && (
-          <Card className="border-gray-800 bg-gray-900">
+          <Card className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
             <CardHeader>
-              <CardTitle className="text-white flex items-center gap-2">
+              <CardTitle className="text-[var(--sa-text-primary)] flex items-center gap-2">
                 <Medal className="h-5 w-5 text-amber-400" />
                 Top 5 Restaurantes — Faturamento no Mês
               </CardTitle>
@@ -211,9 +211,9 @@ export default function SuperAdminDashboard() {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-gray-800 hover:bg-transparent">
+                    <TableRow className="border-[var(--sa-border)] hover:bg-transparent">
                       <TableHead className="text-gray-400 w-10">#</TableHead>
-                      <TableHead className="text-gray-400">Restaurante</TableHead>
+                      <TableHead className="text-[var(--sa-text-muted)]">Restaurante</TableHead>
                       <TableHead className="text-gray-400 text-right">Faturamento</TableHead>
                       <TableHead className="text-gray-400 text-right">Pedidos</TableHead>
                       <TableHead className="text-gray-400 text-right">Ticket Médio</TableHead>
@@ -223,16 +223,16 @@ export default function SuperAdminDashboard() {
                   <TableBody>
                     {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     {topRest.map((r: any, idx: number) => (
-                      <TableRow key={r.id} className="border-gray-800 hover:bg-gray-800/50">
+                      <TableRow key={r.id} className="border-[var(--sa-border)] hover:bg-[var(--sa-bg-hover)]/50">
                         <TableCell>
                           <Medal className={cn("h-5 w-5", idx < 3 ? medalhas[idx] : "text-gray-600")} />
                         </TableCell>
-                        <TableCell className="font-medium text-white">{r.nome}</TableCell>
+                        <TableCell className="font-medium text-[var(--sa-text-primary)]">{r.nome}</TableCell>
                         <TableCell className="text-right font-semibold text-green-400">{fmt(r.faturamento)}</TableCell>
-                        <TableCell className="text-right text-gray-300">{r.total_pedidos}</TableCell>
-                        <TableCell className="text-right text-gray-300">{fmt(r.ticket_medio)}</TableCell>
+                        <TableCell className="text-right text-[var(--sa-text-secondary)]">{r.total_pedidos}</TableCell>
+                        <TableCell className="text-right text-[var(--sa-text-secondary)]">{fmt(r.ticket_medio)}</TableCell>
                         <TableCell className="text-right">
-                          <span className={r.cancelamentos > 0 ? "text-red-400" : "text-gray-500"}>
+                          <span className={r.cancelamentos > 0 ? "text-red-400" : "text-[var(--sa-text-dimmed)]"}>
                             {r.cancelamentos}
                           </span>
                         </TableCell>
@@ -248,9 +248,9 @@ export default function SuperAdminDashboard() {
         {/* Gráficos */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           {/* Tendência Faturamento */}
-          <Card className="border-gray-800 bg-gray-900">
+          <Card className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
             <CardHeader>
-              <CardTitle className="text-white text-base">Tendência de Faturamento</CardTitle>
+              <CardTitle className="text-[var(--sa-text-primary)] text-base">Tendência de Faturamento</CardTitle>
             </CardHeader>
             <CardContent>
               {tendencia.length > 0 ? (
@@ -269,15 +269,15 @@ export default function SuperAdminDashboard() {
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
-                <p className="py-10 text-center text-gray-500">Sem dados no período</p>
+                <p className="py-10 text-center text-[var(--sa-text-dimmed)]">Sem dados no período</p>
               )}
             </CardContent>
           </Card>
 
           {/* Formas de Pagamento */}
-          <Card className="border-gray-800 bg-gray-900">
+          <Card className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
             <CardHeader>
-              <CardTitle className="text-white text-base">Formas de Pagamento</CardTitle>
+              <CardTitle className="text-[var(--sa-text-primary)] text-base">Formas de Pagamento</CardTitle>
             </CardHeader>
             <CardContent>
               {formasPgto.length > 0 ? (
@@ -300,21 +300,21 @@ export default function SuperAdminDashboard() {
                     {formasPgto.map((f: any, idx: number) => (
                       <div key={f.forma} className="flex items-center gap-1.5">
                         <span className="h-3 w-3 rounded-full" style={{ backgroundColor: CORES_PIE[idx % CORES_PIE.length] }} />
-                        <span className="text-xs text-gray-400">{f.forma} ({f.total})</span>
+                        <span className="text-xs text-[var(--sa-text-muted)]">{f.forma} ({f.total})</span>
                       </div>
                     ))}
                   </div>
                 </div>
               ) : (
-                <p className="py-10 text-center text-gray-500">Sem dados</p>
+                <p className="py-10 text-center text-[var(--sa-text-dimmed)]">Sem dados</p>
               )}
             </CardContent>
           </Card>
 
           {/* Tipo Entrega */}
-          <Card className="border-gray-800 bg-gray-900">
+          <Card className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
             <CardHeader>
-              <CardTitle className="text-white text-base">Tipo de Entrega</CardTitle>
+              <CardTitle className="text-[var(--sa-text-primary)] text-base">Tipo de Entrega</CardTitle>
             </CardHeader>
             <CardContent>
               {tiposEntrega.length > 0 ? (
@@ -334,35 +334,35 @@ export default function SuperAdminDashboard() {
                   </ResponsiveContainer>
                 </div>
               ) : (
-                <p className="py-10 text-center text-gray-500">Sem dados</p>
+                <p className="py-10 text-center text-[var(--sa-text-dimmed)]">Sem dados</p>
               )}
             </CardContent>
           </Card>
 
           {/* Insights */}
-          <Card className="border-gray-800 bg-gray-900">
+          <Card className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
             <CardHeader>
-              <CardTitle className="text-white text-base">Insights</CardTitle>
+              <CardTitle className="text-[var(--sa-text-primary)] text-base">Insights</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="flex items-center gap-3 rounded-lg border border-gray-800 p-3">
+              <div className="flex items-center gap-3 rounded-lg border border-[var(--sa-border)] p-3">
                 <Clock className="h-5 w-5 text-amber-400 shrink-0" />
                 <div>
-                  <p className="text-sm text-gray-300">Horário Pico</p>
-                  <p className="text-lg font-bold text-white">{a.horario_pico?.hora ?? "--"}h <span className="text-sm font-normal text-gray-400">({a.horario_pico?.total_pedidos ?? 0} pedidos)</span></p>
+                  <p className="text-sm text-[var(--sa-text-secondary)]">Horário Pico</p>
+                  <p className="text-lg font-bold text-[var(--sa-text-primary)]">{a.horario_pico?.hora ?? "--"}h <span className="text-sm font-normal text-[var(--sa-text-muted)]">({a.horario_pico?.total_pedidos ?? 0} pedidos)</span></p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-lg border border-gray-800 p-3">
+              <div className="flex items-center gap-3 rounded-lg border border-[var(--sa-border)] p-3">
                 <Users className="h-5 w-5 text-blue-400 shrink-0" />
                 <div>
-                  <p className="text-sm text-gray-300">Clientes Novos (semana)</p>
-                  <p className="text-lg font-bold text-white">{a.clientes_novos_semana ?? 0}</p>
+                  <p className="text-sm text-[var(--sa-text-secondary)]">Clientes Novos (semana)</p>
+                  <p className="text-lg font-bold text-[var(--sa-text-primary)]">{a.clientes_novos_semana ?? 0}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3 rounded-lg border border-gray-800 p-3">
+              <div className="flex items-center gap-3 rounded-lg border border-[var(--sa-border)] p-3">
                 <TrendingUp className="h-5 w-5 text-green-400 shrink-0" />
                 <div>
-                  <p className="text-sm text-gray-300">Crescimento Mês vs Anterior</p>
+                  <p className="text-sm text-[var(--sa-text-secondary)]">Crescimento Mês vs Anterior</p>
                   <p className={cn("text-lg font-bold", (a.crescimento_mom ?? 0) >= 0 ? "text-green-400" : "text-red-400")}>{fmtPct(a.crescimento_mom)}</p>
                 </div>
               </div>
@@ -390,17 +390,17 @@ export default function SuperAdminDashboard() {
 
         {/* Tabela Saúde Restaurantes */}
         {saudeRaw.length > 0 && (
-          <Card className="border-gray-800 bg-gray-900">
+          <Card className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
             <CardHeader>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <CardTitle className="text-white">Saúde dos Restaurantes</CardTitle>
+                <CardTitle className="text-[var(--sa-text-primary)]">Saúde dos Restaurantes</CardTitle>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--sa-text-dimmed)]" />
                   <Input
                     placeholder="Buscar restaurante..."
                     value={buscaSaude}
                     onChange={(e) => setBuscaSaude(e.target.value)}
-                    className="pl-9 w-64 border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                    className="pl-9 w-64 border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                   />
                 </div>
               </div>
@@ -409,9 +409,9 @@ export default function SuperAdminDashboard() {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
-                    <TableRow className="border-gray-800 hover:bg-transparent">
-                      <TableHead className="text-gray-400">Nome</TableHead>
-                      <TableHead className="text-gray-400">Plano</TableHead>
+                    <TableRow className="border-[var(--sa-border)] hover:bg-transparent">
+                      <TableHead className="text-[var(--sa-text-muted)]">Nome</TableHead>
+                      <TableHead className="text-[var(--sa-text-muted)]">Plano</TableHead>
                       {[
                         { key: "pedidos_dia", label: "Dia" },
                         { key: "pedidos_semana", label: "Sem" },
@@ -422,7 +422,7 @@ export default function SuperAdminDashboard() {
                       ].map((col) => (
                         <TableHead
                           key={col.key}
-                          className="text-gray-400 cursor-pointer hover:text-white text-right"
+                          className="text-[var(--sa-text-muted)] cursor-pointer hover:text-[var(--sa-text-primary)] text-right"
                           onClick={() => toggleSort(col.key)}
                         >
                           <span className="inline-flex items-center gap-1">
@@ -440,23 +440,23 @@ export default function SuperAdminDashboard() {
                       const ativo = r.pedidos_mes > 0;
                       const baixo = r.pedidos_mes > 0 && r.pedidos_mes < 10;
                       return (
-                        <TableRow key={r.id} className="border-gray-800 hover:bg-gray-800/50">
-                          <TableCell className="font-medium text-white">{r.nome}</TableCell>
+                        <TableRow key={r.id} className="border-[var(--sa-border)] hover:bg-[var(--sa-bg-hover)]/50">
+                          <TableCell className="font-medium text-[var(--sa-text-primary)]">{r.nome}</TableCell>
                           <TableCell>
-                            <Badge variant="outline" className="border-gray-600 text-gray-300 text-xs">
+                            <Badge variant="outline" className="border-[var(--sa-border-input)] text-[var(--sa-text-secondary)] text-xs">
                               {r.plano}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right text-gray-300">{r.pedidos_dia}</TableCell>
-                          <TableCell className="text-right text-gray-300">{r.pedidos_semana}</TableCell>
-                          <TableCell className="text-right text-gray-300">{r.pedidos_mes}</TableCell>
+                          <TableCell className="text-right text-[var(--sa-text-secondary)]">{r.pedidos_dia}</TableCell>
+                          <TableCell className="text-right text-[var(--sa-text-secondary)]">{r.pedidos_semana}</TableCell>
+                          <TableCell className="text-right text-[var(--sa-text-secondary)]">{r.pedidos_mes}</TableCell>
                           <TableCell className="text-right font-medium text-green-400">{fmt(r.faturamento_mes)}</TableCell>
                           <TableCell className="text-right">
-                            <span className={r.cancelamentos_mes > 0 ? "text-red-400" : "text-gray-500"}>
+                            <span className={r.cancelamentos_mes > 0 ? "text-red-400" : "text-[var(--sa-text-dimmed)]"}>
                               {r.cancelamentos_mes}
                             </span>
                           </TableCell>
-                          <TableCell className="text-right text-gray-300">{fmt(r.ticket_medio)}</TableCell>
+                          <TableCell className="text-right text-[var(--sa-text-secondary)]">{fmt(r.ticket_medio)}</TableCell>
                           <TableCell className="text-right">
                             <Badge
                               variant="outline"

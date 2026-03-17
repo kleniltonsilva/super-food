@@ -17,11 +17,18 @@ export default function BillingBanner() {
 
   let content: { bg: string; icon: React.ReactNode; text: string; action?: string } | null = null;
 
-  if (billing.billing_status === "trial" && diasTrial <= 5) {
+  if (billing.billing_status === "trial" && diasTrial > 5) {
+    content = {
+      bg: "bg-blue-500/10 border-blue-500/30",
+      icon: <Clock className="h-4 w-4 text-blue-400 shrink-0" />,
+      text: `Periodo de teste: ${diasTrial} dias restantes. Escolha um plano a qualquer momento.`,
+      action: "Ver planos",
+    };
+  } else if (billing.billing_status === "trial" && diasTrial <= 5) {
     content = {
       bg: "bg-yellow-500/10 border-yellow-500/30",
       icon: <Clock className="h-4 w-4 text-yellow-400 shrink-0" />,
-      text: `Seu periodo de teste termina em ${diasTrial} dia${diasTrial !== 1 ? "s" : ""}`,
+      text: `Seu periodo de teste termina em ${diasTrial} dia${diasTrial !== 1 ? "s" : ""}!`,
       action: "Escolher plano",
     };
   } else if (billing.billing_status === "overdue") {

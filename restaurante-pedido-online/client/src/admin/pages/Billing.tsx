@@ -65,8 +65,28 @@ export default function Billing() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Minha Assinatura</h1>
-          <Button onClick={() => navigate("/billing/planos")}>Trocar Plano</Button>
+          <Button onClick={() => navigate("/billing/planos")}>
+            {billing?.billing_status === "trial" ? "Escolher Plano" : "Trocar Plano"}
+          </Button>
         </div>
+
+        {/* Banner Trial */}
+        {billing?.billing_status === "trial" && diasTrial > 0 && (
+          <Card className="border-blue-500/30 bg-blue-500/10">
+            <CardContent className="flex items-center gap-4 p-4">
+              <Calendar className="h-6 w-6 text-blue-400 shrink-0" />
+              <div className="flex-1">
+                <p className="font-semibold text-blue-400">
+                  Periodo de teste: {diasTrial} dia{diasTrial !== 1 ? "s" : ""} restante{diasTrial !== 1 ? "s" : ""}
+                </p>
+                <p className="text-sm text-[var(--text-muted)]">
+                  Escolha um plano a qualquer momento. A primeira cobranca sera apenas apos o fim do teste ({trialFim?.toLocaleDateString("pt-BR")}).
+                </p>
+              </div>
+              <Button size="sm" onClick={() => navigate("/billing/planos")}>Escolher Plano</Button>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Cards de Status */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

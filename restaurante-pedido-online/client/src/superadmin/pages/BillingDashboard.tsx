@@ -23,7 +23,7 @@ import { useLocation } from "wouter";
 import { toast } from "sonner";
 
 const STATUS_BADGES: Record<string, { label: string; color: string }> = {
-  manual: { label: "Manual", color: "bg-gray-500/20 text-gray-400" },
+  manual: { label: "Manual", color: "bg-gray-500/20 text-[var(--sa-text-muted)]" },
   trial: { label: "Trial", color: "bg-blue-500/20 text-blue-400" },
   active: { label: "Ativo", color: "bg-green-500/20 text-green-400" },
   overdue: { label: "Vencido", color: "bg-yellow-500/20 text-yellow-400" },
@@ -112,7 +112,7 @@ export default function BillingDashboard() {
     <SuperAdminLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">Billing Dashboard</h1>
+          <h1 className="text-2xl font-bold text-[var(--sa-text-primary)]">Billing Dashboard</h1>
           <Button variant="outline" onClick={() => navigate("/billing/config")}>
             <Settings className="h-4 w-4 mr-2" /> Configuração
           </Button>
@@ -120,60 +120,60 @@ export default function BillingDashboard() {
 
         {/* Cards KPI */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="bg-gray-900 border-gray-800">
+          <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm text-gray-400">MRR</CardTitle>
-              <DollarSign className="h-4 w-4 text-gray-500" />
+              <CardTitle className="text-sm text-[var(--sa-text-muted)]">MRR</CardTitle>
+              <DollarSign className="h-4 w-4 text-[var(--sa-text-dimmed)]" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">R$ {dashboard?.mrr?.toFixed(2) || "0,00"}</div>
-              <p className="text-xs text-gray-500">Receita mensal recorrente</p>
+              <div className="text-2xl font-bold text-[var(--sa-text-primary)]">R$ {dashboard?.mrr?.toFixed(2) || "0,00"}</div>
+              <p className="text-xs text-[var(--sa-text-dimmed)]">Receita mensal recorrente</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gray-900 border-gray-800">
+          <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm text-gray-400">Receita Projetada/Ano</CardTitle>
-              <TrendingUp className="h-4 w-4 text-gray-500" />
+              <CardTitle className="text-sm text-[var(--sa-text-muted)]">Receita Projetada/Ano</CardTitle>
+              <TrendingUp className="h-4 w-4 text-[var(--sa-text-dimmed)]" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">R$ {dashboard?.receita_anual_projetada?.toFixed(2) || "0,00"}</div>
+              <div className="text-2xl font-bold text-[var(--sa-text-primary)]">R$ {dashboard?.receita_anual_projetada?.toFixed(2) || "0,00"}</div>
             </CardContent>
           </Card>
 
-          <Card className="bg-gray-900 border-gray-800">
+          <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm text-gray-400">Restaurantes Ativos</CardTitle>
-              <Users className="h-4 w-4 text-gray-500" />
+              <CardTitle className="text-sm text-[var(--sa-text-muted)]">Restaurantes Ativos</CardTitle>
+              <Users className="h-4 w-4 text-[var(--sa-text-dimmed)]" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-white">{dashboard?.total_ativos || 0}</div>
-              <p className="text-xs text-gray-500">{dashboard?.total_trials || 0} em trial</p>
+              <div className="text-2xl font-bold text-[var(--sa-text-primary)]">{dashboard?.total_ativos || 0}</div>
+              <p className="text-xs text-[var(--sa-text-dimmed)]">{dashboard?.total_trials || 0} em trial</p>
             </CardContent>
           </Card>
 
-          <Card className="bg-gray-900 border-gray-800">
+          <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm text-gray-400">Inadimplentes</CardTitle>
-              <AlertTriangle className="h-4 w-4 text-gray-500" />
+              <CardTitle className="text-sm text-[var(--sa-text-muted)]">Inadimplentes</CardTitle>
+              <AlertTriangle className="h-4 w-4 text-[var(--sa-text-dimmed)]" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-400">
                 {(dashboard?.total_overdue || 0) + (dashboard?.total_suspensos || 0)}
               </div>
-              <p className="text-xs text-gray-500">{dashboard?.total_overdue || 0} vencidos, {dashboard?.total_suspensos || 0} suspensos</p>
+              <p className="text-xs text-[var(--sa-text-dimmed)]">{dashboard?.total_overdue || 0} vencidos, {dashboard?.total_suspensos || 0} suspensos</p>
             </CardContent>
           </Card>
         </div>
 
         {/* Restaurantes por Status */}
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <CardHeader>
-            <CardTitle className="text-white">Restaurantes por Status</CardTitle>
+            <CardTitle className="text-[var(--sa-text-primary)]">Restaurantes por Status</CardTitle>
           </CardHeader>
           <CardContent>
             <Tabs value={tabAtiva} onValueChange={setTabAtiva}>
-              <TabsList className="bg-gray-800">
+              <TabsList className="bg-[var(--sa-bg-hover)]">
                 <TabsTrigger value="todos">Todos ({restaurantes.length})</TabsTrigger>
                 <TabsTrigger value="trial">Trial ({dashboard?.total_trials || 0})</TabsTrigger>
                 <TabsTrigger value="active">Ativos ({dashboard?.total_ativos || 0})</TabsTrigger>
@@ -186,26 +186,26 @@ export default function BillingDashboard() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-800">
-                        <th className="text-left py-2 text-gray-400">Restaurante</th>
-                        <th className="text-left py-2 text-gray-400">Plano</th>
-                        <th className="text-left py-2 text-gray-400">Status</th>
-                        <th className="text-left py-2 text-gray-400">Dias Vencido</th>
-                        <th className="text-right py-2 text-gray-400">Ações</th>
+                      <tr className="border-b border-[var(--sa-border)]">
+                        <th className="text-left py-2 text-[var(--sa-text-muted)]">Restaurante</th>
+                        <th className="text-left py-2 text-[var(--sa-text-muted)]">Plano</th>
+                        <th className="text-left py-2 text-[var(--sa-text-muted)]">Status</th>
+                        <th className="text-left py-2 text-[var(--sa-text-muted)]">Dias Vencido</th>
+                        <th className="text-right py-2 text-[var(--sa-text-muted)]">Ações</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtrados.map((r: any) => {
                         const badge = STATUS_BADGES[r.billing_status] || STATUS_BADGES.manual;
                         return (
-                          <tr key={r.id} className="border-b border-gray-800">
+                          <tr key={r.id} className="border-b border-[var(--sa-border)]">
                             <td className="py-2">
-                              <div className="text-white font-medium">{r.nome_fantasia}</div>
-                              <div className="text-xs text-gray-500">{r.email}</div>
+                              <div className="text-[var(--sa-text-primary)] font-medium">{r.nome_fantasia}</div>
+                              <div className="text-xs text-[var(--sa-text-dimmed)]">{r.email}</div>
                             </td>
-                            <td className="py-2 text-gray-300">{r.plano}</td>
+                            <td className="py-2 text-[var(--sa-text-secondary)]">{r.plano}</td>
                             <td className="py-2"><Badge className={badge.color}>{badge.label}</Badge></td>
-                            <td className="py-2 text-gray-300">{r.dias_vencido || 0}</td>
+                            <td className="py-2 text-[var(--sa-text-secondary)]">{r.dias_vencido || 0}</td>
                             <td className="py-2 text-right space-x-1">
                               {r.billing_status === "manual" && (
                                 <Button size="sm" variant="outline" onClick={() => handleMigrar(r.id)} title="Migrar para Asaas">
@@ -233,7 +233,7 @@ export default function BillingDashboard() {
                       })}
                       {filtrados.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="text-center py-8 text-gray-500">Nenhum restaurante</td>
+                          <td colSpan={5} className="text-center py-8 text-[var(--sa-text-dimmed)]">Nenhum restaurante</td>
                         </tr>
                       )}
                     </tbody>
@@ -245,28 +245,28 @@ export default function BillingDashboard() {
         </Card>
 
         {/* Audit Log Recente */}
-        <Card className="bg-gray-900 border-gray-800">
+        <Card className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <CardHeader>
-            <CardTitle className="text-white">Atividade Recente</CardTitle>
+            <CardTitle className="text-[var(--sa-text-primary)]">Atividade Recente</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
               {auditData?.logs?.map((log: any) => (
-                <div key={log.id} className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
+                <div key={log.id} className="flex items-center justify-between py-2 border-b border-[var(--sa-border)] last:border-0">
                   <div className="flex-1">
-                    <span className="text-sm text-white">{AUDIT_LABELS[log.acao] || log.acao}</span>
+                    <span className="text-sm text-[var(--sa-text-primary)]">{AUDIT_LABELS[log.acao] || log.acao}</span>
                     {log.restaurante_nome && (
-                      <span className="text-sm text-gray-400"> — {log.restaurante_nome}</span>
+                      <span className="text-sm text-[var(--sa-text-muted)]"> — {log.restaurante_nome}</span>
                     )}
-                    {log.automatico && <Badge className="ml-2 bg-gray-700 text-gray-400 text-xs">Auto</Badge>}
+                    {log.automatico && <Badge className="ml-2 bg-[var(--sa-bg-hover)] text-[var(--sa-text-muted)] text-xs">Auto</Badge>}
                   </div>
-                  <span className="text-xs text-gray-500">
+                  <span className="text-xs text-[var(--sa-text-dimmed)]">
                     {log.criado_em ? new Date(log.criado_em).toLocaleString("pt-BR") : ""}
                   </span>
                 </div>
               ))}
               {(!auditData?.logs || auditData.logs.length === 0) && (
-                <p className="text-center py-4 text-gray-500">Nenhuma atividade registrada</p>
+                <p className="text-center py-4 text-[var(--sa-text-dimmed)]">Nenhuma atividade registrada</p>
               )}
             </div>
           </CardContent>
@@ -275,22 +275,22 @@ export default function BillingDashboard() {
 
       {/* Dialog Estender Trial */}
       <Dialog open={!!trialDialog} onOpenChange={() => setTrialDialog(null)}>
-        <DialogContent className="bg-gray-900 border-gray-800">
+        <DialogContent className="bg-[var(--sa-bg-surface)] border-[var(--sa-border)]">
           <DialogHeader>
-            <DialogTitle className="text-white">Estender Trial — {trialDialog?.nome}</DialogTitle>
+            <DialogTitle className="text-[var(--sa-text-primary)]">Estender Trial — {trialDialog?.nome}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-sm text-gray-400">Dias a adicionar</label>
+            <label className="text-sm text-[var(--sa-text-muted)]">Dias a adicionar</label>
             <Input
               type="number"
               value={trialDias}
               onChange={(e) => setTrialDias(parseInt(e.target.value) || 0)}
-              className="bg-gray-800 border-gray-700 text-white"
+              className="bg-[var(--sa-bg-hover)] border-[var(--sa-border-input)] text-[var(--sa-text-primary)]"
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setTrialDialog(null)}>Cancelar</Button>
-            <Button onClick={handleEstenderTrial} disabled={estenderTrial.isPending} className="bg-amber-600 hover:bg-amber-700">
+            <Button onClick={handleEstenderTrial} disabled={estenderTrial.isPending} className="bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)]">
               {estenderTrial.isPending ? "Salvando..." : "Estender"}
             </Button>
           </DialogFooter>

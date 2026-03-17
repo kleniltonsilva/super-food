@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, ArrowLeft } from "lucide-react";
+import { Check, ArrowLeft, Info } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -37,6 +37,10 @@ export default function SelecionarPlano() {
     );
   }
 
+  const trialFim = billing?.trial_fim ? new Date(billing.trial_fim) : null;
+  const diasTrial = trialFim ? Math.max(0, Math.ceil((trialFim.getTime() - Date.now()) / 86400000)) : 0;
+  const isTrial = billing?.billing_status === "trial" && diasTrial > 0;
+
   if (isLoading) {
     return (
       <AdminLayout>
@@ -56,6 +60,21 @@ export default function SelecionarPlano() {
           </Button>
           <h1 className="text-2xl font-bold text-[var(--text-primary)]">Escolher Plano</h1>
         </div>
+
+        {/* Info Trial */}
+        {isTrial && (
+          <div className="flex items-start gap-3 p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
+            <Info className="h-5 w-5 text-blue-400 shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="text-[var(--text-primary)] font-medium">
+                Voce ainda tem {diasTrial} dia{diasTrial !== 1 ? "s" : ""} de teste gratuito
+              </p>
+              <p className="text-[var(--text-muted)] mt-1">
+                Pode assinar agora — a primeira cobranca sera apenas em {trialFim!.toLocaleDateString("pt-BR")}, quando o teste terminar.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Toggle Ciclo */}
         <div className="flex justify-center">
@@ -156,6 +175,14 @@ export default function SelecionarPlano() {
               Valor: <strong className="text-[var(--text-primary)]">R$ {confirmDialog?.valor?.toFixed(2)}</strong>
               {ciclo === "YEARLY" ? "/ano" : "/mes"}
             </p>
+            {isTrial && (
+              <div className="flex items-center gap-2 p-3 rounded-md bg-blue-500/10 border border-blue-500/30">
+                <Info className="h-4 w-4 text-blue-400 shrink-0" />
+                <p className="text-xs text-blue-300">
+                  Primeira cobranca em {trialFim!.toLocaleDateString("pt-BR")} (apos o trial)
+                </p>
+              </div>
+            )}
             <div>
               <label className="text-sm text-[var(--text-muted)] mb-1 block">Forma de pagamento</label>
               <Select value={billingType} onValueChange={setBillingType}>

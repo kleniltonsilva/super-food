@@ -7,6 +7,8 @@ import { useSuperAdminAuth } from "@/superadmin/contexts/SuperAdminAuthContext";
 import { loginAdmin } from "@/superadmin/lib/superAdminApiClient";
 import { toast } from "sonner";
 import { Loader2, Shield } from "lucide-react";
+import { useSuperAdminTheme } from "@/superadmin/hooks/useSuperAdminTheme";
+import { cn } from "@/lib/utils";
 
 export default function SuperAdminLogin() {
   const [usuario, setUsuario] = useState("");
@@ -14,6 +16,7 @@ export default function SuperAdminLogin() {
   const [loading, setLoading] = useState(false);
   const { login, isLoggedIn } = useSuperAdminAuth();
   const [, navigate] = useLocation();
+  const { isDark } = useSuperAdminTheme();
 
   if (isLoggedIn) {
     navigate("/");
@@ -43,23 +46,23 @@ export default function SuperAdminLogin() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
-      <Card className="w-full max-w-md border-gray-800 bg-gray-900">
+    <div className={cn("superadmin flex min-h-screen items-center justify-center bg-[var(--sa-bg-base)] px-4", !isDark && "sa-light")}>
+      <Card className="w-full max-w-md border-[var(--sa-border)] bg-[var(--sa-bg-surface)]">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-amber-600/20">
+          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-[var(--sa-accent-bg)]">
             <Shield className="h-7 w-7 text-amber-500" />
           </div>
-          <CardTitle className="text-2xl text-white">
+          <CardTitle className="text-2xl text-[var(--sa-text-primary)]">
             Super Admin
           </CardTitle>
-          <p className="text-sm text-gray-400">
+          <p className="text-sm text-[var(--sa-text-muted)]">
             Sistema de Gerenciamento - Derekh Food
           </p>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">
                 Usuário
               </label>
               <Input
@@ -67,12 +70,12 @@ export default function SuperAdminLogin() {
                 placeholder="superadmin"
                 value={usuario}
                 onChange={(e) => setUsuario(e.target.value)}
-                className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                 autoComplete="username"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">
                 Senha
               </label>
               <Input
@@ -80,13 +83,13 @@ export default function SuperAdminLogin() {
                 placeholder="••••••••"
                 value={senha}
                 onChange={(e) => setSenha(e.target.value)}
-                className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                 autoComplete="current-password"
               />
             </div>
             <Button
               type="submit"
-              className="w-full bg-amber-600 hover:bg-amber-700 text-white"
+              className="w-full bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)] text-white"
               disabled={loading}
             >
               {loading ? (

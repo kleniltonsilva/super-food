@@ -154,20 +154,20 @@ export default function NovoRestaurante() {
         <div className="mx-auto max-w-lg space-y-6 py-10">
           <div className="text-center">
             <CheckCircle className="mx-auto h-16 w-16 text-green-500" />
-            <h2 className="mt-4 text-2xl font-bold text-white">Restaurante Criado!</h2>
-            <p className="mt-1 text-gray-400">{resultado.nome_fantasia}</p>
+            <h2 className="mt-4 text-2xl font-bold text-[var(--sa-text-primary)]">Restaurante Criado!</h2>
+            <p className="mt-1 text-[var(--sa-text-muted)]">{resultado.nome_fantasia}</p>
           </div>
 
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6 space-y-4">
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-6 space-y-4">
             <div>
-              <p className="text-sm text-gray-400">Código de Acesso</p>
-              <p className="text-lg font-mono font-bold text-amber-400">{resultado.codigo_acesso}</p>
+              <p className="text-sm text-[var(--sa-text-muted)]">Código de Acesso</p>
+              <p className="text-lg font-mono font-bold text-[var(--sa-accent-text)]">{resultado.codigo_acesso}</p>
             </div>
             <div>
-              <p className="text-sm text-gray-400">Senha Padrão</p>
-              <p className="text-lg font-mono font-bold text-white">{resultado.senha_padrao}</p>
+              <p className="text-sm text-[var(--sa-text-muted)]">Senha Padrão</p>
+              <p className="text-lg font-mono font-bold text-[var(--sa-text-primary)]">{resultado.senha_padrao}</p>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-[var(--sa-text-dimmed)]">
               O restaurante pode acessar o painel com o email e esta senha.
             </p>
           </div>
@@ -175,7 +175,7 @@ export default function NovoRestaurante() {
           <div className="flex gap-3">
             <Button
               variant="outline"
-              className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+              className="flex-1 border-[var(--sa-border-input)] text-[var(--sa-text-secondary)] hover:bg-[var(--sa-bg-hover)]"
               onClick={() => {
                 setResultado(null);
                 setForm({
@@ -188,7 +188,7 @@ export default function NovoRestaurante() {
               Criar Outro
             </Button>
             <Button
-              className="flex-1 bg-amber-600 hover:bg-amber-700 text-white"
+              className="flex-1 bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)] text-white"
               onClick={() => navigate("/restaurantes")}
             >
               Ver Restaurantes
@@ -206,21 +206,21 @@ export default function NovoRestaurante() {
           <Button
             variant="ghost"
             size="icon"
-            className="text-gray-400 hover:text-white"
+            className="text-[var(--sa-text-muted)] hover:text-[var(--sa-text-primary)]"
             onClick={() => navigate("/restaurantes")}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
-          <h2 className="text-2xl font-bold text-white">Novo Restaurante</h2>
+          <h2 className="text-2xl font-bold text-[var(--sa-text-primary)]">Novo Restaurante</h2>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Bloco 1 - Dados Básicos */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-            <h3 className="mb-4 text-lg font-semibold text-white">Dados Básicos</h3>
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-6">
+            <h3 className="mb-4 text-lg font-semibold text-[var(--sa-text-primary)]">Dados Básicos</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)] flex items-center gap-1.5">
                   Nome Fantasia *
                   <InfoTooltip text="Nome comercial do restaurante, exibido no site e no painel. Mínimo 3 caracteres." />
                 </label>
@@ -228,39 +228,39 @@ export default function NovoRestaurante() {
                   placeholder="Ex: Burger Elite"
                   value={form.nome_fantasia}
                   onChange={(e) => updateField("nome_fantasia", e.target.value)}
-                  className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Razão Social</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Razão Social</label>
                 <Input
                   placeholder="Ex: Burger Elite LTDA"
                   value={form.razao_social}
                   onChange={(e) => updateField("razao_social", e.target.value)}
-                  className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Email *</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Email *</label>
                 <Input
                   type="email"
                   placeholder="contato@burgerelite.com.br"
                   value={form.email}
                   onChange={(e) => updateField("email", e.target.value)}
-                  className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Telefone/WhatsApp *</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Telefone/WhatsApp *</label>
                 <Input
                   placeholder="(11) 99999-9999"
                   value={form.telefone}
                   onChange={(e) => updateField("telefone", e.target.value)}
-                  className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)] flex items-center gap-1.5">
                   CNPJ
                   <InfoTooltip text="Opcional. Se informado, deve ter 14 dígitos. Será validado como único no sistema." />
                 </label>
@@ -268,54 +268,54 @@ export default function NovoRestaurante() {
                   placeholder="00.000.000/0000-00"
                   value={form.cnpj}
                   onChange={(e) => updateField("cnpj", e.target.value)}
-                  className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                 />
               </div>
             </div>
           </div>
 
           {/* Bloco 2 - Endereço */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-            <h3 className="mb-4 text-lg font-semibold text-white">Endereço</h3>
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-6">
+            <h3 className="mb-4 text-lg font-semibold text-[var(--sa-text-primary)]">Endereço</h3>
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Endereço Completo *</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Endereço Completo *</label>
                 <AddressAutocomplete
                   value={form.endereco_completo}
                   onChange={(v) => updateField("endereco_completo", v)}
                   fetchSuggestions={autocompleteEndereco}
                   placeholder="Rua Augusta 123, Bairro Centro, São Paulo, SP, Brasil, CEP 01000-000"
-                  className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                   multiline
                   rows={2}
                 />
               </div>
               <div className="grid gap-4 sm:grid-cols-3">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">Cidade</label>
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Cidade</label>
                   <Input
                     placeholder="São Paulo"
                     value={form.cidade}
                     onChange={(e) => updateField("cidade", e.target.value)}
-                    className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">Estado</label>
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Estado</label>
                   <Input
                     placeholder="SP"
                     value={form.estado}
                     onChange={(e) => updateField("estado", e.target.value)}
-                    className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-300">CEP</label>
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">CEP</label>
                   <Input
                     placeholder="01000-000"
                     value={form.cep}
                     onChange={(e) => updateField("cep", e.target.value)}
-                    className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                   />
                 </div>
               </div>
@@ -323,8 +323,8 @@ export default function NovoRestaurante() {
           </div>
 
           {/* Bloco 3 - Site do Cliente */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-            <h3 className="mb-4 text-lg font-semibold text-white">Site do Cliente</h3>
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-6">
+            <h3 className="mb-4 text-lg font-semibold text-[var(--sa-text-primary)]">Site do Cliente</h3>
             <div className="space-y-4">
               <div className="flex items-center gap-2">
                 <Checkbox
@@ -332,7 +332,7 @@ export default function NovoRestaurante() {
                   checked={form.criar_site}
                   onCheckedChange={(checked) => updateField("criar_site", !!checked)}
                 />
-                <label htmlFor="criar_site" className="text-sm text-gray-300 flex items-center gap-1.5">
+                <label htmlFor="criar_site" className="text-sm text-[var(--sa-text-secondary)] flex items-center gap-1.5">
                   Criar site automaticamente
                   <InfoTooltip text="Gera automaticamente o site do cliente com cardápio, checkout e tracking. Categorias padrão são criadas com base no tipo de restaurante." />
                 </label>
@@ -340,12 +340,12 @@ export default function NovoRestaurante() {
               {form.criar_site && (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                    <label className="text-sm font-medium text-[var(--sa-text-secondary)] flex items-center gap-1.5">
                       Tipo de Restaurante *
                       <InfoTooltip text="Define o tema visual do site (cores, fontes, layout). Cada tipo tem categorias padrão pré-configuradas." />
                     </label>
                     <Select value={form.tipo_restaurante} onValueChange={(v) => updateField("tipo_restaurante", v)}>
-                      <SelectTrigger className="border-gray-700 bg-gray-800 text-white">
+                      <SelectTrigger className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -356,7 +356,7 @@ export default function NovoRestaurante() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+                    <label className="text-sm font-medium text-[var(--sa-text-secondary)] flex items-center gap-1.5">
                       WhatsApp (com DDD)
                       <InfoTooltip text="Número com DDD (ex: 11999999999). Exibe botão de contato no site do cliente." />
                     </label>
@@ -364,7 +364,7 @@ export default function NovoRestaurante() {
                       placeholder="11999999999"
                       value={form.whatsapp}
                       onChange={(e) => updateField("whatsapp", e.target.value)}
-                      className="border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                      className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                     />
                   </div>
                 </div>
@@ -373,8 +373,8 @@ export default function NovoRestaurante() {
           </div>
 
           {/* Bloco 4 - Plano */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
-            <h3 className="mb-4 text-lg font-semibold text-white flex items-center gap-1.5">
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-6">
+            <h3 className="mb-4 text-lg font-semibold text-[var(--sa-text-primary)] flex items-center gap-1.5">
               Plano de Assinatura
               <InfoTooltip text="O plano define o valor mensal e o limite de motoboys simultâneos. Pode ser alterado depois." />
             </h3>
@@ -388,34 +388,34 @@ export default function NovoRestaurante() {
                     "rounded-lg border p-4 text-left transition-all",
                     form.plano === p.nome
                       ? "border-amber-500 bg-amber-500/10"
-                      : "border-gray-700 bg-gray-800 hover:border-gray-600"
+                      : "border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] hover:border-[var(--sa-border-input)]"
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-white">{p.nome}</span>
-                    <span className="text-lg font-bold text-amber-400">
+                    <span className="font-semibold text-[var(--sa-text-primary)]">{p.nome}</span>
+                    <span className="text-lg font-bold text-[var(--sa-accent-text)]">
                       R$ {p.valor.toFixed(2)}
                     </span>
                   </div>
-                  <p className="mt-1 text-xs text-gray-400">{p.descricao}</p>
+                  <p className="mt-1 text-xs text-[var(--sa-text-muted)]">{p.descricao}</p>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Billing — Trial */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-6">
             <div className="flex items-center gap-3">
               <Checkbox
                 id="iniciar_trial"
                 checked={form.iniciar_trial}
                 onCheckedChange={(v) => updateField("iniciar_trial", !!v)}
               />
-              <label htmlFor="iniciar_trial" className="text-sm font-medium text-gray-300 cursor-pointer">
+              <label htmlFor="iniciar_trial" className="text-sm font-medium text-[var(--sa-text-secondary)] cursor-pointer">
                 Iniciar período de teste (trial) de 20 dias
               </label>
             </div>
-            <p className="text-xs text-gray-500 mt-2 ml-7">
+            <p className="text-xs text-[var(--sa-text-dimmed)] mt-2 ml-7">
               Se marcado, o restaurante terá acesso ao plano Premium durante o trial. Após o período, precisará escolher um plano pago.
             </p>
           </div>
@@ -423,7 +423,7 @@ export default function NovoRestaurante() {
           {/* Submit */}
           <Button
             type="submit"
-            className="w-full bg-amber-600 hover:bg-amber-700 text-white py-3"
+            className="w-full bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)] text-white py-3"
             disabled={criarMut.isPending}
           >
             {criarMut.isPending ? (

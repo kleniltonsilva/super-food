@@ -1,5 +1,6 @@
-import { Menu, LogOut, User, ShoppingBag, Bike, DollarSign, Clock, ArrowRight, Printer } from "lucide-react";
+import { Menu, LogOut, User, ShoppingBag, Bike, DollarSign, Clock, ArrowRight, Printer, Sun, Moon } from "lucide-react";
 import NotificationBell from "@/admin/components/NotificationBell";
+import { useAdminTheme } from "@/admin/hooks/useAdminTheme";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useQueryClient } from "@tanstack/react-query";
@@ -101,6 +102,7 @@ function TempoChip({ tipo, data }: { tipo: string; data: TempoData }) {
 export default function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
   const { restaurante, logout } = useAdminAuth();
   const [location, navigate] = useLocation();
+  const { isDark, toggleTheme } = useAdminTheme(restaurante?.id);
 
   // Dados para badges
   const { data: pedidos } = usePedidos({ status: "pendente" });
@@ -221,6 +223,16 @@ export default function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
             </PopoverContent>
           </Popover>
         )}
+
+        {/* Theme Toggle */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={toggleTheme}
+        >
+          {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </Button>
 
         {/* Notification Bell */}
         <NotificationBell />

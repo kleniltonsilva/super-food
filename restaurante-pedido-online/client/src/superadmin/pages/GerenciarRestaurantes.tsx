@@ -247,9 +247,9 @@ export default function GerenciarRestaurantes() {
     <SuperAdminLayout>
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-2xl font-bold text-white">Gerenciar Restaurantes</h2>
+          <h2 className="text-2xl font-bold text-[var(--sa-text-primary)]">Gerenciar Restaurantes</h2>
           <Button
-            className="bg-amber-600 hover:bg-amber-700 text-white"
+            className="bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)] text-white"
             onClick={() => navigate("/restaurantes/novo")}
           >
             <Store className="mr-2 h-4 w-4" />
@@ -260,16 +260,16 @@ export default function GerenciarRestaurantes() {
         {/* Filtros */}
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--sa-text-dimmed)]" />
             <Input
               placeholder="Buscar por nome, email ou telefone..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
-              className="pl-9 border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+              className="pl-9 border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
             />
           </div>
           <Select value={filtroStatus} onValueChange={setFiltroStatus}>
-            <SelectTrigger className="w-40 border-gray-700 bg-gray-800 text-white">
+            <SelectTrigger className="w-40 border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
@@ -280,7 +280,7 @@ export default function GerenciarRestaurantes() {
             </SelectContent>
           </Select>
           <Select value={filtroPlano} onValueChange={setFiltroPlano}>
-            <SelectTrigger className="w-40 border-gray-700 bg-gray-800 text-white">
+            <SelectTrigger className="w-40 border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]">
               <SelectValue placeholder="Plano" />
             </SelectTrigger>
             <SelectContent>
@@ -294,7 +294,7 @@ export default function GerenciarRestaurantes() {
         </div>
 
         {/* Contador */}
-        <p className="text-sm text-gray-400">
+        <p className="text-sm text-[var(--sa-text-muted)]">
           {lista.length} restaurante(s) encontrado(s)
         </p>
 
@@ -304,51 +304,51 @@ export default function GerenciarRestaurantes() {
             <Spinner className="h-6 w-6 text-amber-500" />
           </div>
         ) : lista.length === 0 ? (
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-10 text-center">
-            <Store className="mx-auto h-12 w-12 text-gray-600" />
-            <p className="mt-3 text-gray-400">Nenhum restaurante encontrado</p>
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-10 text-center">
+            <Store className="mx-auto h-12 w-12 text-[var(--sa-text-dimmed)]" />
+            <p className="mt-3 text-[var(--sa-text-muted)]">Nenhum restaurante encontrado</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-gray-800">
+          <div className="overflow-x-auto rounded-xl border border-[var(--sa-border)]">
             <Table>
               <TableHeader>
-                <TableRow className="border-gray-800 hover:bg-transparent">
-                  <TableHead className="text-gray-400">Restaurante</TableHead>
-                  <TableHead className="text-gray-400">Plano</TableHead>
-                  <TableHead className="text-gray-400">Status</TableHead>
-                  <TableHead className="text-gray-400">Vencimento</TableHead>
-                  <TableHead className="text-gray-400">Pedidos</TableHead>
-                  <TableHead className="text-gray-400">Motoboys</TableHead>
-                  <TableHead className="text-gray-400 text-right">Ações</TableHead>
+                <TableRow className="border-[var(--sa-border)] hover:bg-transparent">
+                  <TableHead className="text-[var(--sa-text-muted)]">Restaurante</TableHead>
+                  <TableHead className="text-[var(--sa-text-muted)]">Plano</TableHead>
+                  <TableHead className="text-[var(--sa-text-muted)]">Status</TableHead>
+                  <TableHead className="text-[var(--sa-text-muted)]">Vencimento</TableHead>
+                  <TableHead className="text-[var(--sa-text-muted)]">Pedidos</TableHead>
+                  <TableHead className="text-[var(--sa-text-muted)]">Motoboys</TableHead>
+                  <TableHead className="text-[var(--sa-text-muted)] text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {lista.map((r) => {
                   const dias = diasRestantes(r.data_vencimento);
                   return (
-                    <TableRow key={r.id} className="border-gray-800 hover:bg-gray-800/50">
+                    <TableRow key={r.id} className="border-[var(--sa-border)] hover:bg-[var(--sa-bg-hover)]/50">
                       <TableCell>
                         <div>
-                          <p className="font-medium text-white">{r.nome_fantasia}</p>
-                          <p className="text-xs text-gray-500">{r.email}</p>
-                          <p className="text-xs text-gray-500">{r.telefone}</p>
+                          <p className="font-medium text-[var(--sa-text-primary)]">{r.nome_fantasia}</p>
+                          <p className="text-xs text-[var(--sa-text-dimmed)]">{r.email}</p>
+                          <p className="text-xs text-[var(--sa-text-dimmed)]">{r.telefone}</p>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="border-gray-600 text-gray-300">
+                        <Badge variant="outline" className="border-[var(--sa-border-input)] text-[var(--sa-text-secondary)]">
                           {r.plano}
                         </Badge>
-                        <p className="mt-0.5 text-xs text-gray-500">
+                        <p className="mt-0.5 text-xs text-[var(--sa-text-dimmed)]">
                           R$ {r.valor_plano.toFixed(2)}/mês
                         </p>
                       </TableCell>
                       <TableCell>{statusBadge(r.status)}</TableCell>
                       <TableCell>
-                        <p className="text-sm text-gray-300">{formatDate(r.data_vencimento)}</p>
+                        <p className="text-sm text-[var(--sa-text-secondary)]">{formatDate(r.data_vencimento)}</p>
                         {dias !== null && (
                           <p className={cn(
                             "text-xs",
-                            dias < 0 ? "text-red-400 font-medium" : dias <= 7 ? "text-yellow-400" : "text-gray-500"
+                            dias < 0 ? "text-red-400 font-medium" : dias <= 7 ? "text-yellow-400" : "text-[var(--sa-text-dimmed)]"
                           )}>
                             {dias < 0
                               ? `Vencido há ${Math.abs(dias)} dias`
@@ -358,8 +358,8 @@ export default function GerenciarRestaurantes() {
                           </p>
                         )}
                       </TableCell>
-                      <TableCell className="text-gray-300">{r.total_pedidos}</TableCell>
-                      <TableCell className="text-gray-300">{r.total_motoboys}</TableCell>
+                      <TableCell className="text-[var(--sa-text-secondary)]">{r.total_pedidos}</TableCell>
+                      <TableCell className="text-[var(--sa-text-secondary)]">{r.total_motoboys}</TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
                           <Button
@@ -373,7 +373,7 @@ export default function GerenciarRestaurantes() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="text-gray-400 hover:text-white"
+                            className="text-[var(--sa-text-muted)] hover:text-[var(--sa-text-primary)]"
                             onClick={() => openEdit(r)}
                           >
                             <Edit className="h-4 w-4" />
@@ -433,40 +433,40 @@ export default function GerenciarRestaurantes() {
 
       {/* Modal Editar */}
       <Dialog open={!!editModal} onOpenChange={(open) => !open && setEditModal(null)}>
-        <DialogContent className="border-gray-800 bg-gray-900 text-white sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)] text-white sm:max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar Restaurante</DialogTitle>
             {editModal && (
-              <p className="text-xs text-gray-500">Código: {editModal.codigo_acesso}</p>
+              <p className="text-xs text-[var(--sa-text-dimmed)]">Código: {editModal.codigo_acesso}</p>
             )}
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Nome Fantasia</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Nome Fantasia</label>
                 <Input
                   value={editForm.nome_fantasia || ""}
                   onChange={(e) => setEditForm({ ...editForm, nome_fantasia: e.target.value })}
-                  className="border-gray-700 bg-gray-800 text-white"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Razão Social</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Razão Social</label>
                 <Input
                   value={editForm.razao_social || ""}
                   onChange={(e) => setEditForm({ ...editForm, razao_social: e.target.value })}
-                  className="border-gray-700 bg-gray-800 text-white"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
                   placeholder="Opcional"
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">CPF/CNPJ</label>
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">CPF/CNPJ</label>
               <Input
                 value={editForm.cnpj || ""}
                 onChange={(e) => setEditForm({ ...editForm, cnpj: e.target.value })}
                 className={cn(
-                  "border-gray-700 bg-gray-800 text-white",
+                  "border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]",
                   editForm.cnpj && editForm.cnpj.replace(/\D/g, "").length >= 11 && !validarCpfCnpj(editForm.cnpj)
                     ? "border-red-500 focus-visible:ring-red-500"
                     : editForm.cnpj && validarCpfCnpj(editForm.cnpj)
@@ -483,56 +483,56 @@ export default function GerenciarRestaurantes() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Email</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Email</label>
                 <Input
                   type="email"
                   value={editForm.email || ""}
                   onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                  className="border-gray-700 bg-gray-800 text-white"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Telefone</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Telefone</label>
                 <Input
                   value={editForm.telefone || ""}
                   onChange={(e) => setEditForm({ ...editForm, telefone: e.target.value })}
-                  className="border-gray-700 bg-gray-800 text-white"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Endereço</label>
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Endereço</label>
               <Input
                 value={editForm.endereco_completo || ""}
                 onChange={(e) => setEditForm({ ...editForm, endereco_completo: e.target.value })}
-                className="border-gray-700 bg-gray-800 text-white"
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
                 placeholder="Rua, número, bairro"
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Cidade</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Cidade</label>
                 <Input
                   value={editForm.cidade || ""}
                   onChange={(e) => setEditForm({ ...editForm, cidade: e.target.value })}
-                  className="border-gray-700 bg-gray-800 text-white"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-300">Estado</label>
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Estado</label>
                 <Input
                   value={editForm.estado || ""}
                   onChange={(e) => setEditForm({ ...editForm, estado: e.target.value })}
-                  className="border-gray-700 bg-gray-800 text-white"
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
                   placeholder="UF"
                   maxLength={2}
                 />
               </div>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Plano</label>
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Plano</label>
               <Select value={editForm.plano} onValueChange={(v) => setEditForm({ ...editForm, plano: v })}>
-                <SelectTrigger className="border-gray-700 bg-gray-800 text-white">
+                <SelectTrigger className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -545,11 +545,11 @@ export default function GerenciarRestaurantes() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditModal(null)} className="text-gray-400">
+            <Button variant="ghost" onClick={() => setEditModal(null)} className="text-[var(--sa-text-muted)]">
               Cancelar
             </Button>
             <Button
-              className="bg-amber-600 hover:bg-amber-700 text-white"
+              className="bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)] text-white"
               onClick={handleSaveEdit}
               disabled={atualizarRest.isPending}
             >
@@ -564,7 +564,7 @@ export default function GerenciarRestaurantes() {
       </Dialog>
       {/* Modal Domínios */}
       <Dialog open={!!dominioModal} onOpenChange={(open) => !open && setDominioModal(null)}>
-        <DialogContent className="border-gray-800 bg-gray-900 text-white sm:max-w-lg">
+        <DialogContent className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)] text-white sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Globe className="h-5 w-5 text-purple-400" />
@@ -574,13 +574,13 @@ export default function GerenciarRestaurantes() {
           <div className="space-y-5">
             {/* Adicionar novo domínio */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300">Adicionar novo domínio</label>
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Adicionar novo domínio</label>
               <div className="flex gap-2">
                 <Input
                   placeholder="www.meurestaurante.com.br"
                   value={novoDominio}
                   onChange={(e) => setNovoDominio(e.target.value)}
-                  className="flex-1 border-gray-700 bg-gray-800 text-white placeholder:text-gray-500"
+                  className="flex-1 border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)] placeholder:text-[var(--sa-text-dimmed)]"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && novoDominio.trim()) {
                       criarDom.mutate(
@@ -627,21 +627,21 @@ export default function GerenciarRestaurantes() {
 
             {/* Lista de domínios */}
             <div className="space-y-2">
-              <h4 className="text-sm font-medium text-gray-400">Domínios cadastrados</h4>
+              <h4 className="text-sm font-medium text-[var(--sa-text-muted)]">Domínios cadastrados</h4>
               {dominiosLoading ? (
                 <div className="flex h-16 items-center justify-center">
                   <Spinner className="h-5 w-5 text-purple-400" />
                 </div>
               ) : !dominios || dominios.length === 0 ? (
-                <p className="rounded-lg border border-gray-800 bg-gray-800/50 p-4 text-center text-sm text-gray-500">
+                <p className="rounded-lg border border-[var(--sa-border)] bg-[var(--sa-bg-hover)]/50 p-4 text-center text-sm text-[var(--sa-text-dimmed)]">
                   Nenhum domínio cadastrado
                 </p>
               ) : (
                 <div className="space-y-3">
                   {dominios.map((d: { id: number; dominio: string; verificado: boolean; ssl_ativo: boolean; criado_em: string | null }) => (
-                    <div key={d.id} className="rounded-lg border border-gray-800 bg-gray-800/50 p-3 space-y-2">
+                    <div key={d.id} className="rounded-lg border border-[var(--sa-border)] bg-[var(--sa-bg-hover)]/50 p-3 space-y-2">
                       <div className="flex items-center justify-between">
-                        <span className="font-medium text-white">{d.dominio}</span>
+                        <span className="font-medium text-[var(--sa-text-primary)]">{d.dominio}</span>
                         <div className="flex items-center gap-1">
                           {d.verificado ? (
                             <span className="inline-flex items-center gap-1 rounded-full bg-green-500/20 px-2 py-0.5 text-xs text-green-400">
@@ -663,7 +663,7 @@ export default function GerenciarRestaurantes() {
                         <Button
                           variant="outline"
                           size="sm"
-                          className="border-gray-700 text-gray-300 hover:text-white hover:bg-gray-700"
+                          className="border-[var(--sa-border-input)] text-[var(--sa-text-secondary)] hover:text-[var(--sa-text-primary)] hover:bg-[var(--sa-bg-hover)]"
                           disabled={verificarDNS.isPending}
                           onClick={() => {
                             verificarDNS.mutate(d.id, {
@@ -700,18 +700,18 @@ export default function GerenciarRestaurantes() {
             </div>
 
             {/* Instruções DNS */}
-            <div className="rounded-lg border border-gray-700 bg-gray-800/70 p-4 space-y-2">
-              <h4 className="text-sm font-medium text-gray-300">Instruções para o cliente</h4>
-              <p className="text-xs text-gray-400">No painel DNS do domínio, criar o seguinte registro:</p>
+            <div className="rounded-lg border border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)]/70 p-4 space-y-2">
+              <h4 className="text-sm font-medium text-[var(--sa-text-secondary)]">Instruções para o cliente</h4>
+              <p className="text-xs text-[var(--sa-text-muted)]">No painel DNS do domínio, criar o seguinte registro:</p>
               <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-                <span className="text-gray-500">Tipo:</span>
+                <span className="text-[var(--sa-text-dimmed)]">Tipo:</span>
                 <span className="font-mono text-amber-400">CNAME</span>
-                <span className="text-gray-500">Nome:</span>
+                <span className="text-[var(--sa-text-dimmed)]">Nome:</span>
                 <span className="font-mono text-amber-400">www</span>
-                <span className="text-gray-500">Valor:</span>
+                <span className="text-[var(--sa-text-dimmed)]">Valor:</span>
                 <span className="font-mono text-amber-400">superfood-api.fly.dev</span>
               </div>
-              <p className="text-xs text-gray-500 mt-1">Aguardar até 48h para propagação do DNS.</p>
+              <p className="text-xs text-[var(--sa-text-dimmed)] mt-1">Aguardar até 48h para propagação do DNS.</p>
             </div>
           </div>
         </DialogContent>

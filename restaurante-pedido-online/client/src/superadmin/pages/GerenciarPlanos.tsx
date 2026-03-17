@@ -91,22 +91,22 @@ export default function GerenciarPlanos() {
   return (
     <SuperAdminLayout>
       <div className="space-y-6">
-        <h2 className="text-2xl font-bold text-white">Gerenciar Planos</h2>
+        <h2 className="text-2xl font-bold text-[var(--sa-text-primary)]">Gerenciar Planos</h2>
 
         {/* Resumo */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-            <p className="text-sm text-gray-400">Total Assinantes</p>
-            <p className="mt-1 text-2xl font-bold text-white">{totalAssinantes}</p>
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-5">
+            <p className="text-sm text-[var(--sa-text-muted)]">Total Assinantes</p>
+            <p className="mt-1 text-2xl font-bold text-[var(--sa-text-primary)]">{totalAssinantes}</p>
           </div>
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-            <p className="text-sm text-gray-400">Receita Mensal</p>
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-5">
+            <p className="text-sm text-[var(--sa-text-muted)]">Receita Mensal</p>
             <p className="mt-1 text-2xl font-bold text-green-400">
               {receitaTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
             </p>
           </div>
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-5">
-            <p className="text-sm text-gray-400">Receita Anual Projetada</p>
+          <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-5">
+            <p className="text-sm text-[var(--sa-text-muted)]">Receita Anual Projetada</p>
             <p className="mt-1 text-2xl font-bold text-amber-400">
               {(receitaTotal * 12).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
             </p>
@@ -123,40 +123,40 @@ export default function GerenciarPlanos() {
             {lista.map((plano) => (
               <div
                 key={plano.nome}
-                className={`rounded-xl border p-6 transition-all ${CORES_PLANOS[plano.nome] || "border-gray-800 bg-gray-900"}`}
+                className={`rounded-xl border p-6 transition-all ${CORES_PLANOS[plano.nome] || "border-[var(--sa-border)] bg-[var(--sa-bg-surface)]"}`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={`h-3 w-3 rounded-full ${CORES_BADGE[plano.nome] || "bg-gray-500"}`} />
-                    <h3 className="text-lg font-bold text-white">{plano.nome}</h3>
+                    <h3 className="text-lg font-bold text-[var(--sa-text-primary)]">{plano.nome}</h3>
                   </div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-gray-400 hover:text-white"
+                    className="text-[var(--sa-text-muted)] hover:text-[var(--sa-text-primary)]"
                     onClick={() => openEdit(plano)}
                   >
                     <Edit className="h-4 w-4" />
                   </Button>
                 </div>
 
-                <p className="mt-3 text-3xl font-bold text-white">
+                <p className="mt-3 text-3xl font-bold text-[var(--sa-text-primary)]">
                   R$ {plano.valor.toFixed(2)}
-                  <span className="text-sm font-normal text-gray-400">/mês</span>
+                  <span className="text-sm font-normal text-[var(--sa-text-muted)]">/mês</span>
                 </p>
 
                 <div className="mt-4 space-y-2">
-                  <div className="flex items-center gap-2 text-sm text-gray-300">
-                    <Users className="h-4 w-4 text-gray-500" />
+                  <div className="flex items-center gap-2 text-sm text-[var(--sa-text-secondary)]">
+                    <Users className="h-4 w-4 text-[var(--sa-text-dimmed)]" />
                     <span>{plano.motoboys === 999 ? "Ilimitados" : `Até ${plano.motoboys}`} motoboys</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm text-gray-300">
-                    <CreditCard className="h-4 w-4 text-gray-500" />
+                  <div className="flex items-center gap-2 text-sm text-[var(--sa-text-secondary)]">
+                    <CreditCard className="h-4 w-4 text-[var(--sa-text-dimmed)]" />
                     <span>{plano.total_assinantes} assinante(s)</span>
                   </div>
                 </div>
 
-                <p className="mt-3 text-xs text-gray-500">{plano.descricao}</p>
+                <p className="mt-3 text-xs text-[var(--sa-text-dimmed)]">{plano.descricao}</p>
 
                 {plano.total_assinantes > 0 && (
                   <p className="mt-3 text-sm font-medium text-green-400">
@@ -171,13 +171,13 @@ export default function GerenciarPlanos() {
 
       {/* Modal Editar Plano */}
       <Dialog open={!!editPlano} onOpenChange={(open) => !open && setEditPlano(null)}>
-        <DialogContent className="border-gray-800 bg-gray-900 text-white sm:max-w-md">
+        <DialogContent className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)] text-[var(--sa-text-primary)] sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Editar Plano: {editPlano?.nome}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)] flex items-center gap-1.5">
                 Valor Mensal (R$)
                 <InfoTooltip text="Valor cobrado mensalmente do restaurante. Ao alterar, todos os restaurantes com este plano serão atualizados." />
               </label>
@@ -186,11 +186,11 @@ export default function GerenciarPlanos() {
                 step="0.01"
                 value={editForm.valor}
                 onChange={(e) => setEditForm({ ...editForm, valor: e.target.value })}
-                className="border-gray-700 bg-gray-800 text-white"
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)] flex items-center gap-1.5">
                 Limite de Motoboys
                 <InfoTooltip text="Quantidade máxima de motoboys ativos que o restaurante pode ter. 999 = ilimitados." />
               </label>
@@ -198,18 +198,18 @@ export default function GerenciarPlanos() {
                 type="number"
                 value={editForm.motoboys}
                 onChange={(e) => setEditForm({ ...editForm, motoboys: e.target.value })}
-                className="border-gray-700 bg-gray-800 text-white"
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-300 flex items-center gap-1.5">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)] flex items-center gap-1.5">
                 Descrição
                 <InfoTooltip text="Descrição exibida na seleção de plano ao criar novo restaurante." />
               </label>
               <Input
                 value={editForm.descricao}
                 onChange={(e) => setEditForm({ ...editForm, descricao: e.target.value })}
-                className="border-gray-700 bg-gray-800 text-white"
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
               />
             </div>
             <p className="text-xs text-yellow-400">
@@ -217,11 +217,11 @@ export default function GerenciarPlanos() {
             </p>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditPlano(null)} className="text-gray-400">
+            <Button variant="ghost" onClick={() => setEditPlano(null)} className="text-[var(--sa-text-muted)]">
               Cancelar
             </Button>
             <Button
-              className="bg-amber-600 hover:bg-amber-700 text-white"
+              className="bg-[var(--sa-accent)] hover:bg-[var(--sa-accent-hover)] text-[var(--sa-text-primary)]"
               onClick={handleSave}
               disabled={atualizarPlano.isPending}
             >

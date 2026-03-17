@@ -11,7 +11,7 @@ export default function SuperAdminPrivateRoute({ children }: Props) {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-gray-950">
+      <div className="flex h-screen items-center justify-center bg-[var(--sa-bg-base)]">
         <Spinner className="h-8 w-8 text-amber-500" />
       </div>
     );
