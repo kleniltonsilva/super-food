@@ -1179,9 +1179,9 @@ def _sentry_project(projeto: str):
 
 @router.get("/erros")
 def listar_erros_sentry(
-    projeto: str = Query("api", regex="^(api|frontend)$"),
-    periodo: str = Query("24h", regex="^(1h|24h|7d|30d)$"),
-    status_filtro: str = Query("todos", regex="^(todos|unresolved|resolved|ignored)$"),
+    projeto: str = Query("api", pattern="^(api|frontend)$"),
+    periodo: str = Query("24h", pattern="^(1h|24h|7d|30d)$"),
+    status_filtro: str = Query("todos", pattern="^(todos|unresolved|resolved|ignored)$"),
     current_admin=Depends(auth.get_current_admin),
 ):
     """Lista issues do Sentry com filtros de projeto, período e status."""
