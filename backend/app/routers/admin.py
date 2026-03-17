@@ -118,6 +118,7 @@ class RestauranteUpdateRequest(BaseModel):
     valor_plano: Optional[float] = None
     limite_motoboys: Optional[int] = None
     data_vencimento: Optional[datetime] = None
+    billing_status: Optional[str] = None  # manual, trial, active, overdue, suspended, canceled
 
 
 class RestauranteStatusUpdate(BaseModel):
@@ -451,6 +452,12 @@ def atualizar_restaurante(
             campos["cnpj"] = cnpj_limpo
         else:
             campos["cnpj"] = None
+
+    # Validar billing_status se mudou
+    if "billing_status" in campos and campos["billing_status"]:
+        validos = ("manual", "trial", "active", "overdue", "suspended", "canceled")
+        if campos["billing_status"] not in validos:
+            raise HTTPException(status_code=400, detail=f"billing_status deve ser um de: {', '.join(validos)}")
 
     for campo, valor in campos.items():
         setattr(restaurante, campo, valor)
