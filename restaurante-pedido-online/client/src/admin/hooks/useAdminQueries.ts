@@ -17,6 +17,7 @@ export const ADMIN_QUERY_KEYS = {
   solicitacoesMotoboys: ["admin", "motoboys", "solicitacoes"] as const,
   caixaAtual: ["admin", "caixa", "atual"] as const,
   historicoCaixa: ["admin", "caixa", "historico"] as const,
+  operadoresCaixa: ["admin", "caixa", "operadores"] as const,
   config: ["admin", "config"] as const,
   configSite: ["admin", "config", "site"] as const,
   bairros: ["admin", "bairros"] as const,
@@ -371,8 +372,12 @@ export function useCaixaAtual() {
 export function useAbrirCaixa() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (valor_inicial: number) => api.abrirCaixa(valor_inicial),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.caixaAtual }),
+    mutationFn: (payload: { valor_abertura: number; operador_nome: string; senha: string; criar_operador?: boolean }) =>
+      api.abrirCaixa(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.caixaAtual });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.operadoresCaixa });
+    },
   });
 }
 
@@ -387,7 +392,8 @@ export function useRegistrarMovimentacao() {
 export function useFecharCaixa() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (valor_contado: number) => api.fecharCaixa(valor_contado),
+    mutationFn: (payload: { valor_contado: number; operador_nome: string; senha: string }) =>
+      api.fecharCaixa(payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.caixaAtual });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.historicoCaixa });
@@ -400,6 +406,30 @@ export function useHistoricoCaixa(params?: Record<string, unknown>) {
     queryKey: [...ADMIN_QUERY_KEYS.historicoCaixa, params],
     queryFn: () => api.getHistoricoCaixa(params),
     staleTime: 60 * 1000,
+  });
+}
+
+export function useOperadoresCaixa() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.operadoresCaixa,
+    queryFn: api.getOperadoresCaixa,
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
+export function useCriarOperadorCaixa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { nome: string; senha: string }) => api.criarOperadorCaixa(payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.operadoresCaixa }),
+  });
+}
+
+export function useDeletarOperadorCaixa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, senha }: { id: number; senha: string }) => api.deletarOperadorCaixa(id, senha),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.operadoresCaixa }),
   });
 }
 

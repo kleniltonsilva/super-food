@@ -6,6 +6,7 @@ import {
   useRegistrarMovimentacao,
   useFecharCaixa,
   useHistoricoCaixa,
+  useOperadoresCaixa,
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,16 +37,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import {
   DollarSign,
   ArrowUpCircle,
   ArrowDownCircle,
@@ -56,6 +47,7 @@ import {
   CreditCard,
   Smartphone,
   Ticket,
+  User,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -74,31 +66,82 @@ const PAGAMENTO_LABELS: Record<string, { label: string; icon: React.ReactNode; c
   vale: { label: "Vale", icon: <Ticket className="h-5 w-5 text-orange-400" />, color: "bg-orange-500/10" },
 };
 
+const CRIAR_NOVO_VALUE = "__criar_novo__";
+
 export default function Caixa() {
   const { data: caixa, isLoading } = useCaixaAtual();
   const { data: historico } = useHistoricoCaixa();
+  const { data: operadores } = useOperadoresCaixa();
   const abrirCaixa = useAbrirCaixa();
   const registrarMov = useRegistrarMovimentacao();
   const fecharCaixa = useFecharCaixa();
 
+  // Abrir caixa
   const [showAbrir, setShowAbrir] = useState(false);
   const [valorAbertura, setValorAbertura] = useState("");
+  const [abrirOperador, setAbrirOperador] = useState("Gerente");
+  const [abrirSenha, setAbrirSenha] = useState("");
+  const [abrirNovoNome, setAbrirNovoNome] = useState("");
+  const [abrirNovoSenha, setAbrirNovoSenha] = useState("");
+
+  // Movimentação
   const [showMov, setShowMov] = useState(false);
   const [movTipo, setMovTipo] = useState("entrada");
   const [movValor, setMovValor] = useState("");
   const [movDesc, setMovDesc] = useState("");
+
+  // Fechar caixa
   const [showFechar, setShowFechar] = useState(false);
   const [contadoDinheiro, setContadoDinheiro] = useState("");
   const [contadoCartao, setContadoCartao] = useState("");
   const [contadoPix, setContadoPix] = useState("");
+  const [fecharOperador, setFecharOperador] = useState("Gerente");
+  const [fecharSenha, setFecharSenha] = useState("");
 
   const caixaAberto = caixa && caixa.id;
+  const isCriarNovo = abrirOperador === CRIAR_NOVO_VALUE;
+
+  const operadoresLista = (operadores as Array<{ id: number; nome: string }>) || [];
+
+  function resetAbrirDialog() {
+    setValorAbertura("");
+    setAbrirOperador("Gerente");
+    setAbrirSenha("");
+    setAbrirNovoNome("");
+    setAbrirNovoSenha("");
+  }
+
+  function resetFecharDialog() {
+    setContadoDinheiro("");
+    setContadoCartao("");
+    setContadoPix("");
+    setFecharOperador("Gerente");
+    setFecharSenha("");
+  }
 
   function handleAbrir() {
-    abrirCaixa.mutate(Number(valorAbertura) || 0, {
-      onSuccess: () => { toast.success("Caixa aberto!"); setValorAbertura(""); setShowAbrir(false); },
-      onError: (err: unknown) => toast.error(extractErrorMessage(err)),
-    });
+    if (isCriarNovo) {
+      const nome = abrirNovoNome.trim();
+      if (!nome) { toast.error("Informe o nome do operador"); return; }
+      if (nome.toLowerCase() === "gerente") { toast.error("'Gerente' é um nome reservado"); return; }
+      if (abrirNovoSenha.trim().length < 4) { toast.error("Senha deve ter no mínimo 4 caracteres"); return; }
+      abrirCaixa.mutate(
+        { valor_abertura: Number(valorAbertura) || 0, operador_nome: nome, senha: abrirNovoSenha, criar_operador: true },
+        {
+          onSuccess: () => { toast.success("Caixa aberto!"); resetAbrirDialog(); setShowAbrir(false); },
+          onError: (err: unknown) => toast.error(extractErrorMessage(err)),
+        }
+      );
+    } else {
+      if (!abrirSenha.trim()) { toast.error("Informe a senha"); return; }
+      abrirCaixa.mutate(
+        { valor_abertura: Number(valorAbertura) || 0, operador_nome: abrirOperador, senha: abrirSenha },
+        {
+          onSuccess: () => { toast.success("Caixa aberto!"); resetAbrirDialog(); setShowAbrir(false); },
+          onError: (err: unknown) => toast.error(extractErrorMessage(err)),
+        }
+      );
+    }
   }
 
   function handleMov() {
@@ -121,16 +164,18 @@ export default function Caixa() {
 
   function handleFechar() {
     if (totalContado <= 0) { toast.error("Informe os valores contados"); return; }
-    fecharCaixa.mutate(totalContado, {
-      onSuccess: (data) => {
-        toast.success(`Caixa fechado. Diferença: R$ ${data.diferenca?.toFixed(2)}`);
-        setShowFechar(false);
-        setContadoDinheiro("");
-        setContadoCartao("");
-        setContadoPix("");
-      },
-      onError: (err: unknown) => toast.error(extractErrorMessage(err)),
-    });
+    if (!fecharSenha.trim()) { toast.error("Informe a senha do operador"); return; }
+    fecharCaixa.mutate(
+      { valor_contado: totalContado, operador_nome: fecharOperador, senha: fecharSenha },
+      {
+        onSuccess: (data) => {
+          toast.success(`Caixa fechado. Diferença: R$ ${data.diferenca?.toFixed(2)}`);
+          setShowFechar(false);
+          resetFecharDialog();
+        },
+        onError: (err: unknown) => toast.error(extractErrorMessage(err)),
+      }
+    );
   }
 
   function formatDate(iso: string | null) {
@@ -173,6 +218,12 @@ export default function Caixa() {
             ) : (
               /* Caixa aberto */
               <div className="space-y-4">
+                {/* Info operador */}
+                <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+                  <User className="h-4 w-4" />
+                  <span>Aberto por: <strong className="text-[var(--text-primary)]">{caixa.operador_abertura}</strong></span>
+                </div>
+
                 {/* Métricas principais */}
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
@@ -335,6 +386,7 @@ export default function Caixa() {
                     <TableRow className="border-[var(--border-subtle)]">
                       <TableHead className="text-[var(--text-muted)]">Abertura</TableHead>
                       <TableHead className="text-[var(--text-muted)]">Fechamento</TableHead>
+                      <TableHead className="text-[var(--text-muted)]">Operador</TableHead>
                       <TableHead className="text-[var(--text-muted)]">Vendas</TableHead>
                       <TableHead className="text-[var(--text-muted)]">Dinheiro</TableHead>
                       <TableHead className="text-[var(--text-muted)]">Cartão</TableHead>
@@ -347,7 +399,7 @@ export default function Caixa() {
                   <TableBody>
                     {(historico || []).length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="py-8 text-center text-[var(--text-muted)]">
+                        <TableCell colSpan={10} className="py-8 text-center text-[var(--text-muted)]">
                           Sem histórico
                         </TableCell>
                       </TableRow>
@@ -359,6 +411,14 @@ export default function Caixa() {
                           </TableCell>
                           <TableCell className="text-sm text-[var(--text-secondary)]">
                             {formatDate(h.data_fechamento as string)}
+                          </TableCell>
+                          <TableCell className="text-sm text-[var(--text-primary)]">
+                            <div className="flex flex-col">
+                              <span>{(h.operador_abertura as string) || "—"}</span>
+                              {(h.operador_fechamento as string) && (h.operador_fechamento as string) !== (h.operador_abertura as string) && (
+                                <span className="text-xs text-[var(--text-muted)]">Fechou: {h.operador_fechamento as string}</span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-sm font-medium text-[var(--text-primary)]">
                             R$ {Number(h.total_vendas || 0).toFixed(2)}
@@ -452,12 +512,72 @@ export default function Caixa() {
       </Dialog>
 
       {/* Dialog abrir caixa */}
-      <Dialog open={showAbrir} onOpenChange={setShowAbrir}>
-        <DialogContent>
+      <Dialog open={showAbrir} onOpenChange={(open) => { setShowAbrir(open); if (!open) resetAbrirDialog(); }}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Abrir Caixa</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* Operador */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">Operador</label>
+              <Select value={abrirOperador} onValueChange={(v) => { setAbrirOperador(v); setAbrirSenha(""); }}>
+                <SelectTrigger className="dark-input">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Gerente">Gerente</SelectItem>
+                  {operadoresLista.map((op) => (
+                    <SelectItem key={op.id} value={op.nome}>{op.nome}</SelectItem>
+                  ))}
+                  <SelectItem value={CRIAR_NOVO_VALUE}>
+                    <span className="flex items-center gap-1.5">
+                      <Plus className="h-3.5 w-3.5" /> Criar novo operador
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Se criar novo operador */}
+            {isCriarNovo ? (
+              <>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-[var(--text-secondary)]">Nome do operador</label>
+                  <Input
+                    value={abrirNovoNome}
+                    onChange={(e) => setAbrirNovoNome(e.target.value)}
+                    className="dark-input"
+                    placeholder="Ex: Maria"
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-[var(--text-secondary)]">Senha do operador</label>
+                  <Input
+                    type="password"
+                    value={abrirNovoSenha}
+                    onChange={(e) => setAbrirNovoSenha(e.target.value)}
+                    className="dark-input"
+                    placeholder="Mínimo 4 caracteres"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-[var(--text-secondary)]">Senha</label>
+                <Input
+                  type="password"
+                  value={abrirSenha}
+                  onChange={(e) => setAbrirSenha(e.target.value)}
+                  className="dark-input"
+                  placeholder={abrirOperador === "Gerente" ? "Senha do restaurante" : "Senha do operador"}
+                  autoFocus
+                />
+              </div>
+            )}
+
+            {/* Valor abertura */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-[var(--text-secondary)]">Troco / Fundo de Caixa (R$)</label>
               <Input
@@ -467,13 +587,12 @@ export default function Caixa() {
                 onChange={(e) => setValorAbertura(e.target.value)}
                 className="dark-input"
                 placeholder="0.00"
-                autoFocus
               />
               <p className="text-xs text-[var(--text-muted)]">Quanto de dinheiro tem no caixa para troco?</p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAbrir(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowAbrir(false); resetAbrirDialog(); }}>Cancelar</Button>
             <Button
               className="bg-green-600 hover:bg-green-700"
               onClick={handleAbrir}
@@ -486,12 +605,39 @@ export default function Caixa() {
       </Dialog>
 
       {/* Dialog fechar caixa */}
-      <Dialog open={showFechar} onOpenChange={setShowFechar}>
+      <Dialog open={showFechar} onOpenChange={(open) => { setShowFechar(open); if (!open) resetFecharDialog(); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Fechar Caixa</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
+            {/* Operador + Senha */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">Operador</label>
+              <Select value={fecharOperador} onValueChange={(v) => { setFecharOperador(v); setFecharSenha(""); }}>
+                <SelectTrigger className="dark-input">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Gerente">Gerente</SelectItem>
+                  {operadoresLista.map((op) => (
+                    <SelectItem key={op.id} value={op.nome}>{op.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-[var(--text-secondary)]">Senha</label>
+              <Input
+                type="password"
+                value={fecharSenha}
+                onChange={(e) => setFecharSenha(e.target.value)}
+                className="dark-input"
+                placeholder={fecharOperador === "Gerente" ? "Senha do restaurante" : "Senha do operador"}
+              />
+            </div>
+
+            {/* Valor esperado */}
             <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-3">
               <p className="text-sm text-[var(--text-muted)]">Valor esperado pelo sistema</p>
               <p className="text-xl font-bold text-[var(--text-primary)]">R$ {valorEsperado.toFixed(2)}</p>
@@ -518,7 +664,6 @@ export default function Caixa() {
                     onChange={(e) => setContadoDinheiro(e.target.value)}
                     className="dark-input mt-0.5"
                     placeholder="0.00"
-                    autoFocus
                   />
                 </div>
               </div>
@@ -570,7 +715,7 @@ export default function Caixa() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowFechar(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setShowFechar(false); resetFecharDialog(); }}>Cancelar</Button>
             <Button
               className="bg-red-600 hover:bg-red-700"
               onClick={handleFechar}

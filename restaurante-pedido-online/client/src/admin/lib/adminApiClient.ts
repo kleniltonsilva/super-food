@@ -256,8 +256,13 @@ export async function getCaixaAtual() {
   return data;
 }
 
-export async function abrirCaixa(valor_inicial: number) {
-  const { data } = await adminApi.post("/painel/caixa/abrir", { valor_abertura: valor_inicial });
+export async function abrirCaixa(payload: {
+  valor_abertura: number;
+  operador_nome: string;
+  senha: string;
+  criar_operador?: boolean;
+}) {
+  const { data } = await adminApi.post("/painel/caixa/abrir", payload);
   return data;
 }
 
@@ -270,13 +275,32 @@ export async function registrarMovimentacao(payload: {
   return data;
 }
 
-export async function fecharCaixa(valor_contado: number) {
-  const { data } = await adminApi.post("/painel/caixa/fechar", { valor_contado });
+export async function fecharCaixa(payload: {
+  valor_contado: number;
+  operador_nome: string;
+  senha: string;
+}) {
+  const { data } = await adminApi.post("/painel/caixa/fechar", payload);
   return data;
 }
 
 export async function getHistoricoCaixa(params?: Record<string, unknown>) {
   const { data } = await adminApi.get("/painel/caixa/historico", { params });
+  return data;
+}
+
+export async function getOperadoresCaixa() {
+  const { data } = await adminApi.get("/painel/caixa/operadores");
+  return data;
+}
+
+export async function criarOperadorCaixa(payload: { nome: string; senha: string }) {
+  const { data } = await adminApi.post("/painel/caixa/operadores", payload);
+  return data;
+}
+
+export async function deletarOperadorCaixa(id: number, senha: string) {
+  const { data } = await adminApi.delete(`/painel/caixa/operadores/${id}`, { params: { senha } });
   return data;
 }
 

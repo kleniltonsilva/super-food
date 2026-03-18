@@ -1685,6 +1685,9 @@ def caixa_atual(
 
 class AbrirCaixaRequest(BaseModel):
     valor_abertura: float = 0.0
+    operador_nome: str = "Gerente"
+    senha: str = ""
+    criar_operador: bool = False
 
 
 @router.post("/caixa/abrir")
@@ -1699,10 +1702,48 @@ def abrir_caixa(
     if existente:
         raise HTTPException(400, "Já existe um caixa aberto")
 
+    nome_operador = dados.operador_nome.strip()
+    if not nome_operador:
+        raise HTTPException(400, "Nome do operador é obrigatório")
+    if not dados.senha.strip():
+        raise HTTPException(400, "Senha é obrigatória")
+
+    # Validar operador
+    if nome_operador.lower() == "gerente":
+        if not rest.verificar_senha(dados.senha):
+            raise HTTPException(403, "Senha do gerente incorreta")
+        nome_operador = "Gerente"
+    elif dados.criar_operador:
+        # Criar novo operador inline
+        if len(dados.senha.strip()) < 4:
+            raise HTTPException(400, "Senha do operador deve ter no mínimo 4 caracteres")
+        existente_op = db.query(models.OperadorCaixa).filter(
+            models.OperadorCaixa.restaurante_id == rest.id,
+            models.OperadorCaixa.nome == nome_operador,
+            models.OperadorCaixa.ativo == True,
+        ).first()
+        if existente_op:
+            raise HTTPException(400, f"Já existe um operador com o nome '{nome_operador}'")
+        novo_op = models.OperadorCaixa(restaurante_id=rest.id, nome=nome_operador)
+        novo_op.set_senha(dados.senha)
+        db.add(novo_op)
+        db.flush()
+    else:
+        # Validar operador existente
+        operador = db.query(models.OperadorCaixa).filter(
+            models.OperadorCaixa.restaurante_id == rest.id,
+            models.OperadorCaixa.nome == nome_operador,
+            models.OperadorCaixa.ativo == True,
+        ).first()
+        if not operador:
+            raise HTTPException(404, f"Operador '{nome_operador}' não encontrado")
+        if not operador.verificar_senha(dados.senha):
+            raise HTTPException(403, "Senha do operador incorreta")
+
     caixa = models.Caixa(
         restaurante_id=rest.id,
         data_abertura=datetime.utcnow(),
-        operador_abertura=rest.nome,
+        operador_abertura=nome_operador,
         valor_abertura=dados.valor_abertura
     )
     db.add(caixa)
@@ -1746,6 +1787,8 @@ def registrar_movimentacao(
 
 class FecharCaixaRequest(BaseModel):
     valor_contado: float
+    operador_nome: str = "Gerente"
+    senha: str = ""
 
 
 @router.post("/caixa/fechar")
@@ -1760,12 +1803,32 @@ def fechar_caixa(
     if not caixa:
         raise HTTPException(400, "Nenhum caixa aberto")
 
+    # Validar operador
+    nome_operador = dados.operador_nome.strip()
+    if not nome_operador or not dados.senha.strip():
+        raise HTTPException(400, "Operador e senha são obrigatórios")
+
+    if nome_operador.lower() == "gerente":
+        if not rest.verificar_senha(dados.senha):
+            raise HTTPException(403, "Senha do gerente incorreta")
+        nome_operador = "Gerente"
+    else:
+        operador = db.query(models.OperadorCaixa).filter(
+            models.OperadorCaixa.restaurante_id == rest.id,
+            models.OperadorCaixa.nome == nome_operador,
+            models.OperadorCaixa.ativo == True,
+        ).first()
+        if not operador:
+            raise HTTPException(404, f"Operador '{nome_operador}' não encontrado")
+        if not operador.verificar_senha(dados.senha):
+            raise HTTPException(403, "Senha do operador incorreta")
+
     valor_esperado = (caixa.valor_abertura or 0) + (caixa.total_vendas or 0) - (caixa.valor_retiradas or 0)
     diferenca = dados.valor_contado - valor_esperado
 
     caixa.status = 'fechado'
     caixa.data_fechamento = datetime.utcnow()
-    caixa.operador_fechamento = rest.nome
+    caixa.operador_fechamento = nome_operador
     caixa.valor_contado = dados.valor_contado
     caixa.diferenca = round(diferenca, 2)
     db.commit()
@@ -1786,6 +1849,7 @@ def historico_caixa(
         "id": c.id, "data_abertura": c.data_abertura.isoformat(),
         "data_fechamento": c.data_fechamento.isoformat() if c.data_fechamento else None,
         "operador_abertura": c.operador_abertura,
+        "operador_fechamento": c.operador_fechamento,
         "valor_abertura": c.valor_abertura, "total_vendas": c.total_vendas,
         "valor_retiradas": c.valor_retiradas,
         "total_dinheiro": c.total_dinheiro or 0,
@@ -1794,6 +1858,78 @@ def historico_caixa(
         "total_vale": c.total_vale or 0,
         "valor_contado": c.valor_contado, "diferenca": c.diferenca,
     } for c in caixas]
+
+
+# ---- Operadores de Caixa ----
+
+@router.get("/caixa/operadores")
+def listar_operadores_caixa(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    ops = db.query(models.OperadorCaixa).filter(
+        models.OperadorCaixa.restaurante_id == rest.id,
+        models.OperadorCaixa.ativo == True,
+    ).order_by(models.OperadorCaixa.nome).all()
+    return [{"id": o.id, "nome": o.nome, "criado_em": o.criado_em.isoformat() if o.criado_em else None} for o in ops]
+
+
+class CriarOperadorCaixaRequest(BaseModel):
+    nome: str
+    senha: str
+
+
+@router.post("/caixa/operadores")
+def criar_operador_caixa(
+    dados: CriarOperadorCaixaRequest,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    nome = dados.nome.strip()
+    if not nome:
+        raise HTTPException(400, "Nome é obrigatório")
+    if nome.lower() == "gerente":
+        raise HTTPException(400, "'Gerente' é um nome reservado")
+    if len(dados.senha.strip()) < 4:
+        raise HTTPException(400, "Senha deve ter no mínimo 4 caracteres")
+
+    existente = db.query(models.OperadorCaixa).filter(
+        models.OperadorCaixa.restaurante_id == rest.id,
+        models.OperadorCaixa.nome == nome,
+        models.OperadorCaixa.ativo == True,
+    ).first()
+    if existente:
+        raise HTTPException(400, f"Já existe um operador com o nome '{nome}'")
+
+    op = models.OperadorCaixa(restaurante_id=rest.id, nome=nome)
+    op.set_senha(dados.senha)
+    db.add(op)
+    db.commit()
+    db.refresh(op)
+    return {"id": op.id, "nome": op.nome}
+
+
+@router.delete("/caixa/operadores/{operador_id}")
+def deletar_operador_caixa(
+    operador_id: int,
+    senha: str = Query(..., min_length=1),
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    if not rest.verificar_senha(senha):
+        raise HTTPException(403, "Senha do gerente incorreta")
+
+    op = db.query(models.OperadorCaixa).filter(
+        models.OperadorCaixa.id == operador_id,
+        models.OperadorCaixa.restaurante_id == rest.id,
+        models.OperadorCaixa.ativo == True,
+    ).first()
+    if not op:
+        raise HTTPException(404, "Operador não encontrado")
+
+    op.ativo = False
+    db.commit()
+    return {"mensagem": f"Operador '{op.nome}' desativado"}
 
 
 # ============================================================

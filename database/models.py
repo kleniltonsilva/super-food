@@ -78,6 +78,7 @@ class Restaurante(Base):
     clientes = relationship("Cliente", back_populates="restaurante", cascade="all, delete-orphan")
     carrinhos = relationship("Carrinho", back_populates="restaurante", cascade="all, delete-orphan")
     caixas = relationship("Caixa", back_populates="restaurante", cascade="all, delete-orphan")
+    operadores_caixa = relationship("OperadorCaixa", back_populates="restaurante", cascade="all, delete-orphan")
     notificacoes = relationship("Notificacao", back_populates="restaurante", cascade="all, delete-orphan")
     solicitacoes_motoboy = relationship("MotoboySolicitacao", back_populates="restaurante", cascade="all, delete-orphan")
     rotas_otimizadas = relationship("RotaOtimizada", back_populates="restaurante", cascade="all, delete-orphan")
@@ -675,6 +676,33 @@ class Caixa(Base):
         Index('idx_caixa_restaurante_status', 'restaurante_id', 'status'),
         Index('idx_caixa_restaurante_data', 'restaurante_id', 'data_abertura'),
     )
+
+# ==================== OPERADORES DE CAIXA ====================
+class OperadorCaixa(Base):
+    """Operadores de caixa por restaurante (exceto Gerente que usa senha do restaurante)"""
+    __tablename__ = "operadores_caixa"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    nome = Column(String(100), nullable=False)
+    senha_hash = Column(String(256), nullable=False)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante", back_populates="operadores_caixa")
+    __table_args__ = (
+        UniqueConstraint('restaurante_id', 'nome', name='uq_operador_nome_restaurante'),
+        Index('idx_operador_caixa_restaurante', 'restaurante_id', 'ativo'),
+    )
+
+    def set_senha(self, senha: str):
+        """Gera hash SHA256 da senha. Aplica strip() para ignorar espaços acidentais."""
+        self.senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
+
+    def verificar_senha(self, senha: str) -> bool:
+        """Verifica se a senha está correta. Aplica strip() para consistência com set_senha."""
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
+        return self.senha_hash == senha_hash
+
 
 # ==================== MOVIMENTAÇÕES CAIXA ====================
 class MovimentacaoCaixa(Base):
