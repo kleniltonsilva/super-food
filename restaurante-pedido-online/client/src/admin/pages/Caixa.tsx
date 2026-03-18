@@ -164,7 +164,6 @@ export default function Caixa() {
 
   function handleFechar() {
     if (totalContado <= 0) { toast.error("Informe os valores contados"); return; }
-    if (!fecharSenha.trim()) { toast.error("Informe a senha do operador"); return; }
     fecharCaixa.mutate(
       { valor_contado: totalContado, operador_nome: fecharOperador, senha: fecharSenha },
       {

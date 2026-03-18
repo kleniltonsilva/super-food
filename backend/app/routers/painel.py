@@ -1803,25 +1803,25 @@ def fechar_caixa(
     if not caixa:
         raise HTTPException(400, "Nenhum caixa aberto")
 
-    # Validar operador
-    nome_operador = dados.operador_nome.strip()
-    if not nome_operador or not dados.senha.strip():
-        raise HTTPException(400, "Operador e senha são obrigatórios")
+    # Validar operador (senha opcional para caixas abertos antes da atualização)
+    nome_operador = dados.operador_nome.strip() or "Gerente"
+    senha = dados.senha.strip()
 
-    if nome_operador.lower() == "gerente":
-        if not rest.verificar_senha(dados.senha):
-            raise HTTPException(403, "Senha do gerente incorreta")
-        nome_operador = "Gerente"
-    else:
-        operador = db.query(models.OperadorCaixa).filter(
-            models.OperadorCaixa.restaurante_id == rest.id,
-            models.OperadorCaixa.nome == nome_operador,
-            models.OperadorCaixa.ativo == True,
-        ).first()
-        if not operador:
-            raise HTTPException(404, f"Operador '{nome_operador}' não encontrado")
-        if not operador.verificar_senha(dados.senha):
-            raise HTTPException(403, "Senha do operador incorreta")
+    if senha:
+        if nome_operador.lower() == "gerente":
+            if not rest.verificar_senha(senha):
+                raise HTTPException(403, "Senha do gerente incorreta")
+            nome_operador = "Gerente"
+        else:
+            operador = db.query(models.OperadorCaixa).filter(
+                models.OperadorCaixa.restaurante_id == rest.id,
+                models.OperadorCaixa.nome == nome_operador,
+                models.OperadorCaixa.ativo == True,
+            ).first()
+            if not operador:
+                raise HTTPException(404, f"Operador '{nome_operador}' não encontrado")
+            if not operador.verificar_senha(senha):
+                raise HTTPException(403, "Senha do operador incorreta")
 
     valor_esperado = (caixa.valor_abertura or 0) + (caixa.total_vendas or 0) - (caixa.valor_retiradas or 0)
     diferenca = dados.valor_contado - valor_esperado
