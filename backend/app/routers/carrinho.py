@@ -570,6 +570,30 @@ async def finalizar_carrinho(
                 "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
             }, pedido.restaurante_id)
 
+    # ── Pix Online: se restaurante aderiu e forma_pagamento é PIX, criar cobrança ──
+    pix_config = db.query(models.PixConfig).filter(
+        models.PixConfig.restaurante_id == pedido.restaurante_id,
+        models.PixConfig.ativo == True,
+    ).first()
+
+    if pix_config and finalizacao.forma_pagamento and finalizacao.forma_pagamento.upper() == "PIX":
+        try:
+            from ..pix.pix_service import criar_cobranca_pedido
+            pix_data = await criar_cobranca_pedido(pedido.id, db)
+            return {
+                "pedido_id": pedido.id,
+                "comanda": pedido.comanda,
+                "status": pedido.status,
+                "mensagem": "Pedido realizado com sucesso!",
+                "pix_online": True,
+                "pix_qr_code": pix_data.get("qr_code_image", ""),
+                "pix_br_code": pix_data.get("br_code", ""),
+                "pix_expira_em": pix_data.get("expira_em", ""),
+            }
+        except Exception as e:
+            import logging
+            logging.getLogger("superfood.pix").warning(f"Erro ao criar cobrança Pix para pedido {pedido.id}: {e}")
+
     return {
         "pedido_id": pedido.id,
         "comanda": pedido.comanda,

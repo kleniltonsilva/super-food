@@ -36,6 +36,7 @@ import {
   getPontosFidelidade,
   getPremiosFidelidade,
   resgatarPremio,
+  getPixStatusPedido,
 } from "@/lib/apiClient";
 
 // =============================================================================
@@ -56,6 +57,7 @@ export const QUERY_KEYS = {
   premiosFidelidade: ["premiosFidelidade"] as const,
   produtoDetalhe: (id: number) => ["produtoDetalhe", id] as const,
   saboresDisponiveis: (id: number) => ["saboresDisponiveis", id] as const,
+  pixStatus: (pedidoId: number) => ["pixStatus", pedidoId] as const,
 } as const;
 
 // =============================================================================
@@ -353,5 +355,19 @@ export function useResgatarPremio() {
       qc.invalidateQueries({ queryKey: QUERY_KEYS.pontosFidelidade(variables.clienteId) });
       qc.invalidateQueries({ queryKey: QUERY_KEYS.premiosFidelidade });
     },
+  });
+}
+
+/**
+ * Polling do status de pagamento Pix.
+ * refetchInterval: 3s quando ativo, para detectar pagamento rápido.
+ */
+export function usePixStatusPedido(pedidoId: number | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.pixStatus(pedidoId || 0),
+    queryFn: () => getPixStatusPedido(pedidoId!),
+    enabled: !!pedidoId,
+    refetchInterval: 3000,
+    staleTime: 0,
   });
 }

@@ -581,6 +581,102 @@ export async function disconnectMarketplace(marketplace: string) {
   return data;
 }
 
+// ==================== KDS / COZINHA DIGITAL ====================
+
+export async function getCozinheiros() {
+  const { data } = await adminApi.get("/painel/cozinha/cozinheiros");
+  return data;
+}
+
+export async function criarCozinheiro(payload: {
+  nome: string;
+  login: string;
+  senha: string;
+  modo: string;
+  avatar_emoji?: string;
+  produto_ids?: number[];
+}) {
+  const { data } = await adminApi.post("/painel/cozinha/cozinheiros", payload);
+  return data;
+}
+
+export async function atualizarCozinheiro(
+  id: number,
+  payload: {
+    nome?: string;
+    login?: string;
+    senha?: string;
+    modo?: string;
+    avatar_emoji?: string;
+    produto_ids?: number[];
+  }
+) {
+  const { data } = await adminApi.put(`/painel/cozinha/cozinheiros/${id}`, payload);
+  return data;
+}
+
+export async function deletarCozinheiro(id: number) {
+  const { data } = await adminApi.delete(`/painel/cozinha/cozinheiros/${id}`);
+  return data;
+}
+
+export async function getConfigCozinha() {
+  const { data } = await adminApi.get("/painel/cozinha/config");
+  return data;
+}
+
+export async function atualizarConfigCozinha(payload: {
+  kds_ativo?: boolean;
+  tempo_alerta_min?: number;
+  tempo_critico_min?: number;
+  som_novo_pedido?: boolean;
+}) {
+  const { data } = await adminApi.put("/painel/cozinha/config", payload);
+  return data;
+}
+
+export async function getDashboardCozinha() {
+  const { data } = await adminApi.get("/painel/cozinha/dashboard");
+  return data;
+}
+
+// ==================== PIX ONLINE ====================
+
+export async function getPixConfig() {
+  const { data } = await adminApi.get("/painel/pix/status");
+  return data;
+}
+
+export async function ativarPix(payload: { pix_chave: string; tipo_chave: string; nome: string; termos_aceitos: boolean }) {
+  const { data } = await adminApi.post("/painel/pix/ativar", payload);
+  return data;
+}
+
+export async function desativarPix() {
+  const { data } = await adminApi.post("/painel/pix/desativar");
+  return data;
+}
+
+export async function configSaqueAuto(payload: { saque_automatico: boolean; saque_minimo_centavos: number }) {
+  const { data } = await adminApi.put("/painel/pix/config-saque", payload);
+  return data;
+}
+
+export async function previewSaque(valor_centavos: number) {
+  const { data } = await adminApi.post("/painel/pix/sacar", { valor_centavos });
+  return data;
+}
+
+export async function confirmarSaque(valor_centavos: number) {
+  const { data } = await adminApi.post("/painel/pix/sacar/confirmar", { valor_centavos });
+  return data;
+}
+
+export async function getPixSaques(params?: { limit?: number; offset?: number }) {
+  const { data } = await adminApi.get("/painel/pix/saques", { params });
+  return data;
+}
+
 export async function uploadImagem(file: File, tipo: string = "produto") {
   // Obter restaurante_id do localStorage
   const restauranteStr = localStorage.getItem("sf_admin_restaurante");

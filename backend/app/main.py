@@ -24,7 +24,12 @@ from .routers.integracoes import router as integracoes_router, webhook_router
 from .routers import billing as billing_router
 from .routers import billing_admin as billing_admin_router
 from .routers import billing_webhooks as billing_webhooks_router
+from .routers import pix as pix_router
+from .routers import pix_webhooks as pix_webhooks_router
+from .routers import auth_cozinheiro as auth_cozinheiro_router
+from .routers import kds as kds_router
 from .billing.billing_tasks import verificar_billing_periodico
+from .pix.pix_tasks import verificar_pix_periodico
 from .integrations.manager import integration_manager
 from .database import engine, Base, get_db, SessionLocal
 from . import models
@@ -41,6 +46,7 @@ logger = logging.getLogger("superfood")
 # WebSocket Managers (com suporte Redis Pub/Sub)
 manager = create_manager(channel_prefix="ws:restaurante")
 printer_manager = create_manager(channel_prefix="ws:printer")
+kds_manager = create_manager(channel_prefix="ws:kds")
 
 
 async def verificar_entregas_atrasadas(ws_manager):
@@ -103,12 +109,13 @@ async def verificar_entregas_atrasadas(ws_manager):
 
 _entrega_task = None
 _billing_task = None
+_pix_task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown da aplicacao"""
-    global _entrega_task, _billing_task
+    global _entrega_task, _billing_task, _pix_task
     # Startup
     environment = os.getenv("ENVIRONMENT", "development")
     if environment == "production":
@@ -131,12 +138,17 @@ async def lifespan(app: FastAPI):
         await manager.start()
     if hasattr(printer_manager, 'start'):
         await printer_manager.start()
+    if hasattr(kds_manager, 'start'):
+        await kds_manager.start()
 
     # Inicia verificação periódica de entregas atrasadas
     _entrega_task = asyncio.create_task(verificar_entregas_atrasadas(manager))
 
     # Inicia task periódica de billing
     _billing_task = asyncio.create_task(verificar_billing_periodico(manager))
+
+    # Inicia task periódica de Pix (saque automático)
+    _pix_task = asyncio.create_task(verificar_pix_periodico())
 
     # Inicia integration manager (polling marketplaces)
     integration_manager.set_app(app)
@@ -157,10 +169,18 @@ async def lifespan(app: FastAPI):
             await _billing_task
         except asyncio.CancelledError:
             pass
+    if _pix_task:
+        _pix_task.cancel()
+        try:
+            await _pix_task
+        except asyncio.CancelledError:
+            pass
     if hasattr(manager, 'stop'):
         await manager.stop()
     if hasattr(printer_manager, 'stop'):
         await printer_manager.stop()
+    if hasattr(kds_manager, 'stop'):
+        await kds_manager.stop()
     await integration_manager.stop()
     logger.info("Derekh Food API encerrada")
 
@@ -174,6 +194,7 @@ app = FastAPI(
 # Expor WebSocket managers e integration manager no app.state
 app.state.ws_manager = manager
 app.state.printer_manager = printer_manager
+app.state.kds_manager = kds_manager
 app.state.integration_manager = integration_manager
 
 # ==================== Middlewares ====================
@@ -279,6 +300,10 @@ app.include_router(webhook_router)
 app.include_router(billing_router.router)
 app.include_router(billing_admin_router.router)
 app.include_router(billing_webhooks_router.router)
+app.include_router(pix_router.router)
+app.include_router(pix_webhooks_router.router)
+app.include_router(auth_cozinheiro_router.router)
+app.include_router(kds_router.router)
 
 # ==================== PWA files (manifest, service worker) ====================
 @app.get("/manifest.json")
@@ -427,6 +452,61 @@ async def websocket_printer(websocket: WebSocket, restaurante_id: int, token: Op
         printer_manager.disconnect(websocket, restaurante_id)
         await manager.broadcast({"tipo": "printer_status", "dados": {"online": False}}, restaurante_id)
         logger.info(f"Printer agent desconectado: restaurante={restaurante_id}")
+
+# ==================== WebSocket KDS ====================
+@app.websocket("/ws/kds/{restaurante_id}")
+async def websocket_kds(websocket: WebSocket, restaurante_id: int, token: Optional[str] = Query(None)):
+    """WebSocket para KDS — auth via JWT na query string, role=cozinheiro"""
+    from jose import JWTError, jwt as jose_jwt
+    from .auth import SECRET_KEY, ALGORITHM
+
+    if not token:
+        await websocket.close(code=4001, reason="Token obrigatorio")
+        return
+    try:
+        payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_sub": False})
+        role = payload.get("role")
+        rest_id = payload.get("restaurante_id")
+        if role != "cozinheiro" or rest_id != restaurante_id:
+            await websocket.close(code=4003, reason="Acesso negado")
+            return
+    except (JWTError, ValueError, TypeError):
+        await websocket.close(code=4001, reason="Token invalido")
+        return
+
+    await kds_manager.connect(websocket, restaurante_id)
+    logger.info(f"KDS conectado: restaurante={restaurante_id}")
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # KDS pode enviar pings ou acks
+    except WebSocketDisconnect:
+        kds_manager.disconnect(websocket, restaurante_id)
+        logger.info(f"KDS desconectado: restaurante={restaurante_id}")
+
+
+# ==================== SPA React (KDS / Cozinha) ====================
+@app.get("/cozinha", response_class=HTMLResponse)
+async def serve_cozinha_root():
+    """Serve o app KDS React PWA"""
+    index_file = REACT_BUILD_DIR / "index.html"
+    if index_file.exists():
+        return HTMLResponse(content=index_file.read_text())
+    return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)
+
+
+@app.get("/cozinha/{path:path}", response_class=HTMLResponse)
+async def serve_cozinha_catchall(path: str):
+    """Catch-all para SPA routing do app cozinha"""
+    asset_response = _serve_react_asset(path)
+    if asset_response:
+        return asset_response
+    index_file = REACT_BUILD_DIR / "index.html"
+    if index_file.exists():
+        return HTMLResponse(content=index_file.read_text())
+    return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)
+
 
 # ==================== SPA React (cliente) ====================
 @app.get("/cliente/{codigo_acesso}", response_class=HTMLResponse)

@@ -38,6 +38,11 @@ export const ADMIN_QUERY_KEYS = {
   billingStatus: ["admin", "billing", "status"] as const,
   faturas: ["admin", "billing", "faturas"] as const,
   planosDisponiveis: ["admin", "billing", "planos"] as const,
+  pixConfig: ["admin", "pix", "config"] as const,
+  pixSaques: ["admin", "pix", "saques"] as const,
+  cozinheiros: ["admin", "cozinha", "cozinheiros"] as const,
+  configCozinha: ["admin", "cozinha", "config"] as const,
+  dashboardCozinha: ["admin", "cozinha", "dashboard"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -879,5 +884,122 @@ export function useSelecionarPlano() {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.billingStatus });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.faturas });
     },
+  });
+}
+
+// ─── Pix Online ─────────────────────────────────────────
+export function usePixConfig() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.pixConfig,
+    queryFn: api.getPixConfig,
+    staleTime: 30_000,
+  });
+}
+
+export function useAtivarPix() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.ativarPix,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pixConfig }),
+  });
+}
+
+export function useDesativarPix() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.desativarPix,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pixConfig }),
+  });
+}
+
+export function useConfigSaqueAuto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.configSaqueAuto,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pixConfig }),
+  });
+}
+
+export function usePreviewSaque() {
+  return useMutation({
+    mutationFn: api.previewSaque,
+  });
+}
+
+export function useSolicitarSaque() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.confirmarSaque,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pixConfig });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pixSaques });
+    },
+  });
+}
+
+export function usePixSaques(params?: { limit?: number; offset?: number }) {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.pixSaques, params],
+    queryFn: () => api.getPixSaques(params),
+    staleTime: 30_000,
+  });
+}
+
+// ─── KDS / Cozinha Digital ──────────────────────────────
+export function useCozinheiros() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.cozinheiros,
+    queryFn: api.getCozinheiros,
+    staleTime: 30_000,
+  });
+}
+
+export function useCriarCozinheiro() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.criarCozinheiro,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.cozinheiros }),
+  });
+}
+
+export function useAtualizarCozinheiro() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: number; nome?: string; login?: string; senha?: string; modo?: string; avatar_emoji?: string; produto_ids?: number[] }) =>
+      api.atualizarCozinheiro(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.cozinheiros }),
+  });
+}
+
+export function useDeletarCozinheiro() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.deletarCozinheiro,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.cozinheiros }),
+  });
+}
+
+export function useConfigCozinha() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.configCozinha,
+    queryFn: api.getConfigCozinha,
+    staleTime: 30_000,
+  });
+}
+
+export function useAtualizarConfigCozinha() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.atualizarConfigCozinha,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configCozinha }),
+  });
+}
+
+export function useDashboardCozinha() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.dashboardCozinha,
+    queryFn: api.getDashboardCozinha,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
   });
 }

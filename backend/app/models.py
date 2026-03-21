@@ -79,6 +79,12 @@ from database.models import (
     AsaasPagamento,
     AsaasEventLog,
     BillingAuditLog,
+
+    # KDS Cozinha
+    Cozinheiro,
+    CozinheiroProduto,
+    PedidoCozinha,
+    ConfigCozinha,
 )
 
 # Para compatibilidade com imports existentes
@@ -123,4 +129,8 @@ __all__ = [
     'AsaasPagamento',
     'AsaasEventLog',
     'BillingAuditLog',
+    'Cozinheiro',
+    'CozinheiroProduto',
+    'PedidoCozinha',
+    'ConfigCozinha',
 ]

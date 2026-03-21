@@ -8,10 +8,10 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, MapPin, CreditCard, User, Plus, Search } from "lucide-react";
+import { ArrowLeft, MapPin, CreditCard, User, Plus, Search, QrCode, Copy, Clock, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { autocompleteEndereco, validarEntrega, validarCupom } from "@/lib/apiClient";
-import { useCarrinho, useEnderecos, useFinalizarPedido, useCriarEndereco } from "@/hooks/useQueries";
+import { useCarrinho, useEnderecos, useFinalizarPedido, useCriarEndereco, usePixStatusPedido } from "@/hooks/useQueries";
 import { useRestaurante } from "@/contexts/RestauranteContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -57,12 +57,36 @@ export default function Checkout() {
   );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("PIX");
 
+  // Pix Online state
+  const [pixData, setPixData] = useState<{
+    qr_code: string;
+    br_code: string;
+    expira_em: string;
+    pedido_id: number;
+  } | null>(null);
+  const [pixCopied, setPixCopied] = useState(false);
+
   // React Query: carrinho (staleTime 30s) e endereços (staleTime 5min)
   const { data: carrinhoData, isLoading: loading } = useCarrinho();
   const { data: enderecosData = [] } = useEnderecos(isLoggedIn);
   const finalizarMutation = useFinalizarPedido();
   const criarEnderecoMutation = useCriarEndereco();
   const isProcessing = finalizarMutation.isPending;
+
+  const { data: pixStatus } = usePixStatusPedido(pixData?.pedido_id || null);
+
+  // Navigate when Pix payment is confirmed
+  useEffect(() => {
+    if (pixStatus?.pix_pago) {
+      setPixData(null);
+      toast.success("Pagamento Pix confirmado!");
+      if (isLoggedIn) {
+        navigate("/orders");
+      } else {
+        navigate(`/order-success/${pixStatus.pedido_id}`);
+      }
+    }
+  }, [pixStatus?.pix_pago]);
 
   const cartItems: CartItem[] = carrinhoData?.itens || carrinhoData?.itens_json || [];
   const enderecos: Endereco[] = enderecosData;
@@ -391,11 +415,21 @@ export default function Checkout() {
         longitude: lngFinal,
       });
 
-      toast.success("Pedido realizado com sucesso!");
-      if (isLoggedIn) {
-        navigate("/orders");
+      if (result.pix_online) {
+        toast.success("Pedido criado! Escaneie o QR Code para pagar.");
+        setPixData({
+          qr_code: result.pix_qr_code,
+          br_code: result.pix_br_code,
+          expira_em: result.pix_expira_em,
+          pedido_id: result.pedido_id,
+        });
       } else {
-        navigate(`/order-success/${result.pedido_id}`);
+        toast.success("Pedido realizado com sucesso!");
+        if (isLoggedIn) {
+          navigate("/orders");
+        } else {
+          navigate(`/order-success/${result.pedido_id}`);
+        }
       }
     } catch {
       toast.error("Erro ao realizar pedido. Tente novamente.");
@@ -829,6 +863,77 @@ export default function Checkout() {
             </Card>
           </div>
         </div>
+      {/* Modal Pix QR Code */}
+      {pixData && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <Card className="w-full max-w-md p-6 text-center space-y-4">
+            <div className="flex items-center justify-center gap-2 text-lg font-bold">
+              <QrCode className="w-6 h-6" />
+              Pagamento Pix
+            </div>
+
+            <p className="text-sm text-muted-foreground">
+              Escaneie o QR Code abaixo ou copie o código Pix
+            </p>
+
+            {pixData.qr_code && (
+              <div className="flex justify-center">
+                <img
+                  src={pixData.qr_code.startsWith("data:") ? pixData.qr_code : `data:image/png;base64,${pixData.qr_code}`}
+                  alt="QR Code Pix"
+                  className="w-56 h-56 rounded-lg border"
+                />
+              </div>
+            )}
+
+            {pixData.br_code && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold">Pix Copia e Cola:</p>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    value={pixData.br_code}
+                    className="dark-input text-xs flex-1 truncate"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      navigator.clipboard.writeText(pixData.br_code);
+                      setPixCopied(true);
+                      toast.success("Código Pix copiado!");
+                      setTimeout(() => setPixCopied(false), 3000);
+                    }}
+                  >
+                    {pixCopied ? <CheckCircle2 className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Clock className="w-4 h-4" />
+              <span>Aguardando pagamento...</span>
+              <span className="inline-block w-4 h-4 border-2 border-t-transparent border-current rounded-full animate-spin" />
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              O QR Code expira em 30 minutos. Após o pagamento, você será redirecionado automaticamente.
+            </p>
+
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setPixData(null);
+                navigate(`/order-success/${pixData.pedido_id}`);
+              }}
+            >
+              Já paguei / Fechar
+            </Button>
+          </Card>
+        </div>
+      )}
       </div>
     </div>
   );

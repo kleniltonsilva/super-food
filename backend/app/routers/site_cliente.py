@@ -180,9 +180,49 @@ def get_site_info(
         "pedidos_online_ativos": pedidos_online_ativos,
         "entregas_ativas": entregas_ativas,
         "controle_pedidos_motivo": controle_motivo,
+        "pix_online": bool(db.query(models.PixConfig).filter(
+            models.PixConfig.restaurante_id == restaurante.id,
+            models.PixConfig.ativo == True,
+        ).first()),
     }
     cache_set(cache_key, result, ttl_seconds=300)  # 5 min
     return result
+
+
+@router.get("/{codigo_acesso}/pedido/{pedido_id}/pix-status")
+def get_pix_status_pedido(
+    codigo_acesso: str,
+    pedido_id: int,
+    db: Session = Depends(database.get_db)
+):
+    """Polling do status de pagamento Pix de um pedido"""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    pedido = db.query(models.Pedido).filter(
+        models.Pedido.id == pedido_id,
+        models.Pedido.restaurante_id == restaurante.id,
+    ).first()
+    if not pedido:
+        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+
+    cobranca = db.query(models.PixCobranca).filter(
+        models.PixCobranca.pedido_id == pedido_id,
+        models.PixCobranca.restaurante_id == restaurante.id,
+    ).order_by(models.PixCobranca.criado_em.desc()).first()
+
+    return {
+        "pedido_id": pedido.id,
+        "pedido_status": pedido.status,
+        "pix_status": cobranca.status if cobranca else None,
+        "pix_pago": cobranca.status == "COMPLETED" if cobranca else False,
+        "pix_qr_code": cobranca.qr_code_imagem if cobranca else None,
+        "pix_br_code": cobranca.br_code if cobranca else None,
+        "pix_expira_em": cobranca.expira_em.isoformat() if cobranca and cobranca.expira_em else None,
+    }
 
 
 @router.get("/{codigo_acesso}/categorias", response_model=List[site_schemas.CategoriaPublic])

@@ -15,6 +15,7 @@ export type WsEventTipo =
   | "motoboy_posicao"
   | "mesa_paga"
   | "config_atualizada"
+  | "pix_confirmado"
   | "printer_status"
   | "print_ack"
   | "reimprimir_pedido"

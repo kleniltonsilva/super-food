@@ -19,6 +19,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="restaurantes/login")
 oauth2_scheme_motoboy = OAuth2PasswordBearer(tokenUrl="auth/motoboy/login")
 oauth2_scheme_admin = OAuth2PasswordBearer(tokenUrl="auth/admin/login")
+oauth2_scheme_cozinheiro = OAuth2PasswordBearer(tokenUrl="auth/cozinheiro/login")
 
 def verify_password(plain_password, hashed_password):
     """Verifica senha bcrypt. Aplica strip() para ignorar espaços acidentais."""
@@ -92,3 +93,25 @@ def get_current_admin(token: str = Depends(oauth2_scheme_admin), db: Session = D
     if admin is None:
         raise credentials_exception
     return admin
+
+
+def get_current_cozinheiro(token: str = Depends(oauth2_scheme_cozinheiro), db: Session = Depends(database.get_db)):
+    """Dependency JWT para autenticação do cozinheiro (KDS)."""
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_sub": False})
+        cozinheiro_id = int(payload.get("sub"))
+        role: str = payload.get("role")
+        if role != "cozinheiro" or cozinheiro_id is None:
+            raise credentials_exception
+    except (JWTError, ValueError, TypeError):
+        raise credentials_exception
+    cozinheiro = db.query(models.Cozinheiro).options(
+        joinedload(models.Cozinheiro.restaurante)
+    ).filter(
+        models.Cozinheiro.id == cozinheiro_id,
+        models.Cozinheiro.ativo == True
+    ).first()
+    if cozinheiro is None:
+        raise credentials_exception
+    return cozinheiro

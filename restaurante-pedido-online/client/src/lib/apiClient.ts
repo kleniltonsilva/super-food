@@ -344,4 +344,11 @@ export async function validarCupom(codigo: string, subtotal: number) {
   return data;
 }
 
+// ==================== PIX STATUS (POLLING) ====================
+
+export async function getPixStatusPedido(pedidoId: number) {
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/pedido/${pedidoId}/pix-status`);
+  return data;
+}
+
 export default api;

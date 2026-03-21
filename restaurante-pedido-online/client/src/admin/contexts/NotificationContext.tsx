@@ -9,7 +9,7 @@ import React, { createContext, useContext, useCallback, useState, useRef } from 
 
 export interface AdminNotification {
   id: string;
-  tipo: "novo_pedido" | "pedido_cancelado" | "pedido_despachado" | "entrega_atrasada" | "entrega_finalizada" | "pedido_atualizado" | "info";
+  tipo: "novo_pedido" | "pedido_cancelado" | "pedido_despachado" | "entrega_atrasada" | "entrega_finalizada" | "pedido_atualizado" | "pix_confirmado" | "info";
   titulo: string;
   mensagem: string;
   timestamp: Date;

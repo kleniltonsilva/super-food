@@ -21,6 +21,8 @@ import Configuracoes from "@/admin/pages/Configuracoes";
 import HistoricoAtrasos from "@/admin/pages/HistoricoAtrasos";
 import Integracoes from "@/admin/pages/Integracoes";
 import Billing from "@/admin/pages/Billing";
+import PagamentoPix from "@/admin/pages/PagamentoPix";
+import CozinhaDigital from "@/admin/pages/CozinhaDigital";
 import SelecionarPlano from "@/admin/pages/SelecionarPlano";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -90,6 +92,21 @@ function AdminWebSocket() {
               onClick: () => navigate("/pedidos"),
             },
           }
+        );
+        break;
+      }
+
+      case "pix_confirmado": {
+        const valor = dados.valor as number | undefined;
+        addNotification({
+          tipo: "pix_confirmado",
+          titulo: `Pix confirmado${comanda ? ` #${comanda}` : ""}`,
+          mensagem: valor ? `R$ ${valor.toFixed(2)} recebido` : "Pagamento Pix confirmado",
+          acao: "/pedidos",
+        });
+        toast.success(
+          `Pix confirmado${comanda ? ` #${comanda}` : ""}!`,
+          { duration: 5000 }
         );
         break;
       }
@@ -167,6 +184,10 @@ function AdminRouter() {
         <PrivateRoute><Motoboys /></PrivateRoute>
       </Route>
 
+      <Route path="/cozinha">
+        <PrivateRoute><CozinhaDigital /></PrivateRoute>
+      </Route>
+
       <Route path="/caixa">
         <PrivateRoute><Caixa /></PrivateRoute>
       </Route>
@@ -193,6 +214,10 @@ function AdminRouter() {
 
       <Route path="/integracoes">
         <PrivateRoute><Integracoes /></PrivateRoute>
+      </Route>
+
+      <Route path="/pix">
+        <PrivateRoute><PagamentoPix /></PrivateRoute>
       </Route>
 
       <Route path="/billing/planos">

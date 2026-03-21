@@ -11,7 +11,7 @@ Sistema multi-tenant completo para gestao de restaurantes com entregas inteligen
 
 ## Visao Geral
 
-O Derekh Food e composto por **5 aplicacoes principais**, todas em React + FastAPI:
+O Derekh Food e composto por **6 aplicacoes principais**, todas em React + FastAPI:
 
 | Aplicacao | Tecnologia | Rota | Descricao |
 |-----------|------------|------|-----------|
@@ -19,9 +19,10 @@ O Derekh Food e composto por **5 aplicacoes principais**, todas em React + FastA
 | **Super Admin** | React 19 | `/superadmin` | Painel administrativo do SaaS com analytics |
 | **Painel Restaurante** | React 19 | `/admin` | Gestao completa do restaurante (20+ paginas) |
 | **App Motoboy (PWA)** | React 19 | `/entregador` | App mobile para entregadores com GPS |
+| **App KDS Cozinha (PWA)** | React 19 | `/cozinha` | Kitchen Display System para cozinheiros |
 | **Site Cliente** | React 19 | `/cliente/{codigo}` | Pedido online com 8 layouts tematicos |
 
-**Versao atual: 4.0.0 (16/03/2026) — Em producao: https://superfood-api.fly.dev**
+**Versao atual: 4.0.0 (21/03/2026) — Em producao: https://superfood-api.fly.dev**
 
 ### Stack Tecnologica
 
@@ -29,7 +30,7 @@ O Derekh Food e composto por **5 aplicacoes principais**, todas em React + FastA
 |--------|-----------|
 | Backend API | Python 3.12+ / FastAPI / Uvicorn |
 | ORM | SQLAlchemy 2.0+ |
-| Migrations | Alembic (26 migrations) |
+| Migrations | Alembic (29 migrations) |
 | Banco (dev) | SQLite |
 | Banco (prod) | PostgreSQL 16+ / PgBouncer |
 | Frontend | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
@@ -158,6 +159,7 @@ cd restaurante-pedido-online && npm run build
 | Super Admin | http://localhost:8000/superadmin |
 | Painel Restaurante | http://localhost:8000/admin |
 | App Motoboy (PWA) | http://localhost:8000/entregador |
+| App KDS Cozinha (PWA) | http://localhost:8000/cozinha |
 | Site Cliente | http://localhost:8000/cliente/{CODIGO_RESTAURANTE} |
 | Health Check | http://localhost:8000/health |
 
@@ -168,6 +170,7 @@ cd restaurante-pedido-online && npm run build
 | Super Admin | `superadmin` | `SuperFood2025!` |
 | Restaurante Teste | `teste@superfood.com` | `123456` |
 | Motoboy | Codigo do restaurante + usuario + senha | Configurado no cadastro |
+| Cozinheiro (KDS) | Codigo do restaurante + login + senha | Configurado pelo admin |
 
 ---
 
@@ -184,15 +187,20 @@ super-food/
 │       ├── storage.py          # Abstração storage (Local / R2)
 │       ├── cache.py            # Redis cache helper
 │       ├── rate_limit.py       # Rate limiting (Redis sliding window)
-│       ├── routers/            # 13 arquivos de rotas (100+ endpoints)
+│       ├── routers/            # 17 arquivos de rotas (130+ endpoints)
 │       │   ├── auth_restaurante.py  # Auth JWT restaurante
 │       │   ├── auth_cliente.py      # Auth cliente
 │       │   ├── auth_motoboy.py      # Auth motoboy
+│       │   ├── auth_cozinheiro.py   # Auth cozinheiro (KDS)
+│       │   ├── auth_admin.py        # Auth super admin
 │       │   ├── painel.py            # Todas rotas /painel/* (admin restaurante)
 │       │   ├── admin.py             # Rotas /api/admin/* (super admin)
 │       │   ├── site_cliente.py      # Rotas site publico
 │       │   ├── carrinho.py          # Carrinho/checkout
 │       │   ├── upload.py            # Upload imagens (JWT + Pillow)
+│       │   ├── kds.py               # Endpoints KDS cozinha (pedidos, status, assumir)
+│       │   ├── pix.py               # Endpoints Pix online (ativacao, saque, config)
+│       │   ├── pix_webhooks.py      # Webhook Woovi/OpenPix (pagamentos Pix)
 │       │   ├── integracoes.py        # Integracoes marketplace (iFood, Open Delivery)
 │       │   ├── billing.py            # Billing restaurante (assinatura/pagamento)
 │       │   ├── billing_admin.py      # Billing super admin (config, dashboard, acoes)
@@ -203,18 +211,20 @@ super-food/
 │       │   ├── asaas_client.py      # httpx async (sandbox/prod)
 │       │   ├── billing_service.py   # Logica trial/plano/pagamento/suspensao
 │       │   └── billing_tasks.py     # Task periodica (30min) + polling
+│       ├── pix/                # Pix online Woovi/OpenPix
+│       │   └── woovi_service.py     # Client API Woovi (subcontas, cobranças, saques)
 │       ├── integrations/       # iFood + Open Delivery clients
 │       ├── schemas/            # Pydantic schemas
 │       └── utils/              # Despacho, menus, templates
 │
 ├── database/                   # SQLAlchemy ORM
-│   ├── models.py               # 28+ modelos ORM (fonte de verdade)
+│   ├── models.py               # 35+ modelos ORM (fonte de verdade)
 │   ├── session.py              # get_db_session() + helpers
 │   ├── base.py                 # Base declarativa
 │   ├── init.py                 # Funcoes de inicializacao
 │   └── seed/                   # Seeds (super admin, planos, restaurante, etc)
 │
-├── migrations/                 # Alembic (26 migrations)
+├── migrations/                 # Alembic (29 migrations)
 │   └── versions/
 │
 ├── restaurante-pedido-online/  # FRONTEND REACT (todas as SPAs)
@@ -225,7 +235,7 @@ super-food/
 │   └── client/
 │       └── src/
 │           ├── main.tsx            # Entry point React
-│           ├── App.tsx             # Router principal (4 apps: cliente, admin, motoboy, superadmin)
+│           ├── App.tsx             # Router principal (5 apps: cliente, admin, motoboy, superadmin, kds)
 │           ├── index.css           # Estilos globais + Tailwind + CSS vars tematicos
 │           │
 │           ├── pages/              # Paginas site cliente (11 paginas)
@@ -253,8 +263,8 @@ super-food/
 │           ├── admin/              # PAINEL ADMIN RESTAURANTE
 │           │   ├── AdminApp.tsx    # Router admin (protegido)
 │           │   ├── lib/            # adminApiClient.ts
-│           │   ├── hooks/          # useAdminQueries.ts (57 hooks), useWebSocket.ts
-│           │   ├── pages/          # 20+ paginas
+│           │   ├── hooks/          # useAdminQueries.ts (64+ hooks), useWebSocket.ts
+│           │   ├── pages/          # 22+ paginas (inclui CozinhaDigital, PagamentoPix)
 │           │   │   ├── Dashboard.tsx         # Metricas + entregas ativas + alertas atraso
 │           │   │   ├── Pedidos.tsx            # Lista + entregas em rota + timeline
 │           │   │   ├── PedidoDetalhe.tsx      # Detalhe + timeline 5 passos
@@ -269,6 +279,14 @@ super-food/
 │           │   ├── lib/            # motoboyApiClient.ts
 │           │   ├── hooks/          # useMotoboyQueries.ts, useGPS.ts
 │           │   └── pages/          # Login, Home, Entrega, Ganhos, Historico
+│           │
+│           ├── kds/                # APP KDS COZINHA (PWA)
+│           │   ├── KdsApp.tsx       # Router KDS (auth + WebSocket)
+│           │   ├── lib/            # kdsApiClient.ts
+│           │   ├── contexts/       # KdsAuthContext.tsx
+│           │   ├── hooks/          # useKdsQueries.ts, useKdsWebSocket.ts (sons)
+│           │   ├── components/     # KdsPrivateRoute.tsx
+│           │   └── pages/          # KdsLogin, KdsMain (Preparo + Despacho)
 │           │
 │           └── superadmin/         # SUPER ADMIN
 │               ├── SuperAdminApp.tsx  # Router super admin
@@ -308,11 +326,11 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 ## Funcionalidades Principais
 
 ### API FastAPI (Backend)
-- API REST completa com 100+ endpoints documentados (Swagger/ReDoc)
-- WebSockets para notificacoes em tempo real por restaurante
-- Servindo 4 React SPAs em producao (admin, motoboy, superadmin, site cliente)
+- API REST completa com 130+ endpoints documentados (Swagger/ReDoc)
+- WebSockets para notificacoes em tempo real por restaurante (3 canais: restaurante, printer, kds)
+- Servindo 5 React SPAs em producao (admin, motoboy, kds cozinha, superadmin, site cliente)
 - Upload de imagens com resize automatico (WebP)
-- JWT auth para restaurantes (24h), clientes (72h), motoboys (24h), super admin (12h)
+- JWT auth para restaurantes (24h), clientes (72h), motoboys (30d), cozinheiros (7d), super admin (12h)
 - Rate limiting, cache Redis, health checks
 
 ### Site Cliente (8 Layouts Tematicos)
@@ -349,8 +367,23 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 - Mapa GPS em tempo real (Mapbox GL JS)
 - Controle de caixa (abertura, movimentacoes, fechamento)
 - **Relatorios com aba Analytics protegida por senha** (projecoes, analise horario/dia, top produtos, recorrencia)
+- **Cozinha Digital (KDS)**: CRUD cozinheiros, config tempo alerta/critico, monitor em tempo real
+- **Pagamentos Pix Online**: ativacao com consentimento, saque manual/automatico, dashboard financeiro
+- **Operadores de Caixa**: autenticacao para abrir/fechar caixa com senha
 - **32 tooltips explicativos** em todas as configuracoes (ℹ️)
 - Configuracao de taxas, raio, pagamentos, tema visual, SEO
+
+### App KDS Cozinha (PWA)
+- Login com codigo do restaurante + login + senha do cozinheiro
+- **Tab PREPARO**: fila horizontal de pedidos com timer em tempo real, card comanda grande com itens/observacoes
+- **Tab DESPACHO**: pedidos FEITOS aguardando despacho, historico PRONTO
+- Status flow: NOVO → FAZENDO → FEITO → PRONTO (com timestamps)
+- Filtro por produtos: cozinheiro com modo "individual" ve apenas pedidos contendo seus produtos
+- Cores por tempo: verde (OK), ambar (alerta), vermelho (critico) com animacao pulse
+- Sons via Web Audio API: novo pedido (880Hz+1174Hz), feito (523Hz), pronto (523+659+783Hz)
+- WebSocket em tempo real (canal `ws:kds`)
+- Auto-criacao de PedidoCozinha quando pedido muda para `em_preparo` e KDS ativo
+- Admin: CRUD cozinheiros, config KDS (tempo alerta/critico, som), monitor em tempo real
 
 ### App Motoboy (PWA)
 - Login com codigo do restaurante + usuario + senha
@@ -562,7 +595,13 @@ Todas as configuracoes do painel restaurante possuem tooltips (icone ℹ️) com
 | `/api/admin/billing` | billing_admin.py | 9 | Config, dashboard MRR, audit log, acoes restaurante |
 | `/webhooks/asaas` | billing_webhooks.py | 1 | Webhook Asaas (pagamentos) |
 | `/painel/integracoes` | integracoes.py | 6 | Connect/disconnect iFood, Open Delivery |
+| `/auth/cozinheiro` | auth_cozinheiro.py | 2 | Login, me (cozinheiro KDS) |
+| `/kds` | kds.py | 5 | Pedidos KDS, status, assumir, refazer, config |
+| `/painel/cozinha` | painel.py | 7 | CRUD cozinheiros, config KDS, dashboard cozinha |
+| `/painel/pix` | pix.py | 6 | Ativar/desativar Pix, saque, config, status |
+| `/webhooks/woovi` | pix_webhooks.py | 1 | Webhook Woovi/OpenPix (pagamentos Pix) |
 | `/ws/{id}` | main.py | 1 | WebSocket por restaurante |
+| `/ws/kds/{id}` | main.py | 1 | WebSocket KDS cozinha |
 | `/health` | main.py | 3 | Health check (live, ready, full) |
 
 **Novos endpoints v4.0:**
@@ -613,7 +652,8 @@ alembic revision --autogenerate -m "descricao"  # Criar nova migration
 |-----|-------|-------------------|-----------|
 | Cliente | JWT | `sf_token` + `sf_cliente` | 72h |
 | Admin Restaurante | JWT | `sf_admin_token` + `sf_admin_restaurante` | 24h |
-| Motoboy | JWT | `sf_motoboy_token` | 24h |
+| Motoboy | JWT | `sf_motoboy_token` + `sf_motoboy_data` | 30 dias |
+| Cozinheiro (KDS) | JWT | `sf_kds_token` + `sf_kds_data` | 7 dias |
 | Super Admin | JWT | `sf_superadmin_token` | 12h |
 
 - Interceptor 401 no axios — logout automatico quando token expira
@@ -649,10 +689,11 @@ alembic revision --autogenerate -m "descricao"  # Criar nova migration
      ┌────────▼────────┐    ┌─────────▼─────────┐    ┌────────▼────────┐
      │   FastAPI x N    │    │   React Static     │    │   Redis          │
      │   (Gunicorn)     │    │   (via CDN)        │    │   - Cache menus  │
-     │   API + WebSocket│    │   4 SPAs:           │    │   - Rate limit   │
+     │   API + WebSocket│    │   5 SPAs:           │    │   - Rate limit   │
      │                  │    │   - Site Cliente    │    │   - Pub/Sub WS   │
      │                  │    │   - Painel Rest.    │    │                  │
      │                  │    │   - App Motoboy     │    │                  │
+     │                  │    │   - App KDS Cozinha │    │                  │
      │                  │    │   - Super Admin     │    │                  │
      └────────┬────────┘    └───────────────────┘    └─────────────────┘
               │
@@ -672,7 +713,7 @@ alembic revision --autogenerate -m "descricao"  # Criar nova migration
 
 ### Banco de Dados — PostgreSQL Multi-Tenant
 
-Banco unico com isolamento por `restaurante_id` em todas as 28+ tabelas:
+Banco unico com isolamento por `restaurante_id` em todas as 35+ tabelas:
 - **PgBouncer** para connection pooling
 - **45+ indices compostos** nas tabelas mais consultadas
 - **Read replicas** se necessario
@@ -726,7 +767,7 @@ services:
 
 ## Changelog
 
-### v4.0.0 (16/03/2026) — Mega Migracao React + Deploy Fly.io
+### v4.0.0 (21/03/2026) — Mega Migracao React + Deploy Fly.io
 
 - **Deploy em producao** — Fly.io GRU (Sao Paulo), PostgreSQL + Upstash Redis
 - **Sprint 10 completo** — Streamlit 100% removido, sistema 100% React
@@ -734,6 +775,9 @@ services:
 - **Sprint 13** — Integracao iFood + Open Delivery (marketplace)
 - **Sprint 14** — Credenciais plataforma (Super Admin) + refatoracao integracoes
 - **Sprint 15** — Sistema de Billing/Assinatura com Asaas (PIX + Boleto): trial, planos, pagamento, suspensao, reativacao, webhook idempotente, audit log, dashboard MRR
+- **Sprint 15.1** — Operadores de Caixa com autenticacao (abrir/fechar caixa com senha, migration 027)
+- **Sprint 17** — Pix Online Woovi/OpenPix: subcontas, split de pagamento, saque automatico, QR Code, webhook (migration 028)
+- **Sprint 18** — KDS / Comanda Digital: app PWA cozinha, CRUD cozinheiros, auto-criacao pedidos, WebSocket tempo real, sons Web Audio API, 2 tabs (Preparo + Despacho) (migration 029)
 
 ### v4.0.0-rc (11/03/2026) — Mega Migracao React + Features Avancadas
 - **100% React** — Zero Streamlit. Todas 4 aplicacoes em React 19 + TypeScript
@@ -788,9 +832,13 @@ services:
   - Sprint 11: Deploy Fly.io (producao GRU) ✅
 - [x] Fase 12: Integracao iFood + Open Delivery ✅
 - [x] Fase 13: Sistema de Billing/Assinatura (Asaas) ✅
-- [ ] Fase 14: Recuperacao de senha por SMS
-- [ ] Fase 15: Push notifications nativas
-- [ ] Fase 16: App nativo (React Native ou Capacitor)
+- [x] Fase 13.1: Operadores de Caixa (autenticacao abrir/fechar) ✅
+- [x] Fase 14: Pix Online Woovi/OpenPix (split, subcontas, QR Code) ✅
+- [x] Fase 15: KDS / Comanda Digital (app cozinha PWA, WebSocket, sons) ✅
+- [ ] Fase 16: App Garcom (atendimento mesa, sessoes, pedidos por etapa)
+- [ ] Fase 17: Bot WhatsApp IA (pedido por conversa, STT, Pix integrado)
+- [ ] Fase 18: Sales Autopilot (CRM B2B, prospeccao automatica)
+- [ ] Fase 19: Printer Agent (impressao ESC/POS, bridge API, Windows Service)
 
 ---
 
@@ -850,6 +898,7 @@ curl https://superfood-api.fly.dev/health
 | Super Admin | https://superfood-api.fly.dev/superadmin |
 | Painel Restaurante | https://superfood-api.fly.dev/admin |
 | App Motoboy | https://superfood-api.fly.dev/entregador |
+| App KDS Cozinha | https://superfood-api.fly.dev/cozinha |
 | Site Cliente | https://superfood-api.fly.dev/cliente/{CODIGO} |
 | Health Check | https://superfood-api.fly.dev/health |
 

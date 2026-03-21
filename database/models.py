@@ -1175,3 +1175,177 @@ class BillingAuditLog(Base):
         Index('idx_billing_audit_restaurante', 'restaurante_id', 'criado_em'),
         Index('idx_billing_audit_acao', 'acao', 'criado_em'),
     )
+
+
+# ==================== PIX ONLINE — WOOVI/OPENPIX ====================
+class PixConfig(Base):
+    """Configuração Pix online por restaurante (subconta Woovi)"""
+    __tablename__ = "pix_config"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), unique=True, nullable=False)
+    ativo = Column(Boolean, default=False)
+    pix_chave = Column(String(255), nullable=False)
+    tipo_chave = Column(String(20), nullable=False)
+    nome_subconta = Column(String(200), nullable=False)
+    termos_aceitos_em = Column(DateTime, nullable=False)
+    ativado_em = Column(DateTime)
+    saque_automatico = Column(Boolean, default=False)
+    saque_minimo_centavos = Column(Integer, default=50000)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_pix_config_restaurante', 'restaurante_id'),
+    )
+
+
+class PixCobranca(Base):
+    """Cobrança Pix por pedido"""
+    __tablename__ = "pix_cobrancas"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
+    woovi_charge_id = Column(String(100), unique=True)
+    correlation_id = Column(String(100), unique=True, nullable=False)
+    transaction_id = Column(String(100))
+    valor_centavos = Column(Integer, nullable=False)
+    status = Column(String(30), default='ACTIVE')
+    qr_code_imagem = Column(Text)
+    br_code = Column(Text)
+    expira_em = Column(DateTime)
+    pago_em = Column(DateTime)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    restaurante = relationship("Restaurante")
+    pedido = relationship("Pedido")
+    __table_args__ = (
+        Index('idx_pix_cobranca_restaurante', 'restaurante_id'),
+        Index('idx_pix_cobranca_pedido', 'pedido_id'),
+        Index('idx_pix_cobranca_status', 'restaurante_id', 'status'),
+    )
+
+
+class PixSaque(Base):
+    """Histórico de saques Pix do restaurante"""
+    __tablename__ = "pix_saques"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    valor_centavos = Column(Integer, nullable=False)
+    taxa_centavos = Column(Integer, default=0)
+    status = Column(String(30), default='solicitado')
+    automatico = Column(Boolean, default=False)
+    solicitado_em = Column(DateTime, default=datetime.utcnow)
+    concluido_em = Column(DateTime)
+    erro = Column(Text)
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_pix_saque_restaurante', 'restaurante_id'),
+    )
+
+
+# ==================== KDS — COZINHEIROS ====================
+class Cozinheiro(Base):
+    """Cozinheiro com login no KDS"""
+    __tablename__ = "cozinheiros"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    nome = Column(String(100), nullable=False)
+    login = Column(String(50), nullable=False)
+    senha_hash = Column(String(256), nullable=False)
+    modo = Column(String(20), nullable=False, default='todos')  # todos | individual
+    avatar_emoji = Column(String(10))
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    produtos = relationship("CozinheiroProduto", back_populates="cozinheiro", cascade="all, delete-orphan")
+    pedidos_cozinha = relationship("PedidoCozinha", back_populates="cozinheiro")
+    __table_args__ = (
+        UniqueConstraint('restaurante_id', 'login', name='uq_cozinheiro_login_restaurante'),
+        Index('idx_cozinheiro_restaurante', 'restaurante_id', 'ativo'),
+        Index('idx_cozinheiro_login', 'restaurante_id', 'login'),
+    )
+
+    def set_senha(self, senha: str):
+        """Gera hash SHA256 da senha. Aplica strip() para ignorar espaços acidentais."""
+        self.senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
+
+    def verificar_senha(self, senha: str) -> bool:
+        """Verifica se a senha está correta. Aplica strip() para consistência com set_senha."""
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
+        return self.senha_hash == senha_hash
+
+
+class CozinheiroProduto(Base):
+    """Vínculo cozinheiro <-> produtos que prepara (modo individual)"""
+    __tablename__ = "cozinheiro_produtos"
+    id = Column(Integer, primary_key=True, index=True)
+    cozinheiro_id = Column(Integer, ForeignKey("cozinheiros.id", ondelete="CASCADE"), nullable=False)
+    produto_id = Column(Integer, ForeignKey("produtos.id", ondelete="CASCADE"), nullable=False)
+    # Relacionamentos
+    cozinheiro = relationship("Cozinheiro", back_populates="produtos")
+    produto = relationship("Produto")
+    __table_args__ = (
+        UniqueConstraint('cozinheiro_id', 'produto_id', name='uq_cozinheiro_produto'),
+        Index('idx_cozinheiro_produto_cozinheiro', 'cozinheiro_id'),
+    )
+
+
+class PedidoCozinha(Base):
+    """Pedido no KDS — 1 registro por pedido"""
+    __tablename__ = "pedidos_cozinha"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(20), nullable=False, default='NOVO')  # NOVO, FAZENDO, FEITO, PRONTO
+    cozinheiro_id = Column(Integer, ForeignKey("cozinheiros.id", ondelete="SET NULL"))
+    urgente = Column(Boolean, default=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    iniciado_em = Column(DateTime)
+    feito_em = Column(DateTime)
+    pronto_em = Column(DateTime)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    pedido = relationship("Pedido")
+    cozinheiro = relationship("Cozinheiro", back_populates="pedidos_cozinha")
+    __table_args__ = (
+        UniqueConstraint('pedido_id', name='uq_pedido_cozinha_pedido'),
+        Index('idx_pedido_cozinha_restaurante', 'restaurante_id', 'status'),
+        Index('idx_pedido_cozinha_pedido', 'pedido_id'),
+        Index('idx_pedido_cozinha_cozinheiro', 'cozinheiro_id'),
+    )
+
+
+class ConfigCozinha(Base):
+    """Configuração KDS por restaurante"""
+    __tablename__ = "config_cozinha"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    kds_ativo = Column(Boolean, default=False)
+    tempo_alerta_min = Column(Integer, default=15)
+    tempo_critico_min = Column(Integer, default=25)
+    som_novo_pedido = Column(Boolean, default=True)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        UniqueConstraint('restaurante_id', name='uq_config_cozinha_restaurante'),
+        Index('idx_config_cozinha_restaurante', 'restaurante_id'),
+    )
+
+
+class PixEventLog(Base):
+    """Log de eventos webhook Woovi (idempotência)"""
+    __tablename__ = "pix_event_log"
+    id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String(200), unique=True, nullable=False)
+    event_type = Column(String(50), nullable=False)
+    woovi_charge_id = Column(String(100))
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="SET NULL"))
+    payload_json = Column(JSON)
+    processed = Column(Boolean, default=False)
+    error_message = Column(Text)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_pix_event_id', 'event_id', unique=True),
+    )

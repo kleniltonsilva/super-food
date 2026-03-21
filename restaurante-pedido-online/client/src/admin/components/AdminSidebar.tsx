@@ -19,6 +19,8 @@ import {
   Settings,
   Plug,
   CreditCard,
+  QrCode,
+  ChefHat,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,6 +38,7 @@ const menuItems = [
   { path: "/combos", label: "Combos", icon: Layers },
   { path: "/motoboys", label: "Motoboys", icon: Bike },
   { path: "/motoboys/mapa", label: "Mapa Motoboys", icon: Map },
+  { path: "/cozinha", label: "Cozinha Digital", icon: ChefHat },
   { path: "/caixa", label: "Caixa", icon: DollarSign },
   { path: "/promocoes", label: "Promoções", icon: Percent },
   { path: "/fidelidade", label: "Fidelidade", icon: Star },
@@ -43,6 +46,7 @@ const menuItems = [
   { path: "/relatorios", label: "Relatórios", icon: BarChart3 },
   { path: "/historico-atrasos", label: "Atrasos", icon: Clock },
   { path: "/integracoes", label: "Integrações", icon: Plug },
+  { path: "/pix", label: "Pagamento Pix", icon: QrCode },
   { path: "/billing", label: "Assinatura", icon: CreditCard },
   { path: "/configuracoes", label: "Configurações", icon: Settings },
 ];

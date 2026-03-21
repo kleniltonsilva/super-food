@@ -332,6 +332,25 @@ async def atualizar_status_pedido(
             except (ValueError, TypeError):
                 pass
 
+    # Auto-criar PedidoCozinha quando muda para em_preparo e KDS está ativo
+    if dados.status == 'em_preparo':
+        config_kds = db.query(models.ConfigCozinha).filter(
+            models.ConfigCozinha.restaurante_id == rest.id,
+            models.ConfigCozinha.kds_ativo == True
+        ).first()
+        if config_kds:
+            existente = db.query(models.PedidoCozinha).filter(
+                models.PedidoCozinha.pedido_id == pedido.id
+            ).first()
+            if not existente:
+                pc_novo = models.PedidoCozinha(
+                    restaurante_id=rest.id,
+                    pedido_id=pedido.id,
+                    status='NOVO',
+                    criado_em=agora,
+                )
+                db.add(pc_novo)
+
     # Criar alerta de atraso quando pedido é entregue/finalizado
     if dados.status == 'entregue':
         _verificar_e_criar_alerta_atraso(db, rest, pedido)
@@ -383,6 +402,15 @@ async def atualizar_status_pedido(
         }, rest.id)
         if dados.status in ('entregue', 'pronto'):
             await ws.broadcast({"tipo": "tempo_medio_atualizado", "dados": {}}, rest.id)
+
+    # Notificar KDS WebSocket sobre novo pedido
+    if dados.status == 'em_preparo':
+        kds_ws = getattr(request.app.state, 'kds_manager', None)
+        if kds_ws:
+            await kds_ws.broadcast({
+                "tipo": "kds:novo_pedido",
+                "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+            }, rest.id)
 
     # Notificar marketplace se pedido veio de integração
     if pedido.marketplace_source:
@@ -490,6 +518,24 @@ async def despachar_pedido(
     pedido.status = 'em_preparo'
     motoboy.entregas_pendentes = (motoboy.entregas_pendentes or 0) + 1
     motoboy.ultima_rota_em = datetime.utcnow()
+
+    # Auto-criar PedidoCozinha se KDS ativo
+    config_kds = db.query(models.ConfigCozinha).filter(
+        models.ConfigCozinha.restaurante_id == rest.id,
+        models.ConfigCozinha.kds_ativo == True
+    ).first()
+    if config_kds:
+        existente_kds = db.query(models.PedidoCozinha).filter(
+            models.PedidoCozinha.pedido_id == pedido.id
+        ).first()
+        if not existente_kds:
+            db.add(models.PedidoCozinha(
+                restaurante_id=rest.id,
+                pedido_id=pedido.id,
+                status='NOVO',
+                criado_em=datetime.utcnow(),
+            ))
+
     db.commit()
 
     # Broadcast WebSocket
@@ -502,6 +548,14 @@ async def despachar_pedido(
                 "motoboy_id": motoboy.id, "motoboy_nome": motoboy.nome,
                 "distancia_km": distancia_km, "tempo_estimado_min": tempo_estimado_min,
             }
+        }, rest.id)
+
+    # Notificar KDS WebSocket sobre novo pedido
+    kds_ws = getattr(request.app.state, 'kds_manager', None)
+    if kds_ws and config_kds:
+        await kds_ws.broadcast({
+            "tipo": "kds:novo_pedido",
+            "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
         }, rest.id)
 
     return {
@@ -3983,3 +4037,314 @@ async def pedido_rapido_mesa(
     await _broadcast_imprimir_pedido(request, db, pedido, rest.id)
 
     return {"id": pedido.id, "comanda": pedido.comanda, "status": pedido.status, "valor_total": pedido.valor_total}
+
+
+# ==================== KDS — COZINHEIROS CRUD ====================
+
+class CozinheiroCreate(BaseModel):
+    nome: str
+    login: str
+    senha: str
+    modo: str = 'todos'  # todos | individual
+    avatar_emoji: Optional[str] = None
+    produto_ids: Optional[List[int]] = None
+
+
+class CozinheiroUpdate(BaseModel):
+    nome: Optional[str] = None
+    login: Optional[str] = None
+    senha: Optional[str] = None
+    modo: Optional[str] = None
+    avatar_emoji: Optional[str] = None
+    produto_ids: Optional[List[int]] = None
+
+
+@router.get("/cozinha/cozinheiros")
+def listar_cozinheiros(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Lista cozinheiros do restaurante com produto_ids atribuídos."""
+    cozinheiros = db.query(models.Cozinheiro).filter(
+        models.Cozinheiro.restaurante_id == rest.id,
+        models.Cozinheiro.ativo == True
+    ).order_by(models.Cozinheiro.nome).all()
+
+    resultado = []
+    for c in cozinheiros:
+        produto_ids = [cp.produto_id for cp in c.produtos]
+        resultado.append({
+            "id": c.id,
+            "nome": c.nome,
+            "login": c.login,
+            "modo": c.modo,
+            "avatar_emoji": c.avatar_emoji,
+            "ativo": c.ativo,
+            "criado_em": c.criado_em.isoformat() if c.criado_em else None,
+            "produto_ids": produto_ids,
+        })
+
+    return resultado
+
+
+@router.post("/cozinha/cozinheiros")
+def criar_cozinheiro(
+    dados: CozinheiroCreate,
+    rest: models.Restaurante = Depends(verificar_billing_ativo),
+    db: Session = Depends(database.get_db)
+):
+    """Cria cozinheiro com login e senha definidos pelo admin."""
+    login_limpo = dados.login.strip().lower()
+    nome_limpo = dados.nome.strip()
+
+    if len(login_limpo) < 3:
+        raise HTTPException(400, "Login deve ter pelo menos 3 caracteres")
+    if len(dados.senha.strip()) < 4:
+        raise HTTPException(400, "Senha deve ter pelo menos 4 caracteres")
+    if len(nome_limpo) < 2:
+        raise HTTPException(400, "Nome deve ter pelo menos 2 caracteres")
+
+    # Verificar login duplicado
+    existente = db.query(models.Cozinheiro).filter(
+        models.Cozinheiro.restaurante_id == rest.id,
+        models.Cozinheiro.login == login_limpo,
+        models.Cozinheiro.ativo == True
+    ).first()
+    if existente:
+        raise HTTPException(400, "Já existe um cozinheiro com este login")
+
+    cozinheiro = models.Cozinheiro(
+        restaurante_id=rest.id,
+        nome=nome_limpo,
+        login=login_limpo,
+        modo=dados.modo if dados.modo in ('todos', 'individual') else 'todos',
+        avatar_emoji=dados.avatar_emoji,
+    )
+    cozinheiro.set_senha(dados.senha)
+    db.add(cozinheiro)
+    db.flush()
+
+    # Vincular produtos se modo individual
+    if dados.produto_ids and dados.modo == 'individual':
+        for pid in dados.produto_ids:
+            cp = models.CozinheiroProduto(cozinheiro_id=cozinheiro.id, produto_id=pid)
+            db.add(cp)
+
+    db.commit()
+    db.refresh(cozinheiro)
+
+    return {
+        "id": cozinheiro.id,
+        "nome": cozinheiro.nome,
+        "login": cozinheiro.login,
+        "modo": cozinheiro.modo,
+        "avatar_emoji": cozinheiro.avatar_emoji,
+        "produto_ids": dados.produto_ids or [],
+    }
+
+
+@router.put("/cozinha/cozinheiros/{cozinheiro_id}")
+def atualizar_cozinheiro(
+    cozinheiro_id: int,
+    dados: CozinheiroUpdate,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Atualiza cozinheiro. Senha só se enviada, replace produto_ids."""
+    cozinheiro = db.query(models.Cozinheiro).filter(
+        models.Cozinheiro.id == cozinheiro_id,
+        models.Cozinheiro.restaurante_id == rest.id
+    ).first()
+    if not cozinheiro:
+        raise HTTPException(404, "Cozinheiro não encontrado")
+
+    if dados.nome is not None:
+        cozinheiro.nome = dados.nome.strip()
+    if dados.login is not None:
+        login_limpo = dados.login.strip().lower()
+        # Verificar duplicação
+        existente = db.query(models.Cozinheiro).filter(
+            models.Cozinheiro.restaurante_id == rest.id,
+            models.Cozinheiro.login == login_limpo,
+            models.Cozinheiro.ativo == True,
+            models.Cozinheiro.id != cozinheiro_id
+        ).first()
+        if existente:
+            raise HTTPException(400, "Já existe outro cozinheiro com este login")
+        cozinheiro.login = login_limpo
+    if dados.senha is not None and dados.senha.strip():
+        if len(dados.senha.strip()) < 4:
+            raise HTTPException(400, "Senha deve ter pelo menos 4 caracteres")
+        cozinheiro.set_senha(dados.senha)
+    if dados.modo is not None:
+        cozinheiro.modo = dados.modo if dados.modo in ('todos', 'individual') else 'todos'
+    if dados.avatar_emoji is not None:
+        cozinheiro.avatar_emoji = dados.avatar_emoji
+
+    # Replace produto_ids se fornecido
+    if dados.produto_ids is not None:
+        # Remove antigos
+        db.query(models.CozinheiroProduto).filter(
+            models.CozinheiroProduto.cozinheiro_id == cozinheiro.id
+        ).delete()
+        # Adiciona novos
+        for pid in dados.produto_ids:
+            cp = models.CozinheiroProduto(cozinheiro_id=cozinheiro.id, produto_id=pid)
+            db.add(cp)
+
+    db.commit()
+
+    produto_ids = [cp.produto_id for cp in db.query(models.CozinheiroProduto).filter(
+        models.CozinheiroProduto.cozinheiro_id == cozinheiro.id
+    ).all()]
+
+    return {
+        "id": cozinheiro.id,
+        "nome": cozinheiro.nome,
+        "login": cozinheiro.login,
+        "modo": cozinheiro.modo,
+        "avatar_emoji": cozinheiro.avatar_emoji,
+        "produto_ids": produto_ids,
+    }
+
+
+@router.delete("/cozinha/cozinheiros/{cozinheiro_id}")
+def deletar_cozinheiro(
+    cozinheiro_id: int,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Soft-delete (ativo=False)."""
+    cozinheiro = db.query(models.Cozinheiro).filter(
+        models.Cozinheiro.id == cozinheiro_id,
+        models.Cozinheiro.restaurante_id == rest.id
+    ).first()
+    if not cozinheiro:
+        raise HTTPException(404, "Cozinheiro não encontrado")
+
+    cozinheiro.ativo = False
+    db.commit()
+    return {"mensagem": "Cozinheiro desativado"}
+
+
+# ==================== KDS — CONFIG COZINHA ====================
+
+class ConfigCozinhaUpdate(BaseModel):
+    kds_ativo: Optional[bool] = None
+    tempo_alerta_min: Optional[int] = None
+    tempo_critico_min: Optional[int] = None
+    som_novo_pedido: Optional[bool] = None
+
+
+@router.get("/cozinha/config")
+def get_config_cozinha(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Retorna config KDS (cria default se não existe)."""
+    config = db.query(models.ConfigCozinha).filter(
+        models.ConfigCozinha.restaurante_id == rest.id
+    ).first()
+
+    if not config:
+        config = models.ConfigCozinha(restaurante_id=rest.id)
+        db.add(config)
+        db.commit()
+        db.refresh(config)
+
+    return {
+        "kds_ativo": config.kds_ativo,
+        "tempo_alerta_min": config.tempo_alerta_min,
+        "tempo_critico_min": config.tempo_critico_min,
+        "som_novo_pedido": config.som_novo_pedido,
+    }
+
+
+@router.put("/cozinha/config")
+def atualizar_config_cozinha(
+    dados: ConfigCozinhaUpdate,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Atualiza config KDS."""
+    config = db.query(models.ConfigCozinha).filter(
+        models.ConfigCozinha.restaurante_id == rest.id
+    ).first()
+
+    if not config:
+        config = models.ConfigCozinha(restaurante_id=rest.id)
+        db.add(config)
+
+    if dados.kds_ativo is not None:
+        config.kds_ativo = dados.kds_ativo
+    if dados.tempo_alerta_min is not None:
+        config.tempo_alerta_min = dados.tempo_alerta_min
+    if dados.tempo_critico_min is not None:
+        config.tempo_critico_min = dados.tempo_critico_min
+    if dados.som_novo_pedido is not None:
+        config.som_novo_pedido = dados.som_novo_pedido
+
+    db.commit()
+
+    return {
+        "kds_ativo": config.kds_ativo,
+        "tempo_alerta_min": config.tempo_alerta_min,
+        "tempo_critico_min": config.tempo_critico_min,
+        "som_novo_pedido": config.som_novo_pedido,
+    }
+
+
+# ==================== KDS — DASHBOARD COZINHA ====================
+
+@router.get("/cozinha/dashboard")
+def get_dashboard_cozinha(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Dashboard KDS: contagens por status + tempo médio + cozinheiros ativos."""
+    from sqlalchemy import func
+
+    # Contagens por status
+    contagens = dict(
+        db.query(
+            models.PedidoCozinha.status,
+            func.count(models.PedidoCozinha.id)
+        ).filter(
+            models.PedidoCozinha.restaurante_id == rest.id
+        ).group_by(models.PedidoCozinha.status).all()
+    )
+
+    # Tempo médio de preparo (FAZENDO→FEITO) das últimas 24h
+    agora = datetime.utcnow()
+    inicio_24h = agora - timedelta(hours=24)
+    tempo_medio_result = db.query(
+        func.avg(
+            func.extract('epoch', models.PedidoCozinha.feito_em) -
+            func.extract('epoch', models.PedidoCozinha.iniciado_em)
+        )
+    ).filter(
+        models.PedidoCozinha.restaurante_id == rest.id,
+        models.PedidoCozinha.iniciado_em >= inicio_24h,
+        models.PedidoCozinha.feito_em.isnot(None),
+        models.PedidoCozinha.iniciado_em.isnot(None),
+    ).scalar()
+
+    tempo_medio_min = round(tempo_medio_result / 60, 1) if tempo_medio_result else 0
+
+    # Cozinheiros ativos (com pedido FAZENDO)
+    cozinheiros_ativos = db.query(
+        func.count(func.distinct(models.PedidoCozinha.cozinheiro_id))
+    ).filter(
+        models.PedidoCozinha.restaurante_id == rest.id,
+        models.PedidoCozinha.status == 'FAZENDO',
+        models.PedidoCozinha.cozinheiro_id.isnot(None),
+    ).scalar() or 0
+
+    return {
+        "novo": contagens.get('NOVO', 0),
+        "fazendo": contagens.get('FAZENDO', 0),
+        "feito": contagens.get('FEITO', 0),
+        "pronto": contagens.get('PRONTO', 0),
+        "tempo_medio_min": tempo_medio_min,
+        "cozinheiros_ativos": cozinheiros_ativos,
+    }
