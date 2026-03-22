@@ -1,0 +1,439 @@
+-- ============================================================
+-- Derekh CRM - Schema PostgreSQL CONSOLIDADO
+-- Database: derekh_crm (fly.io PostgreSQL)
+-- Inclui: base + outreach + whatsapp + agente + scanner
+-- Totalmente idempotente (IF NOT EXISTS / IF EXISTS)
+-- ============================================================
+
+-- Extensão para UUID
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- ============================================================
+-- LEADS (espelho de cnpjs_receita + campos CRM + Maps)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS leads (
+    id SERIAL PRIMARY KEY,
+    cnpj VARCHAR(14) NOT NULL UNIQUE,
+
+    -- Dados Receita Federal (Estabelecimentos)
+    razao_social TEXT,
+    nome_fantasia TEXT,
+    tipo_logradouro TEXT,
+    logradouro TEXT,
+    numero TEXT,
+    complemento TEXT,
+    bairro TEXT,
+    cidade TEXT,
+    uf VARCHAR(2),
+    cep VARCHAR(8),
+    telefone1 TEXT,
+    telefone2 TEXT,
+    email TEXT,
+    cnae_principal VARCHAR(7),
+    data_abertura TEXT,
+    situacao_cadastral VARCHAR(10),
+
+    -- Dados RF complementares (Empresas + Simples + Sócios)
+    tipo_empresa TEXT,
+    tipo_negocio TEXT,
+    capital_social REAL,
+    porte TEXT,
+    natureza_juridica TEXT,
+    simples VARCHAR(1),
+    mei VARCHAR(1),
+    data_opcao_simples TEXT,
+    socios_json JSONB,
+
+    -- Contato extra (cnpj.biz - opcional)
+    telefone_proprietario TEXT,
+    email_proprietario TEXT,
+
+    -- Delivery
+    tem_ifood SMALLINT DEFAULT 0,
+    nome_ifood TEXT,
+    url_ifood TEXT,
+    ifood_checked SMALLINT DEFAULT 0,
+    tem_rappi SMALLINT DEFAULT 0,
+    nome_rappi TEXT,
+    url_rappi TEXT,
+    rappi_checked SMALLINT DEFAULT 0,
+    tem_99food SMALLINT DEFAULT 0,
+    nome_99food TEXT,
+    url_99food TEXT,
+    food99_checked SMALLINT DEFAULT 0,
+
+    -- Dados Google Maps (desnormalizados no sync)
+    rating REAL,
+    total_reviews INTEGER,
+    website TEXT,
+    google_maps_url TEXT,
+    categoria TEXT,
+    nome_maps TEXT,
+    endereco_maps TEXT,
+    telefone_maps TEXT,
+    maps_checked SMALLINT DEFAULT 0,
+    matched SMALLINT DEFAULT 0,
+    score_match REAL,
+    detalhado SMALLINT DEFAULT 0,
+
+    -- Controle de rede
+    multi_restaurante SMALLINT DEFAULT 0,
+
+    -- CRM
+    lead_score INTEGER DEFAULT 0,
+    segmento TEXT DEFAULT 'novo',
+    status_pipeline TEXT DEFAULT 'novo',
+    motivo_perda TEXT,
+    notas TEXT,
+    data_ultimo_contato TIMESTAMP,
+    data_proximo_contato DATE,
+    email_invalido SMALLINT DEFAULT 0,
+
+    -- Outreach
+    opt_out_email BOOLEAN DEFAULT FALSE,
+    opt_out_wa BOOLEAN DEFAULT FALSE,
+    opt_out_at TIMESTAMPTZ,
+    tier TEXT DEFAULT 'cold',
+
+    -- Controle
+    synced_at TIMESTAMP DEFAULT NOW(),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+-- INTERAÇÕES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS interacoes (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    tipo TEXT NOT NULL,
+    canal TEXT,
+    conteudo TEXT,
+    resultado TEXT,
+    email_message_id TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+-- EMAIL TEMPLATES
+-- ============================================================
+CREATE TABLE IF NOT EXISTS email_templates (
+    id SERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    assunto TEXT NOT NULL,
+    corpo_html TEXT NOT NULL,
+    segmento_alvo TEXT,
+    ativo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+-- CAMPANHAS DE EMAIL
+-- ============================================================
+CREATE TABLE IF NOT EXISTS campanhas_email (
+    id SERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    template_id INTEGER REFERENCES email_templates(id) ON DELETE SET NULL,
+    filtros_json JSONB,
+    total_enviados INTEGER DEFAULT 0,
+    total_abertos INTEGER DEFAULT 0,
+    total_clicados INTEGER DEFAULT 0,
+    total_bounced INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'rascunho',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+-- SEQUÊNCIAS DE EMAIL
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sequencias_email (
+    id SERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    descricao TEXT,
+    ativo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS sequencia_etapas (
+    id SERIAL PRIMARY KEY,
+    sequencia_id INTEGER NOT NULL REFERENCES sequencias_email(id) ON DELETE CASCADE,
+    ordem INTEGER NOT NULL,
+    template_id INTEGER NOT NULL REFERENCES email_templates(id) ON DELETE CASCADE,
+    dias_espera INTEGER NOT NULL DEFAULT 1,
+    condicao TEXT DEFAULT 'sempre',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS lead_sequencia (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    sequencia_id INTEGER NOT NULL REFERENCES sequencias_email(id) ON DELETE CASCADE,
+    etapa_atual INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'ativo',
+    proximo_envio TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(lead_id, sequencia_id)
+);
+
+-- ============================================================
+-- CONFIGURAÇÕES DO SISTEMA
+-- ============================================================
+CREATE TABLE IF NOT EXISTS configuracoes (
+    chave VARCHAR(100) PRIMARY KEY,
+    valor TEXT,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================
+-- EMAILS ENVIADOS (tracking individual — Outreach)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS emails_enviados (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    template_id INTEGER REFERENCES email_templates(id) ON DELETE SET NULL,
+    campanha_id INTEGER REFERENCES campanhas_email(id) ON DELETE SET NULL,
+    assunto TEXT NOT NULL,
+    tracking_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    pixel_url TEXT,
+    horario_enviado TIMESTAMPTZ DEFAULT NOW(),
+    aberto BOOLEAN DEFAULT FALSE,
+    aberto_at TIMESTAMPTZ,
+    aberturas_count INTEGER DEFAULT 0,
+    clicou_site BOOLEAN DEFAULT FALSE,
+    clicou_wa BOOLEAN DEFAULT FALSE,
+    clicou_unsub BOOLEAN DEFAULT FALSE,
+    bounced BOOLEAN DEFAULT FALSE,
+    resend_message_id TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- OUTREACH SEQUÊNCIA (ações automáticas agendadas)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS outreach_sequencia (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    acao TEXT NOT NULL,
+    tier TEXT NOT NULL DEFAULT 'cold',
+    template_id INTEGER REFERENCES email_templates(id) ON DELETE SET NULL,
+    agendado_para TIMESTAMPTZ NOT NULL,
+    executado BOOLEAN DEFAULT FALSE,
+    executado_at TIMESTAMPTZ,
+    cancelado BOOLEAN DEFAULT FALSE,
+    resultado TEXT,
+    erro_detalhe TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- WHATSAPP CONVERSAS E MENSAGENS
+-- ============================================================
+CREATE TABLE IF NOT EXISTS wa_conversas (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    numero_envio TEXT NOT NULL,
+    status TEXT DEFAULT 'ativo',
+    voz_usada TEXT,
+    tom_usado TEXT,
+    usou_audio BOOLEAN DEFAULT FALSE,
+    msgs_enviadas INTEGER DEFAULT 0,
+    msgs_recebidas INTEGER DEFAULT 0,
+    intencao_detectada TEXT,
+    handoff_at TIMESTAMPTZ,
+    handoff_motivo TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS wa_mensagens (
+    id SERIAL PRIMARY KEY,
+    conversa_id INTEGER NOT NULL REFERENCES wa_conversas(id) ON DELETE CASCADE,
+    direcao TEXT NOT NULL,
+    tipo TEXT DEFAULT 'texto',
+    conteudo TEXT,
+    intencao TEXT,
+    grok_resposta BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- AGENTE AUTÔNOMO
+-- ============================================================
+CREATE TABLE IF NOT EXISTS agente_experimentos (
+    id SERIAL PRIMARY KEY,
+    variavel TEXT NOT NULL,
+    variante_a TEXT NOT NULL,
+    variante_b TEXT NOT NULL,
+    metrica_alvo TEXT NOT NULL,
+    amostras_a INTEGER DEFAULT 0,
+    sucessos_a INTEGER DEFAULT 0,
+    amostras_b INTEGER DEFAULT 0,
+    sucessos_b INTEGER DEFAULT 0,
+    vencedor TEXT,
+    confianca_pct FLOAT,
+    decidido_at TIMESTAMPTZ,
+    aplicado BOOLEAN DEFAULT FALSE,
+    ativo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agente_decisoes (
+    id SERIAL PRIMARY KEY,
+    tipo TEXT NOT NULL,
+    descricao TEXT NOT NULL,
+    dados JSONB,
+    aprovado BOOLEAN,
+    aprovado_at TIMESTAMPTZ,
+    executado BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS agente_relatorios (
+    id SERIAL PRIMARY KEY,
+    periodo_inicio DATE NOT NULL,
+    periodo_fim DATE NOT NULL,
+    metricas JSONB NOT NULL,
+    descobertas JSONB,
+    recomendacoes JSONB,
+    resumo_texto TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- SCANNER (scan jobs + logs)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS scan_jobs (
+    id SERIAL PRIMARY KEY,
+    cidades JSONB,
+    etapas JSONB,
+    headless BOOLEAN DEFAULT TRUE,
+    status TEXT DEFAULT 'pendente',
+    cidade_atual TEXT,
+    etapa_atual TEXT,
+    total_leads INTEGER DEFAULT 0,
+    processados INTEGER DEFAULT 0,
+    encontrados INTEGER DEFAULT 0,
+    erros INTEGER DEFAULT 0,
+    progresso JSONB,
+    started_at TIMESTAMPTZ,
+    finished_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS scan_logs (
+    id SERIAL PRIMARY KEY,
+    scan_job_id INTEGER NOT NULL REFERENCES scan_jobs(id) ON DELETE CASCADE,
+    level TEXT DEFAULT 'info',
+    message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================
+-- ÍNDICES
+-- ============================================================
+
+-- Leads
+CREATE INDEX IF NOT EXISTS idx_leads_cidade_uf ON leads(cidade, uf);
+CREATE INDEX IF NOT EXISTS idx_leads_lead_score ON leads(lead_score DESC);
+CREATE INDEX IF NOT EXISTS idx_leads_segmento ON leads(segmento);
+CREATE INDEX IF NOT EXISTS idx_leads_status_pipeline ON leads(status_pipeline);
+CREATE INDEX IF NOT EXISTS idx_leads_proximo_contato ON leads(data_proximo_contato);
+CREATE INDEX IF NOT EXISTS idx_leads_synced_at ON leads(synced_at);
+CREATE INDEX IF NOT EXISTS idx_leads_uf ON leads(uf);
+CREATE INDEX IF NOT EXISTS idx_leads_tier ON leads(tier);
+CREATE INDEX IF NOT EXISTS idx_leads_opt_out ON leads(opt_out_email, opt_out_wa);
+
+-- Interações
+CREATE INDEX IF NOT EXISTS idx_interacoes_lead_id ON interacoes(lead_id);
+CREATE INDEX IF NOT EXISTS idx_interacoes_created ON interacoes(created_at DESC);
+
+-- Campanhas
+CREATE INDEX IF NOT EXISTS idx_campanhas_status ON campanhas_email(status);
+
+-- Sequências
+CREATE INDEX IF NOT EXISTS idx_lead_sequencia_proximo ON lead_sequencia(proximo_envio)
+    WHERE status = 'ativo';
+CREATE INDEX IF NOT EXISTS idx_sequencia_etapas_seq ON sequencia_etapas(sequencia_id, ordem);
+
+-- Emails enviados
+CREATE INDEX IF NOT EXISTS idx_emails_enviados_lead ON emails_enviados(lead_id);
+CREATE INDEX IF NOT EXISTS idx_emails_enviados_tracking ON emails_enviados(tracking_id);
+CREATE INDEX IF NOT EXISTS idx_emails_enviados_resend ON emails_enviados(resend_message_id);
+CREATE INDEX IF NOT EXISTS idx_emails_enviados_campanha ON emails_enviados(campanha_id);
+
+-- Outreach
+CREATE INDEX IF NOT EXISTS idx_outreach_pendentes ON outreach_sequencia(agendado_para)
+    WHERE executado = FALSE AND cancelado = FALSE;
+CREATE INDEX IF NOT EXISTS idx_outreach_lead ON outreach_sequencia(lead_id);
+
+-- WhatsApp
+CREATE INDEX IF NOT EXISTS idx_wa_conversas_lead ON wa_conversas(lead_id);
+CREATE INDEX IF NOT EXISTS idx_wa_conversas_status ON wa_conversas(status);
+CREATE INDEX IF NOT EXISTS idx_wa_mensagens_conversa ON wa_mensagens(conversa_id);
+
+-- Agente
+CREATE INDEX IF NOT EXISTS idx_agente_exp_variavel ON agente_experimentos(variavel) WHERE ativo = TRUE;
+CREATE INDEX IF NOT EXISTS idx_agente_decisoes_pendentes ON agente_decisoes(tipo) WHERE aprovado IS NULL;
+
+-- Scanner
+CREATE INDEX IF NOT EXISTS idx_scan_logs_job ON scan_logs(scan_job_id);
+
+-- ============================================================
+-- TRIGGER: updated_at automático
+-- ============================================================
+CREATE OR REPLACE FUNCTION trigger_set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DO $$ BEGIN
+    CREATE TRIGGER set_updated_at_leads
+        BEFORE UPDATE ON leads
+        FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE TRIGGER set_updated_at_campanhas
+        BEFORE UPDATE ON campanhas_email
+        FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE TRIGGER set_updated_at_templates
+        BEFORE UPDATE ON email_templates
+        FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+    CREATE TRIGGER set_updated_at_wa_conversas
+        BEFORE UPDATE ON wa_conversas
+        FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ============================================================
+-- CONFIGURAÇÕES DEFAULT
+-- ============================================================
+INSERT INTO configuracoes (chave, valor) VALUES
+    ('outreach_email_dominio', '@derekh.com.br'),
+    ('outreach_max_email_dia', '20'),
+    ('outreach_warmup_emails_dia', '20'),
+    ('outreach_landing_url', 'https://derekh.com.br/food'),
+    ('outreach_ativo', 'false'),
+    ('wa_sales_numero', ''),
+    ('wa_evolution_url', ''),
+    ('wa_evolution_key', ''),
+    ('wa_evolution_instance', 'derekh_sales'),
+    ('xai_api_key', ''),
+    ('wa_sales_ativo', 'false')
+ON CONFLICT (chave) DO NOTHING;
