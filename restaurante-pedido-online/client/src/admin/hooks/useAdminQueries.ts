@@ -44,6 +44,9 @@ export const ADMIN_QUERY_KEYS = {
   configCozinha: ["admin", "cozinha", "config"] as const,
   dashboardCozinha: ["admin", "cozinha", "dashboard"] as const,
   desempenhoCozinha: ["admin", "cozinha", "desempenho"] as const,
+  garcons: ["admin", "garcom", "garcons"] as const,
+  configGarcom: ["admin", "garcom", "config"] as const,
+  sessoesGarcom: ["admin", "garcom", "sessoes"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -1032,5 +1035,72 @@ export function useDespausarPedidoCozinha() {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboardCozinha });
     },
+  });
+}
+
+// ─── Garçom / Atendimento ──────────────────────────────
+export function useGarcons() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.garcons,
+    queryFn: api.getGarcons,
+    staleTime: 30_000,
+  });
+}
+
+export function useCriarGarcom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.criarGarcom,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.garcons }),
+  });
+}
+
+export function useAtualizarGarcom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }: { id: number; [key: string]: any }) =>
+      api.atualizarGarcom(id, payload),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.garcons }),
+  });
+}
+
+export function useDeletarGarcom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.deletarGarcom,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.garcons }),
+  });
+}
+
+export function useConfigGarcom() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.configGarcom,
+    queryFn: api.getConfigGarcom,
+    staleTime: 30_000,
+  });
+}
+
+export function useAtualizarConfigGarcom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.atualizarConfigGarcom,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.configGarcom }),
+  });
+}
+
+export function useSessoesGarcom() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.sessoesGarcom,
+    queryFn: api.getSessoesGarcom,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useFecharSessaoGarcom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.fecharSessaoGarcom,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.sessoesGarcom }),
   });
 }

@@ -655,6 +655,52 @@ export async function despausarPedidoCozinha(pedidoId: number) {
   return data;
 }
 
+// ==================== GARÇOM ====================
+
+export async function getGarcons() {
+  const { data } = await adminApi.get("/painel/garcom/garcons");
+  return data;
+}
+
+export async function criarGarcom(payload: {
+  nome: string; login: string; senha: string;
+  modo_secao?: string; secao_inicio?: number; secao_fim?: number;
+  avatar_emoji?: string; mesa_ids?: number[];
+}) {
+  const { data } = await adminApi.post("/painel/garcom/garcons", payload);
+  return data;
+}
+
+export async function atualizarGarcom(id: number, payload: Record<string, any>) {
+  const { data } = await adminApi.put(`/painel/garcom/garcons/${id}`, payload);
+  return data;
+}
+
+export async function deletarGarcom(id: number) {
+  const { data } = await adminApi.delete(`/painel/garcom/garcons/${id}`);
+  return data;
+}
+
+export async function getConfigGarcom() {
+  const { data } = await adminApi.get("/painel/garcom/config");
+  return data;
+}
+
+export async function atualizarConfigGarcom(payload: Record<string, any>) {
+  const { data } = await adminApi.put("/painel/garcom/config", payload);
+  return data;
+}
+
+export async function getSessoesGarcom() {
+  const { data } = await adminApi.get("/painel/garcom/sessoes");
+  return data;
+}
+
+export async function fecharSessaoGarcom(sessaoId: number) {
+  const { data } = await adminApi.post(`/painel/garcom/sessoes/${sessaoId}/fechar`);
+  return data;
+}
+
 // ==================== PIX ONLINE ====================
 
 export async function getPixConfig() {

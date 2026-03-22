@@ -83,8 +83,8 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
 - **Última sessão:** 21/03/2026
 - **Migrations em produção:** 001-027 (última: 027_operadores_caixa)
-- **Migrations locais:** 028 (Pix), 029 (KDS), 030 (Planos), 031 (KDS pausa)
-- **Migrations planejadas:** 032 (Garçom), 033 (Bot), 034 (Bridge)
+- **Migrations locais:** 028 (Pix), 029 (KDS), 030 (Planos), 031 (KDS pausa), 032 (Garçom)
+- **Migrations planejadas:** 033 (Bot), 034 (Bridge)
 - **Bugs conhecidos:** Nenhum crítico
 - **Pendente:** 6 módulos (Pix → KDS → Garçom → Bot → Sales → Printer), domínio próprio
 
@@ -159,7 +159,7 @@ super-food/
 ├── backend/app/
 │   ├── main.py                # FastAPI entry + WebSocket + lifespan
 │   ├── database.py            # Config BD SQLite/PostgreSQL
-│   ├── auth.py                # JWT helpers (3 roles: restaurante, motoboy, admin)
+│   ├── auth.py                # JWT helpers (6 roles: restaurante, motoboy, admin, cliente, cozinheiro, garcom)
 │   ├── models.py              # Re-exporta models de database/models.py
 │   ├── websocket_manager.py   # Redis Pub/Sub multi-worker
 │   ├── routers/
@@ -232,7 +232,7 @@ super-food/
 | 4 | App Motoboy | React PWA | /entregador | Produção |
 | 5 | Site Cliente | React | /cliente/{codigo} | Produção |
 | 6 | App KDS (Cozinha) | React PWA | /cozinha | Implementado |
-| 7 | App Garçom | React PWA | /garcom | Planejado |
+| 7 | App Garçom | React PWA | /garcom | Implementado |
 | 8 | Bot WhatsApp | FastAPI (micro) | derekh-bot.fly.dev | Planejado |
 | 9 | Sales Autopilot | FastAPI | derekh-crm.fly.dev | Em deploy |
 | 10 | Printer Agent | Windows Service | localhost:8765 | Planejado |
@@ -263,7 +263,7 @@ super-food/
 | 16 | Bot WhatsApp IA (Plano Premium) | ⏳ Planejado |
 | 17 | Pix Online Woovi/OpenPix | ⏳ Planejado |
 | 18 | KDS / Comanda Digital | ✅ 21/03 (falta deploy) |
-| 19 | App Garçom (Atendimento Mesa) | ⏳ Planejado |
+| 19 | App Garçom (Atendimento Mesa) | ✅ 22/03 (falta deploy) |
 | 20 | Sales Autopilot (CRM B2B) | ⏳ Planejado |
 | 21 | Printer Agent (Windows Service) | ⏳ Planejado |
 
@@ -446,44 +446,47 @@ super-food/
 
 ---
 
-### MÓDULO 3 — App Garçom — Sprint 19 — Migration 030
+### MÓDULO 3 — App Garçom — Sprint 19 — Migration 032
 
 **Fase 1: Backend Models + Migration**
-- [ ] Migration 030: tabelas `garcons` (id, restaurante_id, nome, login, senha_hash, secao_inicio, secao_fim, modo_secao [FAIXA/TODOS/CUSTOM], avatar_emoji, ativo), `garcom_mesas` (garcom_id, mesa_id), `config_garcom` (restaurante_id UNIQUE, taxa_servico, pct_taxa, couvert_auto, item_couvert_id, campos_obrigatorios, permitir_cancelamento), `sessoes_mesa` (id, restaurante_id, mesa_id, garcom_id, status [ABERTA/FECHANDO/FECHADA], qtd_pessoas, alergia, tags, subtotal, taxa, total), `sessao_pedidos` (sessao_id, pedido_id), `itens_esgotados` (id, restaurante_id, item_cardapio_id, reportado_por, ativo)
-- [ ] Campos novos em `pedidos`: `course`, `tipo_origem`, `label_origem`
-- [ ] Campos novos em `itens_pedido`: `status_cozinha`, `cancelado`, `cancelado_em`
-- [ ] Models ORM: `Garcom`, `GarcomMesa`, `ConfigGarcom`, `SessaoMesa`, `SessaoPedido`, `ItemEsgotado`
+- [x] Migration 032: tabelas `garcons`, `garcom_mesas`, `config_garcom`, `sessoes_mesa`, `sessao_pedidos`, `itens_esgotados`
+- [x] Campos novos em `pedidos`: `course`, `tipo_origem`, `label_origem`
+- [x] Models ORM: `Garcom`, `GarcomMesa`, `ConfigGarcom`, `SessaoMesa`, `SessaoPedido`, `ItemEsgotado`
 
 **Fase 2: Backend Endpoints Admin**
-- [ ] CRUD garçons: `GET/POST /painel/garcons`, `PUT/DELETE /painel/garcons/{id}`
-- [ ] Config: `GET/PUT /painel/garcons/config`
-- [ ] Monitor: `GET /painel/garcons/monitor`
+- [x] CRUD garçons: `GET/POST /painel/garcom/garcons`, `PUT/DELETE /painel/garcom/garcons/{id}`
+- [x] Config: `GET/PUT /painel/garcom/config`
+- [x] Monitor: `GET /painel/garcom/sessoes`, `POST /painel/garcom/sessoes/{id}/fechar`
 
 **Fase 3: Backend Endpoints Garçom**
-- [ ] Auth: `POST /garcom/auth/login` → JWT role=garcom
-- [ ] Mesas: `GET /garcom/mesas`, `POST /garcom/mesas/{id}/abrir`, `POST /garcom/mesas/{id}/transferir`
-- [ ] Sessão: `GET /garcom/sessoes/{id}`, `POST /garcom/sessoes/{id}/pedidos`, `POST /garcom/sessoes/{id}/solicitar-fechamento`
-- [ ] Itens: `DELETE /garcom/pedidos/{id}/itens/{item_id}`, `POST/DELETE /garcom/itens-esgotados`
+- [x] Auth: `POST /garcom/auth/login`, `GET /garcom/auth/me` → JWT role=garcom
+- [x] Mesas: `GET /garcom/mesas`, `POST /garcom/mesas/{id}/abrir`, `POST /garcom/mesas/{id}/transferir`
+- [x] Sessão: `GET /garcom/sessoes/{id}`, `POST /garcom/sessoes/{id}/pedidos`, `POST /garcom/sessoes/{id}/solicitar-fechamento`, `POST /garcom/sessoes/{id}/repetir-rodada`
+- [x] Itens: `DELETE /garcom/pedidos/{id}/itens/{item_id}`, `GET/POST/DELETE /garcom/itens-esgotados`
+- [x] Cardápio: `GET /garcom/cardapio`
 
 **Fase 4: Backend WebSocket**
-- [ ] Canal `/ws/garcom?token={jwt}`, eventos: `garcom:pedido_pronto`, `garcom:item_esgotado`, `garcom:mesa_fechada`
+- [x] Canal `/ws/garcom/{restaurante_id}?token={jwt}`, eventos: `garcom:pedido_pronto`, `garcom:item_esgotado`, `garcom:item_disponivel`, `garcom:mesa_fechada`
 
 **Fase 5: Frontend Admin**
-- [ ] Página "Garçons e Atendimento" no painel (CRUD + config + monitor)
-- [ ] Hooks em `useAdminQueries.ts`
+- [x] Página "Garçons" no painel (CRUD + config + monitor mesas ativas)
+- [x] Hooks em `useAdminQueries.ts` (8 hooks)
+- [x] Menu sidebar "Garçons" (Users icon)
+- [x] Rota `/garcons` em AdminApp.tsx
 
 **Fase 6: Frontend PWA Garçom**
-- [ ] App React em `src/garcom/` (rota `/garcom`), `GarcomAuthContext`, `useGarcomQueries.ts`
-- [ ] Login garçom
-- [ ] Grid de mesas (status visual: LIVRE/OCUPADA/FECHANDO/PRONTO)
-- [ ] Modal abertura mesa (pessoas, alergia, tags)
-- [ ] Detalhe da mesa (pedidos por etapa, conta, cancelados)
-- [ ] Cardápio (categorias, carrinho, enviar pedido com course)
-- [ ] Notificações pedido pronto (WebSocket do KDS) + sons + badges
-- [ ] PWA manifest + service worker
+- [x] App React em `src/garcom/` (rota `/garcom`), `GarcomAuthContext`, `useGarcomQueries.ts`
+- [x] Login garçom (dark theme amber)
+- [x] Grid de mesas (status visual: LIVRE/ABERTA/FECHANDO)
+- [x] Abertura mesa (pessoas, alergia, tags, notas)
+- [x] Detalhe da mesa (pedidos por course, conta, cancelar itens)
+- [x] Cardápio (categorias, carrinho, course selector, enviar para cozinha)
+- [x] Transferir mesa (grid mesas livres)
+- [x] WebSocket + sons (sndReady, snd86, sndClick)
+- [x] Repetir rodada
 
 **Fase 7: Deploy**
-- [ ] Deploy migration 030 + testar fluxo garçom → mesa → pedido → KDS → pronto
+- [ ] Deploy migration 032 + testar fluxo garçom → mesa → pedido → KDS → pronto
 
 ---
 

@@ -85,6 +85,14 @@ from database.models import (
     CozinheiroProduto,
     PedidoCozinha,
     ConfigCozinha,
+
+    # Garçom
+    Garcom,
+    GarcomMesa,
+    ConfigGarcom,
+    SessaoMesa,
+    SessaoPedido,
+    ItemEsgotado,
 )
 
 # Para compatibilidade com imports existentes
@@ -133,4 +141,10 @@ __all__ = [
     'CozinheiroProduto',
     'PedidoCozinha',
     'ConfigCozinha',
+    'Garcom',
+    'GarcomMesa',
+    'ConfigGarcom',
+    'SessaoMesa',
+    'SessaoPedido',
+    'ItemEsgotado',
 ]

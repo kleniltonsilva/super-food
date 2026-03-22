@@ -28,6 +28,8 @@ from .routers import pix as pix_router
 from .routers import pix_webhooks as pix_webhooks_router
 from .routers import auth_cozinheiro as auth_cozinheiro_router
 from .routers import kds as kds_router
+from .routers import auth_garcom as auth_garcom_router
+from .routers import garcom as garcom_router
 from .billing.billing_tasks import verificar_billing_periodico
 from .pix.pix_tasks import verificar_pix_periodico
 from .integrations.manager import integration_manager
@@ -48,6 +50,7 @@ logger = logging.getLogger("superfood")
 manager = create_manager(channel_prefix="ws:restaurante")
 printer_manager = create_manager(channel_prefix="ws:printer")
 kds_manager = create_manager(channel_prefix="ws:kds")
+garcom_manager = create_manager(channel_prefix="ws:garcom")
 
 
 async def verificar_entregas_atrasadas(ws_manager):
@@ -142,6 +145,8 @@ async def lifespan(app: FastAPI):
         await printer_manager.start()
     if hasattr(kds_manager, 'start'):
         await kds_manager.start()
+    if hasattr(garcom_manager, 'start'):
+        await garcom_manager.start()
 
     # Inicia verificação periódica de entregas atrasadas
     _entrega_task = asyncio.create_task(verificar_entregas_atrasadas(manager))
@@ -192,6 +197,8 @@ async def lifespan(app: FastAPI):
         await printer_manager.stop()
     if hasattr(kds_manager, 'stop'):
         await kds_manager.stop()
+    if hasattr(garcom_manager, 'stop'):
+        await garcom_manager.stop()
     await integration_manager.stop()
     logger.info("Derekh Food API encerrada")
 
@@ -206,6 +213,7 @@ app = FastAPI(
 app.state.ws_manager = manager
 app.state.printer_manager = printer_manager
 app.state.kds_manager = kds_manager
+app.state.garcom_manager = garcom_manager
 app.state.integration_manager = integration_manager
 
 # ==================== Middlewares ====================
@@ -315,6 +323,8 @@ app.include_router(pix_router.router)
 app.include_router(pix_webhooks_router.router)
 app.include_router(auth_cozinheiro_router.router)
 app.include_router(kds_router.router)
+app.include_router(auth_garcom_router.router)
+app.include_router(garcom_router.router)
 
 # ==================== Endpoint público — Planos (landing page) ====================
 @app.get("/api/public/planos")
@@ -559,6 +569,39 @@ async def websocket_kds(websocket: WebSocket, restaurante_id: int, token: Option
         logger.info(f"KDS desconectado: restaurante={restaurante_id}")
 
 
+# ==================== WebSocket Garçom ====================
+@app.websocket("/ws/garcom/{restaurante_id}")
+async def websocket_garcom(websocket: WebSocket, restaurante_id: int, token: Optional[str] = Query(None)):
+    """WebSocket para App Garçom — auth via JWT na query string, role=garcom"""
+    from jose import JWTError, jwt as jose_jwt
+    from .auth import SECRET_KEY, ALGORITHM
+
+    if not token:
+        await websocket.close(code=4001, reason="Token obrigatorio")
+        return
+    try:
+        payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_sub": False})
+        role = payload.get("role")
+        rest_id = payload.get("restaurante_id")
+        if role != "garcom" or rest_id != restaurante_id:
+            await websocket.close(code=4003, reason="Acesso negado")
+            return
+    except (JWTError, ValueError, TypeError):
+        await websocket.close(code=4001, reason="Token invalido")
+        return
+
+    await garcom_manager.connect(websocket, restaurante_id)
+    logger.info(f"Garcom conectado: restaurante={restaurante_id}")
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Garçom pode enviar pings ou acks
+    except WebSocketDisconnect:
+        garcom_manager.disconnect(websocket, restaurante_id)
+        logger.info(f"Garcom desconectado: restaurante={restaurante_id}")
+
+
 # ==================== SPA React (KDS / Cozinha) ====================
 @app.get("/cozinha", response_class=HTMLResponse)
 async def serve_cozinha_root():
@@ -572,6 +615,28 @@ async def serve_cozinha_root():
 @app.get("/cozinha/{path:path}", response_class=HTMLResponse)
 async def serve_cozinha_catchall(path: str):
     """Catch-all para SPA routing do app cozinha"""
+    asset_response = _serve_react_asset(path)
+    if asset_response:
+        return asset_response
+    index_file = REACT_BUILD_DIR / "index.html"
+    if index_file.exists():
+        return HTMLResponse(content=index_file.read_text())
+    return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)
+
+
+# ==================== SPA React (App Garçom) ====================
+@app.get("/garcom", response_class=HTMLResponse)
+async def serve_garcom_root():
+    """Serve o app Garçom React PWA"""
+    index_file = REACT_BUILD_DIR / "index.html"
+    if index_file.exists():
+        return HTMLResponse(content=index_file.read_text())
+    return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)
+
+
+@app.get("/garcom/{path:path}", response_class=HTMLResponse)
+async def serve_garcom_catchall(path: str):
+    """Catch-all para SPA routing do app garçom"""
     asset_response = _serve_react_asset(path)
     if asset_response:
         return asset_response

@@ -547,6 +547,10 @@ class Pedido(Base):
     marketplace_order_id = Column(String(100))    # ID original do marketplace
     marketplace_display_id = Column(String(50))   # ID curto para exibição (ex: "iFood #A1B2")
     marketplace_raw_json = Column(JSON)           # Pedido original completo do marketplace
+    # Garçom
+    course = Column(String(20))                     # couvert/bebida/entrada/principal/sobremesa
+    tipo_origem = Column(String(20))                # garcom/cliente/admin
+    label_origem = Column(String(100))              # "Mesa 5 - João"
     # Timestamps
     data_criacao = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -1349,6 +1353,136 @@ class ConfigCozinha(Base):
     __table_args__ = (
         UniqueConstraint('restaurante_id', name='uq_config_cozinha_restaurante'),
         Index('idx_config_cozinha_restaurante', 'restaurante_id'),
+    )
+
+
+# ==================== GARÇOM — APP GARÇOM ====================
+class Garcom(Base):
+    """Garçom com login no app"""
+    __tablename__ = "garcons"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    nome = Column(String(100), nullable=False)
+    login = Column(String(50), nullable=False)
+    senha_hash = Column(String(256), nullable=False)
+    secao_inicio = Column(Integer)
+    secao_fim = Column(Integer)
+    modo_secao = Column(String(20), default='FAIXA')  # FAIXA | TODOS | CUSTOM
+    avatar_emoji = Column(String(10))
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    mesas_custom = relationship("GarcomMesa", back_populates="garcom", cascade="all, delete-orphan")
+    __table_args__ = (
+        UniqueConstraint('restaurante_id', 'login', name='uq_garcom_login_restaurante'),
+        Index('idx_garcom_restaurante', 'restaurante_id', 'ativo'),
+        Index('idx_garcom_login', 'restaurante_id', 'login'),
+    )
+
+    def set_senha(self, senha: str):
+        """Gera hash SHA256 da senha. Aplica strip() para ignorar espaços acidentais."""
+        self.senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
+
+    def verificar_senha(self, senha: str) -> bool:
+        """Verifica se a senha está correta. Aplica strip() para consistência com set_senha."""
+        senha_hash = hashlib.sha256(senha.strip().encode()).hexdigest()
+        return self.senha_hash == senha_hash
+
+
+class GarcomMesa(Base):
+    """Atribuição custom de mesas a garçom"""
+    __tablename__ = "garcom_mesas"
+    id = Column(Integer, primary_key=True, index=True)
+    garcom_id = Column(Integer, ForeignKey("garcons.id", ondelete="CASCADE"), nullable=False)
+    mesa_id = Column(Integer, nullable=False)
+    # Relacionamentos
+    garcom = relationship("Garcom", back_populates="mesas_custom")
+    __table_args__ = (
+        UniqueConstraint('garcom_id', 'mesa_id', name='uq_garcom_mesa'),
+        Index('idx_garcom_mesa_garcom', 'garcom_id'),
+    )
+
+
+class ConfigGarcom(Base):
+    """Configuração do app garçom por restaurante"""
+    __tablename__ = "config_garcom"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    garcom_ativo = Column(Boolean, default=False)
+    taxa_servico = Column(Float, default=0.10)
+    pct_taxa = Column(Boolean, default=True)  # True = percentual, False = valor fixo
+    couvert_auto = Column(Boolean, default=False)
+    item_couvert_id = Column(Integer)
+    campos_obrigatorios = Column(JSON)  # ex: ["qtd_pessoas", "alergia"]
+    permitir_cancelamento = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        UniqueConstraint('restaurante_id', name='uq_config_garcom_restaurante'),
+        Index('idx_config_garcom_restaurante', 'restaurante_id'),
+    )
+
+
+class SessaoMesa(Base):
+    """Sessão de atendimento em uma mesa"""
+    __tablename__ = "sessoes_mesa"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    mesa_id = Column(Integer, nullable=False)
+    garcom_id = Column(Integer, ForeignKey("garcons.id", ondelete="SET NULL"))
+    status = Column(String(20), default='ABERTA')  # ABERTA | FECHANDO | FECHADA
+    qtd_pessoas = Column(Integer, default=1)
+    alergia = Column(Text)
+    tags = Column(JSON)  # ["Aniversário", "VIP", etc]
+    notas = Column(Text)
+    subtotal = Column(Float, default=0)
+    taxa = Column(Float, default=0)
+    total = Column(Float, default=0)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    fechado_em = Column(DateTime)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    garcom = relationship("Garcom")
+    pedidos_sessao = relationship("SessaoPedido", back_populates="sessao", cascade="all, delete-orphan")
+    __table_args__ = (
+        Index('idx_sessao_mesa_restaurante', 'restaurante_id', 'status'),
+        Index('idx_sessao_mesa_mesa', 'restaurante_id', 'mesa_id', 'status'),
+        Index('idx_sessao_mesa_garcom', 'garcom_id'),
+    )
+
+
+class SessaoPedido(Base):
+    """Vínculo sessão <-> pedido"""
+    __tablename__ = "sessao_pedidos"
+    id = Column(Integer, primary_key=True, index=True)
+    sessao_id = Column(Integer, ForeignKey("sessoes_mesa.id", ondelete="CASCADE"), nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="CASCADE"), nullable=False)
+    # Relacionamentos
+    sessao = relationship("SessaoMesa", back_populates="pedidos_sessao")
+    pedido = relationship("Pedido")
+    __table_args__ = (
+        UniqueConstraint('sessao_id', 'pedido_id', name='uq_sessao_pedido'),
+        Index('idx_sessao_pedido_sessao', 'sessao_id'),
+        Index('idx_sessao_pedido_pedido', 'pedido_id'),
+    )
+
+
+class ItemEsgotado(Base):
+    """Item do cardápio marcado como esgotado"""
+    __tablename__ = "itens_esgotados"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    item_cardapio_id = Column(Integer, nullable=False)
+    reportado_por = Column(Integer, ForeignKey("garcons.id", ondelete="SET NULL"))
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    garcom = relationship("Garcom")
+    __table_args__ = (
+        Index('idx_itens_esgotados_restaurante', 'restaurante_id', 'ativo'),
     )
 
 

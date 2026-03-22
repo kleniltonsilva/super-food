@@ -16,7 +16,7 @@
   4. App Motoboy (PWA)
   5. Site do Cliente (cardápio online)
   6. Cozinha Digital KDS (PWA)
-  7. App Garçom (planejado)
+  7. App Garçom (PWA)
 
 ### Diferenciais
 - Sistema 100% brasileiro, desenvolvido em português
@@ -48,7 +48,13 @@
   - Auto-aceitar: restaurantes podem configurar aceite automático para clientes recorrentes
 - **Ações por pedido:** ver detalhes, imprimir comanda, mudar status, cancelar (com senha para finalizados)
 - **Despacho:** automático (rápido/cronológico) ou manual (admin escolhe motoboy)
-- **Integração KDS:** quando ativado, pedido vai automaticamente para cozinha digital
+- **Integração KDS inteligente:**
+  - Quando KDS ativo, pedidos vão **automaticamente** para a cozinha digital ao serem criados
+  - Status "Pronto" é bloqueado no painel — **só o cozinheiro marca PRONTO** via KDS
+  - Quando cozinheiro marca PRONTO no KDS → status do pedido atualiza automaticamente no painel
+  - Tempo de preparo real calculado automaticamente (histórico do pedido)
+- **Pausar pedido na cozinha:** admin pode pausar pedidos NOVOS — KDS mostra cadeado, cozinheiro não pode avançar
+- **Despausar:** admin despausa e pedido volta à posição original na fila da cozinha
 - **Origem do pedido:** badges visuais (iFood, 99Food, Rappi, Keeta, Web, Manual)
 - **Borda vermelha:** pedidos ativos há mais de 30 min recebem destaque visual
 
@@ -104,9 +110,40 @@
   - Modo "Todos os produtos" ou "Produtos específicos" (seleciona quais prepara)
 - **Monitor:** contadores em tempo real — pedidos novos, fazendo, feitos, prontos
 - **Fluxo:** Novo → Fazendo (COMECEI) → Feito (FEITO) → Pronto (despacho)
-- **Aba Desempenho:** ranking de cozinheiros por tempo médio de montagem e despacho
+- **Auto-envio:** pedidos criados no checkout vão automaticamente para o KDS (sem intervenção do admin)
+- **Sincronização KDS→Pedido:** quando cozinheiro marca PRONTO, o status do pedido principal atualiza automaticamente
+- **Pausar/Despausar:** admin pode pausar pedido NOVO na cozinha — KDS exibe cadeado, ações bloqueadas
+  - Ao despausar, pedido volta à posição original na fila (por horário de criação)
+- **Aba Desempenho:** ranking de cozinheiros com métricas em tempo real
+  - **Tempo médio de montagem:** tempo entre FAZENDO e FEITO (habilidade do cozinheiro)
+  - **Tempo médio de despacho:** tempo entre criação e PRONTO (eficiência total da cozinha)
+  - Filtros por período: hoje, 7 dias, 30 dias
+  - Cards resumo: total de pedidos preparados, tempo médio geral
+  - Ranking com medalhas (ouro/prata/bronze), avatar emoji, tempos formatados
 
-### 2.9 Caixa
+### 2.9 Garçons e Atendimento (App Garçom)
+- **Configuração no painel:** ativar/desativar app garçom, taxa de serviço (% ou fixa), permitir cancelamento de itens
+- **Garçons:** CRUD com nome, login, senha, avatar emoji, modo de seção (todas mesas, faixa, custom)
+- **Monitor de mesas ativas:** sessões abertas em tempo real, fechar sessão pelo admin
+- **App Garçom (PWA):** app dedicado para garçons acessarem via `/garcom`
+  - Login com código do restaurante + login + senha
+  - **Grid de mesas:** todas as mesas com status visual (LIVRE=verde, ABERTA=âmbar, FECHANDO=vermelho)
+  - **Timer por mesa:** tempo decorrido desde abertura
+  - **Abertura de mesa:** quantidade de pessoas, alergias, tags (Aniversário, VIP, Família etc.), notas
+  - **Pedidos por course:** couvert, bebida, entrada, principal, sobremesa (cores distintas por etapa)
+  - **Cardápio integrado:** categorias + produtos do restaurante, busca, itens esgotados
+  - **Carrinho:** qtd por item, observações, seletor de course, enviar para cozinha
+  - **Conta da mesa:** subtotal, taxa de serviço, total, divisão por pessoa
+  - **Transferir mesa:** transfere sessão inteira para outra mesa livre
+  - **Repetir rodada:** repete último pedido da mesa
+  - **Cancelar itens:** garçom pode cancelar itens que ainda não foram preparados
+  - **Itens esgotados:** garçom pode marcar/desmarcar produtos como esgotados
+  - **Integração KDS:** pedidos vão automaticamente para a cozinha digital
+  - **WebSocket:** notificações em tempo real (pedido pronto, item esgotado, mesa fechada)
+  - **Sons:** notificações sonoras via Web Audio API (pedido pronto, item esgotado)
+  - **Tema:** dark (bg #0a0806), accent amber (#d97706/#fbbf24), fontes Outfit + JetBrains Mono
+
+### 2.10 Caixa
 - **Abertura:** operador + valor inicial (fundo de caixa)
 - **Movimentações:** vendas automáticas (ao entregar pedido), reforços, sangrias manuais
   - Classificação por forma de pagamento: dinheiro, cartão, Pix, vale
@@ -115,7 +152,7 @@
   - Gerente usa senha do restaurante (não precisa de operador)
 - **Histórico:** lista de caixas anteriores com totais
 
-### 2.10 Promoções
+### 2.11 Promoções
 - Cupons de desconto com código
 - Tipo: percentual ou valor fixo
 - Valor mínimo do pedido para aplicar
@@ -124,35 +161,35 @@
 - Limite de usos total
 - Ativação/desativação
 
-### 2.11 Fidelidade
+### 2.12 Fidelidade
 - Sistema de pontos por pedido (configurável por restaurante)
 - **Prêmios resgatáveis:** desconto, item grátis, brinde
   - Cada prêmio com custo em pontos, descrição, valor
 - Histórico de transações (ganhos e resgates)
 - Saldo de pontos exibido no site do cliente
 
-### 2.12 Bairros
+### 2.13 Bairros
 - Zonas de entrega por bairro
 - Taxa de entrega personalizada por bairro
 - Tempo estimado de entrega por bairro
 - Ativação/desativação por bairro
 - Alternativa ao cálculo por distância (km)
 
-### 2.13 Relatórios
+### 2.14 Relatórios
 - **Vendas:** gráfico de barras por período, total de pedidos, faturamento
 - **Motoboys:** ranking por entregas realizadas, tempo médio, km percorridos
 - **Produtos:** mais vendidos, receita por produto
 - Filtros por período (hoje, 7 dias, 30 dias, personalizado)
 - Gráficos interativos (Recharts)
 
-### 2.14 Histórico de Atrasos
+### 2.15 Histórico de Atrasos
 - Monitoramento automático de atrasos em pedidos
 - Alerta quando entrega ultrapassa tempo estimado + tolerância configurável
 - Tipos: atraso de entrega, retirada, mesa
 - Resolução automática quando pedido é finalizado
 - Sugestões de ajuste de tempo baseadas no histórico
 
-### 2.15 Integrações Marketplace
+### 2.16 Integrações Marketplace
 - Conectar restaurante ao iFood, 99Food, Rappi, Keeta
 - Receber pedidos do marketplace direto no painel
 - Sincronização de status bidirecional
@@ -160,7 +197,7 @@
 - Credenciais gerenciadas pelo Super Admin (1 credencial da plataforma por marketplace)
 - Cada restaurante autoriza individualmente
 
-### 2.16 Pagamento Pix Online (Woovi/OpenPix)
+### 2.17 Pagamento Pix Online (Woovi/OpenPix)
 - **Adesão com consentimento:** formulário com chave Pix + tipo + aceite de termos
 - **Custo:** R$0,85 por transação Pix (cobrado pela Woovi) — Derekh não cobra nada
 - **Subconta virtual:** restaurante não precisa criar conta Woovi
@@ -169,7 +206,7 @@
 - **Saque automático:** configura valor mínimo para saque automático
 - **Fluxo:** cliente paga Pix → webhook confirma → saldo acumula → restaurante saca
 
-### 2.17 Assinatura/Billing (Asaas)
+### 2.18 Assinatura/Billing (Asaas)
 - **Trial:** 20 dias grátis com plano Premium completo
 - **Planos:** Básico, Profissional, Premium (valores configuráveis pelo Super Admin)
 - **Pagamento:** Pix ou Boleto via Asaas
@@ -179,7 +216,21 @@
   - Suspensão parcial (pode ver mas não operar)
   - Preservação de dados por 90 dias após cancelamento
 
-### 2.18 Configurações
+### 2.19 Garçons
+- **Aba Garçons:** CRUD completo (nome, login, senha, emoji avatar)
+  - Modo de seção: Todas as mesas, Faixa de mesas (início-fim), Mesas específicas
+  - Status ativo/inativo
+- **Aba Config:**
+  - Ativar/desativar app garçom (habilita login pelo app)
+  - Taxa de serviço: valor fixo ou percentual do subtotal
+  - Permitir cancelamento de itens pelos garçons
+- **Aba Mesas Ativas:** monitor em tempo real
+  - Lista de sessões abertas com mesa, garçom, pessoas, pedidos, total
+  - Timer desde abertura
+  - Botão fechar sessão pelo admin
+  - Status visual: ABERTA (amber), FECHANDO (vermelho)
+
+### 2.20 Configurações
 - **Loja:** nome, endereço, telefone, coordenadas GPS
 - **Site:** tipo de restaurante (8 temas), cores, logo, banner, favicon
 - **Operação:** horários de abertura/fechamento por dia da semana
@@ -399,10 +450,15 @@ Admin escolhe:
 - **Botão FEITO - PRÓXIMO:** marca como "Feito" e avança para próximo
 - **Navegação:** setas anterior/próximo para ver fila
 - **Badge de origem:** Mesa, Retirada, Delivery com ícone
+- **Pedidos pausados:** exibidos com ícone de cadeado, fundo cinza, no final da fila
+  - Mensagem "Pausado pelo admin" — ações bloqueadas até admin despausar
+  - Ao despausar, volta à posição original na fila por horário de criação
 
 ### 6.3 Aba Despacho
 - Pedidos com status FEITO (prontos para embalar)
 - Botão **PRONTO** → marca como pronto para retirada/entrega
+  - **Sincronização automática:** ao marcar PRONTO, o status do pedido principal atualiza para "pronto" no painel admin
+  - Cálculo automático do `tempo_preparo_real_min` (registrado no histórico do pedido)
 - Botão **REFAZER** → volta para fila de preparo
 - Seção de pedidos já marcados como PRONTO (confirmação visual)
 
@@ -420,67 +476,138 @@ Admin escolhe:
 
 ---
 
-## 7. SUPER ADMIN
+## 7. APP GARÇOM (PWA)
 
-### 7.1 Dashboard
+### 7.1 Login Garçom
+- Código do restaurante + login + senha
+- Interface dark theme (bg: #0a0806, accent amber #d97706)
+- JWT com role=garcom, expiração 7 dias
+
+### 7.2 Grid de Mesas
+- Grid visual com todas as mesas do restaurante
+- **Status por cor:** Verde=LIVRE, Amber=OCUPADA (ABERTA), Vermelho=FECHANDO
+- Timer mostrando tempo desde abertura da mesa
+- Badge de quantidade de pessoas e tags (VIP, Aniversário, etc.)
+- Footer com estatísticas: total de mesas, livres, ocupadas
+- Click em mesa LIVRE → abrir mesa | Click em mesa OCUPADA → ver detalhe
+
+### 7.3 Abertura de Mesa
+- Seletor de pessoas (1-20) com botões +/-
+- Campo de alergia (texto livre)
+- Tags rápidas: Aniversário, VIP, Família, Casal, Reunião, Criança
+- Campo de notas adicionais
+- Cria sessão ABERTA vinculada ao garçom
+
+### 7.4 Detalhe da Mesa
+- Pedidos agrupados por **course** (etapa do serviço):
+  - Couvert (#78716c), Bebida (#6366f1), Entrada (#0ea5e9), Principal (#d97706), Sobremesa (#ec4899)
+- Lista de itens por pedido com quantidade, observações, preço
+- **Cancelar item:** botão X ao lado do item (só itens em preparo, se configuração permitir)
+- **Conta:** subtotal + taxa de serviço (% ou fixo) + total
+- Divisão por pessoa (total ÷ qtd_pessoas)
+- **Ações:** Repetir Rodada (repete último pedido), Novo Pedido, Pedir Conta
+- Banner de alergia (vermelho) quando sessão tem alergia registrada
+- Botão transferir mesa
+
+### 7.5 Cardápio / Novo Pedido
+- Categorias do restaurante com ícones
+- Busca por nome de produto
+- **Seletor de course:** pills coloridas (Couvert/Bebida/Entrada/Principal/Sobremesa)
+- Cards de produto com imagem, preço, botão +/- para quantidade
+- Badge "Esgotado" para itens marcados como indisponíveis
+- Observação por item (modal com textarea)
+- **Carrinho (drawer):** lista de itens selecionados, qtd, observação, total
+- Botão "Enviar para Cozinha" → cria pedido + envia para KDS automaticamente
+
+### 7.6 Transferir Mesa
+- Grid com apenas mesas LIVRES (verdes)
+- Click transfere a sessão inteira (pedidos + dados) para nova mesa
+- Mesa antiga volta a LIVRE, nova mesa fica OCUPADA
+
+### 7.7 Itens Esgotados
+- Garçom pode marcar item como esgotado (desaparece do cardápio de todos)
+- Garçom pode desmarcar quando item voltar a ter estoque
+- Notificação WebSocket para todos os garçons conectados
+
+### 7.8 WebSocket e Sons
+- Canal: `/ws/garcom/{restaurante_id}?token={jwt}`
+- **Eventos recebidos:**
+  - `garcom:pedido_pronto` → som ascendente (C5-E5-G5), toast "Pedido pronto!"
+  - `garcom:item_esgotado` → som descendente (A4-F#3), toast "Item esgotado"
+  - `garcom:item_disponivel` → toast "Item disponível novamente"
+  - `garcom:mesa_fechada` → toast "Mesa fechada pelo admin"
+- Sons via Web Audio API (sem arquivos externos)
+
+### 7.9 Gestão Admin (Painel)
+- **Aba Garçons:** CRUD completo (nome, login, senha, emoji, modo seção TODOS/FAIXA/CUSTOM, faixa de mesas)
+- **Aba Config:** ativar/desativar app garçom, taxa de serviço (% ou fixo), permitir cancelamento de itens
+- **Aba Mesas Ativas:** monitor em tempo real de sessões abertas com garçom, pessoas, pedidos, total, botão fechar
+
+---
+
+## 8. SUPER ADMIN
+
+### 8.1 Dashboard
 - Métricas globais: total de restaurantes, MRR, churn rate
 - Gráficos de crescimento
 - Analytics por período
 
-### 7.2 Restaurantes
+### 8.2 Restaurantes
 - CRUD completo de restaurantes
 - Filtros: status, plano, billing
 - Ações: ativar/desativar, resetar senha, alterar plano
 - Detalhes: config, pedidos, faturamento
 
-### 7.3 Planos
+### 8.3 Planos
 - CRUD de planos de assinatura
 - Campos: nome, valor, limite motoboys, descrição, destaque
 - Ordenação para exibição na landing page
 
-### 7.4 Billing
+### 8.4 Billing
 - MRR (Monthly Recurring Revenue) em tempo real
 - Lista de inadimplentes
 - Ações: criar trial, cancelar assinatura, gerar fatura manual
 - Histórico de pagamentos por restaurante
 
-### 7.5 Integrações
+### 8.5 Integrações
 - Credenciais da plataforma por marketplace (iFood, 99Food, Rappi, Keeta)
 - 1 credencial por marketplace (gerenciada pelo Super Admin)
 - Restaurantes autorizam individualmente
 
-### 7.6 Demos
+### 8.6 Demos
 - Restaurantes de demonstração para showcase
 - Dados fictícios realistas
 - Autopilot opcional (simula pedidos)
 
-### 7.7 Erros (Sentry)
+### 8.7 Erros (Sentry)
 - Monitoramento de erros em tempo real
 - Integração com Sentry.io
 - Dashboard de erros por período
 
 ---
 
-## 8. API TÉCNICA
+## 9. API TÉCNICA
 
-### 8.1 Arquitetura
+### 9.1 Arquitetura
 - **Framework:** FastAPI (Python 3.11+)
 - **ORM:** SQLAlchemy 2.0 (async-compatible)
-- **Auth:** JWT (HS256) via authlib — 5 roles:
+- **Auth:** JWT (HS256) via authlib — 6 roles:
   1. `restaurante` — dono do restaurante
   2. `motoboy` — entregador
   3. `admin` — super admin
   4. `cliente` — cliente final
   5. `cozinheiro` — operador KDS
-- **WebSocket:** 3 canais em tempo real:
+  6. `garcom` — garçom (atendimento mesa)
+- **WebSocket:** 4 canais em tempo real:
   1. `/ws/{restaurante_id}` — painel admin (pedidos, alertas)
   2. `/ws/motoboy/{motoboy_id}` — app motoboy (entregas, GPS)
   3. `/ws/kds/{restaurante_id}` — KDS cozinha (pedidos cozinha)
+  4. `/ws/garcom/{restaurante_id}` — app garçom (pedido pronto, itens esgotados)
 - **Cache:** Redis (Upstash) para WebSocket multi-worker e sessões
 - **BD desenvolvimento:** SQLite
 - **BD produção:** PostgreSQL 16
 
-### 8.2 Endpoints por Módulo (80+)
+### 9.2 Endpoints por Módulo (95+)
 | Módulo | Prefixo | Endpoints | Descrição |
 |--------|---------|-----------|-----------|
 | Painel Admin | `/painel/*` | ~30 | CRUD pedidos, produtos, categorias, motoboys, config |
@@ -500,25 +627,29 @@ Admin escolhe:
 | Integrações | `/painel/integracoes/*` | 4 | Connect/disconnect marketplace |
 | Upload | `/painel/upload` | 1 | Upload de imagens |
 | Cozinha Admin | `/painel/cozinha/*` | 7 | CRUD cozinheiros, config, dashboard |
+| Auth Garçom | `/garcom/auth/*` | 2 | Login, perfil (me) |
+| App Garçom | `/garcom/*` | 10 | Mesas, sessões, pedidos, itens esgotados, cardápio |
+| Garçom Admin | `/painel/garcom/*` | 6 | CRUD garçons, config, sessões, fechar sessão |
 
-### 8.3 WebSocket Channels
+### 9.3 WebSocket Channels
 | Canal | Auth | Eventos |
 |-------|------|---------|
 | `/ws/{rest_id}` | JWT restaurante | novo_pedido, pedido_atualizado, kds_status_atualizado, tempo_medio_atualizado |
 | `/ws/motoboy/{id}` | JWT motoboy | nova_entrega, entrega_atualizada, gps_update |
-| `/ws/kds/{rest_id}` | JWT cozinheiro | kds:novo_pedido, kds:pedido_atualizado, kds:pedido_pausado, kds:pedido_despausado |
+| `/ws/kds/{rest_id}` | JWT cozinheiro | kds:novo_pedido, kds:pedido_atualizado, kds:pedido_pausado, kds:pedido_despausado, kds:pedido_pronto |
+| `/ws/garcom/{rest_id}` | JWT garcom | garcom:pedido_pronto, garcom:item_esgotado, garcom:item_disponivel, garcom:mesa_fechada |
 
-### 8.4 Autenticação
-- JWT com expiração de 24h
-- 5 roles: restaurante, motoboy, admin, cliente, cozinheiro
+### 9.4 Autenticação
+- JWT com expiração de 24h (garçom: 7 dias)
+- 6 roles: restaurante, motoboy, admin, cliente, cozinheiro, garcom
 - Senha SHA256 com .strip() antes de hash
 - Interceptor 401 no frontend (auto-logout)
 
 ---
 
-## 9. FLUXOS DE NEGÓCIO
+## 10. FLUXOS DE NEGÓCIO
 
-### 9.1 Ciclo de Vida do Pedido
+### 10.1 Ciclo de Vida do Pedido
 ```
 Criação (site/manual/marketplace)
     |
@@ -529,7 +660,11 @@ PENDENTE --> Admin aceita --> CONFIRMADO
     v                            v
 EM_PREPARO <---------------------+
     |
-    | (KDS: Cozinheiro marca FEITO --> PRONTO)
+    | [Se KDS ativo: pedido vai AUTOMATICAMENTE para cozinha digital]
+    | [Admin pode PAUSAR pedido NOVO na cozinha (cadeado no KDS)]
+    |
+    | (KDS: COMECEI → FEITO → PRONTO)
+    | [Cozinheiro marca PRONTO → status atualiza automaticamente aqui]
     v
 PRONTO --> Despacho --> EM_ENTREGA --> ENTREGUE
     |                       |
@@ -538,7 +673,7 @@ PRONTO --> Despacho --> EM_ENTREGA --> ENTREGUE
 Em qualquer ponto: CANCELADO (com motivo)
 ```
 
-### 9.2 Ciclo de Vida da Entrega
+### 10.2 Ciclo de Vida da Entrega
 ```
 Pedido PRONTO
     |
@@ -557,7 +692,7 @@ Chegou no destino --> Registra pagamento --> ENTREGUE
     +-- Ocorrência: Cliente ausente / Cancelamento
 ```
 
-### 9.3 Sistema de Billing
+### 10.3 Sistema de Billing
 ```
 Restaurante se cadastra
     |
@@ -580,7 +715,7 @@ ATIVO (pagou) ou INADIMPLENTE (não pagou)
 Renovação automática --> ATIVO
 ```
 
-### 9.4 Pix Online
+### 10.4 Pix Online
 ```
 Restaurante ativa Pix no painel
     | (informa chave Pix + aceita termos)
@@ -607,7 +742,7 @@ Restaurante saca (manual ou automático)
 
 ---
 
-## 10. INFRAESTRUTURA
+## 11. INFRAESTRUTURA
 
 ### Hospedagem
 - **Backend:** Fly.io (região GRU — São Paulo)
@@ -636,5 +771,60 @@ Restaurante saca (manual ou automático)
 
 ---
 
+---
+
+## 12. SITE INSTITUCIONAL (LANDING PAGE)
+
+### 12.1 Landing Page — derekhfood.com.br
+- **URL:** https://derekhfood.com.br (SSL Let's Encrypt)
+- **URL alternativa:** https://www.derekhfood.com.br
+- **URL backend:** https://superfood-api.fly.dev
+- Página de vendas com design moderno (Tailwind CSS)
+- Seções: hero, funcionalidades, tipos de restaurante, planos, depoimentos, FAQ, CTA
+- Botão WhatsApp flutuante (SVG) para contato comercial
+- Responsivo para mobile, tablet e desktop
+- SEO otimizado (meta tags, Open Graph)
+
+### 12.2 Domínio e SSL
+- Domínio: `derekhfood.com.br`
+- DNS: A e AAAA apontando para Fly.io
+- SSL: certificados Let's Encrypt (RSA + ECDSA) para domínio raiz e www
+- Renovação automática pelo Fly.io
+
+### 12.3 WhatsApp Comercial
+- Número: +1 555-900-4563 (Facebook Business)
+- Integrado à landing page (botão flutuante)
+- Integrado ao site dos restaurantes (botão flutuante SVG — oculto em demos)
+- Será usado pelo Sales Autopilot (bot de vendas B2B)
+
+---
+
+## 13. FUNCIONALIDADES POR PLANO
+
+| Funcionalidade | Básico | Profissional | Premium |
+|---------------|--------|-------------|---------|
+| Site do cliente | ✅ | ✅ | ✅ |
+| Painel admin | ✅ | ✅ | ✅ |
+| Pedidos online | ✅ | ✅ | ✅ |
+| Categorias e produtos | ✅ | ✅ | ✅ |
+| Caixa | ✅ | ✅ | ✅ |
+| Relatórios básicos | ✅ | ✅ | ✅ |
+| App motoboy | — | ✅ | ✅ |
+| Mapa GPS motoboys | — | ✅ | ✅ |
+| Promoções/cupons | — | ✅ | ✅ |
+| Fidelidade | — | ✅ | ✅ |
+| Bairros/taxas | — | ✅ | ✅ |
+| Cozinha Digital (KDS) | — | ✅ | ✅ |
+| App Garçom | — | ✅ | ✅ |
+| Pix Online | — | — | ✅ |
+| Integrações marketplace | — | — | ✅ |
+| Bot WhatsApp IA | — | — | ✅ |
+| Relatórios avançados | — | — | ✅ |
+| Motoboys ilimitados | 2 | 5 | Ilimitado |
+
+---
+
 *Documento gerado automaticamente pelo sistema Derekh Food v4.0.0*
+*Última atualização: 22/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
+*WhatsApp comercial: +1 555-900-4563*

@@ -23,6 +23,7 @@ import Integracoes from "@/admin/pages/Integracoes";
 import Billing from "@/admin/pages/Billing";
 import PagamentoPix from "@/admin/pages/PagamentoPix";
 import CozinhaDigital from "@/admin/pages/CozinhaDigital";
+import Garcons from "@/admin/pages/Garcons";
 import SelecionarPlano from "@/admin/pages/SelecionarPlano";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
@@ -186,6 +187,10 @@ function AdminRouter() {
 
       <Route path="/cozinha">
         <PrivateRoute><CozinhaDigital /></PrivateRoute>
+      </Route>
+
+      <Route path="/garcons">
+        <PrivateRoute><Garcons /></PrivateRoute>
       </Route>
 
       <Route path="/caixa">

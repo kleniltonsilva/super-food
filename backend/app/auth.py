@@ -20,6 +20,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="restaurantes/login")
 oauth2_scheme_motoboy = OAuth2PasswordBearer(tokenUrl="auth/motoboy/login")
 oauth2_scheme_admin = OAuth2PasswordBearer(tokenUrl="auth/admin/login")
 oauth2_scheme_cozinheiro = OAuth2PasswordBearer(tokenUrl="auth/cozinheiro/login")
+oauth2_scheme_garcom = OAuth2PasswordBearer(tokenUrl="garcom/auth/login")
 
 def verify_password(plain_password, hashed_password):
     """Verifica senha bcrypt. Aplica strip() para ignorar espaços acidentais."""
@@ -115,3 +116,25 @@ def get_current_cozinheiro(token: str = Depends(oauth2_scheme_cozinheiro), db: S
     if cozinheiro is None:
         raise credentials_exception
     return cozinheiro
+
+
+def get_current_garcom(token: str = Depends(oauth2_scheme_garcom), db: Session = Depends(database.get_db)):
+    """Dependency JWT para autenticação do garçom (App Garçom)."""
+    credentials_exception = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_sub": False})
+        garcom_id = int(payload.get("sub"))
+        role: str = payload.get("role")
+        if role != "garcom" or garcom_id is None:
+            raise credentials_exception
+    except (JWTError, ValueError, TypeError):
+        raise credentials_exception
+    garcom = db.query(models.Garcom).options(
+        joinedload(models.Garcom.restaurante)
+    ).filter(
+        models.Garcom.id == garcom_id,
+        models.Garcom.ativo == True
+    ).first()
+    if garcom is None:
+        raise credentials_exception
+    return garcom

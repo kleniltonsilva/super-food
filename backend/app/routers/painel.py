@@ -4542,3 +4542,295 @@ def get_desempenho_cozinheiros(
         "media_geral_montagem_min": media_geral_montagem,
         "ranking": ranking,
     }
+
+
+# ==================== GARÇOM — CRUD & CONFIG ====================
+
+@router.get("/garcom/garcons")
+def listar_garcons(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db),
+):
+    """Lista garçons do restaurante."""
+    garcons = db.query(models.Garcom).filter(
+        models.Garcom.restaurante_id == rest.id
+    ).order_by(models.Garcom.nome).all()
+
+    return [
+        {
+            "id": g.id,
+            "nome": g.nome,
+            "login": g.login,
+            "modo_secao": g.modo_secao,
+            "secao_inicio": g.secao_inicio,
+            "secao_fim": g.secao_fim,
+            "avatar_emoji": g.avatar_emoji,
+            "ativo": g.ativo,
+            "mesa_ids": [gm.mesa_id for gm in g.mesas_custom],
+            "criado_em": g.criado_em.isoformat() if g.criado_em else None,
+        }
+        for g in garcons
+    ]
+
+
+@router.post("/garcom/garcons")
+def criar_garcom(
+    dados: dict,
+    rest: models.Restaurante = Depends(verificar_billing_ativo),
+    db: Session = Depends(database.get_db),
+):
+    """Cria um novo garçom."""
+    nome = dados.get("nome", "").strip()
+    login = dados.get("login", "").strip().lower()
+    senha = dados.get("senha", "")
+
+    if not nome or not login or not senha:
+        raise HTTPException(status_code=400, detail="Nome, login e senha são obrigatórios")
+
+    # Verificar login duplicado
+    existente = db.query(models.Garcom).filter(
+        models.Garcom.restaurante_id == rest.id,
+        models.Garcom.login == login,
+    ).first()
+    if existente:
+        raise HTTPException(status_code=409, detail="Login já em uso")
+
+    garcom = models.Garcom(
+        restaurante_id=rest.id,
+        nome=nome,
+        login=login,
+        modo_secao=dados.get("modo_secao", "FAIXA"),
+        secao_inicio=dados.get("secao_inicio"),
+        secao_fim=dados.get("secao_fim"),
+        avatar_emoji=dados.get("avatar_emoji"),
+    )
+    garcom.set_senha(senha)
+    db.add(garcom)
+    db.flush()
+
+    # Vincular mesas custom
+    mesa_ids = dados.get("mesa_ids", [])
+    for mid in mesa_ids:
+        gm = models.GarcomMesa(garcom_id=garcom.id, mesa_id=mid)
+        db.add(gm)
+
+    db.commit()
+    db.refresh(garcom)
+
+    return {
+        "id": garcom.id,
+        "nome": garcom.nome,
+        "login": garcom.login,
+        "modo_secao": garcom.modo_secao,
+    }
+
+
+@router.put("/garcom/garcons/{garcom_id}")
+def atualizar_garcom(
+    garcom_id: int,
+    dados: dict,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db),
+):
+    """Atualiza um garçom."""
+    garcom = db.query(models.Garcom).filter(
+        models.Garcom.id == garcom_id,
+        models.Garcom.restaurante_id == rest.id,
+    ).first()
+    if not garcom:
+        raise HTTPException(status_code=404, detail="Garçom não encontrado")
+
+    if "nome" in dados:
+        garcom.nome = dados["nome"].strip()
+    if "login" in dados:
+        novo_login = dados["login"].strip().lower()
+        # Verificar duplicado
+        existente = db.query(models.Garcom).filter(
+            models.Garcom.restaurante_id == rest.id,
+            models.Garcom.login == novo_login,
+            models.Garcom.id != garcom_id,
+        ).first()
+        if existente:
+            raise HTTPException(status_code=409, detail="Login já em uso")
+        garcom.login = novo_login
+    if "senha" in dados and dados["senha"]:
+        garcom.set_senha(dados["senha"])
+    if "modo_secao" in dados:
+        garcom.modo_secao = dados["modo_secao"]
+    if "secao_inicio" in dados:
+        garcom.secao_inicio = dados["secao_inicio"]
+    if "secao_fim" in dados:
+        garcom.secao_fim = dados["secao_fim"]
+    if "avatar_emoji" in dados:
+        garcom.avatar_emoji = dados["avatar_emoji"]
+    if "ativo" in dados:
+        garcom.ativo = dados["ativo"]
+    if "mesa_ids" in dados:
+        # Resetar e recriar
+        db.query(models.GarcomMesa).filter(
+            models.GarcomMesa.garcom_id == garcom_id
+        ).delete()
+        for mid in dados["mesa_ids"]:
+            gm = models.GarcomMesa(garcom_id=garcom.id, mesa_id=mid)
+            db.add(gm)
+
+    db.commit()
+
+    return {"id": garcom.id, "atualizado": True}
+
+
+@router.delete("/garcom/garcons/{garcom_id}")
+def deletar_garcom(
+    garcom_id: int,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db),
+):
+    """Deleta um garçom."""
+    garcom = db.query(models.Garcom).filter(
+        models.Garcom.id == garcom_id,
+        models.Garcom.restaurante_id == rest.id,
+    ).first()
+    if not garcom:
+        raise HTTPException(status_code=404, detail="Garçom não encontrado")
+
+    db.delete(garcom)
+    db.commit()
+
+    return {"deletado": True}
+
+
+@router.get("/garcom/config")
+def get_config_garcom(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db),
+):
+    """Retorna configuração do app garçom."""
+    config = db.query(models.ConfigGarcom).filter(
+        models.ConfigGarcom.restaurante_id == rest.id
+    ).first()
+
+    if not config:
+        return {
+            "garcom_ativo": False,
+            "taxa_servico": 0.10,
+            "pct_taxa": True,
+            "couvert_auto": False,
+            "item_couvert_id": None,
+            "campos_obrigatorios": None,
+            "permitir_cancelamento": True,
+        }
+
+    return {
+        "garcom_ativo": config.garcom_ativo,
+        "taxa_servico": config.taxa_servico,
+        "pct_taxa": config.pct_taxa,
+        "couvert_auto": config.couvert_auto,
+        "item_couvert_id": config.item_couvert_id,
+        "campos_obrigatorios": config.campos_obrigatorios,
+        "permitir_cancelamento": config.permitir_cancelamento,
+    }
+
+
+@router.put("/garcom/config")
+def atualizar_config_garcom(
+    dados: dict,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db),
+):
+    """Atualiza configuração do app garçom."""
+    config = db.query(models.ConfigGarcom).filter(
+        models.ConfigGarcom.restaurante_id == rest.id
+    ).first()
+
+    if not config:
+        config = models.ConfigGarcom(restaurante_id=rest.id)
+        db.add(config)
+
+    if "garcom_ativo" in dados:
+        config.garcom_ativo = dados["garcom_ativo"]
+    if "taxa_servico" in dados:
+        config.taxa_servico = dados["taxa_servico"]
+    if "pct_taxa" in dados:
+        config.pct_taxa = dados["pct_taxa"]
+    if "couvert_auto" in dados:
+        config.couvert_auto = dados["couvert_auto"]
+    if "item_couvert_id" in dados:
+        config.item_couvert_id = dados["item_couvert_id"]
+    if "campos_obrigatorios" in dados:
+        config.campos_obrigatorios = dados["campos_obrigatorios"]
+    if "permitir_cancelamento" in dados:
+        config.permitir_cancelamento = dados["permitir_cancelamento"]
+
+    db.commit()
+
+    return {"atualizado": True}
+
+
+@router.get("/garcom/sessoes")
+def listar_sessoes_ativas(
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db),
+):
+    """Monitor: lista sessões de mesa ativas."""
+    sessoes = db.query(models.SessaoMesa).filter(
+        models.SessaoMesa.restaurante_id == rest.id,
+        models.SessaoMesa.status.in_(["ABERTA", "FECHANDO"]),
+    ).order_by(models.SessaoMesa.criado_em.desc()).all()
+
+    result = []
+    for s in sessoes:
+        garcom = db.query(models.Garcom).filter(models.Garcom.id == s.garcom_id).first() if s.garcom_id else None
+        qtd_pedidos = db.query(models.SessaoPedido).filter(
+            models.SessaoPedido.sessao_id == s.id
+        ).count()
+        result.append({
+            "sessao_id": s.id,
+            "mesa_id": s.mesa_id,
+            "status": s.status,
+            "garcom_nome": garcom.nome if garcom else None,
+            "qtd_pessoas": s.qtd_pessoas,
+            "qtd_pedidos": qtd_pedidos,
+            "subtotal": s.subtotal,
+            "taxa": s.taxa,
+            "total": s.total,
+            "alergia": s.alergia,
+            "tags": s.tags,
+            "criado_em": s.criado_em.isoformat() if s.criado_em else None,
+        })
+
+    return result
+
+
+@router.post("/garcom/sessoes/{sessao_id}/fechar")
+async def fechar_sessao_admin(
+    sessao_id: int,
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db),
+):
+    """Admin fecha uma sessão de mesa."""
+    sessao = db.query(models.SessaoMesa).filter(
+        models.SessaoMesa.id == sessao_id,
+        models.SessaoMesa.restaurante_id == rest.id,
+        models.SessaoMesa.status.in_(["ABERTA", "FECHANDO"]),
+    ).first()
+
+    if not sessao:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    sessao.status = "FECHADA"
+    sessao.fechado_em = datetime.utcnow()
+    db.commit()
+
+    # Broadcast para garçons
+    garcom_mgr = getattr(request.app.state, 'garcom_manager', None)
+    if garcom_mgr:
+        await garcom_mgr.broadcast({
+            "tipo": "garcom:mesa_fechada",
+            "dados": {
+                "sessao_id": sessao.id,
+                "mesa_id": sessao.mesa_id,
+            }
+        }, rest.id)
+
+    return {"sessao_id": sessao.id, "status": "FECHADA"}
