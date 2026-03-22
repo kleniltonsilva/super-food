@@ -20,11 +20,13 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { RestauranteProvider } from "./contexts/RestauranteContext";
 import { AuthProvider } from "./contexts/AuthContext";
+import DemoOverlay from "./components/DemoOverlay";
 
 function ClienteRouter() {
   return (
     <RestauranteProvider>
       <AuthProvider>
+        <DemoOverlay />
         <Switch>
           <Route path={"/"} component={Home} />
           <Route path={"/product/:id"} component={ProductDetail} />

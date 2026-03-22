@@ -48,6 +48,10 @@ def _pedido_cozinha_to_dict(pc: models.PedidoCozinha, pedido: models.Pedido) -> 
         "status": pc.status,
         "cozinheiro_id": pc.cozinheiro_id,
         "urgente": pc.urgente or False,
+        "pausado": pc.pausado or False,
+        "pausado_em": pc.pausado_em.isoformat() if pc.pausado_em else None,
+        "despausado_em": pc.despausado_em.isoformat() if pc.despausado_em else None,
+        "posicao_original": pc.posicao_original,
         "criado_em": pc.criado_em.isoformat() if pc.criado_em else None,
         "iniciado_em": pc.iniciado_em.isoformat() if pc.iniciado_em else None,
         "feito_em": pc.feito_em.isoformat() if pc.feito_em else None,
@@ -159,6 +163,10 @@ async def atualizar_status_kds(
     if novo_status not in transicoes_validas.get(pc.status, []):
         raise HTTPException(400, f"Transição inválida: {pc.status} → {novo_status}")
 
+    # Bloquear ações em pedidos pausados
+    if pc.pausado and novo_status != 'NOVO':
+        raise HTTPException(400, "Pedido pausado pelo admin — não é possível alterar status")
+
     pc.status = novo_status
 
     if novo_status == 'FAZENDO':
@@ -168,6 +176,30 @@ async def atualizar_status_kds(
         pc.feito_em = agora
     elif novo_status == 'PRONTO':
         pc.pronto_em = agora
+        # Sincronizar: atualizar status do Pedido para 'pronto'
+        pedido_sync = db.query(models.Pedido).filter(models.Pedido.id == pc.pedido_id).first()
+        if pedido_sync:
+            pedido_sync.status = 'pronto'
+            pedido_sync.atualizado_em = agora
+            # Calcular tempo_preparo_real_min
+            if pedido_sync.historico_status:
+                ts_pendente = None
+                for h in pedido_sync.historico_status:
+                    if h.get("status") == "pendente":
+                        ts_pendente = h.get("timestamp")
+                        break
+                if ts_pendente:
+                    try:
+                        dt_pendente = datetime.fromisoformat(ts_pendente)
+                        delta = (agora - dt_pendente).total_seconds() / 60
+                        pedido_sync.tempo_preparo_real_min = int(delta)
+                    except (ValueError, TypeError):
+                        pass
+            historico = list(pedido_sync.historico_status or [])
+            historico.append({"status": "pronto", "timestamp": agora.isoformat()})
+            pedido_sync.historico_status = historico
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(pedido_sync, "historico_status")
     elif novo_status == 'NOVO':
         # Refazer — limpa timestamps
         pc.iniciado_em = None

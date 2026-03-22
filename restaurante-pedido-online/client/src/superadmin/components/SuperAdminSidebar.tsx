@@ -10,6 +10,7 @@ import {
   Bug,
   Plug,
   Receipt,
+  Sparkles,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ const menuItems = [
   { path: "/inadimplentes", label: "Inadimplentes", icon: AlertTriangle },
   { path: "/billing", label: "Billing", icon: Receipt },
   { path: "/integracoes", label: "Integrações", icon: Plug },
+  { path: "/demos", label: "Demos", icon: Sparkles },
   { path: "/erros", label: "Erros (Sentry)", icon: Bug },
 ];
 

@@ -640,6 +640,21 @@ export async function getDashboardCozinha() {
   return data;
 }
 
+export async function getDesempenhoCozinha(periodo: string = "hoje") {
+  const { data } = await adminApi.get(`/painel/cozinha/desempenho?periodo=${periodo}`);
+  return data;
+}
+
+export async function pausarPedidoCozinha(pedidoId: number) {
+  const { data } = await adminApi.post(`/painel/pedidos/${pedidoId}/pausar`);
+  return data;
+}
+
+export async function despausarPedidoCozinha(pedidoId: number) {
+  const { data } = await adminApi.post(`/painel/pedidos/${pedidoId}/despausar`);
+  return data;
+}
+
 // ==================== PIX ONLINE ====================
 
 export async function getPixConfig() {

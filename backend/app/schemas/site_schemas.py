@@ -35,6 +35,7 @@ class SiteInfoPublic(BaseModel):
     pedidos_online_ativos: bool = True
     entregas_ativas: bool = True
     controle_pedidos_motivo: Optional[str] = None
+    is_demo: bool = False
 
 class CategoriaPublic(BaseModel):
     id: int
@@ -78,6 +79,8 @@ class ProdutoDetalhadoPublic(BaseModel):
     destaque: bool
     promocao: bool
     categoria_id: Optional[int] = None
+    ingredientes: List[str] = []
+    eh_pizza: bool = False
     variacoes_agrupadas: Dict[str, List[dict]]
 
 class ValidacaoEntregaRequest(BaseModel):

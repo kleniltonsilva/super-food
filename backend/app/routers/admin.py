@@ -195,28 +195,23 @@ class InadimplenteItem(BaseModel):
 
 # ========== Planos padrão ==========
 
-PLANOS_PADRAO = {
-    "Básico": {
-        "valor": 199.00,
-        "motoboys": 3,
-        "descricao": "Ideal para pequenos restaurantes - até 3 motoboys simultâneos"
-    },
-    "Essencial": {
-        "valor": 269.00,
-        "motoboys": 6,
-        "descricao": "Bom equilíbrio - até 6 motoboys simultâneos"
-    },
-    "Avançado": {
-        "valor": 360.00,
-        "motoboys": 12,
-        "descricao": "Para crescimento - até 12 motoboys simultâneos"
-    },
-    "Premium": {
-        "valor": 599.00,
-        "motoboys": 999,
-        "descricao": "Top: motoboys ilimitados + suporte prioritário"
+def _get_planos_db(db: Session) -> dict:
+    """Lê planos do banco de dados. Fallback para valores padrão."""
+    try:
+        planos_db = db.query(models.Plano).filter(models.Plano.ativo == True).order_by(models.Plano.ordem).all()
+        if planos_db:
+            return {
+                p.nome: {"valor": p.valor, "motoboys": p.limite_motoboys, "descricao": p.descricao}
+                for p in planos_db
+            }
+    except Exception:
+        pass
+    return {
+        "Básico": {"valor": 169.90, "motoboys": 2, "descricao": "Ideal para começar"},
+        "Essencial": {"valor": 279.90, "motoboys": 5, "descricao": "Para restaurantes em crescimento"},
+        "Avançado": {"valor": 329.90, "motoboys": 10, "descricao": "Para operações maiores"},
+        "Premium": {"valor": 527.00, "motoboys": 999, "descricao": "Sem limites"},
     }
-}
 
 
 # ========== Endpoints ==========
@@ -232,7 +227,9 @@ def listar_restaurantes(
     db: Session = Depends(database.get_db)
 ):
     """Lista todos os restaurantes com filtros opcionais."""
-    query = db.query(models.Restaurante)
+    query = db.query(models.Restaurante).filter(
+        ~models.Restaurante.email.like("%@superfood.test")
+    )
 
     # Filtros
     if status_filtro:
@@ -551,8 +548,9 @@ def listar_planos(
     db: Session = Depends(database.get_db)
 ):
     """Lista planos disponíveis com contagem de assinantes."""
+    planos = _get_planos_db(db)
     resultado = []
-    for nome, info in PLANOS_PADRAO.items():
+    for nome, info in planos.items():
         total = db.query(func.count(models.Restaurante.id)).filter(
             models.Restaurante.plano == nome,
             models.Restaurante.ativo == True
@@ -578,17 +576,22 @@ def atualizar_plano(
     current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db)
 ):
-    """Atualiza valores de um plano. Afeta novos restaurantes e renovações."""
-    if nome_plano not in PLANOS_PADRAO:
+    """Atualiza valores de um plano. Persiste no BD e afeta restaurantes existentes."""
+    plano_db = db.query(models.Plano).filter(models.Plano.nome == nome_plano).first()
+    if not plano_db:
         raise HTTPException(status_code=404, detail=f"Plano '{nome_plano}' não encontrado")
 
     campos = dados.model_dump(exclude_unset=True)
     if not campos:
         raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
 
-    # Atualizar plano em memória
-    for campo, valor in campos.items():
-        PLANOS_PADRAO[nome_plano][campo] = valor
+    # Atualizar plano no BD
+    if "valor" in campos:
+        plano_db.valor = campos["valor"]
+    if "motoboys" in campos:
+        plano_db.limite_motoboys = campos["motoboys"]
+    if "descricao" in campos:
+        plano_db.descricao = campos["descricao"]
 
     # Atualizar restaurantes existentes com este plano (valor e limite)
     restaurantes_plano = db.query(models.Restaurante).filter(
@@ -604,10 +607,11 @@ def atualizar_plano(
         atualizados += 1
 
     db.commit()
+    db.refresh(plano_db)
 
     return {
         "mensagem": f"Plano '{nome_plano}' atualizado",
-        "plano": PLANOS_PADRAO[nome_plano],
+        "plano": {"valor": plano_db.valor, "motoboys": plano_db.limite_motoboys, "descricao": plano_db.descricao},
         "restaurantes_atualizados": atualizados
     }
 
@@ -624,21 +628,22 @@ def obter_metricas(
     inicio_hoje = agora.replace(hour=0, minute=0, second=0, microsecond=0)
     inicio_mes = agora.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # Restaurantes
-    total_restaurantes = db.query(func.count(models.Restaurante.id)).scalar() or 0
+    # Restaurantes (excluindo demos)
+    _no_demo = ~models.Restaurante.email.like("%@superfood.test")
+    total_restaurantes = db.query(func.count(models.Restaurante.id)).filter(_no_demo).scalar() or 0
     restaurantes_ativos = db.query(func.count(models.Restaurante.id)).filter(
-        models.Restaurante.status == 'ativo'
+        models.Restaurante.status == 'ativo', _no_demo
     ).scalar() or 0
     restaurantes_suspensos = db.query(func.count(models.Restaurante.id)).filter(
-        models.Restaurante.status == 'suspenso'
+        models.Restaurante.status == 'suspenso', _no_demo
     ).scalar() or 0
     restaurantes_cancelados = db.query(func.count(models.Restaurante.id)).filter(
-        models.Restaurante.status == 'cancelado'
+        models.Restaurante.status == 'cancelado', _no_demo
     ).scalar() or 0
 
-    # Receita
+    # Receita (excluindo demos)
     receita_mensal = db.query(func.sum(models.Restaurante.valor_plano)).filter(
-        models.Restaurante.status == 'ativo'
+        models.Restaurante.status == 'ativo', _no_demo
     ).scalar() or 0.0
 
     ticket_medio = receita_mensal / restaurantes_ativos if restaurantes_ativos > 0 else 0.0
@@ -1835,3 +1840,302 @@ def status_global_integracoes(
         })
 
     return resultado
+
+
+# ========== Demos ==========
+
+class DemoUpdateRequest(BaseModel):
+    nome_fantasia: Optional[str] = None
+    tema_cor_primaria: Optional[str] = None
+    tema_cor_secundaria: Optional[str] = None
+
+
+class DemoProdutoUpdateRequest(BaseModel):
+    nome: Optional[str] = None
+    preco: Optional[float] = None
+    imagem_url: Optional[str] = None
+    descricao: Optional[str] = None
+
+
+class DemoSiteConfigUpdateRequest(BaseModel):
+    logo_url: Optional[str] = None
+    banner_principal_url: Optional[str] = None
+    tema_cor_primaria: Optional[str] = None
+    tema_cor_secundaria: Optional[str] = None
+    tipo_restaurante: Optional[str] = None
+
+
+@router.get("/demos")
+def listar_demos(
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Lista todos os restaurantes demo com estatísticas."""
+    demos = db.query(models.Restaurante).filter(
+        models.Restaurante.email.like("%@superfood.test")
+    ).order_by(models.Restaurante.id).all()
+
+    resultado = []
+    for r in demos:
+        site_config = db.query(models.SiteConfig).filter(
+            models.SiteConfig.restaurante_id == r.id
+        ).first()
+
+        total_produtos = db.query(func.count(models.Produto.id)).filter(
+            models.Produto.restaurante_id == r.id,
+            models.Produto.disponivel == True,
+        ).scalar() or 0
+
+        total_categorias = db.query(func.count(models.CategoriaMenu.id)).filter(
+            models.CategoriaMenu.restaurante_id == r.id,
+            models.CategoriaMenu.ativo == True,
+        ).scalar() or 0
+
+        pedidos_recentes = db.query(func.count(models.Pedido.id)).filter(
+            models.Pedido.restaurante_id == r.id,
+            models.Pedido.data_criacao >= datetime.utcnow() - timedelta(hours=24),
+        ).scalar() or 0
+
+        resultado.append({
+            "id": r.id,
+            "nome_fantasia": r.nome_fantasia,
+            "codigo_acesso": r.codigo_acesso,
+            "email": r.email,
+            "ativo": r.ativo,
+            "tipo_restaurante": site_config.tipo_restaurante if site_config else "geral",
+            "logo_url": site_config.logo_url if site_config else None,
+            "banner_principal_url": site_config.banner_principal_url if site_config else None,
+            "tema_cor_primaria": site_config.tema_cor_primaria if site_config else "#E31A24",
+            "tema_cor_secundaria": site_config.tema_cor_secundaria if site_config else "#1A1A2E",
+            "total_produtos": total_produtos,
+            "total_categorias": total_categorias,
+            "pedidos_recentes_24h": pedidos_recentes,
+        })
+
+    return resultado
+
+
+@router.get("/demos/{demo_id}")
+def detalhe_demo(
+    demo_id: int,
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Detalhe completo de um restaurante demo: config, categorias, produtos."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == demo_id,
+        models.Restaurante.email.like("%@superfood.test"),
+    ).first()
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Demo não encontrado")
+
+    site_config = db.query(models.SiteConfig).filter(
+        models.SiteConfig.restaurante_id == restaurante.id
+    ).first()
+
+    config_rest = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == restaurante.id
+    ).first()
+
+    categorias = db.query(models.CategoriaMenu).filter(
+        models.CategoriaMenu.restaurante_id == restaurante.id,
+        models.CategoriaMenu.ativo == True,
+    ).order_by(models.CategoriaMenu.ordem_exibicao).all()
+
+    categorias_result = []
+    for cat in categorias:
+        produtos = db.query(models.Produto).filter(
+            models.Produto.restaurante_id == restaurante.id,
+            models.Produto.categoria_id == cat.id,
+            models.Produto.disponivel == True,
+        ).order_by(models.Produto.ordem_exibicao, models.Produto.nome).all()
+
+        categorias_result.append({
+            "id": cat.id,
+            "nome": cat.nome,
+            "ordem_exibicao": cat.ordem_exibicao,
+            "produtos": [
+                {
+                    "id": p.id,
+                    "nome": p.nome,
+                    "descricao": p.descricao,
+                    "preco": p.preco,
+                    "imagem_url": p.imagem_url,
+                    "destaque": p.destaque,
+                    "promocao": p.promocao,
+                    "preco_promocional": p.preco_promocional,
+                }
+                for p in produtos
+            ],
+        })
+
+    return {
+        "id": restaurante.id,
+        "nome_fantasia": restaurante.nome_fantasia,
+        "codigo_acesso": restaurante.codigo_acesso,
+        "email": restaurante.email,
+        "ativo": restaurante.ativo,
+        "site_config": {
+            "tipo_restaurante": site_config.tipo_restaurante if site_config else "geral",
+            "logo_url": site_config.logo_url if site_config else None,
+            "banner_principal_url": site_config.banner_principal_url if site_config else None,
+            "tema_cor_primaria": site_config.tema_cor_primaria if site_config else "#E31A24",
+            "tema_cor_secundaria": site_config.tema_cor_secundaria if site_config else "#1A1A2E",
+            "pedido_minimo": site_config.pedido_minimo if site_config else 0,
+            "tempo_entrega_estimado": site_config.tempo_entrega_estimado if site_config else 50,
+        } if site_config else None,
+        "config": {
+            "raio_entrega_km": config_rest.raio_entrega_km if config_rest else 10,
+            "taxa_entrega_base": config_rest.taxa_entrega_base if config_rest else 5,
+        } if config_rest else None,
+        "categorias": categorias_result,
+    }
+
+
+@router.put("/demos/{demo_id}")
+def atualizar_demo(
+    demo_id: int,
+    dados: DemoUpdateRequest,
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Atualiza nome/cores de um restaurante demo."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == demo_id,
+        models.Restaurante.email.like("%@superfood.test"),
+    ).first()
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Demo não encontrado")
+
+    if dados.nome_fantasia:
+        restaurante.nome_fantasia = dados.nome_fantasia
+
+    site_config = db.query(models.SiteConfig).filter(
+        models.SiteConfig.restaurante_id == restaurante.id
+    ).first()
+    if site_config:
+        if dados.tema_cor_primaria:
+            site_config.tema_cor_primaria = dados.tema_cor_primaria
+        if dados.tema_cor_secundaria:
+            site_config.tema_cor_secundaria = dados.tema_cor_secundaria
+
+    db.commit()
+    return {"mensagem": "Demo atualizado", "id": restaurante.id}
+
+
+@router.put("/demos/{demo_id}/produto/{produto_id}")
+def atualizar_produto_demo(
+    demo_id: int,
+    produto_id: int,
+    dados: DemoProdutoUpdateRequest,
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Atualiza foto/nome/preço de um produto de demo."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == demo_id,
+        models.Restaurante.email.like("%@superfood.test"),
+    ).first()
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Demo não encontrado")
+
+    produto = db.query(models.Produto).filter(
+        models.Produto.id == produto_id,
+        models.Produto.restaurante_id == restaurante.id,
+    ).first()
+    if not produto:
+        raise HTTPException(status_code=404, detail="Produto não encontrado")
+
+    if dados.nome is not None:
+        produto.nome = dados.nome
+    if dados.preco is not None:
+        produto.preco = dados.preco
+    if dados.imagem_url is not None:
+        produto.imagem_url = dados.imagem_url
+    if dados.descricao is not None:
+        produto.descricao = dados.descricao
+
+    db.commit()
+    return {"mensagem": "Produto atualizado", "produto_id": produto.id}
+
+
+@router.put("/demos/{demo_id}/site-config")
+def atualizar_site_config_demo(
+    demo_id: int,
+    dados: DemoSiteConfigUpdateRequest,
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Atualiza logo, banner, cores e tipo de um restaurante demo."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == demo_id,
+        models.Restaurante.email.like("%@superfood.test"),
+    ).first()
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Demo não encontrado")
+
+    site_config = db.query(models.SiteConfig).filter(
+        models.SiteConfig.restaurante_id == restaurante.id
+    ).first()
+    if not site_config:
+        raise HTTPException(status_code=404, detail="SiteConfig não encontrado")
+
+    if dados.logo_url is not None:
+        site_config.logo_url = dados.logo_url
+    if dados.banner_principal_url is not None:
+        site_config.banner_principal_url = dados.banner_principal_url
+    if dados.tema_cor_primaria is not None:
+        site_config.tema_cor_primaria = dados.tema_cor_primaria
+    if dados.tema_cor_secundaria is not None:
+        site_config.tema_cor_secundaria = dados.tema_cor_secundaria
+    if dados.tipo_restaurante is not None:
+        site_config.tipo_restaurante = dados.tipo_restaurante
+
+    db.commit()
+    return {"mensagem": "Site config atualizado"}
+
+
+@router.post("/demos/{demo_id}/reset")
+def reset_demo(
+    demo_id: int,
+    admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Limpa pedidos e clientes do demo (mantém cardápio e config)."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == demo_id,
+        models.Restaurante.email.like("%@superfood.test"),
+    ).first()
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Demo não encontrado")
+
+    # Deleta entregas dos pedidos
+    pedido_ids = [p.id for p in db.query(models.Pedido.id).filter(
+        models.Pedido.restaurante_id == restaurante.id
+    ).all()]
+    if pedido_ids:
+        db.query(models.Entrega).filter(
+            models.Entrega.pedido_id.in_(pedido_ids)
+        ).delete(synchronize_session=False)
+
+    # Deleta pedidos
+    deleted_pedidos = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == restaurante.id
+    ).delete(synchronize_session=False)
+
+    # Deleta clientes do demo
+    deleted_clientes = db.query(models.Cliente).filter(
+        models.Cliente.restaurante_id == restaurante.id
+    ).delete(synchronize_session=False)
+
+    # Deleta carrinhos
+    db.query(models.Carrinho).filter(
+        models.Carrinho.restaurante_id == restaurante.id
+    ).delete(synchronize_session=False)
+
+    db.commit()
+    return {
+        "mensagem": "Demo resetado",
+        "pedidos_removidos": deleted_pedidos,
+        "clientes_removidos": deleted_clientes,
+    }

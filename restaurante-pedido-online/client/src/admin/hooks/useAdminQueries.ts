@@ -43,6 +43,7 @@ export const ADMIN_QUERY_KEYS = {
   cozinheiros: ["admin", "cozinha", "cozinheiros"] as const,
   configCozinha: ["admin", "cozinha", "config"] as const,
   dashboardCozinha: ["admin", "cozinha", "dashboard"] as const,
+  desempenhoCozinha: ["admin", "cozinha", "desempenho"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -1001,5 +1002,35 @@ export function useDashboardCozinha() {
     queryFn: api.getDashboardCozinha,
     staleTime: 15_000,
     refetchInterval: 30_000,
+  });
+}
+
+export function useDesempenhoCozinha(periodo: string = "hoje") {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.desempenhoCozinha, periodo],
+    queryFn: () => api.getDesempenhoCozinha(periodo),
+    staleTime: 30_000,
+  });
+}
+
+export function usePausarPedidoCozinha() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (pedidoId: number) => api.pausarPedidoCozinha(pedidoId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboardCozinha });
+    },
+  });
+}
+
+export function useDespausarPedidoCozinha() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (pedidoId: number) => api.despausarPedidoCozinha(pedidoId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboardCozinha });
+    },
   });
 }

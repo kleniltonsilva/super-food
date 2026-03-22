@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Derekh Food — Sistema Completo de Delivery para Restaurantes</title>
+  <meta name="description" content="Sistema completo de delivery para pizzarias, hamburguerias, açaí, sushi e mais. Site personalizado, app motoboy com GPS, KDS cozinha, Pix online. Teste grátis!">
+  <meta name="keywords" content="sistema delivery, app delivery, site restaurante, pedido online, sistema pizzaria, cardápio digital">
+  <meta property="og:title" content="Derekh Food — Sistema Completo de Delivery">
+  <meta property="og:description" content="Seu restaurante com site próprio, app motoboy, cozinha digital e Pix online. 8 temas visuais. Teste grátis!">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://derekhfood.com.br">
+  <link rel="icon" type="image/png" href="/static/logo-derekh.png">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+            display: ['"Plus Jakarta Sans"', 'Inter', 'sans-serif'],
+          },
+          animation: {
+            'float': 'float 6s ease-in-out infinite',
+            'float-delay': 'float 6s ease-in-out 2s infinite',
+            'fade-up': 'fadeUp 0.6s ease-out forwards',
+            'pulse-slow': 'pulse 3s ease-in-out infinite',
+          },
+          keyframes: {
+            float: {
+              '0%, 100%': { transform: 'translateY(0)' },
+              '50%': { transform: 'translateY(-20px)' },
+            },
+            fadeUp: {
+              '0%': { opacity: '0', transform: 'translateY(30px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            },
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* Custom styles */
+    .gradient-text {
+      background: linear-gradient(135deg, #EA580C 0%, #F97316 50%, #FB923C 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-gradient {
+      background: linear-gradient(135deg, #FFF7ED 0%, #FFEDD5 30%, #FEF3C7 60%, #FFF7ED 100%);
+    }
+    .glass {
+      background: rgba(255,255,255,0.8);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    .card-hover {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .card-hover:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.08);
+    }
+    .theme-card {
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .theme-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      transition: height 0.3s ease;
+    }
+    .theme-card:hover::before {
+      height: 6px;
+    }
+    .theme-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    }
+    .faq-content {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+    .faq-content.open {
+      max-height: 500px;
+      transition: max-height 0.5s ease-in;
+    }
+    .faq-arrow {
+      transition: transform 0.3s ease;
+    }
+    .faq-arrow.open {
+      transform: rotate(180deg);
+    }
+    .blob-1 {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(249,115,22,0.08) 0%, transparent 70%);
+      top: -200px;
+      right: -200px;
+      pointer-events: none;
+    }
+    .blob-2 {
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(251,146,60,0.06) 0%, transparent 70%);
+      bottom: -100px;
+      left: -100px;
+      pointer-events: none;
+    }
+    .plan-popular {
+      border: 2px solid #F97316;
+      position: relative;
+    }
+    .plan-popular::before {
+      content: '⭐ Mais Popular';
+      position: absolute;
+      top: -14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #F97316, #EA580C);
+      color: white;
+      padding: 4px 20px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .login-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 8px;
+      width: 320px;
+      z-index: 100;
+    }
+    .login-dropdown.active {
+      display: block;
+      animation: fadeUp 0.2s ease-out;
+    }
+    @media (max-width: 768px) {
+      .login-dropdown {
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        margin-top: 0;
+        border-radius: 16px 16px 0 0;
+      }
+    }
+    .scroll-reveal {
+      opacity: 0;
+      transform: translateY(30px);
+      transition: all 0.6s ease-out;
+    }
+    .scroll-reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    /* Scroll bar custom */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  </style>
+</head>
+<body class="bg-white text-slate-800 font-sans antialiased overflow-x-hidden">
+
+  <!-- ============================================================ -->
+  <!-- HEADER                                                        -->
+  <!-- ============================================================ -->
+  <header id="header" class="fixed top-0 left-0 right-0 z-50 transition-all duration-300">
+    <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+      <!-- Logo -->
+      <a href="#" class="flex items-center gap-2 text-xl font-display font-bold text-slate-900">
+        <img src="/static/logo-derekh.png" alt="Derekh Food" class="w-[72px] h-[72px] rounded-xl object-contain">
+        <span>Derekh<span class="text-orange-500">Food</span></span>
+      </a>
+
+      <!-- Nav Desktop -->
+      <div class="hidden lg:flex items-center gap-8">
+        <a href="#funcionalidades" class="text-sm font-medium text-slate-600 hover:text-orange-600 transition-colors">Funcionalidades</a>
+        <a href="#temas" class="text-sm font-medium text-slate-600 hover:text-orange-600 transition-colors">Temas</a>
+        <a href="#planos" class="text-sm font-medium text-slate-600 hover:text-orange-600 transition-colors">Planos</a>
+        <a href="#faq" class="text-sm font-medium text-slate-600 hover:text-orange-600 transition-colors">FAQ</a>
+      </div>
+
+      <!-- Actions Desktop -->
+      <div class="hidden lg:flex items-center gap-3">
+        <div class="relative">
+          <button id="loginBtn" class="text-sm font-medium text-slate-700 hover:text-orange-600 transition-colors px-4 py-2 rounded-lg hover:bg-orange-50">
+            Entrar
+          </button>
+          <!-- Login Dropdown -->
+          <div id="loginDropdown" class="login-dropdown">
+            <div class="bg-white rounded-2xl shadow-2xl border border-slate-100 p-6">
+              <h3 class="text-lg font-bold text-slate-900 mb-1">Acessar painel</h3>
+              <p class="text-sm text-slate-500 mb-4">Entre com seus dados do restaurante</p>
+              <form id="loginForm" class="space-y-3">
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Email</label>
+                  <input type="email" id="loginEmail" required placeholder="seu@email.com"
+                    class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all">
+                </div>
+                <div>
+                  <label class="block text-xs font-medium text-slate-600 mb-1">Senha</label>
+                  <input type="password" id="loginSenha" required placeholder="••••••••"
+                    class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all">
+                </div>
+                <div id="loginError" class="hidden text-xs text-red-600 bg-red-50 p-2 rounded-lg"></div>
+                <button type="submit" id="loginSubmitBtn"
+                  class="w-full py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all text-sm shadow-lg shadow-orange-500/20">
+                  Entrar
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+        <a href="#contato"
+          class="text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 px-5 py-2.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg shadow-orange-500/20">
+          Começar Grátis
+        </a>
+      </div>
+
+      <!-- Hamburger Mobile -->
+      <button id="mobileMenuBtn" class="lg:hidden w-10 h-10 flex items-center justify-center rounded-lg hover:bg-slate-100 transition-colors">
+        <svg id="menuIconOpen" class="w-6 h-6 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+        </svg>
+        <svg id="menuIconClose" class="w-6 h-6 text-slate-700 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+        </svg>
+      </button>
+    </nav>
+
+    <!-- Mobile Menu -->
+    <div id="mobileMenu" class="hidden lg:hidden bg-white border-t border-slate-100 shadow-lg">
+      <div class="max-w-7xl mx-auto px-4 py-4 space-y-1">
+        <a href="#funcionalidades" class="block px-4 py-3 rounded-xl text-slate-700 hover:bg-orange-50 hover:text-orange-600 font-medium transition-colors">Funcionalidades</a>
+        <a href="#temas" class="block px-4 py-3 rounded-xl text-slate-700 hover:bg-orange-50 hover:text-orange-600 font-medium transition-colors">Temas</a>
+        <a href="#planos" class="block px-4 py-3 rounded-xl text-slate-700 hover:bg-orange-50 hover:text-orange-600 font-medium transition-colors">Planos</a>
+        <a href="#faq" class="block px-4 py-3 rounded-xl text-slate-700 hover:bg-orange-50 hover:text-orange-600 font-medium transition-colors">FAQ</a>
+        <hr class="border-slate-100 my-2">
+        <!-- Login Mobile -->
+        <form id="loginFormMobile" class="space-y-3 px-4 py-3">
+          <p class="text-sm font-bold text-slate-900">Acessar painel do restaurante</p>
+          <input type="email" id="loginEmailMobile" required placeholder="Email do restaurante"
+            class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
+          <input type="password" id="loginSenhaMobile" required placeholder="Senha"
+            class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-500">
+          <div id="loginErrorMobile" class="hidden text-xs text-red-600 bg-red-50 p-2 rounded-lg"></div>
+          <button type="submit"
+            class="w-full py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold rounded-xl text-sm">
+            Entrar
+          </button>
+        </form>
+        <a href="#contato" class="block mx-4 py-2.5 text-center bg-slate-900 text-white font-semibold rounded-xl text-sm">
+          Começar Grátis
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============================================================ -->
+    <!-- HERO                                                          -->
+    <!-- ============================================================ -->
+    <section id="hero" class="hero-gradient relative pt-28 pb-16 lg:pt-36 lg:pb-24 overflow-hidden">
+      <div class="blob-1"></div>
+      <div class="blob-2"></div>
+
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        <div class="grid lg:grid-cols-2 gap-12 items-center">
+          <!-- Texto -->
+          <div class="text-center lg:text-left">
+            <div class="inline-flex items-center gap-2 bg-white/80 border border-orange-200 rounded-full px-4 py-1.5 mb-6 text-sm font-medium text-orange-700 shadow-sm">
+              <span class="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+              Teste grátis — sem cartão de crédito
+            </div>
+            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-display font-extrabold text-slate-900 leading-tight mb-6">
+              Seu restaurante com
+              <span class="gradient-text"> sistema completo</span>
+              de delivery
+            </h1>
+            <p class="text-lg sm:text-xl text-slate-600 mb-8 max-w-xl mx-auto lg:mx-0 leading-relaxed">
+              Site personalizado, app para entregadores com GPS, cozinha digital, Pix online e muito mais. Tudo em um só lugar.
+            </p>
+            <div class="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
+              <a href="#contato"
+                class="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold rounded-2xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-xl shadow-orange-500/25 text-center text-lg">
+                Começar Grátis
+              </a>
+              <a href="#temas"
+                class="w-full sm:w-auto px-8 py-4 bg-white text-slate-700 font-bold rounded-2xl border-2 border-slate-200 hover:border-orange-300 hover:text-orange-600 transition-all text-center text-lg">
+                ▶ Ver Demo
+              </a>
+            </div>
+            <!-- Trust badges -->
+            <div class="flex items-center gap-6 mt-10 justify-center lg:justify-start text-sm text-slate-500">
+              <div class="flex items-center gap-1.5">
+                <svg class="w-5 h-5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                Sem taxa de adesão
+              </div>
+              <div class="flex items-center gap-1.5">
+                <svg class="w-5 h-5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                Pedidos ilimitados
+              </div>
+              <div class="flex items-center gap-1.5">
+                <svg class="w-5 h-5 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                Suporte incluído
+              </div>
+            </div>
+          </div>
+
+          <!-- Visual -->
+          <div class="relative hidden lg:block">
+            <div class="relative w-full max-w-lg mx-auto">
+              <!-- Mockup decorativo dashboard -->
+              <div class="bg-white rounded-3xl shadow-2xl p-6 border border-slate-100 animate-float">
+                <div class="flex items-center gap-2 mb-4">
+                  <div class="w-3 h-3 rounded-full bg-red-400"></div>
+                  <div class="w-3 h-3 rounded-full bg-yellow-400"></div>
+                  <div class="w-3 h-3 rounded-full bg-emerald-400"></div>
+                  <span class="ml-2 text-xs text-slate-400">Painel do Restaurante</span>
+                </div>
+                <!-- Mini dashboard -->
+                <div class="grid grid-cols-3 gap-3 mb-4">
+                  <div class="bg-orange-50 rounded-xl p-3 text-center">
+                    <div class="text-2xl font-bold text-orange-600">47</div>
+                    <div class="text-xs text-slate-500">Pedidos hoje</div>
+                  </div>
+                  <div class="bg-emerald-50 rounded-xl p-3 text-center">
+                    <div class="text-2xl font-bold text-emerald-600">R$2.4k</div>
+                    <div class="text-xs text-slate-500">Faturamento</div>
+                  </div>
+                  <div class="bg-blue-50 rounded-xl p-3 text-center">
+                    <div class="text-2xl font-bold text-blue-600">4.8</div>
+                    <div class="text-xs text-slate-500">Avaliação</div>
+                  </div>
+                </div>
+                <!-- Mini orders -->
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-2.5">
+                    <div class="flex items-center gap-3">
+                      <span class="text-lg">🍕</span>
+                      <div><div class="text-sm font-semibold">#1047</div><div class="text-xs text-slate-400">Pizza Margherita</div></div>
+                    </div>
+                    <span class="text-xs font-medium bg-amber-100 text-amber-700 px-2.5 py-1 rounded-full">Preparando</span>
+                  </div>
+                  <div class="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-2.5">
+                    <div class="flex items-center gap-3">
+                      <span class="text-lg">🍔</span>
+                      <div><div class="text-sm font-semibold">#1046</div><div class="text-xs text-slate-400">Burger Artesanal</div></div>
+                    </div>
+                    <span class="text-xs font-medium bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full">Em rota</span>
+                  </div>
+                  <div class="flex items-center justify-between bg-slate-50 rounded-xl px-4 py-2.5">
+                    <div class="flex items-center gap-3">
+                      <span class="text-lg">🍣</span>
+                      <div><div class="text-sm font-semibold">#1045</div><div class="text-xs text-slate-400">Combo Sushi 30pç</div></div>
+                    </div>
+                    <span class="text-xs font-medium bg-emerald-100 text-emerald-700 px-2.5 py-1 rounded-full">Entregue ✓</span>
+                  </div>
+                </div>
+              </div>
+              <!-- Floating card KDS -->
+              <div class="absolute -bottom-6 -left-12 bg-white rounded-2xl shadow-xl p-4 border border-slate-100 animate-float-delay w-52">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-lg">👨‍🍳</span>
+                  <span class="text-xs font-bold text-slate-700">KDS Cozinha</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <div class="w-full bg-emerald-100 rounded-full h-2"><div class="bg-emerald-500 h-2 rounded-full" style="width:75%"></div></div>
+                  <span class="text-xs font-semibold text-emerald-600">75%</span>
+                </div>
+                <div class="text-xs text-slate-400 mt-1">3 de 4 pedidos prontos</div>
+              </div>
+              <!-- Floating card GPS -->
+              <div class="absolute -top-4 -right-8 bg-white rounded-2xl shadow-xl p-4 border border-slate-100 animate-float w-48">
+                <div class="flex items-center gap-2 mb-2">
+                  <span class="text-lg">🛵</span>
+                  <span class="text-xs font-bold text-slate-700">GPS Motoboy</span>
+                </div>
+                <div class="text-xs text-slate-500">João Silva</div>
+                <div class="text-xs font-semibold text-blue-600">📍 800m do destino</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- FUNCIONALIDADES                                               -->
+    <!-- ============================================================ -->
+    <section id="funcionalidades" class="py-20 lg:py-28 bg-white relative">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16 scroll-reveal">
+          <span class="text-sm font-semibold text-orange-600 uppercase tracking-wider">Funcionalidades</span>
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold text-slate-900 mt-3 mb-4">
+            Tudo que seu delivery precisa
+          </h2>
+          <p class="text-lg text-slate-500 max-w-2xl mx-auto">
+            Do pedido à entrega, cada etapa do seu negócio coberta por tecnologia de ponta.
+          </p>
+        </div>
+
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
+          <!-- Feature 1 -->
+          <div class="card-hover scroll-reveal bg-white rounded-2xl p-8 border border-slate-100 shadow-sm">
+            <div class="w-14 h-14 bg-orange-100 rounded-2xl flex items-center justify-center text-2xl mb-5">🎨</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-3">Site Personalizado</h3>
+            <p class="text-slate-500 leading-relaxed">
+              8 temas visuais que se adaptam ao seu tipo de restaurante. Cardápio digital completo com carrinho, busca e checkout inteligente.
+            </p>
+          </div>
+          <!-- Feature 2 -->
+          <div class="card-hover scroll-reveal bg-white rounded-2xl p-8 border border-slate-100 shadow-sm">
+            <div class="w-14 h-14 bg-blue-100 rounded-2xl flex items-center justify-center text-2xl mb-5">📋</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-3">Gestão de Pedidos</h3>
+            <p class="text-slate-500 leading-relaxed">
+              Pedidos em tempo real com timeline visual, notificações sonoras, despacho automático inteligente e controle de caixa completo.
+            </p>
+          </div>
+          <!-- Feature 3 -->
+          <div class="card-hover scroll-reveal bg-white rounded-2xl p-8 border border-slate-100 shadow-sm">
+            <div class="w-14 h-14 bg-emerald-100 rounded-2xl flex items-center justify-center text-2xl mb-5">🛵</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-3">App Entregador com GPS</h3>
+            <p class="text-slate-500 leading-relaxed">
+              App PWA instalável para motoboys com rastreamento GPS em tempo real, antifraude por geolocalização e ganhos transparentes.
+            </p>
+          </div>
+          <!-- Feature 4 -->
+          <div class="card-hover scroll-reveal bg-white rounded-2xl p-8 border border-slate-100 shadow-sm">
+            <div class="w-14 h-14 bg-purple-100 rounded-2xl flex items-center justify-center text-2xl mb-5">👨‍🍳</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-3">KDS Cozinha Digital</h3>
+            <p class="text-slate-500 leading-relaxed">
+              Comanda digital com timer em tempo real, alertas por cores, sons diferenciados e controle total do preparo. Adeus papel térmico.
+            </p>
+          </div>
+          <!-- Feature 5 -->
+          <div class="card-hover scroll-reveal bg-white rounded-2xl p-8 border border-slate-100 shadow-sm">
+            <div class="w-14 h-14 bg-green-100 rounded-2xl flex items-center justify-center text-2xl mb-5">💰</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-3">Pix Online Integrado</h3>
+            <p class="text-slate-500 leading-relaxed">
+              Receba Pix no seu site sem custo algum para você. QR Code automático, confirmação em tempo real e saque direto na sua conta.
+            </p>
+          </div>
+          <!-- Feature 6 -->
+          <div class="card-hover scroll-reveal bg-white rounded-2xl p-8 border border-slate-100 shadow-sm">
+            <div class="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center text-2xl mb-5">📊</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-3">Dashboard e Analytics</h3>
+            <p class="text-slate-500 leading-relaxed">
+              Relatórios completos: faturamento, top produtos, horário de pico, ticket médio, recorrência de clientes e projeções de crescimento.
+            </p>
+          </div>
+        </div>
+
+        <!-- Extra features row -->
+        <div class="grid md:grid-cols-4 gap-4 mt-10">
+          <div class="scroll-reveal flex items-center gap-3 bg-slate-50 rounded-xl px-5 py-4">
+            <span class="text-xl">🏆</span>
+            <span class="text-sm font-medium text-slate-700">Programa de Fidelidade</span>
+          </div>
+          <div class="scroll-reveal flex items-center gap-3 bg-slate-50 rounded-xl px-5 py-4">
+            <span class="text-xl">🎟️</span>
+            <span class="text-sm font-medium text-slate-700">Cupons e Promoções</span>
+          </div>
+          <div class="scroll-reveal flex items-center gap-3 bg-slate-50 rounded-xl px-5 py-4">
+            <span class="text-xl">📱</span>
+            <span class="text-sm font-medium text-slate-700">App Instalável (PWA)</span>
+          </div>
+          <div class="scroll-reveal flex items-center gap-3 bg-slate-50 rounded-xl px-5 py-4">
+            <span class="text-xl">🔗</span>
+            <span class="text-sm font-medium text-slate-700">Integração iFood</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- TEMAS / DEMO                                                  -->
+    <!-- ============================================================ -->
+    <section id="temas" class="py-20 lg:py-28 bg-gradient-to-b from-slate-50 to-white relative">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16 scroll-reveal">
+          <span class="text-sm font-semibold text-orange-600 uppercase tracking-wider">8 Temas Visuais</span>
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold text-slate-900 mt-3 mb-4">
+            Um visual único para cada tipo de restaurante
+          </h2>
+          <p class="text-lg text-slate-500 max-w-2xl mx-auto">
+            O site do seu cliente se adapta automaticamente ao seu segmento. Cores, fontes e layout pensados para converter.
+          </p>
+        </div>
+
+        <div id="themesGrid" class="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
+          <!-- Pizzaria -->
+          <a href="/cliente/237CC868" target="_blank" class="theme-card scroll-reveal bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer" style="--theme-color: #e4002e">
+            <div class="before:bg-[#e4002e]"></div>
+            <div style="background:#e4002e" class="w-3 h-3 rounded-full mx-auto mb-3 hidden"></div>
+            <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4" style="background:rgba(228,0,46,0.1)">🍕</div>
+            <h4 class="font-bold text-slate-900 mb-1">Pizzaria</h4>
+            <p class="text-xs text-slate-400">Italiano clássico</p>
+            <div class="flex justify-center gap-1 mt-3">
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#e4002e"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#1a1a2e"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#f5f0eb"></div>
+            </div>
+          </a>
+          <!-- Hamburgueria -->
+          <a href="/cliente/237CC868" target="_blank" class="theme-card scroll-reveal bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer">
+            <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4" style="background:rgba(255,205,0,0.15)">🍔</div>
+            <h4 class="font-bold text-slate-900 mb-1">Hamburgueria</h4>
+            <p class="text-xs text-slate-400">Dark urbano</p>
+            <div class="flex justify-center gap-1 mt-3">
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#ffcd00"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#1a1a1a"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#2d2d2d"></div>
+            </div>
+          </a>
+          <!-- Sushi -->
+          <a href="/cliente/237CC868" target="_blank" class="theme-card scroll-reveal bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer">
+            <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4" style="background:rgba(164,0,0,0.1)">🍣</div>
+            <h4 class="font-bold text-slate-900 mb-1">Sushi / Japonesa</h4>
+            <p class="text-xs text-slate-400">Oriental minimalista</p>
+            <div class="flex justify-center gap-1 mt-3">
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#a40000"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#1a1212"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#f0e6d3"></div>
+            </div>
+          </a>
+          <!-- Açaí -->
+          <a href="/cliente/237CC868" target="_blank" class="theme-card scroll-reveal bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer">
+            <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4" style="background:rgba(97,38,156,0.1)">🫐</div>
+            <h4 class="font-bold text-slate-900 mb-1">Açaí / Sorvetes</h4>
+            <p class="text-xs text-slate-400">Tropical dessert</p>
+            <div class="flex justify-center gap-1 mt-3">
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#61269c"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#e8d5f5"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#f8f0ff"></div>
+            </div>
+          </a>
+          <!-- Bebidas -->
+          <a href="/cliente/237CC868" target="_blank" class="theme-card scroll-reveal bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer">
+            <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4" style="background:rgba(229,14,22,0.1)">🍺</div>
+            <h4 class="font-bold text-slate-900 mb-1">Bebidas</h4>
+            <p class="text-xs text-slate-400">Clean &amp; fresh</p>
+            <div class="flex justify-center gap-1 mt-3">
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#e50e16"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#ffffff"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#f0f0f0"></div>
+            </div>
+          </a>
+          <!-- Esfiharia -->
+          <a href="/cliente/237CC868" target="_blank" class="theme-card scroll-reveal bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer">
+            <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4" style="background:rgba(212,136,15,0.1)">🥟</div>
+            <h4 class="font-bold text-slate-900 mb-1">Esfiharia</h4>
+            <p class="text-xs text-slate-400">Árabe quente</p>
+            <div class="flex justify-center gap-1 mt-3">
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#d4880f"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#3d2b1f"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#fff8ee"></div>
+            </div>
+          </a>
+          <!-- Restaurante -->
+          <a href="/cliente/237CC868" target="_blank" class="theme-card scroll-reveal bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer">
+            <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4" style="background:rgba(255,153,10,0.1)">🍽️</div>
+            <h4 class="font-bold text-slate-900 mb-1">Restaurante</h4>
+            <p class="text-xs text-slate-400">Casual quente</p>
+            <div class="flex justify-center gap-1 mt-3">
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#ff990a"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#2d1810"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#fff5e6"></div>
+            </div>
+          </a>
+          <!-- Salgados -->
+          <a href="/cliente/237CC868" target="_blank" class="theme-card scroll-reveal bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer">
+            <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4" style="background:rgba(255,136,58,0.1)">🧁</div>
+            <h4 class="font-bold text-slate-900 mb-1">Salgados / Doces</h4>
+            <p class="text-xs text-slate-400">Artesanal festa</p>
+            <div class="flex justify-center gap-1 mt-3">
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#ff883a"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#fff0e6"></div>
+              <div class="w-5 h-5 rounded-full border-2 border-white shadow" style="background:#ffecd6"></div>
+            </div>
+          </a>
+        </div>
+
+        <p class="text-center text-sm text-slate-400 mt-8">Clique em qualquer tema para visualizar uma loja demonstrativa</p>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- COMO FUNCIONA                                                 -->
+    <!-- ============================================================ -->
+    <section class="py-20 lg:py-28 bg-white">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16 scroll-reveal">
+          <span class="text-sm font-semibold text-orange-600 uppercase tracking-wider">Simples e rápido</span>
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold text-slate-900 mt-3 mb-4">
+            Funcionando em minutos
+          </h2>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-8 lg:gap-12">
+          <div class="scroll-reveal text-center">
+            <div class="w-16 h-16 mx-auto bg-orange-500 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mb-5 shadow-lg shadow-orange-500/20">1</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-2">Cadastre seu restaurante</h3>
+            <p class="text-slate-500">Preencha os dados básicos e escolha seu plano. Em menos de 5 minutos seu site está no ar.</p>
+          </div>
+          <div class="scroll-reveal text-center">
+            <div class="w-16 h-16 mx-auto bg-orange-500 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mb-5 shadow-lg shadow-orange-500/20">2</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-2">Monte seu cardápio</h3>
+            <p class="text-slate-500">Cadastre categorias, produtos, combos e variações. O tema visual se adapta automaticamente ao seu segmento.</p>
+          </div>
+          <div class="scroll-reveal text-center">
+            <div class="w-16 h-16 mx-auto bg-orange-500 text-white rounded-2xl flex items-center justify-center text-2xl font-bold mb-5 shadow-lg shadow-orange-500/20">3</div>
+            <h3 class="text-xl font-bold text-slate-900 mb-2">Comece a vender</h3>
+            <p class="text-slate-500">Compartilhe o link do seu site, receba pedidos em tempo real e gerencie tudo pelo painel.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- PLANOS (dinâmico — busca da API)                              -->
+    <!-- ============================================================ -->
+    <section id="planos" class="py-20 lg:py-28 bg-gradient-to-b from-slate-50 to-white relative overflow-hidden">
+      <div class="blob-1" style="top:auto;bottom:-200px;left:-200px;right:auto;"></div>
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+        <div class="text-center mb-16 scroll-reveal">
+          <span class="text-sm font-semibold text-orange-600 uppercase tracking-wider">Planos</span>
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold text-slate-900 mt-3 mb-4">
+            Escolha o plano ideal para seu negócio
+          </h2>
+          <p class="text-lg text-slate-500 max-w-2xl mx-auto">
+            Todos os planos incluem pedidos ilimitados, site personalizado e suporte. Sem taxa de adesão.
+          </p>
+        </div>
+
+        <!-- Container dinâmico — preenchido via JS -->
+        <div id="planosContainer" class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <!-- Loading skeleton -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-8 animate-pulse"><div class="h-6 bg-slate-200 rounded w-1/2 mb-4"></div><div class="h-10 bg-slate-200 rounded w-3/4 mb-6"></div><div class="space-y-3"><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div></div></div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-8 animate-pulse"><div class="h-6 bg-slate-200 rounded w-1/2 mb-4"></div><div class="h-10 bg-slate-200 rounded w-3/4 mb-6"></div><div class="space-y-3"><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div></div></div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-8 animate-pulse"><div class="h-6 bg-slate-200 rounded w-1/2 mb-4"></div><div class="h-10 bg-slate-200 rounded w-3/4 mb-6"></div><div class="space-y-3"><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div></div></div>
+          <div class="bg-white rounded-2xl border border-slate-200 p-8 animate-pulse"><div class="h-6 bg-slate-200 rounded w-1/2 mb-4"></div><div class="h-10 bg-slate-200 rounded w-3/4 mb-6"></div><div class="space-y-3"><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div></div></div>
+        </div>
+
+        <!-- Notes -->
+        <div class="mt-10 text-center space-y-2">
+          <p class="text-sm text-slate-500">Todos os planos incluem <strong>período de teste grátis</strong>. Cancele quando quiser.</p>
+          <p class="text-sm text-slate-400">Pagamento via Pix ou Boleto. Desconto especial no plano anual.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- NÚMEROS / SOCIAL PROOF                                        -->
+    <!-- ============================================================ -->
+    <section class="py-16 bg-slate-900">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-8 text-center">
+          <div class="scroll-reveal">
+            <div class="text-3xl sm:text-4xl font-extrabold text-white">8</div>
+            <div class="text-sm text-slate-400 mt-1">Temas visuais</div>
+          </div>
+          <div class="scroll-reveal">
+            <div class="text-3xl sm:text-4xl font-extrabold text-white">22+</div>
+            <div class="text-sm text-slate-400 mt-1">Páginas no painel</div>
+          </div>
+          <div class="scroll-reveal">
+            <div class="text-3xl sm:text-4xl font-extrabold text-white">5</div>
+            <div class="text-sm text-slate-400 mt-1">Apps integrados</div>
+          </div>
+          <div class="scroll-reveal">
+            <div class="text-3xl sm:text-4xl font-extrabold text-white">24/7</div>
+            <div class="text-sm text-slate-400 mt-1">Sistema no ar</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- FAQ                                                           -->
+    <!-- ============================================================ -->
+    <section id="faq" class="py-20 lg:py-28 bg-white">
+      <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="text-center mb-16 scroll-reveal">
+          <span class="text-sm font-semibold text-orange-600 uppercase tracking-wider">FAQ</span>
+          <h2 class="text-3xl sm:text-4xl font-display font-extrabold text-slate-900 mt-3">
+            Perguntas Frequentes
+          </h2>
+        </div>
+
+        <div class="space-y-3 scroll-reveal">
+          <!-- FAQ 1 -->
+          <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
+            <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
+              <span class="font-semibold text-slate-900">O que é o Derekh Food?</span>
+              <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="faq-content">
+              <div class="px-6 pb-5 text-slate-500 leading-relaxed">
+                O Derekh Food é um sistema completo de delivery para restaurantes. Inclui site personalizado para seus clientes fazerem pedidos, painel de gestão completo, app para entregadores com GPS, cozinha digital (KDS), Pix online integrado e muito mais. Tudo em uma plataforma só.
+              </div>
+            </div>
+          </div>
+          <!-- FAQ 2 -->
+          <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
+            <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
+              <span class="font-semibold text-slate-900">Como funciona o período de teste?</span>
+              <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="faq-content">
+              <div class="px-6 pb-5 text-slate-500 leading-relaxed">
+                Ao se cadastrar, você recebe acesso gratuito com todas as funcionalidades do plano Premium. Não é necessário cartão de crédito. Ao final do período de teste, você escolhe o plano que melhor se adequa ao seu negócio.
+              </div>
+            </div>
+          </div>
+          <!-- FAQ 3 -->
+          <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
+            <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
+              <span class="font-semibold text-slate-900">Preciso instalar alguma coisa?</span>
+              <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="faq-content">
+              <div class="px-6 pb-5 text-slate-500 leading-relaxed">
+                Não! O Derekh Food funciona 100% no navegador. Seu site, painel de gestão, app do entregador e KDS da cozinha são todos acessíveis pelo celular ou computador, sem precisar baixar nada. São Progressive Web Apps (PWA) que podem ser instalados na tela inicial como um app nativo.
+              </div>
+            </div>
+          </div>
+          <!-- FAQ 4 -->
+          <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
+            <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
+              <span class="font-semibold text-slate-900">Como funciona o Pix online?</span>
+              <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="faq-content">
+              <div class="px-6 pb-5 text-slate-500 leading-relaxed">
+                O Pix online permite que seus clientes paguem diretamente pelo site com QR Code. A Derekh Food <strong>não cobra nada</strong> por isso — a única taxa é de R$0,85 por transação cobrada pela processadora (Woovi). O dinheiro vai direto para sua conta e você pode sacar a qualquer momento. Não é necessário criar conta em nenhuma plataforma.
+              </div>
+            </div>
+          </div>
+          <!-- FAQ 5 -->
+          <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
+            <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
+              <span class="font-semibold text-slate-900">Posso ter meu próprio domínio?</span>
+              <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="faq-content">
+              <div class="px-6 pb-5 text-slate-500 leading-relaxed">
+                Sim! No plano Premium, você pode conectar seu próprio domínio (ex: pedidos.seurestaurante.com.br) ao seu site de delivery. O certificado SSL é gerado automaticamente. Basta configurar o DNS e pronto.
+              </div>
+            </div>
+          </div>
+          <!-- FAQ 6 -->
+          <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
+            <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
+              <span class="font-semibold text-slate-900">Quantos pedidos posso receber por mês?</span>
+              <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="faq-content">
+              <div class="px-6 pb-5 text-slate-500 leading-relaxed">
+                <strong>Ilimitados!</strong> Todos os planos do Derekh Food incluem pedidos ilimitados. Não cobramos por pedido, não temos taxa por venda e não limitamos seu crescimento.
+              </div>
+            </div>
+          </div>
+          <!-- FAQ 7 -->
+          <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
+            <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
+              <span class="font-semibold text-slate-900">E se eu precisar de suporte?</span>
+              <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="faq-content">
+              <div class="px-6 pb-5 text-slate-500 leading-relaxed">
+                Todos os planos incluem suporte técnico. Nos planos Avançado e Premium o suporte é prioritário. Estamos disponíveis por WhatsApp, email e pelo próprio painel do restaurante.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- CTA FINAL / CONTATO                                           -->
+    <!-- ============================================================ -->
+    <section id="contato" class="py-20 lg:py-28 bg-gradient-to-br from-orange-500 via-orange-600 to-orange-700 relative overflow-hidden">
+      <div class="absolute inset-0 opacity-10">
+        <div class="absolute top-10 left-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
+        <div class="absolute bottom-10 right-10 w-60 h-60 bg-white rounded-full blur-3xl"></div>
+      </div>
+      <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+        <div class="scroll-reveal">
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold text-white mb-6">
+            Pronto para transformar seu delivery?
+          </h2>
+          <p class="text-lg text-orange-100 mb-10 max-w-2xl mx-auto">
+            Comece agora com teste grátis. Sem cartão de crédito, sem burocracia. Monte seu cardápio e comece a receber pedidos em minutos.
+          </p>
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <a href="https://wa.me/15559004563?text=Olá! Tenho interesse no Derekh Food para meu restaurante." target="_blank"
+              class="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-4 bg-white text-orange-600 font-bold rounded-2xl hover:bg-orange-50 transition-all text-lg shadow-xl">
+              <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+              Falar no WhatsApp
+            </a>
+            <a href="/admin"
+              class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-4 bg-orange-800/30 text-white font-bold rounded-2xl border-2 border-white/30 hover:bg-orange-800/50 transition-all text-lg">
+              Acessar Painel
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- FOOTER                                                        -->
+  <!-- ============================================================ -->
+  <footer class="bg-slate-900 border-t border-slate-800">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-10">
+        <!-- Col 1 - Brand -->
+        <div class="lg:col-span-1">
+          <a href="#" class="flex items-center gap-2 text-xl font-display font-bold text-white mb-4">
+            <img src="/static/logo-derekh.png" alt="Derekh Food" class="w-[72px] h-[72px] rounded-xl object-contain">
+            Derekh<span class="text-orange-400">Food</span>
+          </a>
+          <p class="text-sm text-slate-400 leading-relaxed">
+            Sistema completo de delivery para restaurantes. Do pedido à entrega, tudo em uma plataforma.
+          </p>
+        </div>
+        <!-- Col 2 - Produto -->
+        <div>
+          <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">Produto</h4>
+          <ul class="space-y-3">
+            <li><a href="#funcionalidades" class="text-sm text-slate-400 hover:text-orange-400 transition-colors">Funcionalidades</a></li>
+            <li><a href="#temas" class="text-sm text-slate-400 hover:text-orange-400 transition-colors">Temas Visuais</a></li>
+            <li><a href="#planos" class="text-sm text-slate-400 hover:text-orange-400 transition-colors">Planos e Preços</a></li>
+            <li><a href="#faq" class="text-sm text-slate-400 hover:text-orange-400 transition-colors">FAQ</a></li>
+          </ul>
+        </div>
+        <!-- Col 3 - Acesso -->
+        <div>
+          <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">Acesso</h4>
+          <ul class="space-y-3">
+            <li><a href="/admin" class="text-sm text-slate-400 hover:text-orange-400 transition-colors">Painel do Restaurante</a></li>
+            <li><a href="/entregador" class="text-sm text-slate-400 hover:text-orange-400 transition-colors">App Entregador</a></li>
+            <li><a href="/cozinha" class="text-sm text-slate-400 hover:text-orange-400 transition-colors">KDS Cozinha</a></li>
+          </ul>
+        </div>
+        <!-- Col 4 - Contato -->
+        <div>
+          <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">Contato</h4>
+          <ul class="space-y-3">
+            <li>
+              <a href="https://wa.me/15559004563" target="_blank" class="text-sm text-slate-400 hover:text-orange-400 transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                WhatsApp
+              </a>
+            </li>
+            <li>
+              <a href="mailto:contato@derekhfood.com.br" class="text-sm text-slate-400 hover:text-orange-400 transition-colors flex items-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                contato@derekhfood.com.br
+              </a>
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Bottom -->
+      <div class="border-t border-slate-800 mt-10 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <p class="text-xs text-slate-500">© <span id="currentYear"></span> Derekh Food. Todos os direitos reservados.</p>
+        <p class="text-xs text-slate-500">Desenvolvido por <strong class="text-slate-400">Derekh Food LTDA</strong></p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ============================================================ -->
+  <!-- WhatsApp Floating Button                                       -->
+  <!-- ============================================================ -->
+  <a href="https://wa.me/15559004563?text=Olá! Tenho interesse no Derekh Food." target="_blank"
+    class="fixed bottom-6 right-6 w-14 h-14 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 hover:scale-110 transition-all z-50">
+    <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+  </a>
+
+  <!-- ============================================================ -->
+  <!-- SCRIPTS                                                        -->
+  <!-- ============================================================ -->
+  <script>
+    // ===== Header scroll effect =====
+    const header = document.getElementById('header');
+    let lastScroll = 0;
+    window.addEventListener('scroll', () => {
+      const scrollY = window.scrollY;
+      if (scrollY > 50) {
+        header.classList.add('glass', 'shadow-sm', 'border-b', 'border-slate-100/50');
+        header.querySelector('nav').classList.remove('py-4');
+        header.querySelector('nav').classList.add('py-2');
+      } else {
+        header.classList.remove('glass', 'shadow-sm', 'border-b', 'border-slate-100/50');
+        header.querySelector('nav').classList.remove('py-2');
+        header.querySelector('nav').classList.add('py-4');
+      }
+      lastScroll = scrollY;
+    });
+
+    // ===== Mobile menu toggle =====
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const mobileMenu = document.getElementById('mobileMenu');
+    const menuIconOpen = document.getElementById('menuIconOpen');
+    const menuIconClose = document.getElementById('menuIconClose');
+    let menuOpen = false;
+
+    mobileMenuBtn.addEventListener('click', () => {
+      menuOpen = !menuOpen;
+      mobileMenu.classList.toggle('hidden', !menuOpen);
+      menuIconOpen.classList.toggle('hidden', menuOpen);
+      menuIconClose.classList.toggle('hidden', !menuOpen);
+    });
+
+    // Close mobile menu on link click
+    mobileMenu.querySelectorAll('a[href^="#"]').forEach(link => {
+      link.addEventListener('click', () => {
+        menuOpen = false;
+        mobileMenu.classList.add('hidden');
+        menuIconOpen.classList.remove('hidden');
+        menuIconClose.classList.add('hidden');
+      });
+    });
+
+    // ===== Login dropdown =====
+    const loginBtn = document.getElementById('loginBtn');
+    const loginDropdown = document.getElementById('loginDropdown');
+
+    loginBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      loginDropdown.classList.toggle('active');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!loginDropdown.contains(e.target) && e.target !== loginBtn) {
+        loginDropdown.classList.remove('active');
+      }
+    });
+
+    // ===== Login form submit =====
+    async function handleLogin(email, senha, errorEl, submitBtn) {
+      errorEl.classList.add('hidden');
+      const originalText = submitBtn.textContent;
+      submitBtn.textContent = 'Entrando...';
+      submitBtn.disabled = true;
+
+      try {
+        const resp = await fetch('/auth/restaurante/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, senha })
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || 'Email ou senha incorretos');
+        }
+
+        const data = await resp.json();
+        localStorage.setItem('sf_admin_token', data.token);
+        localStorage.setItem('sf_admin_restaurante', JSON.stringify(data.restaurante || data));
+        window.location.href = '/admin';
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+        submitBtn.textContent = originalText;
+        submitBtn.disabled = false;
+      }
+    }
+
+    document.getElementById('loginForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleLogin(
+        document.getElementById('loginEmail').value.trim(),
+        document.getElementById('loginSenha').value,
+        document.getElementById('loginError'),
+        document.getElementById('loginSubmitBtn')
+      );
+    });
+
+    document.getElementById('loginFormMobile').addEventListener('submit', (e) => {
+      e.preventDefault();
+      handleLogin(
+        document.getElementById('loginEmailMobile').value.trim(),
+        document.getElementById('loginSenhaMobile').value,
+        document.getElementById('loginErrorMobile'),
+        e.target.querySelector('button[type="submit"]')
+      );
+    });
+
+    // ===== FAQ accordion =====
+    document.querySelectorAll('.faq-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const content = btn.nextElementSibling;
+        const arrow = btn.querySelector('.faq-arrow');
+        const isOpen = content.classList.contains('open');
+
+        // Close all
+        document.querySelectorAll('.faq-content').forEach(c => c.classList.remove('open'));
+        document.querySelectorAll('.faq-arrow').forEach(a => a.classList.remove('open'));
+
+        // Toggle clicked
+        if (!isOpen) {
+          content.classList.add('open');
+          arrow.classList.add('open');
+        }
+      });
+    });
+
+    // ===== Scroll reveal animation =====
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+
+    document.querySelectorAll('.scroll-reveal').forEach(el => observer.observe(el));
+
+    // ===== Copyright year auto-update =====
+    document.getElementById('currentYear').textContent = new Date().getFullYear();
+
+    // ===== Dynamic pricing — fetch from API =====
+    (async function loadPlanos() {
+      const checkIcon = `<svg class="w-5 h-5 shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>`;
+
+      // Features por plano (mapeamento visual)
+      const featuresPorPlano = {
+        'Básico': [
+          '{motoboys}',
+          'Pedidos ilimitados',
+          'Site personalizado',
+          'Cardápio digital',
+          'Relatórios',
+        ],
+        'Essencial': [
+          '{motoboys}',
+          'Pedidos ilimitados',
+          'Site personalizado',
+          'KDS Cozinha Digital',
+          'Controle de Caixa',
+          'Programa de Fidelidade',
+        ],
+        'Avançado': [
+          '{motoboys}',
+          'Pedidos ilimitados',
+          'Tudo do Essencial',
+          '<strong>Pix Online</strong> integrado',
+          'Analytics avançado',
+          'Cupons e Promoções',
+          'Suporte prioritário',
+        ],
+        'Premium': [
+          'Motoboys <strong>ilimitados</strong>',
+          'Tudo do Avançado',
+          '<strong>Bot WhatsApp IA</strong> <span class="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded-full ml-1">Em breve</span>',
+          '<strong>Domínio personalizado</strong>',
+          '<strong>App Garçom</strong> <span class="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded-full ml-1">Em breve</span>',
+          'Suporte dedicado',
+        ],
+      };
+
+      function formatPrice(valor) {
+        const inteiro = Math.floor(valor);
+        const centavos = Math.round((valor - inteiro) * 100).toString().padStart(2, '0');
+        return { inteiro, centavos: centavos === '00' ? '' : ',' + centavos };
+      }
+
+      function renderCard(plano, index, total) {
+        const isPremium = plano.nome === 'Premium';
+        const isDestaque = plano.destaque;
+        const { inteiro, centavos } = formatPrice(plano.valor);
+        const motoboysText = plano.limite_motoboys >= 999
+          ? 'Motoboys <strong>ilimitados</strong>'
+          : `Até <strong>${plano.limite_motoboys} motoboys</strong>`;
+        const features = (featuresPorPlano[plano.nome] || featuresPorPlano['Básico'])
+          .map(f => f.replace('{motoboys}', motoboysText));
+
+        const iconColor = isPremium ? 'text-orange-400' : 'text-emerald-500';
+        const textColor = isPremium ? 'text-slate-300' : 'text-slate-600';
+        const priceColor = isDestaque ? 'text-orange-600' : (isPremium ? 'text-white' : 'text-slate-900');
+        const centColor = isDestaque ? 'text-orange-300' : (isPremium ? 'text-slate-500' : 'text-slate-400');
+
+        let wrapperClass, btnHtml;
+        if (isPremium) {
+          wrapperClass = 'card-hover bg-slate-900 rounded-2xl border border-slate-700 p-8 flex flex-col';
+          btnHtml = `<a href="#contato" class="block text-center py-3 rounded-xl bg-white text-slate-900 font-semibold hover:bg-slate-100 transition-all text-sm">Começar Grátis</a>`;
+        } else if (isDestaque) {
+          wrapperClass = 'card-hover plan-popular bg-white rounded-2xl p-8 flex flex-col shadow-lg';
+          btnHtml = `<a href="#contato" class="block text-center py-3 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold hover:from-orange-600 hover:to-orange-700 transition-all text-sm shadow-lg shadow-orange-500/20">Começar Grátis</a>`;
+        } else {
+          wrapperClass = 'card-hover bg-white rounded-2xl border border-slate-200 p-8 flex flex-col';
+          btnHtml = `<a href="#contato" class="block text-center py-3 rounded-xl border-2 border-slate-200 text-slate-700 font-semibold hover:border-orange-300 hover:text-orange-600 transition-all text-sm">Começar Grátis</a>`;
+        }
+
+        const nameColor = isPremium ? 'text-white' : 'text-slate-900';
+        const descColor = 'text-slate-400';
+
+        return `
+          <div class="scroll-reveal visible ${wrapperClass}">
+            <div class="mb-6">
+              <h3 class="text-lg font-bold ${nameColor}">${plano.nome}</h3>
+              <p class="text-sm ${descColor} mt-1">${plano.descricao}</p>
+            </div>
+            <div class="mb-6">
+              <span class="text-4xl font-extrabold ${priceColor}">R$${inteiro}</span>
+              ${centavos ? `<span class="text-xl font-bold ${centColor}">${centavos}</span>` : ''}
+              <span class="text-sm text-slate-400">/mês</span>
+            </div>
+            <ul class="space-y-3 mb-8 flex-grow">
+              ${features.map(f => `<li class="flex items-start gap-2 text-sm ${textColor}">${checkIcon.replace('shrink-0', `${iconColor} shrink-0`)}${f}</li>`).join('')}
+            </ul>
+            ${btnHtml}
+          </div>`;
+      }
+
+      try {
+        const resp = await fetch('/api/public/planos');
+        const planos = await resp.json();
+        if (planos && planos.length) {
+          const container = document.getElementById('planosContainer');
+          container.innerHTML = planos.map((p, i) => renderCard(p, i, planos.length)).join('');
+        }
+      } catch (e) {
+        console.warn('Falha ao carregar planos da API:', e);
+        // Skeleton permanece — fallback visual
+      }
+    })();
+
+    // ===== Dynamic demo links — fetch from API =====
+    (async function loadDemos() {
+      const TIPO_MAP = {
+        'pizzaria':     { emoji: '🍕', label: 'Pizzaria',        sub: 'Italiano clássico' },
+        'hamburgueria': { emoji: '🍔', label: 'Hamburgueria',    sub: 'Dark urbano' },
+        'japonesa':     { emoji: '🍣', label: 'Sushi / Japonesa', sub: 'Oriental minimalista' },
+        'acai':         { emoji: '🫐', label: 'Açaí / Sorvetes', sub: 'Tropical dessert' },
+        'bebidas':      { emoji: '🍺', label: 'Bebidas',          sub: 'Clean & fresh' },
+        'esfiharia':    { emoji: '🥟', label: 'Esfiharia',        sub: 'Árabe quente' },
+        'restaurante':  { emoji: '🍽️', label: 'Restaurante',     sub: 'Casual quente' },
+        'salgados':     { emoji: '🧁', label: 'Salgados / Doces', sub: 'Artesanal festa' },
+      };
+
+      try {
+        const resp = await fetch('/api/public/demos');
+        const demos = await resp.json();
+        if (!demos || !demos.length) return;
+
+        const grid = document.getElementById('themesGrid');
+        if (!grid) return;
+
+        grid.innerHTML = demos.map(d => {
+          const info = TIPO_MAP[d.tipo_restaurante] || { emoji: '🍽️', label: d.tipo_restaurante, sub: '' };
+          const cor = d.cor_primaria || '#EA580C';
+          return `
+            <a href="/cliente/${d.codigo_acesso}" target="_blank"
+              class="theme-card scroll-reveal visible bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center cursor-pointer">
+              <div class="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-3xl mb-4"
+                style="background:${cor}15">${info.emoji}</div>
+              <h4 class="font-bold text-slate-900 mb-1">${info.label}</h4>
+              <p class="text-xs text-slate-400">${info.sub}</p>
+              <p class="text-[10px] text-orange-500 font-semibold mt-2 uppercase tracking-wider">Ver Demo</p>
+            </a>`;
+        }).join('');
+      } catch (e) {
+        // Mantém links estáticos como fallback
+        console.warn('Falha ao carregar demos:', e);
+      }
+    })();
+
+    // ===== Smooth scroll for anchor links =====
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          const offset = 80;
+          const top = target.getBoundingClientRect().top + window.scrollY - offset;
+          window.scrollTo({ top, behavior: 'smooth' });
+        }
+      });
+    });
+  </script>
+</body>
+</html>

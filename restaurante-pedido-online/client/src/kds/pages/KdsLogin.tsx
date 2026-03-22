@@ -47,9 +47,7 @@ export default function KdsLogin() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/20">
-            <ChefHat className="h-8 w-8 text-amber-500" />
-          </div>
+          <img src="/static/logo-derekh-kds.png" alt="Derekh Food" className="mx-auto mb-4 h-40 w-40 rounded-2xl object-contain" />
           <h1 className="text-2xl font-bold text-white">Cozinha Digital</h1>
           <p className="mt-1 text-sm text-gray-400">KDS — Kitchen Display System</p>
         </div>

@@ -30,28 +30,8 @@ ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/jpg"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
 
 
-@router.post("/imagem")
-async def upload_imagem(
-    arquivo: UploadFile = File(...),
-    tipo: str = Form(...),
-    restaurante_id: int = Form(...),
-    current_restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
-):
-    """
-    Upload e processamento de imagem.
-
-    Args:
-        arquivo: Arquivo de imagem (jpg, png, webp)
-        tipo: Tipo da imagem (logo, banner, produto, combo, categoria)
-        restaurante_id: ID do restaurante (multi-tenant)
-
-    Returns:
-        {"url": "/static/uploads/{restaurante_id}/tipo_uuid.webp"}
-    """
-    # Validar que o restaurante_id do form é o mesmo do token
-    if restaurante_id != current_restaurante.id:
-        raise HTTPException(status_code=403, detail="Sem permissão para este restaurante")
-
+async def _process_and_upload(arquivo: UploadFile, tipo: str, restaurante_id: int) -> dict:
+    """Processa e faz upload de imagem. Reutilizado por admin e super admin."""
     # Validar tipo
     if tipo not in TIPO_CONFIG:
         raise HTTPException(
@@ -116,3 +96,43 @@ async def upload_imagem(
     url = storage.upload(file_bytes, key, content_type="image/webp")
 
     return {"url": url, "filename": filename}
+
+
+@router.post("/imagem")
+async def upload_imagem(
+    arquivo: UploadFile = File(...),
+    tipo: str = Form(...),
+    restaurante_id: int = Form(...),
+    current_restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
+):
+    """
+    Upload e processamento de imagem (painel restaurante).
+
+    Args:
+        arquivo: Arquivo de imagem (jpg, png, webp)
+        tipo: Tipo da imagem (logo, banner, produto, combo, categoria)
+        restaurante_id: ID do restaurante (multi-tenant)
+    """
+    # Validar que o restaurante_id do form é o mesmo do token
+    if restaurante_id != current_restaurante.id:
+        raise HTTPException(status_code=403, detail="Sem permissão para este restaurante")
+
+    return await _process_and_upload(arquivo, tipo, restaurante_id)
+
+
+@router.post("/admin/imagem")
+async def upload_imagem_admin(
+    arquivo: UploadFile = File(...),
+    tipo: str = Form("produto"),
+    restaurante_id: int = Form(...),
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+):
+    """
+    Upload de imagem pelo super admin (pode enviar para qualquer restaurante).
+
+    Args:
+        arquivo: Arquivo de imagem (jpg, png, webp)
+        tipo: Tipo da imagem (logo, banner, produto, combo, categoria)
+        restaurante_id: ID do restaurante destino
+    """
+    return await _process_and_upload(arquivo, tipo, restaurante_id)

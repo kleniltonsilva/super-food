@@ -124,6 +124,20 @@ export default function Checkout() {
   const [validandoCupom, setValidandoCupom] = useState(false);
   const [troco, setTroco] = useState("");
 
+  // Demo: auto-preencher endereço e taxa
+  const isDemo = siteInfo?.is_demo === true;
+  useEffect(() => {
+    if (isDemo && deliveryType === "entrega" && !isLoggedIn && !enderecoTexto) {
+      setEnderecoTexto("Rua Demonstração, 100 - Centro, São Paulo");
+      setNomeCliente(prev => prev || "Cliente Demo");
+      setTelefoneCliente(prev => prev || "(11) 99999-0000");
+      setDeliveryFee(5.0);
+      setDeliveryMsg("~35 min | 2.5 km");
+      setSelectedLat(-23.5505);
+      setSelectedLng(-46.6333);
+    }
+  }, [isDemo, deliveryType, isLoggedIn]);
+
   // Seleciona endereço padrão quando endereços carregam do cache/API
   useEffect(() => {
     if (enderecos.length > 0 && !selectedEnderecoId) {

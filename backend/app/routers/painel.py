@@ -4348,3 +4348,197 @@ def get_dashboard_cozinha(
         "tempo_medio_min": tempo_medio_min,
         "cozinheiros_ativos": cozinheiros_ativos,
     }
+
+
+# ─── Pausar / Despausar Pedido na Cozinha ───────────────
+
+@router.post("/pedidos/{pedido_id}/pausar")
+async def pausar_pedido_cozinha(
+    pedido_id: int,
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Pausa pedido na cozinha (só se status NOVO). Admin envia para final da fila."""
+    pc = db.query(models.PedidoCozinha).filter(
+        models.PedidoCozinha.pedido_id == pedido_id,
+        models.PedidoCozinha.restaurante_id == rest.id
+    ).first()
+
+    if not pc:
+        raise HTTPException(404, "Pedido não encontrado no KDS")
+
+    if pc.status != 'NOVO':
+        raise HTTPException(400, "Só é possível pausar pedidos com status NOVO")
+
+    if pc.pausado:
+        raise HTTPException(400, "Pedido já está pausado")
+
+    agora = datetime.utcnow()
+    # Salvar posição original baseada em criado_em (para restaurar depois)
+    posicao = db.query(models.PedidoCozinha).filter(
+        models.PedidoCozinha.restaurante_id == rest.id,
+        models.PedidoCozinha.status == 'NOVO',
+        models.PedidoCozinha.criado_em <= pc.criado_em,
+    ).count()
+    pc.pausado = True
+    pc.pausado_em = agora
+    pc.posicao_original = posicao
+    db.commit()
+
+    # Broadcast KDS
+    kds_ws = getattr(request.app.state, 'kds_manager', None)
+    if kds_ws:
+        await kds_ws.broadcast({
+            "tipo": "kds:pedido_pausado",
+            "dados": {"id": pc.id, "pedido_id": pc.pedido_id, "comanda": db.query(models.Pedido.comanda).filter(models.Pedido.id == pc.pedido_id).scalar()}
+        }, rest.id)
+
+    # Broadcast admin
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "pedido_atualizado",
+            "dados": {"pedido_id": pedido_id, "status": "pausado_cozinha"}
+        }, rest.id)
+
+    return {"id": pc.id, "pausado": True}
+
+
+@router.post("/pedidos/{pedido_id}/despausar")
+async def despausar_pedido_cozinha(
+    pedido_id: int,
+    request: Request,
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Despausa pedido na cozinha — volta para fila na posição original por criado_em."""
+    pc = db.query(models.PedidoCozinha).filter(
+        models.PedidoCozinha.pedido_id == pedido_id,
+        models.PedidoCozinha.restaurante_id == rest.id
+    ).first()
+
+    if not pc:
+        raise HTTPException(404, "Pedido não encontrado no KDS")
+
+    if not pc.pausado:
+        raise HTTPException(400, "Pedido não está pausado")
+
+    agora = datetime.utcnow()
+    pc.pausado = False
+    pc.despausado_em = agora
+    db.commit()
+
+    # Broadcast KDS
+    kds_ws = getattr(request.app.state, 'kds_manager', None)
+    if kds_ws:
+        await kds_ws.broadcast({
+            "tipo": "kds:pedido_despausado",
+            "dados": {"id": pc.id, "pedido_id": pc.pedido_id, "comanda": db.query(models.Pedido.comanda).filter(models.Pedido.id == pc.pedido_id).scalar()}
+        }, rest.id)
+
+    # Broadcast admin
+    ws = getattr(request.app.state, 'ws_manager', None)
+    if ws:
+        await ws.broadcast({
+            "tipo": "pedido_atualizado",
+            "dados": {"pedido_id": pedido_id, "status": "em_preparo"}
+        }, rest.id)
+
+    return {"id": pc.id, "pausado": False}
+
+
+# ─── Desempenho Cozinheiros ─────────────────────────────
+
+@router.get("/cozinha/desempenho")
+def get_desempenho_cozinheiros(
+    periodo: str = "hoje",
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Rankings e métricas dos cozinheiros. Calcula em tempo real."""
+    from sqlalchemy import func
+
+    agora = datetime.utcnow()
+    if periodo == "7d":
+        data_inicio = agora - timedelta(days=7)
+    elif periodo == "30d":
+        data_inicio = agora - timedelta(days=30)
+    else:  # hoje
+        data_inicio = agora.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Buscar todos os pedidos_cozinha concluídos (FEITO ou PRONTO) no período
+    pedidos_kds = db.query(models.PedidoCozinha).filter(
+        models.PedidoCozinha.restaurante_id == rest.id,
+        models.PedidoCozinha.feito_em.isnot(None),
+        models.PedidoCozinha.feito_em >= data_inicio,
+        models.PedidoCozinha.cozinheiro_id.isnot(None),
+    ).all()
+
+    # Agrupar por cozinheiro
+    cozinheiros_stats: dict = {}
+    for pc in pedidos_kds:
+        cid = pc.cozinheiro_id
+        if cid not in cozinheiros_stats:
+            cozinheiros_stats[cid] = {
+                "total_pedidos": 0,
+                "tempos_montagem": [],  # FAZENDO→FEITO
+                "tempos_despacho": [],  # criado_em→pronto_em
+            }
+        stats = cozinheiros_stats[cid]
+        stats["total_pedidos"] += 1
+        if pc.iniciado_em and pc.feito_em:
+            delta = (pc.feito_em - pc.iniciado_em).total_seconds()
+            if delta > 0:
+                stats["tempos_montagem"].append(delta)
+        if pc.criado_em and pc.pronto_em:
+            delta = (pc.pronto_em - pc.criado_em).total_seconds()
+            if delta > 0:
+                stats["tempos_despacho"].append(delta)
+
+    # Buscar nomes dos cozinheiros
+    cozinheiro_ids = list(cozinheiros_stats.keys())
+    cozinheiros_db = {}
+    if cozinheiro_ids:
+        for c in db.query(models.Cozinheiro).filter(
+            models.Cozinheiro.id.in_(cozinheiro_ids)
+        ).all():
+            cozinheiros_db[c.id] = c
+
+    # Montar ranking
+    ranking = []
+    for cid, stats in cozinheiros_stats.items():
+        c = cozinheiros_db.get(cid)
+        tempo_medio_montagem = (
+            round(sum(stats["tempos_montagem"]) / len(stats["tempos_montagem"]))
+            if stats["tempos_montagem"] else 0
+        )
+        tempo_medio_despacho = (
+            round(sum(stats["tempos_despacho"]) / len(stats["tempos_despacho"]))
+            if stats["tempos_despacho"] else 0
+        )
+        ranking.append({
+            "cozinheiro_id": cid,
+            "nome": c.nome if c else "Desconhecido",
+            "avatar_emoji": c.avatar_emoji if c else None,
+            "total_pedidos": stats["total_pedidos"],
+            "tempo_medio_montagem_seg": tempo_medio_montagem,
+            "tempo_medio_montagem_min": round(tempo_medio_montagem / 60, 1),
+            "tempo_medio_despacho_seg": tempo_medio_despacho,
+            "tempo_medio_despacho_min": round(tempo_medio_despacho / 60, 1),
+        })
+
+    # Ordenar por tempo_medio_montagem ASC (mais rápido primeiro)
+    ranking.sort(key=lambda x: x["tempo_medio_montagem_seg"] if x["tempo_medio_montagem_seg"] > 0 else 999999)
+
+    # Totais gerais
+    total_pedidos = sum(r["total_pedidos"] for r in ranking)
+    todos_montagem = [t for s in cozinheiros_stats.values() for t in s["tempos_montagem"]]
+    media_geral_montagem = round(sum(todos_montagem) / len(todos_montagem) / 60, 1) if todos_montagem else 0
+
+    return {
+        "periodo": periodo,
+        "total_pedidos": total_pedidos,
+        "media_geral_montagem_min": media_geral_montagem,
+        "ranking": ranking,
+    }

@@ -30,6 +30,12 @@ import {
   migrarRestauranteAsaas,
   atualizarPlanoRestaurante,
   cancelarAssinaturaRestaurante,
+  getDemos,
+  getDemo,
+  atualizarDemo,
+  atualizarProdutoDemo,
+  atualizarSiteConfigDemo,
+  resetDemo,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -335,6 +341,70 @@ export function useCancelarAssinatura() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
       qc.invalidateQueries({ queryKey: ["superadmin", "billing-dashboard"] });
+    },
+  });
+}
+
+// ─── Demos ─────────────────────────────────────────────
+export function useDemos() {
+  return useQuery({
+    queryKey: ["superadmin", "demos"],
+    queryFn: getDemos,
+    staleTime: 30_000,
+  });
+}
+
+export function useDemo(id: number | null) {
+  return useQuery({
+    queryKey: ["superadmin", "demo", id],
+    queryFn: () => getDemo(id!),
+    enabled: !!id,
+    staleTime: 30_000,
+  });
+}
+
+export function useAtualizarDemo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
+      atualizarDemo(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "demos"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "demo"] });
+    },
+  });
+}
+
+export function useAtualizarProdutoDemo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ demoId, produtoId, payload }: { demoId: number; produtoId: number; payload: Record<string, unknown> }) =>
+      atualizarProdutoDemo(demoId, produtoId, payload),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "demo", variables.demoId] });
+    },
+  });
+}
+
+export function useAtualizarSiteConfigDemo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ demoId, payload }: { demoId: number; payload: Record<string, unknown> }) =>
+      atualizarSiteConfigDemo(demoId, payload),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "demo", variables.demoId] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "demos"] });
+    },
+  });
+}
+
+export function useResetDemo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: resetDemo,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "demos"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "demo"] });
     },
   });
 }

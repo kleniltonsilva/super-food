@@ -10,6 +10,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional
 from datetime import datetime, timedelta
 import uuid
+import random
 
 from .. import models, database
 from ..schemas import carrinho_schemas
@@ -425,11 +426,17 @@ async def finalizar_carrinho(
     if not carrinho or not carrinho.itens_json:
         raise HTTPException(status_code=400, detail="Carrinho vazio")
 
-    # Verificar se restaurante está aberto
+    # Verifica se é restaurante demo
+    _rest_for_demo = db.query(models.Restaurante).filter(
+        models.Restaurante.id == carrinho.restaurante_id
+    ).first()
+    _is_demo = bool(_rest_for_demo and _rest_for_demo.email and _rest_for_demo.email.endswith("@superfood.test"))
+
+    # Verificar se restaurante está aberto (skip para demos)
     config_rest = db.query(models.ConfigRestaurante).filter(
         models.ConfigRestaurante.restaurante_id == carrinho.restaurante_id
     ).first()
-    if config_rest and config_rest.status_atual != "aberto":
+    if not _is_demo and config_rest and config_rest.status_atual != "aberto":
         horario_msg = ""
         if config_rest.horario_abertura and config_rest.horario_fechamento:
             horario_msg = f" Horário de funcionamento: {config_rest.horario_abertura} às {config_rest.horario_fechamento}."
@@ -460,37 +467,44 @@ async def finalizar_carrinho(
     lat_entrega = finalizacao.latitude
     lng_entrega = finalizacao.longitude
 
-    if finalizacao.endereco_entrega and not (lat_entrega and lng_entrega):
-        try:
-            from utils.mapbox_api import geocode_address
-            coords = geocode_address(finalizacao.endereco_entrega)
-            if coords:
-                lat_entrega, lng_entrega = coords
-        except Exception:
-            pass  # Segue sem coordenadas se geocoding falhar
+    # Demo: auto-gerar coordenadas e taxa fixa
+    if _is_demo and finalizacao.tipo_entrega == "entrega":
+        if not (lat_entrega and lng_entrega) and _rest_for_demo.latitude:
+            lat_entrega = _rest_for_demo.latitude + random.uniform(-0.015, 0.015)
+            lng_entrega = _rest_for_demo.longitude + random.uniform(-0.015, 0.015)
+        taxa_entrega = 5.0
+    else:
+        if finalizacao.endereco_entrega and not (lat_entrega and lng_entrega):
+            try:
+                from utils.mapbox_api import geocode_address
+                coords = geocode_address(finalizacao.endereco_entrega)
+                if coords:
+                    lat_entrega, lng_entrega = coords
+            except Exception:
+                pass  # Segue sem coordenadas se geocoding falhar
 
-    # Calcula taxa de entrega real se tem coordenadas
-    taxa_entrega = 0.0
-    if lat_entrega and lng_entrega and finalizacao.tipo_entrega == "entrega":
-        restaurante = db.query(models.Restaurante).filter(
-            models.Restaurante.id == carrinho.restaurante_id
-        ).first()
-        config = db.query(models.ConfigRestaurante).filter(
-            models.ConfigRestaurante.restaurante_id == carrinho.restaurante_id
-        ).first()
-        if restaurante and restaurante.latitude and restaurante.longitude and config:
-            from utils.mapbox_api import check_coverage_zone
-            resultado = check_coverage_zone(
-                (restaurante.latitude, restaurante.longitude),
-                (lat_entrega, lng_entrega),
-                config.raio_entrega_km or 10.0
-            )
-            if resultado['dentro_zona']:
-                distancia = resultado['distancia_km']
-                if distancia <= config.distancia_base_km:
-                    taxa_entrega = config.taxa_entrega_base
-                else:
-                    taxa_entrega = config.taxa_entrega_base + (distancia - config.distancia_base_km) * config.taxa_km_extra
+        # Calcula taxa de entrega real se tem coordenadas
+        taxa_entrega = 0.0
+        if lat_entrega and lng_entrega and finalizacao.tipo_entrega == "entrega":
+            restaurante = db.query(models.Restaurante).filter(
+                models.Restaurante.id == carrinho.restaurante_id
+            ).first()
+            config = db.query(models.ConfigRestaurante).filter(
+                models.ConfigRestaurante.restaurante_id == carrinho.restaurante_id
+            ).first()
+            if restaurante and restaurante.latitude and restaurante.longitude and config:
+                from utils.mapbox_api import check_coverage_zone
+                resultado = check_coverage_zone(
+                    (restaurante.latitude, restaurante.longitude),
+                    (lat_entrega, lng_entrega),
+                    config.raio_entrega_km or 10.0
+                )
+                if resultado['dentro_zona']:
+                    distancia = resultado['distancia_km']
+                    if distancia <= config.distancia_base_km:
+                        taxa_entrega = config.taxa_entrega_base
+                    else:
+                        taxa_entrega = config.taxa_entrega_base + (distancia - config.distancia_base_km) * config.taxa_km_extra
 
     valor_total_final = carrinho.valor_subtotal + taxa_entrega - carrinho.valor_desconto
 
@@ -538,6 +552,29 @@ async def finalizar_carrinho(
         if pedido_anterior:
             pedido.status = 'confirmado'
 
+    # Auto-enviar para KDS se cozinha digital está ativa
+    try:
+        config_kds = db.query(models.ConfigCozinha).filter(
+            models.ConfigCozinha.restaurante_id == carrinho.restaurante_id,
+            models.ConfigCozinha.kds_ativo == True
+        ).first()
+        if config_kds:
+            # Mudar status para em_preparo e criar PedidoCozinha
+            pedido.status = 'em_preparo'
+            historico = list(pedido.historico_status or [])
+            historico.append({"status": "em_preparo", "timestamp": datetime.utcnow().isoformat()})
+            pedido.historico_status = historico
+
+            pc_novo = models.PedidoCozinha(
+                restaurante_id=carrinho.restaurante_id,
+                pedido_id=pedido.id,
+                status='NOVO',
+                criado_em=datetime.utcnow(),
+            )
+            db.add(pc_novo)
+    except Exception:
+        pass  # Tabelas KDS podem não existir ainda
+
     # Limpa carrinho
     db.delete(carrinho)
 
@@ -558,6 +595,22 @@ async def finalizar_carrinho(
             }
         }, pedido.restaurante_id)
 
+    # Broadcast KDS se auto-enviou para cozinha
+    try:
+        config_kds_check = db.query(models.ConfigCozinha).filter(
+            models.ConfigCozinha.restaurante_id == pedido.restaurante_id,
+            models.ConfigCozinha.kds_ativo == True
+        ).first()
+        if config_kds_check and pedido.status == 'em_preparo':
+            kds_ws = getattr(request.app.state, 'kds_manager', None)
+            if kds_ws:
+                await kds_ws.broadcast({
+                    "tipo": "kds:novo_pedido",
+                    "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+                }, pedido.restaurante_id)
+    except Exception:
+        pass
+
     # Broadcast para printer agent (impressão automática)
     config_rest = db.query(models.ConfigRestaurante).filter(
         models.ConfigRestaurante.restaurante_id == pedido.restaurante_id
@@ -571,10 +624,14 @@ async def finalizar_carrinho(
             }, pedido.restaurante_id)
 
     # ── Pix Online: se restaurante aderiu e forma_pagamento é PIX, criar cobrança ──
-    pix_config = db.query(models.PixConfig).filter(
-        models.PixConfig.restaurante_id == pedido.restaurante_id,
-        models.PixConfig.ativo == True,
-    ).first()
+    pix_config = None
+    try:
+        pix_config = db.query(models.PixConfig).filter(
+            models.PixConfig.restaurante_id == pedido.restaurante_id,
+            models.PixConfig.ativo == True,
+        ).first()
+    except Exception:
+        pass  # PixConfig table may not exist yet (migration 028 pending)
 
     if pix_config and finalizacao.forma_pagamento and finalizacao.forma_pagamento.upper() == "PIX":
         try:

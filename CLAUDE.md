@@ -37,6 +37,7 @@
     - Se a tarefa é simples e rápida, NÃO tocar na memória (custo > benefício)
     - Regra geral: atualizar memória quando a informação será útil em sessões FUTURAS
 9. **REGRA CRÍTICA — CHECKBOXES:** Ao concluir qualquer etapa do Plano Mestre, marcar `[x]` IMEDIATAMENTE neste arquivo. Nunca deixar para depois.
+10. **REGRA INQUEBRÁVEL — DOCUMENTAÇÃO TÉCNICA:** Ao criar novas funcionalidades, endpoints, páginas ou alterações significativas no projeto, **ATUALIZAR `DOCUMENTACAO_TECNICA.md` IMEDIATAMENTE** (de forma simultânea ao desenvolvimento, se possível). Esta regra **NUNCA pode ser quebrada**. A documentação deve sempre refletir o estado real do sistema.
 
 ---
 
@@ -82,8 +83,8 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
 - **Última sessão:** 21/03/2026
 - **Migrations em produção:** 001-027 (última: 027_operadores_caixa)
-- **Migrations locais:** 028 (Pix), 029 (KDS)
-- **Migrations planejadas:** 030 (Garçom), 031 (Bot), 032 (Bridge)
+- **Migrations locais:** 028 (Pix), 029 (KDS), 030 (Planos), 031 (KDS pausa)
+- **Migrations planejadas:** 032 (Garçom), 033 (Bot), 034 (Bridge)
 - **Bugs conhecidos:** Nenhum crítico
 - **Pendente:** 6 módulos (Pix → KDS → Garçom → Bot → Sales → Printer), domínio próprio
 
@@ -429,8 +430,19 @@ super-food/
 - [x] Tela DESPACHO: pedidos FEITOS + PRONTO + REFAZER
 - [x] Sons (Web Audio API): sndNew (880Hz+1174Hz), sndDone (523Hz), sndReady (523+659+783Hz)
 
-**Fase 7: Deploy**
-- [ ] Deploy migration 029 + testar fluxo pedido → cozinha → despacho
+**Fase 7: Melhorias KDS (22/03)**
+- [x] Auto-envio para cozinha ao criar pedido (carrinho.py) — KDS ativo → em_preparo + PedidoCozinha NOVO
+- [x] Sincronização KDS→Pedido: cook marca PRONTO → Pedido.status='pronto' + tempo_preparo_real_min
+- [x] Pausar/despausar pedido na cozinha (endpoints POST /painel/pedidos/{id}/pausar e despausar)
+- [x] Migration 031: campos pausado, pausado_em, despausado_em, posicao_original em pedidos_cozinha
+- [x] Endpoint GET /painel/cozinha/desempenho — ranking cozinheiros por tempo médio
+- [x] Frontend admin: aba Desempenho na CozinhaDigital (ranking + filtro período)
+- [x] Frontend admin: Pedidos.tsx remove "Marcar Pronto" quando KDS ativo, adiciona Pausar
+- [x] Frontend KDS: pedidos pausados com cadeado, final da fila, botões desabilitados
+- [x] WebSocket: kds:pedido_pausado, kds:pedido_despausado
+
+**Fase 8: Deploy**
+- [ ] Deploy migrations 029-031 + testar fluxo pedido → cozinha → pausa → despacho
 
 ---
 

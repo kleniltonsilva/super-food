@@ -10,6 +10,9 @@ import {
   useEntregasAtivas,
   useConfig,
   useMesas,
+  useConfigCozinha,
+  usePausarPedidoCozinha,
+  useDespausarPedidoCozinha,
 } from "@/admin/hooks/useAdminQueries";
 import MesasGrid from "@/admin/components/MesasGrid";
 import { Card, CardContent } from "@/components/ui/card";
@@ -67,6 +70,8 @@ import {
   AlertTriangle,
   MapPin,
   Printer,
+  Pause,
+  Play,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useWebSocket } from "@/admin/hooks/useWebSocket";
@@ -126,7 +131,11 @@ export default function Pedidos() {
   const despachar = useDespacharPedido();
   const { data: configData } = useConfig();
   const { data: mesasData } = useMesas();
+  const { data: configCozinha } = useConfigCozinha();
+  const pausarMut = usePausarPedidoCozinha();
+  const despausarMut = useDespausarPedidoCozinha();
   const modoDespacho = configData?.modo_prioridade_entrega || "rapido_economico";
+  const kdsAtivo = configCozinha?.kds_ativo ?? false;
   const { restaurante } = useAdminAuth();
   const { enviarMensagem } = useWebSocket({ restauranteId: restaurante?.id ?? null });
 
@@ -439,6 +448,9 @@ export default function Pedidos() {
               getTempoDesde={getTempoDesde}
               modoDespacho={modoDespacho}
               onImprimir={handleImprimir}
+              kdsAtivo={kdsAtivo}
+              onPausar={(id) => pausarMut.mutate(id, { onSuccess: () => toast.success("Pedido pausado"), onError: (e: any) => toast.error(e.response?.data?.detail || "Erro ao pausar") })}
+              onDespausar={(id) => despausarMut.mutate(id, { onSuccess: () => toast.success("Pedido despausado"), onError: (e: any) => toast.error(e.response?.data?.detail || "Erro ao despausar") })}
             />
           </TabsContent>
 
@@ -484,6 +496,9 @@ export default function Pedidos() {
               getTempoDesde={getTempoDesde}
               modoDespacho={modoDespacho}
               onImprimir={handleImprimir}
+              kdsAtivo={kdsAtivo}
+              onPausar={(id) => pausarMut.mutate(id, { onSuccess: () => toast.success("Pedido pausado"), onError: (e: any) => toast.error(e.response?.data?.detail || "Erro ao pausar") })}
+              onDespausar={(id) => despausarMut.mutate(id, { onSuccess: () => toast.success("Pedido despausado"), onError: (e: any) => toast.error(e.response?.data?.detail || "Erro ao despausar") })}
             />
           </TabsContent>
         </Tabs>
@@ -539,6 +554,9 @@ function PedidosTabela({
   getTempoDesde,
   modoDespacho,
   onImprimir,
+  kdsAtivo = false,
+  onPausar,
+  onDespausar,
 }: {
   pedidos: Record<string, unknown>[];
   isLoading: boolean;
@@ -550,6 +568,9 @@ function PedidosTabela({
   getTempoDesde: (iso: string | null) => number;
   modoDespacho: string;
   onImprimir: (id: number) => void;
+  kdsAtivo?: boolean;
+  onPausar?: (id: number) => void;
+  onDespausar?: (id: number) => void;
 }) {
   return (
     <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
@@ -648,7 +669,13 @@ function PedidosTabela({
                           <DropdownMenuItem onClick={() => onImprimir(p.id as number)}>
                             <Printer className="mr-2 h-4 w-4" /> Imprimir
                           </DropdownMenuItem>
-                          {(STATUS_FLOW[p.status as string] || []).map((nextStatus) => {
+                          {(STATUS_FLOW[p.status as string] || [])
+                            .filter((nextStatus) => {
+                              // Quando KDS ativo, remover "pronto" do dropdown (cozinha controla)
+                              if (kdsAtivo && nextStatus === "pronto" && p.status === "em_preparo") return false;
+                              return true;
+                            })
+                            .map((nextStatus) => {
                             if (nextStatus === "cancelado") {
                               return (
                                 <DropdownMenuItem
@@ -688,6 +715,12 @@ function PedidosTabela({
                               </DropdownMenuItem>
                             );
                           })}
+                          {/* Pausar/Despausar quando KDS ativo e pedido em_preparo */}
+                          {kdsAtivo && p.status === "em_preparo" && onPausar && (
+                            <DropdownMenuItem onClick={() => onPausar(p.id as number)}>
+                              <Pause className="mr-2 h-4 w-4" /> Pausar na Cozinha
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>

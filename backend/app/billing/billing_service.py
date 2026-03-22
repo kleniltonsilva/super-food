@@ -14,13 +14,31 @@ from .asaas_client import asaas_client
 
 logger = logging.getLogger("superfood.billing")
 
-# Planos disponíveis com preços e limites
-PLANOS = {
-    "Básico": {"valor": 99.90, "limite_motoboys": 2, "descricao": "Ideal para começar"},
-    "Essencial": {"valor": 149.90, "limite_motoboys": 5, "descricao": "Para restaurantes em crescimento"},
-    "Avançado": {"valor": 199.90, "limite_motoboys": 10, "descricao": "Para operações maiores"},
-    "Premium": {"valor": 299.90, "limite_motoboys": 999, "descricao": "Sem limites"},
+# Planos fallback (usado quando tabela planos ainda não existe no BD)
+PLANOS_FALLBACK = {
+    "Básico": {"valor": 169.90, "limite_motoboys": 2, "descricao": "Ideal para começar"},
+    "Essencial": {"valor": 279.90, "limite_motoboys": 5, "descricao": "Para restaurantes em crescimento"},
+    "Avançado": {"valor": 329.90, "limite_motoboys": 10, "descricao": "Para operações maiores"},
+    "Premium": {"valor": 527.00, "limite_motoboys": 999, "descricao": "Sem limites"},
 }
+
+
+def get_planos(db: Session) -> dict:
+    """Retorna planos do BD. Fallback para dict hardcoded se tabela não existir."""
+    try:
+        planos_db = db.query(models.Plano).filter(models.Plano.ativo == True).order_by(models.Plano.ordem).all()
+        if planos_db:
+            return {
+                p.nome: {"valor": p.valor, "limite_motoboys": p.limite_motoboys, "descricao": p.descricao}
+                for p in planos_db
+            }
+    except Exception:
+        pass
+    return PLANOS_FALLBACK
+
+
+# Retrocompatibilidade: PLANOS aponta para fallback (usado em imports diretos)
+PLANOS = PLANOS_FALLBACK
 
 
 def _get_config(db: Session) -> models.ConfigBilling:
@@ -69,7 +87,8 @@ async def iniciar_trial(restaurante_id: int, db: Session, admin_id: Optional[int
     restaurante.dias_vencido = 0
 
     # Atualizar limites conforme plano do trial
-    plano_info = PLANOS.get(config.trial_plano, PLANOS["Premium"])
+    planos = get_planos(db)
+    plano_info = planos.get(config.trial_plano, planos.get("Premium", PLANOS_FALLBACK["Premium"]))
     restaurante.limite_motoboys = plano_info["limite_motoboys"]
     restaurante.valor_plano = plano_info["valor"]
 
@@ -126,7 +145,8 @@ async def selecionar_plano(
         raise ValueError("Restaurante não encontrado")
 
     config = _get_config(db)
-    plano_info = PLANOS[plano]
+    planos = get_planos(db)
+    plano_info = planos.get(plano, PLANOS_FALLBACK.get(plano, PLANOS_FALLBACK["Básico"]))
     valor = plano_info["valor"]
 
     # Desconto anual
@@ -480,7 +500,8 @@ async def migrar_restaurante_asaas(restaurante_id: int, db: Session, admin_id: O
 
     # Criar assinatura
     plano = restaurante.plano or "Básico"
-    plano_info = PLANOS.get(plano, PLANOS["Básico"])
+    planos = get_planos(db)
+    plano_info = planos.get(plano, PLANOS_FALLBACK["Básico"])
     ciclo = restaurante.plano_ciclo or "MONTHLY"
     config = _get_config(db)
 
@@ -535,9 +556,10 @@ def get_planos_disponiveis(db: Session) -> list:
     """Retorna lista de planos com preços mensal e anual."""
     config = _get_config(db)
     desconto = config.desconto_anual_percentual
+    planos = get_planos(db)
 
     resultado = []
-    for nome, info in PLANOS.items():
+    for nome, info in planos.items():
         valor_mensal = info["valor"]
         valor_anual_total = round(valor_mensal * 12 * (1 - desconto / 100), 2)
         valor_anual_mensal = round(valor_anual_total / 12, 2)

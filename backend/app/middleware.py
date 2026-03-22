@@ -64,7 +64,14 @@ class DomainTenantMiddleware(BaseHTTPMiddleware):
     BYPASS_PREFIXES = (
         "/api/", "/painel/", "/admin/", "/auth/", "/health",
         "/metrics", "/ws/", "/static/", "/docs", "/openapi.json",
-        "/superadmin", "/entregador",
+        "/superadmin", "/entregador", "/cozinha",
+    )
+
+    # Domínios da própria plataforma — NÃO resolver como tenant
+    PLATFORM_DOMAINS = (
+        "superfood-api.fly.dev",
+        "derekhfood.com.br",
+        "www.derekhfood.com.br",
     )
 
     async def dispatch(self, request: Request, call_next):
@@ -78,6 +85,10 @@ class DomainTenantMiddleware(BaseHTTPMiddleware):
 
         # Ignora localhost e IPs
         if host in ("localhost", "127.0.0.1", "") or host.replace(".", "").isdigit():
+            return await call_next(request)
+
+        # Ignora domínios da própria plataforma
+        if host in self.PLATFORM_DOMAINS:
             return await call_next(request)
 
         # Tenta resolver por dominio customizado ou subdominio

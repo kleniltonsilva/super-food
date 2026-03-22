@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useKdsAuth } from "@/kds/contexts/KdsAuthContext";
 import { usePedidosKds, useAtualizarStatusKds, useRefazerPedidoKds, useConfigKds } from "@/kds/hooks/useKdsQueries";
 import { Button } from "@/components/ui/button";
-import { ChefHat, LogOut, Flame, Check, RotateCcw, Bell, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChefHat, LogOut, Flame, Check, RotateCcw, Bell, ChevronLeft, ChevronRight, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -12,6 +12,10 @@ interface PedidoKds {
   status: string;
   cozinheiro_id: number | null;
   urgente: boolean;
+  pausado: boolean;
+  pausado_em: string | null;
+  despausado_em: string | null;
+  posicao_original: number | null;
   criado_em: string | null;
   iniciado_em: string | null;
   feito_em: string | null;
@@ -64,7 +68,10 @@ function QueueChip({ pedido, selected, onClick, alertaMin, criticoMin }: {
   criticoMin: number;
 }) {
   const min = getMinutosDesde(pedido.criado_em);
-  const color = min >= criticoMin ? "border-red-500 bg-red-500/10" : min >= alertaMin ? "border-amber-500 bg-amber-500/10" : "border-green-500 bg-green-500/10";
+  const isPaused = pedido.pausado;
+  const color = isPaused
+    ? "border-gray-600 bg-gray-800/50"
+    : min >= criticoMin ? "border-red-500 bg-red-500/10" : min >= alertaMin ? "border-amber-500 bg-amber-500/10" : "border-green-500 bg-green-500/10";
 
   return (
     <button
@@ -72,13 +79,17 @@ function QueueChip({ pedido, selected, onClick, alertaMin, criticoMin }: {
       className={cn(
         "flex-shrink-0 rounded-lg border-2 px-3 py-2 text-sm font-medium transition-all",
         color,
-        selected ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-gray-950" : "opacity-70 hover:opacity-100"
+        selected ? "ring-2 ring-amber-400 ring-offset-2 ring-offset-gray-950" : "opacity-70 hover:opacity-100",
+        isPaused && "opacity-50"
       )}
     >
-      <span className="text-white">#{pedido.comanda}</span>
-      <span className="ml-2 text-xs">
-        <TempoDecorrido isoStr={pedido.criado_em} alertaMin={alertaMin} criticoMin={criticoMin} />
-      </span>
+      {isPaused && <Lock className="inline h-3 w-3 mr-1 text-gray-400" />}
+      <span className={isPaused ? "text-gray-400" : "text-white"}>#{pedido.comanda}</span>
+      {!isPaused && (
+        <span className="ml-2 text-xs">
+          <TempoDecorrido isoStr={pedido.criado_em} alertaMin={alertaMin} criticoMin={criticoMin} />
+        </span>
+      )}
     </button>
   );
 }
@@ -102,9 +113,16 @@ export default function KdsMain() {
   const alertaMin = config?.tempo_alerta_min ?? 15;
   const criticoMin = config?.tempo_critico_min ?? 25;
 
-  // Separar pedidos por aba
+  // Separar pedidos por aba (pausados vão para o final)
   const preparoPedidos = useMemo(() =>
-    (pedidos as PedidoKds[]).filter((p) => p.status === "NOVO" || p.status === "FAZENDO"),
+    (pedidos as PedidoKds[])
+      .filter((p) => p.status === "NOVO" || p.status === "FAZENDO")
+      .sort((a, b) => {
+        // Pausados vão para o final
+        if (a.pausado && !b.pausado) return 1;
+        if (!a.pausado && b.pausado) return -1;
+        return 0; // Mantém ordem original (criado_em ASC do backend)
+      }),
     [pedidos]
   );
 
@@ -234,7 +252,9 @@ export default function KdsMain() {
                   <div className="flex-1 p-4">
                     <div className={cn(
                       "rounded-xl border-2 p-5 transition-colors",
-                      currentPedido.status === "FAZENDO"
+                      currentPedido.pausado
+                        ? "border-gray-600 bg-gray-900/50"
+                        : currentPedido.status === "FAZENDO"
                         ? "border-amber-500 bg-amber-500/5"
                         : "border-gray-700 bg-gray-900"
                     )}>
@@ -243,7 +263,12 @@ export default function KdsMain() {
                         <div className="flex items-center gap-3">
                           <span className="text-xl font-bold">#{currentPedido.comanda}</span>
                           <OrigemBadge pedido={currentPedido} />
-                          {currentPedido.status === "FAZENDO" && (
+                          {currentPedido.pausado && (
+                            <span className="text-xs bg-gray-500/20 text-gray-400 rounded-full px-2 py-0.5 flex items-center gap-1">
+                              <Lock className="h-3 w-3" /> Pausado pelo admin
+                            </span>
+                          )}
+                          {currentPedido.status === "FAZENDO" && !currentPedido.pausado && (
                             <span className="text-xs bg-amber-500/20 text-amber-400 rounded-full px-2 py-0.5 animate-pulse">
                               Preparando...
                             </span>
@@ -285,26 +310,36 @@ export default function KdsMain() {
                       )}
 
                       {/* Actions */}
-                      {currentPedido.status === "NOVO" && (
-                        <Button
-                          onClick={() => handleAction(currentPedido, "FAZENDO")}
-                          disabled={statusMut.isPending}
-                          className="w-full bg-amber-500 hover:bg-amber-600 text-gray-950 font-bold py-6 text-lg"
-                        >
-                          <Flame className="h-5 w-5 mr-2" />
-                          COMECEI A FAZER
-                        </Button>
-                      )}
+                      {currentPedido.pausado ? (
+                        <div className="w-full rounded-lg border border-gray-700 bg-gray-800/50 p-4 text-center">
+                          <Lock className="mx-auto h-6 w-6 text-gray-500 mb-2" />
+                          <p className="text-sm text-gray-400">Pedido pausado pelo admin</p>
+                          <p className="text-xs text-gray-500 mt-1">Aguardando liberação...</p>
+                        </div>
+                      ) : (
+                        <>
+                          {currentPedido.status === "NOVO" && (
+                            <Button
+                              onClick={() => handleAction(currentPedido, "FAZENDO")}
+                              disabled={statusMut.isPending}
+                              className="w-full bg-amber-500 hover:bg-amber-600 text-gray-950 font-bold py-6 text-lg"
+                            >
+                              <Flame className="h-5 w-5 mr-2" />
+                              COMECEI A FAZER
+                            </Button>
+                          )}
 
-                      {currentPedido.status === "FAZENDO" && (
-                        <Button
-                          onClick={() => handleAction(currentPedido, "FEITO")}
-                          disabled={statusMut.isPending}
-                          className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-6 text-lg"
-                        >
-                          <Check className="h-5 w-5 mr-2" />
-                          FEITO - PROXIMO
-                        </Button>
+                          {currentPedido.status === "FAZENDO" && (
+                            <Button
+                              onClick={() => handleAction(currentPedido, "FEITO")}
+                              disabled={statusMut.isPending}
+                              className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-6 text-lg"
+                            >
+                              <Check className="h-5 w-5 mr-2" />
+                              FEITO - PROXIMO
+                            </Button>
+                          )}
+                        </>
                       )}
                     </div>
 

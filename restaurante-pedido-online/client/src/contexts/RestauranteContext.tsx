@@ -46,6 +46,7 @@ export interface SiteInfo {
   entregas_ativas: boolean;
   controle_pedidos_motivo?: string;
   billing_suspenso?: boolean;
+  is_demo?: boolean;
 }
 
 interface RestauranteContextType {

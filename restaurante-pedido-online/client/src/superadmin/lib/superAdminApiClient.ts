@@ -250,3 +250,34 @@ export async function cancelarAssinaturaRestaurante(restauranteId: number) {
   const { data } = await superAdminApi.post(`/api/admin/billing/restaurantes/${restauranteId}/cancelar`);
   return data;
 }
+
+// ─── Demos ─────────────────────────────────────────────
+export async function getDemos() {
+  const { data } = await superAdminApi.get("/api/admin/demos");
+  return data;
+}
+
+export async function getDemo(id: number) {
+  const { data } = await superAdminApi.get(`/api/admin/demos/${id}`);
+  return data;
+}
+
+export async function atualizarDemo(id: number, payload: Record<string, unknown>) {
+  const { data } = await superAdminApi.put(`/api/admin/demos/${id}`, payload);
+  return data;
+}
+
+export async function atualizarProdutoDemo(demoId: number, produtoId: number, payload: Record<string, unknown>) {
+  const { data } = await superAdminApi.put(`/api/admin/demos/${demoId}/produto/${produtoId}`, payload);
+  return data;
+}
+
+export async function atualizarSiteConfigDemo(demoId: number, payload: Record<string, unknown>) {
+  const { data } = await superAdminApi.put(`/api/admin/demos/${demoId}/site-config`, payload);
+  return data;
+}
+
+export async function resetDemo(id: number) {
+  const { data } = await superAdminApi.post(`/api/admin/demos/${id}/reset`);
+  return data;
+}

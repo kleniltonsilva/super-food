@@ -18,6 +18,17 @@ from ..cache import cache_get, cache_set
 from utils.mapbox_api import autocomplete_address, check_coverage_zone
 
 
+def _check_pix_online(db, restaurante_id: int) -> bool:
+    """Verifica se Pix online está ativo. Retorna False se tabela não existir."""
+    try:
+        return bool(db.query(models.PixConfig).filter(
+            models.PixConfig.restaurante_id == restaurante_id,
+            models.PixConfig.ativo == True,
+        ).first())
+    except Exception:
+        return False
+
+
 def _calcular_status_aberto(config_rest):
     """Calcula se o restaurante está aberto considerando horários por dia."""
     if not config_rest or config_rest.status_atual != 'aberto':
@@ -146,7 +157,8 @@ def get_site_info(
     
     # Calcular status e horários usando funções helper
     horario_abertura, horario_fechamento = _get_horario_hoje(config_rest)
-    status_aberto = _calcular_status_aberto(config_rest)
+    is_demo = bool(restaurante.email and restaurante.email.endswith("@superfood.test"))
+    status_aberto = True if is_demo else _calcular_status_aberto(config_rest)
     pedidos_online_ativos, entregas_ativas, controle_motivo = _verificar_controle_pedidos(config_rest, db)
 
     result = {
@@ -180,10 +192,8 @@ def get_site_info(
         "pedidos_online_ativos": pedidos_online_ativos,
         "entregas_ativas": entregas_ativas,
         "controle_pedidos_motivo": controle_motivo,
-        "pix_online": bool(db.query(models.PixConfig).filter(
-            models.PixConfig.restaurante_id == restaurante.id,
-            models.PixConfig.ativo == True,
-        ).first()),
+        "pix_online": _check_pix_online(db, restaurante.id),
+        "is_demo": is_demo,
     }
     cache_set(cache_key, result, ttl_seconds=300)  # 5 min
     return result
@@ -442,9 +452,20 @@ def validar_endereco_entrega(
         models.SiteConfig.restaurante_id == restaurante.id
     ).first()
     
+    # Demo bypass: sempre retornar dentro_zona para restaurantes demo
+    is_demo = bool(restaurante.email and restaurante.email.endswith("@superfood.test"))
+    if is_demo:
+        return {
+            "dentro_zona": True,
+            "distancia_km": 2.5,
+            "tempo_estimado_min": 35,
+            "taxa_entrega": 5.00,
+            "mensagem": "Entrega disponível",
+        }
+
     if not restaurante.latitude or not restaurante.longitude:
         raise HTTPException(status_code=500, detail="Coordenadas do restaurante não configuradas")
-    
+
     # Se enviou texto, geocodifica
     if validacao.endereco_texto and not (validacao.latitude and validacao.longitude):
         from utils.mapbox_api import geocode_address

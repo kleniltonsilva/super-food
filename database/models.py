@@ -1046,6 +1046,21 @@ class SugestaoTempo(Base):
 
 
 # ==================== BILLING — CONFIG GLOBAL ====================
+class Plano(Base):
+    """Planos de assinatura — editáveis pelo Super Admin, exibidos na landing page"""
+    __tablename__ = "planos"
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(50), unique=True, nullable=False)
+    valor = Column(Float, nullable=False)
+    limite_motoboys = Column(Integer, default=2)
+    descricao = Column(String(200))
+    destaque = Column(Boolean, default=False)
+    ordem = Column(Integer, default=0)
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ConfigBilling(Base):
     """Configurações globais de billing (1 row, gerenciada pelo Super Admin)"""
     __tablename__ = "config_billing"
@@ -1300,6 +1315,10 @@ class PedidoCozinha(Base):
     status = Column(String(20), nullable=False, default='NOVO')  # NOVO, FAZENDO, FEITO, PRONTO
     cozinheiro_id = Column(Integer, ForeignKey("cozinheiros.id", ondelete="SET NULL"))
     urgente = Column(Boolean, default=False)
+    pausado = Column(Boolean, default=False)
+    pausado_em = Column(DateTime)
+    despausado_em = Column(DateTime)
+    posicao_original = Column(Integer)
     criado_em = Column(DateTime, default=datetime.utcnow)
     iniciado_em = Column(DateTime)
     feito_em = Column(DateTime)

@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Query, Request, Depends
+from fastapi import FastAPI, Query, Request, Depends, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -38,6 +38,7 @@ from .metrics import metrics
 from .websocket_manager import create_manager
 from .rate_limit import RateLimitMiddleware
 from .middleware import DomainTenantMiddleware
+from .demo_autopilot import demo_autopilot_loop
 
 # Configura logging
 setup_logging()
@@ -110,12 +111,13 @@ async def verificar_entregas_atrasadas(ws_manager):
 _entrega_task = None
 _billing_task = None
 _pix_task = None
+_demo_task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown da aplicacao"""
-    global _entrega_task, _billing_task, _pix_task
+    global _entrega_task, _billing_task, _pix_task, _demo_task
     # Startup
     environment = os.getenv("ENVIRONMENT", "development")
     if environment == "production":
@@ -150,6 +152,9 @@ async def lifespan(app: FastAPI):
     # Inicia task periódica de Pix (saque automático)
     _pix_task = asyncio.create_task(verificar_pix_periodico())
 
+    # Inicia demo autopilot (progride pedidos demo automaticamente)
+    _demo_task = asyncio.create_task(demo_autopilot_loop(manager))
+
     # Inicia integration manager (polling marketplaces)
     integration_manager.set_app(app)
     await integration_manager.start()
@@ -173,6 +178,12 @@ async def lifespan(app: FastAPI):
         _pix_task.cancel()
         try:
             await _pix_task
+        except asyncio.CancelledError:
+            pass
+    if _demo_task:
+        _demo_task.cancel()
+        try:
+            await _demo_task
         except asyncio.CancelledError:
             pass
     if hasattr(manager, 'stop'):
@@ -304,6 +315,68 @@ app.include_router(pix_router.router)
 app.include_router(pix_webhooks_router.router)
 app.include_router(auth_cozinheiro_router.router)
 app.include_router(kds_router.router)
+
+# ==================== Endpoint público — Planos (landing page) ====================
+@app.get("/api/public/planos")
+def planos_publicos(db: Session = Depends(get_db)):
+    """Retorna planos para a landing page pública. Sem autenticação."""
+    try:
+        planos_db = db.query(models.Plano).filter(
+            models.Plano.ativo == True
+        ).order_by(models.Plano.ordem).all()
+        config = db.query(models.ConfigBilling).first()
+        desconto_anual = config.desconto_anual_percentual if config else 20.0
+    except Exception:
+        # Fallback se tabela não existir ainda
+        return JSONResponse(content=[
+            {"nome": "Básico", "valor": 169.90, "limite_motoboys": 2, "descricao": "Ideal para começar", "destaque": False, "ordem": 1},
+            {"nome": "Essencial", "valor": 279.90, "limite_motoboys": 5, "descricao": "Para restaurantes em crescimento", "destaque": False, "ordem": 2},
+            {"nome": "Avançado", "valor": 329.90, "limite_motoboys": 10, "descricao": "Para operações maiores", "destaque": True, "ordem": 3},
+            {"nome": "Premium", "valor": 527.00, "limite_motoboys": 999, "descricao": "Sem limites", "destaque": False, "ordem": 4},
+        ])
+
+    if not planos_db:
+        return JSONResponse(content=[])
+
+    return [
+        {
+            "nome": p.nome,
+            "valor": p.valor,
+            "limite_motoboys": p.limite_motoboys,
+            "descricao": p.descricao,
+            "destaque": p.destaque,
+            "ordem": p.ordem,
+            "desconto_anual": desconto_anual,
+        }
+        for p in planos_db
+    ]
+
+
+# ==================== Endpoint público — Restaurantes Demo ====================
+@app.get("/api/public/demos")
+def demos_publicos(db: Session = Depends(get_db)):
+    """Retorna restaurantes demo para a landing page. Sem autenticação."""
+    try:
+        demos = db.query(models.Restaurante).filter(
+            models.Restaurante.email.like("%@superfood.test"),
+            models.Restaurante.ativo == True,
+        ).all()
+
+        result = []
+        for r in demos:
+            site_config = db.query(models.SiteConfig).filter(
+                models.SiteConfig.restaurante_id == r.id
+            ).first()
+            result.append({
+                "codigo_acesso": r.codigo_acesso,
+                "nome_fantasia": r.nome_fantasia,
+                "tipo_restaurante": site_config.tipo_restaurante if site_config else "restaurante",
+                "cor_primaria": site_config.tema_cor_primaria if site_config else "#EA580C",
+            })
+        return result
+    except Exception:
+        return JSONResponse(content=[])
+
 
 # ==================== PWA files (manifest, service worker) ====================
 @app.get("/manifest.json")
@@ -624,3 +697,52 @@ async def serve_superadmin_catchall(path: str):
     if index_file.exists():
         return HTMLResponse(content=index_file.read_text())
     return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)
+
+
+# ==================== Domínio personalizado → Site restaurante ====================
+def _serve_tenant_site(restaurante_id: int):
+    """Serve o site do cliente para um domínio personalizado"""
+    db = SessionLocal()
+    try:
+        restaurante = db.query(models.Restaurante).filter(
+            models.Restaurante.id == restaurante_id
+        ).first()
+        if not restaurante:
+            raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+        codigo = restaurante.codigo_acesso
+    finally:
+        db.close()
+
+    index_file = REACT_BUILD_DIR / "index.html"
+    if index_file.exists():
+        content = index_file.read_text()
+        script = f'<script>window.RESTAURANTE_CODIGO="{codigo}";</script>'
+        content = content.replace('</head>', f'{script}</head>')
+        return HTMLResponse(content=content)
+
+    return HTMLResponse("<h1>Build não encontrado</h1>", status_code=500)
+
+
+@app.get("/", response_class=HTMLResponse)
+async def serve_root(request: Request):
+    """Rota raiz — se domínio personalizado, serve site do restaurante. Senão, landing page."""
+    domain_tenant_id = getattr(request.state, "domain_tenant_id", None)
+    if domain_tenant_id:
+        return _serve_tenant_site(domain_tenant_id)
+    return templates.TemplateResponse("landing.html", {"request": request})
+
+
+@app.get("/{path:path}", response_class=HTMLResponse)
+async def serve_catchall(request: Request, path: str):
+    """Catch-all — se domínio personalizado, serve SPA do restaurante"""
+    domain_tenant_id = getattr(request.state, "domain_tenant_id", None)
+    if not domain_tenant_id:
+        raise HTTPException(status_code=404)
+
+    # Se é um asset estático, serve o arquivo
+    asset_response = _serve_react_asset(path)
+    if asset_response:
+        return asset_response
+
+    # Senão, serve o SPA com codigo_acesso injetado
+    return _serve_tenant_site(domain_tenant_id)

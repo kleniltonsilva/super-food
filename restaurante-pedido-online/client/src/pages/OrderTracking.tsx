@@ -7,6 +7,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRestaurante } from "@/contexts/RestauranteContext";
 import { useClienteWebSocket } from "@/hooks/useClienteWebSocket";
 import MapTracking from "@/components/MapTracking";
+import DemoMapAnimation from "@/components/DemoMapAnimation";
 
 /** Som de atualização de status: tom ascendente de confirmação */
 function tocarSomStatusAtualizado() {
@@ -105,7 +106,8 @@ export default function OrderTracking() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevStatusRef = useRef<string | null>(null);
 
-  // Polling mais rápido quando motoboy está em rota (10s) vs normal (30s)
+  // Polling mais rápido: demo (5s), motoboy em rota (10s), normal (30s)
+  const isDemo = siteInfo?.is_demo === true;
   const isEmRota = tracking?.status === "em_entrega" && tracking?.motoboy?.latitude != null;
 
   // Re-fetch tracking data
@@ -174,7 +176,7 @@ export default function OrderTracking() {
   // Polling como fallback (30s normal, 10s em rota)
   useEffect(() => {
     if (!pedidoId) return;
-    const intervalo = isEmRota ? 10000 : 30000;
+    const intervalo = isDemo ? 5000 : isEmRota ? 10000 : 30000;
 
     intervalRef.current = setInterval(() => {
       fetchTracking();
@@ -183,7 +185,7 @@ export default function OrderTracking() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [pedidoId, isEmRota, fetchTracking]);
+  }, [pedidoId, isDemo, isEmRota, fetchTracking]);
 
   if (loading) {
     return (
@@ -364,26 +366,33 @@ export default function OrderTracking() {
         )}
 
         {/* Motoboy info + Mapa em tempo real */}
-        {tracking.motoboy && tracking.status === "em_entrega" && (
+        {tracking.status === "em_entrega" && (
           <Card className="p-4 md:p-6 mb-6">
             <h2 className="font-bold text-lg mb-3 flex items-center gap-2">
               <Truck className="w-5 h-5" />
               Entregador a caminho
             </h2>
             <p className="text-sm mb-4">
-              <span className="font-semibold">{tracking.motoboy.nome}</span> está levando seu pedido
+              <span className="font-semibold">{tracking.motoboy?.nome || "Motoboy"}</span> está levando seu pedido
             </p>
 
-            {/* Mapa com GPS em tempo real */}
-            {tracking.motoboy.latitude && tracking.motoboy.longitude && (
-              <MapTracking
-                motoboyLat={tracking.motoboy.latitude}
-                motoboyLng={tracking.motoboy.longitude}
-                motoboyNome={tracking.motoboy.nome}
-                destinoLat={tracking.latitude_entrega ?? undefined}
-                destinoLng={tracking.longitude_entrega ?? undefined}
-                destinoLabel={tracking.endereco_entrega ?? "Seu endereço"}
+            {/* Demo: animação pré-programada | Real: GPS em tempo real */}
+            {isDemo ? (
+              <DemoMapAnimation
+                centroLat={tracking.latitude_entrega || -23.5505}
+                centroLng={tracking.longitude_entrega || -46.6333}
               />
+            ) : (
+              tracking.motoboy?.latitude && tracking.motoboy?.longitude && (
+                <MapTracking
+                  motoboyLat={tracking.motoboy.latitude}
+                  motoboyLng={tracking.motoboy.longitude}
+                  motoboyNome={tracking.motoboy.nome}
+                  destinoLat={tracking.latitude_entrega ?? undefined}
+                  destinoLng={tracking.longitude_entrega ?? undefined}
+                  destinoLabel={tracking.endereco_entrega ?? "Seu endereço"}
+                />
+              )
             )}
 
             <p className="text-xs text-muted-foreground mt-3 text-center">
@@ -458,7 +467,7 @@ export default function OrderTracking() {
               Atualização em tempo real ativa
             </>
           ) : (
-            <>Atualizando automaticamente a cada {isEmRota ? "10" : "30"} segundos</>
+            <>Atualizando automaticamente a cada {isDemo ? "5" : isEmRota ? "10" : "30"} segundos</>
           )}
         </p>
       </div>

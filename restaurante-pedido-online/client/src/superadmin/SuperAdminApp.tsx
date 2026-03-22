@@ -11,6 +11,8 @@ import ErrosSentry from "@/superadmin/pages/ErrosSentry";
 import IntegracoesPlatforma from "@/superadmin/pages/IntegracoesPlatforma";
 import BillingDashboard from "@/superadmin/pages/BillingDashboard";
 import ConfigBilling from "@/superadmin/pages/ConfigBilling";
+import GerenciarDemos from "@/superadmin/pages/GerenciarDemos";
+import EditarDemo from "@/superadmin/pages/EditarDemo";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -33,6 +35,14 @@ function SuperAdminRouter() {
 
       <Route path="/inadimplentes">
         <SuperAdminPrivateRoute><Inadimplentes /></SuperAdminPrivateRoute>
+      </Route>
+
+      <Route path="/demos/:id">
+        <SuperAdminPrivateRoute><EditarDemo /></SuperAdminPrivateRoute>
+      </Route>
+
+      <Route path="/demos">
+        <SuperAdminPrivateRoute><GerenciarDemos /></SuperAdminPrivateRoute>
       </Route>
 
       <Route path="/erros">

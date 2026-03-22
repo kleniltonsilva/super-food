@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { ChefHat, Plus, Pencil, Trash2, Activity, Settings, Users } from "lucide-react";
+import { ChefHat, Plus, Pencil, Trash2, Activity, Settings, Users, BarChart3, Trophy, Clock } from "lucide-react";
 import {
   useCozinheiros,
   useCriarCozinheiro,
@@ -29,6 +29,7 @@ import {
   useConfigCozinha,
   useAtualizarConfigCozinha,
   useDashboardCozinha,
+  useDesempenhoCozinha,
   useProdutos,
 } from "@/admin/hooks/useAdminQueries";
 
@@ -53,15 +54,17 @@ const formDefault: CozinheiroForm = {
 };
 
 export default function CozinhaDigital() {
-  const [tab, setTab] = useState<"cozinheiros" | "config" | "monitor">("cozinheiros");
+  const [tab, setTab] = useState<"cozinheiros" | "config" | "monitor" | "desempenho">("cozinheiros");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<CozinheiroForm>(formDefault);
+  const [periodoDesempenho, setPeriodoDesempenho] = useState("hoje");
 
   // Queries
   const { data: cozinheiros = [], isLoading: loadingCoz } = useCozinheiros();
   const { data: configCozinha } = useConfigCozinha();
   const { data: dashboard } = useDashboardCozinha();
+  const { data: desempenho } = useDesempenhoCozinha(periodoDesempenho);
   const { data: produtos = [] } = useProdutos();
   const criarMut = useCriarCozinheiro();
   const atualizarMut = useAtualizarCozinheiro();
@@ -149,6 +152,7 @@ export default function CozinhaDigital() {
     { key: "cozinheiros" as const, label: "Cozinheiros", icon: Users },
     { key: "config" as const, label: "Configuração", icon: Settings },
     { key: "monitor" as const, label: "Monitor", icon: Activity },
+    { key: "desempenho" as const, label: "Desempenho", icon: BarChart3 },
   ];
 
   return (
@@ -336,6 +340,99 @@ export default function CozinhaDigital() {
                 {dashboard?.cozinheiros_ativos ?? 0}
               </p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Desempenho */}
+      {tab === "desempenho" && (
+        <div className="space-y-4">
+          {/* Filtro de período */}
+          <div className="flex items-center gap-2">
+            <Label className="text-[var(--text-muted)]">Período:</Label>
+            <div className="flex gap-1">
+              {[
+                { key: "hoje", label: "Hoje" },
+                { key: "7d", label: "7 dias" },
+                { key: "30d", label: "30 dias" },
+              ].map((p) => (
+                <Button
+                  key={p.key}
+                  variant={periodoDesempenho === p.key ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPeriodoDesempenho(p.key)}
+                >
+                  {p.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* Cards resumo */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
+              <p className="text-sm text-[var(--text-muted)]">Total Pedidos Preparados</p>
+              <p className="text-2xl font-bold text-[var(--text-primary)]">
+                {desempenho?.total_pedidos ?? 0}
+              </p>
+            </div>
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
+              <p className="text-sm text-[var(--text-muted)]">Tempo Médio Montagem</p>
+              <p className="text-2xl font-bold text-[var(--text-primary)]">
+                {desempenho?.media_geral_montagem_min ?? 0} min
+              </p>
+            </div>
+          </div>
+
+          {/* Ranking */}
+          <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)]">
+            <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-4 py-3">
+              <Trophy className="h-4 w-4 text-amber-500" />
+              <p className="font-medium text-[var(--text-primary)]">Ranking de Cozinheiros</p>
+            </div>
+            {!desempenho?.ranking?.length ? (
+              <div className="text-center py-8 text-[var(--text-muted)]">
+                <ChefHat className="mx-auto h-10 w-10 mb-2 opacity-30" />
+                <p className="text-sm">Nenhum dado no período</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-[var(--border-subtle)]">
+                {desempenho.ranking.map((r: any, idx: number) => (
+                  <div key={r.cozinheiro_id} className="flex items-center justify-between px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <span className={`text-lg font-bold ${idx === 0 ? "text-amber-500" : idx === 1 ? "text-gray-400" : idx === 2 ? "text-orange-600" : "text-[var(--text-muted)]"}`}>
+                        #{idx + 1}
+                      </span>
+                      <span className="text-xl">{r.avatar_emoji || "👨‍🍳"}</span>
+                      <div>
+                        <p className="font-medium text-[var(--text-primary)]">{r.nome}</p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          {r.total_pedidos} pedido{r.total_pedidos !== 1 ? "s" : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-4 text-right">
+                      <div>
+                        <p className="text-sm font-medium text-[var(--text-primary)]">
+                          {r.tempo_medio_montagem_min} min
+                        </p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          <Clock className="inline h-3 w-3 mr-0.5" />Montagem
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-[var(--text-primary)]">
+                          {r.tempo_medio_despacho_min} min
+                        </p>
+                        <p className="text-xs text-[var(--text-muted)]">
+                          <Clock className="inline h-3 w-3 mr-0.5" />Despacho
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
