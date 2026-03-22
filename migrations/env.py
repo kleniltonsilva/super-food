@@ -76,11 +76,12 @@ def run_migrations_online():
             ))
             connection.commit()
         else:
-            # Expandir coluna se ja existe com tamanho menor
-            connection.execute(text(
-                "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"
-            ))
-            connection.commit()
+            # Expandir coluna se ja existe com tamanho menor (só PostgreSQL)
+            if connection.dialect.name == "postgresql":
+                connection.execute(text(
+                    "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"
+                ))
+                connection.commit()
 
         context.configure(
             connection=connection,
