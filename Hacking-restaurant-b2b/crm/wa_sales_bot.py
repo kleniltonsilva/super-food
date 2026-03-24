@@ -1097,7 +1097,7 @@ def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
             "https://api.x.ai/v1/chat/completions",
             headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
             json={
-                "model": "grok-3-mini",
+                "model": "grok-3-fast",
                 "messages": [{"role": "system", "content": system_prompt}] + historico,
                 "max_tokens": 250,
                 "temperature": 0.8,
@@ -1410,7 +1410,7 @@ def _responder_inbound(conversa_id: int, mensagem: str) -> dict:
             "https://api.x.ai/v1/chat/completions",
             headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
             json={
-                "model": "grok-3-mini",
+                "model": "grok-3-fast",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": mensagem},

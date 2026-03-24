@@ -328,4 +328,15 @@ requirements-crm.txt    # FastAPI, psycopg2-binary, resend, uvicorn, jinja2
 - (x) **Fase 5**: WhatsApp (links wa.me + templates personalizados)
 - (x) **Fase 6**: Deploy (Dockerfile + fly.toml + sync_crm.py)
 - (x) **Fase 7**: WA Sales Bot v2.0 — prompts humanizados, intent scoring contextual (INTENT_PATTERNS: high +30, medium +15, competitor_pain +20, objection como oportunidade, opt_out/hard_no), handoff gradual (immediate/warm/strategic + notificacao dono), delay humano 3-15s, contexto lead no prompt (_build_lead_context), anti-loop cross-instance (_BOT_PHONE_NUMBERS em app.py), temperature 0.8/0.85
+- (x) **Fase 7.1**: WA Sales Bot v2.1 — Áudio STT/TTS + Autonomia Total:
+  - STT: transcrição áudios recebidos via Groq Whisper (grátis, 2000 req/dia)
+  - TTS autônomo: bot envia áudio automaticamente (reciprocidade, explicações, conversa longa)
+  - Voz masculina `rex` (bot finge ser Klenilton)
+  - Envio áudio via Evolution API (`sendMedia`)
+  - Retry automático com backoff exponencial (5min → 30min → 2h)
+  - Cooling period anti-fadiga (N ações sem resposta → pausa)
+  - Descoberta automática de regras (análise padrões sucesso → decisão pendente admin)
+  - 10 toggles on/off via `POST /api/configuracao`
+  - Management API xAI: saldo real + uso por modelo no `/api/tokens/usage`
+  - Modelo chat: `grok-3-fast` (inteligência máxima)
 - ( ) **Fase 8**: Agente de auditoria (revisao de codigo + performance + seguranca)
