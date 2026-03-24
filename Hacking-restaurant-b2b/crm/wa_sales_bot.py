@@ -3,6 +3,13 @@ wa_sales_bot.py - Bot de vendas WhatsApp via Evolution API (outbound) + Grok IA
 Estratégia dual-number:
   - Outbound (prospecção): Evolution API → +55 45 9971-3063
   - Inbound (receber): +55 11 97176-5565 (link nos emails para "Fale Conosco")
+
+v2.0 — Reestruturação completa:
+  - Prompts humanizados (gírias, abreviações, tom oral)
+  - Intent scoring contextual (não mais keywords binárias)
+  - Handoff gradual (imediato / quente / estratégico)
+  - Delay variável para parecer humano
+  - Contexto resumido do lead no prompt
 """
 import os
 import re
@@ -12,6 +19,8 @@ import hashlib
 import logging
 import tempfile
 import base64
+import random
+import time as _time
 from typing import Optional
 
 try:
@@ -108,6 +117,15 @@ def verificar_webhook_meta(body: bytes, signature: str) -> bool:
         secret.encode(), body, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(esperado, signature)
+
+
+def _calcular_delay_humano(mensagem_cliente: str) -> float:
+    """Calcula delay variável para parecer humano.
+    Mensagens longas = mais tempo 'lendo'. Mínimo 3s, máximo 15s."""
+    n_palavras = len(mensagem_cliente.split())
+    base = n_palavras * 0.8  # mais palavras = mais tempo "lendo"
+    delay = random.uniform(3, max(8, min(base, 15)))
+    return delay
 
 
 # ============================================================
@@ -412,47 +430,272 @@ def enviar_audio_wa(lead_id: int, voz: str = "ara") -> dict:
 
 
 # ============================================================
-# PROCESSAR RESPOSTAS (IA)
+# INTENT SCORING (substitui keywords binárias)
 # ============================================================
 
-# Palavras-chave de opt-out
-_OPT_OUT_KEYWORDS = {"sair", "parar", "para", "cancelar", "não quero", "nao quero",
-                      "remover", "desinscrever", "stop", "sai"}
-_RECUSA_KEYWORDS = {"não", "nao", "sem interesse", "não preciso", "nao preciso",
-                     "já tenho", "ja tenho"}
-_INTERESSE_KEYWORDS = {"como funciona", "quanto custa", "me interessa", "quero saber",
-                        "pode me", "falar mais", "demo", "ver"}
-_TRIAL_KEYWORDS = {"teste gratis", "teste grátis", "trial", "experimentar",
-                    "15 dias", "testar", "quero testar", "periodo gratis",
-                    "período grátis"}
+INTENT_PATTERNS = {
+    # Alta intenção (score +30 cada)
+    "high_intent": [
+        "quanto custa", "qual o preço", "qual o preco", "como contrato", "quero contratar",
+        "me manda proposta", "quero testar", "teste grátis", "teste gratis", "trial",
+        "demo", "como funciona o plano", "aceita pix", "quero fechar", "me passa o link",
+        "como assino", "quero assinar", "período grátis", "periodo gratis",
+        "15 dias", "experimentar",
+    ],
+    # Média intenção (score +15 cada)
+    "medium_intent": [
+        "como funciona", "me interessa", "me explica", "quero saber mais",
+        "tem site", "é app", "e app", "quanto tempo pra instalar", "pode me",
+        "falar mais", "ver", "quero saber",
+    ],
+    # Sinais de uso de concorrente (score +20 — DOR pra explorar)
+    "competitor_pain": [
+        "ifood", "rappi", "uber eats", "comissão", "comissao", "taxa",
+        "tô pagando muito", "to pagando muito", "delivery tá caro",
+        "delivery ta caro", "27%", "27 por cento",
+    ],
+    # Objeção (NÃO é negativo — é oportunidade de contornar)
+    "objection": [
+        "caro", "não sei", "nao sei", "vou pensar", "já tenho sistema", "ja tenho sistema",
+        "não é o momento", "nao e o momento", "depois", "sem grana", "sem dinheiro",
+        "tá difícil", "ta dificil", "não preciso", "nao preciso",
+    ],
+    # Opt-out real (encerra DEFINITIVAMENTE — nunca mais contata)
+    "opt_out": [
+        "sair", "parar", "cancelar", "não quero mais", "nao quero mais", "remover",
+        "stop", "para de mandar", "não me mande mais", "nao me mande mais",
+        "desinscrever", "me tira dessa lista",
+    ],
+    # Recusa firme (encerra conversa com classe, mas pode reativar se voltar)
+    "hard_no": [
+        "não tenho interesse nenhum", "nao tenho interesse nenhum",
+        "já disse que não", "ja disse que nao", "chega", "não enche", "nao enche",
+        "sem interesse", "não quero", "nao quero",
+    ],
+}
 
 
-def detectar_intencao(mensagem: str) -> str:
-    """Detecta intenção da mensagem por keywords.
-    Retorna: opt_out|recusa|trial|interesse|duvida|outro"""
+def detectar_intencao(mensagem: str) -> dict:
+    """Detecta intenção por scoring contextual.
+    Retorna dict com: intencao (str), score (int), matches (list), objecoes (list)."""
     msg = mensagem.lower().strip()
+    score = 0
+    matches = []
+    objecoes = []
 
-    for kw in _OPT_OUT_KEYWORDS:
+    # Opt-out tem prioridade absoluta
+    for kw in INTENT_PATTERNS["opt_out"]:
         if kw in msg:
-            return "opt_out"
+            return {"intencao": "opt_out", "score": 0, "matches": [kw], "objecoes": []}
 
-    for kw in _RECUSA_KEYWORDS:
+    # Recusa firme
+    for kw in INTENT_PATTERNS["hard_no"]:
         if kw in msg:
-            return "recusa"
+            return {"intencao": "hard_no", "score": 0, "matches": [kw], "objecoes": []}
 
-    for kw in _TRIAL_KEYWORDS:
+    # Scoring: alta intenção (+30)
+    for kw in INTENT_PATTERNS["high_intent"]:
         if kw in msg:
-            return "trial"
+            score += 30
+            matches.append(kw)
 
-    for kw in _INTERESSE_KEYWORDS:
+    # Scoring: média intenção (+15)
+    for kw in INTENT_PATTERNS["medium_intent"]:
         if kw in msg:
-            return "interesse"
+            score += 15
+            matches.append(kw)
 
+    # Scoring: dor de concorrente (+20)
+    for kw in INTENT_PATTERNS["competitor_pain"]:
+        if kw in msg:
+            score += 20
+            matches.append(kw)
+
+    # Objeções (não reduzem score, são oportunidades)
+    for kw in INTENT_PATTERNS["objection"]:
+        if kw in msg:
+            objecoes.append(kw)
+
+    # Pergunta = curiosidade (+10)
     if "?" in msg:
-        return "duvida"
+        score += 10
 
-    return "outro"
+    # Classificar
+    if score >= 30:
+        intencao = "interesse_alto" if score >= 50 else "interesse"
+    elif objecoes:
+        intencao = "objecao"
+    elif "?" in msg:
+        intencao = "duvida"
+    else:
+        intencao = "outro"
 
+    return {"intencao": intencao, "score": score, "matches": matches, "objecoes": objecoes}
+
+
+# ============================================================
+# CONTEXTO DO LEAD (resumo para o prompt)
+# ============================================================
+
+def _build_lead_context(conversa: dict, lead: dict) -> str:
+    """Monta resumo contextual do lead para injetar no prompt."""
+    nome_rest = conversa.get("nome_fantasia") or conversa.get("razao_social") or "restaurante"
+    cidade = (lead or {}).get("cidade") or ""
+    rating = conversa.get("rating") or 0
+    reviews = conversa.get("total_reviews") or 0
+
+    # Dados iFood
+    tem_ifood = (lead or {}).get("tem_ifood") or 0
+    ifood_rating = (lead or {}).get("ifood_rating") or 0
+    ifood_reviews = (lead or {}).get("ifood_reviews") or 0
+    ifood_categorias = (lead or {}).get("ifood_categorias") or ""
+    ifood_preco = (lead or {}).get("ifood_preco") or ""
+
+    # Bloco iFood
+    ifood_context = ""
+    if tem_ifood and (ifood_rating or ifood_categorias):
+        parts = []
+        if ifood_rating:
+            s = f"Rating iFood: {ifood_rating}"
+            if ifood_reviews:
+                s += f" ({ifood_reviews} avaliações)"
+            parts.append(s)
+        if ifood_categorias:
+            parts.append(f"Categorias: {ifood_categorias}")
+        if ifood_preco:
+            parts.append(f"Faixa: {ifood_preco}")
+        ifood_context = "\nDados iFood: " + " · ".join(parts)
+
+    # Cenário
+    cenario = ""
+    if not tem_ifood:
+        cenario = "\nCenário: restaurante SEM delivery online — oportunidade pura."
+    elif ifood_rating and ifood_rating >= 4.5:
+        cenario = f"\nCenário: nota excelente no iFood ({ifood_rating}★) — merece canal próprio sem comissão."
+    elif ifood_reviews and ifood_reviews >= 500:
+        cenario = f"\nCenário: restaurante popular ({ifood_reviews} avaliações) — falta canal direto."
+
+    # Histórico de interações
+    msgs = conversa.get("mensagens") or []
+    n_msgs = len([m for m in msgs if m["direcao"] == "recebida"])
+    intencao_atual = conversa.get("intencao_detectada") or "desconhecida"
+
+    # Objeções levantadas anteriormente
+    objecoes_anteriores = []
+    for m in msgs:
+        if m["direcao"] == "recebida":
+            det = detectar_intencao(m.get("conteudo") or "")
+            objecoes_anteriores.extend(det.get("objecoes", []))
+    objecoes_unicas = list(set(objecoes_anteriores))
+
+    resumo = f"""RESUMO DO LEAD:
+Restaurante: {nome_rest}{f' ({cidade})' if cidade else ''}
+Google: {rating}★ ({reviews} avaliações)
+Usa iFood: {'Sim' if tem_ifood else 'Não sei'}
+{ifood_context}{cenario}
+Msgs trocadas: {n_msgs}
+Intenção atual: {intencao_atual}
+{'Objeções levantadas: ' + ', '.join(objecoes_unicas) if objecoes_unicas else 'Sem objeções ainda'}"""
+    return resumo
+
+
+# ============================================================
+# PROMPTS IA (v2.0 — humanizados)
+# ============================================================
+
+def _build_system_prompt_conversa(lead_context: str, n_turnos: int) -> str:
+    """System prompt para conversa em andamento com lead existente."""
+    return f"""Você é Klenilton, vendedor humano da Derekh Food. Você NÃO é um robô, assistente virtual ou IA.
+
+QUEM VOCÊ É:
+- Vendedor experiente de tecnologia para restaurantes
+- Fala como gente real no WhatsApp: usa "kkk", "show", "massa", "dahora" quando natural
+- Tem personalidade: é animado mas não forçado, direto mas acolhedor
+- Às vezes erra digitação de propósito (tipo "tbm", "vc", "qdo")
+- Manda áudio mental: escreve como se estivesse falando (frases curtas, tom oral)
+
+{lead_context}
+
+O QUE VOCÊ VENDE:
+Derekh Food — sistema delivery próprio. 0% comissão (iFood cobra 27%).
+7 apps integrados. Planos de R$169,90 a R$527/mês. Setup 48h, sem fidelidade.
+WhatsApp Humanoide: incluso no Premium, nos demais +R$99,45/mês.
+Site: https://superfood-api.fly.dev
+
+ANTES DE CADA RESPOSTA, PENSE (não escreva isso pro cliente):
+1. FASE DO LEAD: Curioso / Interessado / Comparando / Quase fechando / Esfriando / Voltou depois de sumir
+2. EMOÇÃO: Animado / Desconfiado / Apressado / Entediado / Resistente
+3. ESTRATÉGIA: O que dizer pra avançar ele pro próximo estágio?
+4. GANCHO: Que dor específica DESTE restaurante eu posso cutucar?
+
+TÁTICAS DE VENDA (use naturalmente, não como checklist):
+- ESPELHAMENTO: repita palavras que o cliente usou ("vc falou que tá cansado do iFood, né?")
+- DOR ESPECÍFICA: se tem iFood, calcule quanto perde em comissão ("com essas avaliações, quanto vc fatura no iFood? só de comissão deve ir uns R$X mil/mês embora")
+- ESCASSEZ REAL: "tô com agenda apertada essa semana mas consigo encaixar uma demo"
+- PROVA SOCIAL: mencione que "um restaurante aqui da região" já usa (sem inventar nomes)
+- MICRO-COMPROMISSOS: não peça pra fechar, peça pra "dar uma olhada de 5 min"
+- REATIVAÇÃO: se sumiu e voltou, "e aí, conseguiu pensar sobre aquilo?"
+- OBJEÇÃO = OPORTUNIDADE: "caro" → "quanto vc paga de comissão no iFood por mês?"
+
+COMO INSISTIR SEM SER CHATO:
+- Nunca repita o mesmo argumento. Se já falou de comissão, fale de autonomia.
+- Se o cara ficou em silêncio, mande UMA mensagem casual depois ("e aí, conseguiu ver?")
+- Se disse "vou pensar", responda "tranquilo! só pra eu saber, o que ficou te travando?"
+- Se disse "não tenho interesse" de forma vaga, sonde: "entendo! curiosidade: vc já usa algum sistema próprio?"
+- Se disse "NÃO" firme ou pediu pra parar, encerre com classe.
+
+FORMATO:
+- Máximo 2-3 frases por mensagem
+- UMA mensagem por vez
+- Zero emojis corporativos (NÃO use 🚀📈💪🎯). Pode usar 😅🤙👊 se fizer sentido
+- Nunca liste features em bullet points. Fale de UMA coisa por vez.
+- Varie seu estilo entre mensagens. Às vezes comece com "olha", às vezes com "então", às vezes direto no assunto. Nunca use a mesma abertura duas vezes seguidas.
+- Ocasionalmente (1 em cada 5 msgs), use uma abreviação ou gíria: "pô", "mano", "tlgd", "blz"
+
+{"PRIMEIRA INTERAÇÃO: cumprimente, diga seu nome e pergunte como pode ajudar. NÃO liste preços nem features." if n_turnos <= 1 else "Você JÁ se apresentou. NÃO se apresente de novo. Continue a conversa naturalmente de onde parou."}
+{"Se o cliente voltou depois de dias/semanas, retome naturalmente: 'e aí, conseguiu pensar sobre aquilo?'" if n_turnos > 3 else ""}"""
+
+
+def _build_system_prompt_inbound() -> str:
+    """System prompt para primeiro contato inbound (alguém mandou msg pela primeira vez)."""
+    return """Você é Klenilton, vendedor da Derekh Food. Alguém mandou mensagem pela primeira vez.
+
+PERSONALIDADE: vendedor humano, informal, WhatsApp. Você NÃO é robô.
+Fala como gente: "e aí", "beleza", "show", "massa". Às vezes abrevia: "vc", "tbm", "qdo".
+
+PRIMEIRA MENSAGEM — ESCOLHA UMA ABORDAGEM (não siga sempre a mesma):
+Opção A: "E aí! Klenilton aqui da Derekh Food 🤙 em que posso te ajudar?"
+Opção B: "Fala! Sou o Klenilton, tudo bem? Vi que mandou msg, conta pra mim o que vc tá buscando"
+Opção C: "Opa, beleza? Klenilton aqui! Me diz como posso te ajudar"
+(Varie entre elas, não use sempre a mesma)
+
+REGRA DE OURO: na primeira msg NÃO fale preço, features, nada. Só cumprimente e pergunte.
+
+DEPOIS DA PRIMEIRA:
+- Faça perguntas pra entender a DOR antes de oferecer solução
+- "Vc tem delivery próprio ou usa iFood/Rappi?"
+- "Qual o maior perrengue do seu delivery hoje?"
+- Só fale do sistema quando souber o que o cara precisa
+
+COLETA NATURAL (não faça formulário):
+Ao longo da conversa, tente descobrir: nome do restaurante, cidade, tipo de comida.
+Mas de forma orgânica, não "qual seu nome? qual sua cidade?"
+
+SOBRE A DEREKH FOOD (use só quando perguntarem):
+- Sistema delivery próprio — 0% comissão (iFood cobra 27%)
+- 7 apps integrados
+- Planos: Básico R$169,90 · Essencial R$279,90 · Avançado R$329,90 · Premium R$527/mês
+- WhatsApp Humanoide: incluso no Premium, nos demais +R$99,45/mês
+- Setup em 48h, sem fidelidade
+- Site: https://superfood-api.fly.dev
+
+SE PEDIR HUMANO: "Show, vou te passar pro time agora!"
+PORTUGUÊS BRASILEIRO. Nunca invente dados."""
+
+
+# ============================================================
+# RESPONDER COM IA (v2.0)
+# ============================================================
 
 def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
     """Usa Grok IA para gerar resposta contextualizada.
@@ -468,42 +711,9 @@ def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
     if httpx is None:
         return {"erro": "httpx não instalado"}
 
-    # Contexto do lead
-    nome_rest = conversa.get("nome_fantasia") or conversa.get("razao_social") or "restaurante"
-    rating = conversa.get("rating") or 0
-    reviews = conversa.get("total_reviews") or 0
+    # Contexto completo do lead
     lead_completo = obter_lead(conversa.get("lead_id")) if conversa.get("lead_id") else {}
-
-    # Dados iFood enriquecidos
-    ifood_rating = (lead_completo or {}).get("ifood_rating") or 0
-    ifood_reviews = (lead_completo or {}).get("ifood_reviews") or 0
-    ifood_categorias = (lead_completo or {}).get("ifood_categorias") or ""
-    ifood_preco = (lead_completo or {}).get("ifood_preco") or ""
-    tem_ifood = (lead_completo or {}).get("tem_ifood") or 0
-
-    # Bloco de dados iFood para contexto
-    ifood_context = ""
-    if tem_ifood and (ifood_rating or ifood_categorias):
-        parts = []
-        if ifood_rating:
-            s = f"Rating iFood: {ifood_rating}"
-            if ifood_reviews:
-                s += f" ({ifood_reviews} avaliações)"
-            parts.append(s)
-        if ifood_categorias:
-            parts.append(f"Categorias: {ifood_categorias}")
-        if ifood_preco:
-            parts.append(f"Faixa: {ifood_preco}")
-        ifood_context = "\nDados iFood: " + " · ".join(parts)
-
-    # Pitch inteligente baseado em cenário
-    pitch_cenario = ""
-    if not tem_ifood:
-        pitch_cenario = "\nCenário: restaurante SEM delivery online."
-    elif ifood_rating and ifood_rating >= 4.5:
-        pitch_cenario = f"\nCenário: nota excelente no iFood ({ifood_rating}★), merece canal próprio."
-    elif ifood_reviews and ifood_reviews >= 500:
-        pitch_cenario = f"\nCenário: restaurante popular ({ifood_reviews} avaliações), falta canal direto."
+    lead_context = _build_lead_context(conversa, lead_completo)
 
     # Histórico da conversa (últimas 30 msgs — contexto persistente)
     historico = []
@@ -518,28 +728,7 @@ def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
     # Contar turnos para adaptar comportamento
     n_turnos = len([m for m in historico if m["role"] == "user"])
 
-    system_prompt = f"""Você é o Klenilton, vendedor da Derekh Food. Conversa via WhatsApp.
-Restaurante: {nome_rest} (Google: {rating}★, {reviews} avaliações).{ifood_context}{pitch_cenario}
-
-DEREKH FOOD — Sistema delivery próprio para restaurantes:
-• 0% comissão (iFood cobra 27%)
-• 7 apps: Painel, Site Pedidos, App Motoboy, KDS Cozinha, App Garçom, Pix Online, WhatsApp Humanoide
-• Planos: Básico R$169,90 · Essencial R$279,90 · Avançado R$329,90 · Premium R$527/mês
-• WhatsApp Humanoide: incluso no Premium, nos demais +R$99,45/mês (atendimento IA humanizado 24h, sem menus robotizados)
-• Setup em 48h, sem fidelidade, PWA (sem app store)
-• Site: https://superfood-api.fly.dev
-
-REGRAS CRÍTICAS:
-1. Mensagens CURTAS — máximo 2-3 frases. WhatsApp não é email.
-2. UMA mensagem por vez. Nunca mande duas mensagens seguidas.
-3. {"Primeira mensagem: cumprimente, diga seu nome e pergunte como pode ajudar. NÃO liste preços/funcionalidades ainda." if n_turnos <= 1 else "Você JÁ se apresentou. NÃO se apresente de novo. Continue a conversa naturalmente."}
-4. Só fale de preços se perguntarem.
-5. Seja direto, informal, sem textão. Fale como humano no WhatsApp.
-6. Se pedir demo, agende. Se recusar, despeça educadamente.
-7. Nunca invente dados.
-8. Português brasileiro.
-9. CONTEXTO PERSISTENTE: você tem TODO o histórico da conversa. Se o cliente voltou depois de dias/semanas, retome naturalmente de onde parou. NUNCA se apresente de novo se já se apresentou antes. Leia o histórico e continue a conversa com coerência.
-10. Se o cliente já mostrou interesse antes e voltou, vá direto ao ponto — ele está mais quente agora."""
+    system_prompt = _build_system_prompt_conversa(lead_context, n_turnos)
 
     try:
         resp = httpx.post(
@@ -549,7 +738,7 @@ REGRAS CRÍTICAS:
                 "model": "grok-3-fast",
                 "messages": [{"role": "system", "content": system_prompt}] + historico,
                 "max_tokens": 150,
-                "temperature": 0.7,
+                "temperature": 0.8,
             },
             timeout=20,
         )
@@ -562,6 +751,73 @@ REGRAS CRÍTICAS:
 
     return {"sucesso": True, "resposta": resposta}
 
+
+# ============================================================
+# HANDOFF GRADUAL (v2.0)
+# ============================================================
+
+def avaliar_handoff(conversa_id: int) -> tuple:
+    """Avalia se deve fazer handoff para humano — escalonamento gradual.
+    Retorna (tipo_handoff, motivo).
+    tipo_handoff: None | "immediate" | "warm" | "strategic" """
+    conversa = obter_conversa_wa(conversa_id)
+    if not conversa:
+        return None, ""
+
+    msgs_recebidas = conversa.get("msgs_recebidas", 0)
+    score = conversa.get("lead_score", 0)
+
+    # Coletar dados das mensagens
+    pediu_demo = False
+    pediu_humano = False
+    objecoes_nao_resolvidas = 0
+    intent_score_acumulado = 0
+
+    for msg in (conversa.get("mensagens") or []):
+        if msg["direcao"] == "recebida":
+            txt = (msg.get("conteudo") or "").lower()
+
+            # Pediu demo/reunião?
+            if any(w in txt for w in ("demo", "agendar", "reunião", "reuniao",
+                                       "amanhã", "amanha", "horário", "horario",
+                                       "quero ver", "me mostra")):
+                pediu_demo = True
+
+            # Pediu humano?
+            if any(w in txt for w in ("falar com alguém", "falar com alguem",
+                                       "atendente", "humano", "pessoa real",
+                                       "gerente", "responsável", "responsavel")):
+                pediu_humano = True
+
+            # Contar objeções
+            det = detectar_intencao(txt)
+            if det.get("objecoes"):
+                objecoes_nao_resolvidas += 1
+            intent_score_acumulado += det.get("score", 0)
+
+    # 1. HANDOFF IMEDIATO — pediu demo ou humano
+    if pediu_demo or pediu_humano:
+        motivo = "Lead pediu demo/reunião" if pediu_demo else "Lead pediu atendente humano"
+        return "immediate", motivo
+
+    # 2. HANDOFF QUENTE — lead muito engajado
+    if intent_score_acumulado >= 60 and msgs_recebidas >= 3:
+        return "warm", f"Lead engajado (score acumulado={intent_score_acumulado}, {msgs_recebidas} msgs)"
+
+    # 3. HANDOFF QUENTE — score CRM alto
+    if score >= 85 and msgs_recebidas >= 1:
+        return "warm", f"Lead HOT (score CRM={score}) respondeu"
+
+    # 4. HANDOFF ESTRATÉGICO — objeções não resolvidas
+    if objecoes_nao_resolvidas >= 2:
+        return "strategic", f"Lead com {objecoes_nao_resolvidas} objeções — escalar para gerente"
+
+    return None, ""
+
+
+# ============================================================
+# PROCESSAR RESPOSTAS (PRINCIPAL)
+# ============================================================
 
 def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = "") -> dict:
     """Processa mensagem recebida — de lead existente OU contato novo.
@@ -606,6 +862,11 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         registrar_interacao(lead_id, "whatsapp", "whatsapp",
                             f"WA inbound: {mensagem[:100]}", "positivo")
 
+        # Delay humano antes de responder
+        delay = _calcular_delay_humano(mensagem)
+        log.info(f"Delay humano: {delay:.1f}s antes de responder inbound")
+        _time.sleep(delay)
+
         # Responder com IA (prompt de boas-vindas)
         resultado_ia = _responder_inbound(conversa_id, mensagem)
         if resultado_ia.get("sucesso"):
@@ -621,54 +882,52 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
     conversa_id = row["id"]
     lead_id = row["lead_id"]
 
-    # Detectar intenção
-    intencao = detectar_intencao(mensagem)
+    # Detectar intenção (scoring contextual v2.0)
+    intent_result = detectar_intencao(mensagem)
+    intencao = intent_result["intencao"]
+    intent_score = intent_result["score"]
+    objecoes = intent_result["objecoes"]
 
     # Registrar mensagem recebida (1x)
     registrar_msg_wa(conversa_id, "recebida", mensagem, intencao=intencao)
     registrar_interacao(lead_id, "whatsapp", "whatsapp",
                         f"WA recebido: {mensagem[:100]}", "positivo")
 
-    log.info(f"Resposta do lead {lead_id}: intenção={intencao} (instance={instance})")
+    log.info(f"Resposta do lead {lead_id}: intenção={intencao} score={intent_score} "
+             f"objeções={objecoes} (instance={instance})")
 
     # Buscar número de envio
     conversa_full = obter_conversa_wa(conversa_id)
     numero_envio = (conversa_full or {}).get("numero_envio") or numero
 
+    # --- OPT-OUT: remove da lista para sempre ---
     if intencao == "opt_out":
         opt_out_lead(lead_id, "wa")
         atualizar_conversa_wa(conversa_id, status="opt_out", intencao_detectada="opt_out")
         _enviar_e_salvar(conversa_id, numero_envio,
-                         "Entendido! Você foi removido da nossa lista. Desculpe o incômodo.",
+                         "Tranquilo, te tirei da lista. Desculpa o incômodo! 🤙",
                          instance=instance)
         return {"processado": True, "intencao": "opt_out", "lead_id": lead_id}
 
-    if intencao == "recusa":
-        atualizar_conversa_wa(conversa_id, intencao_detectada="recusa")
+    # --- RECUSA FIRME: encerra com classe (mas pode reativar se voltar) ---
+    if intencao == "hard_no":
+        atualizar_conversa_wa(conversa_id, intencao_detectada="hard_no")
+        # Delay humano
+        _time.sleep(_calcular_delay_humano(mensagem))
         _enviar_e_salvar(conversa_id, numero_envio,
-                         "Sem problemas! Se mudar de ideia, estamos aqui. Sucesso!",
+                         "De boa, entendo! Se um dia precisar de algo, tô por aqui. Sucesso! 🤙",
                          instance=instance)
         atualizar_conversa_wa(conversa_id, status="encerrado")
-        return {"processado": True, "intencao": "recusa", "lead_id": lead_id}
+        return {"processado": True, "intencao": "hard_no", "lead_id": lead_id}
 
-    if intencao == "trial":
-        atualizar_conversa_wa(conversa_id, intencao_detectada="trial")
-        # Atualizar pipeline
-        from crm.database import atualizar_status_pipeline
-        atualizar_status_pipeline(lead_id, "demo_agendada")
-        registrar_interacao(lead_id, "whatsapp", "whatsapp",
-                            "Lead solicitou teste grátis de 15 dias", "positivo")
-        # Responder ao lead
-        _enviar_e_salvar(conversa_id, numero_envio,
-                         "Ótimo! Vou preparar seu acesso ao teste grátis de 15 dias. "
-                         "Um especialista vai te contactar em instantes para configurar tudo!",
-                         instance=instance)
-        # Notificar o dono
-        _notificar_trial(lead_id, numero, instance)
-        return {"processado": True, "intencao": "trial", "lead_id": lead_id}
-
-    # Interesse ou dúvida → IA responde
+    # --- TUDO MAIS: IA responde (interesse, objeção, dúvida, outro) ---
     atualizar_conversa_wa(conversa_id, intencao_detectada=intencao)
+
+    # Delay humano antes de responder
+    delay = _calcular_delay_humano(mensagem)
+    log.info(f"Delay humano: {delay:.1f}s antes de responder lead {lead_id}")
+    _time.sleep(delay)
+
     resultado_ia = responder_com_ia(conversa_id, mensagem)
 
     if resultado_ia.get("sucesso"):
@@ -676,15 +935,41 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         _enviar_e_salvar(conversa_id, numero_envio, resultado_ia["resposta"],
                          grok=True, instance=instance)
 
-        # Avaliar handoff
-        handoff, motivo = avaliar_handoff(conversa_id)
-        if handoff:
-            atualizar_conversa_wa(conversa_id, status="handoff",
-                                  handoff_motivo=motivo)
-            log.info(f"HANDOFF lead {lead_id}: {motivo}")
+        # Avaliar handoff gradual
+        handoff_tipo, motivo = avaliar_handoff(conversa_id)
+        if handoff_tipo == "immediate":
+            atualizar_conversa_wa(conversa_id, status="handoff", handoff_motivo=motivo)
+            # Notificar o dono
+            _notificar_handoff(lead_id, numero, motivo, instance)
+            log.info(f"HANDOFF IMEDIATO lead {lead_id}: {motivo}")
 
-    return {"processado": True, "intencao": intencao, "lead_id": lead_id}
+        elif handoff_tipo == "warm":
+            # Bot faz a transição naturalmente
+            _time.sleep(random.uniform(2, 5))
+            _enviar_e_salvar(conversa_id, numero_envio,
+                             "Olha, deixa eu te passar pro time técnico que eles conseguem "
+                             "te mostrar o sistema ao vivo, rapidinho. Já já alguém te chama!",
+                             instance=instance)
+            atualizar_conversa_wa(conversa_id, status="handoff", handoff_motivo=motivo)
+            _notificar_handoff(lead_id, numero, motivo, instance)
+            log.info(f"HANDOFF QUENTE lead {lead_id}: {motivo}")
 
+        elif handoff_tipo == "strategic":
+            _time.sleep(random.uniform(2, 5))
+            _enviar_e_salvar(conversa_id, numero_envio,
+                             "Sabe o que, vou pedir pro meu gerente te dar um toque, "
+                             "ele explica melhor essa parte. Pode ser?",
+                             instance=instance)
+            atualizar_conversa_wa(conversa_id, status="handoff", handoff_motivo=motivo)
+            _notificar_handoff(lead_id, numero, motivo, instance)
+            log.info(f"HANDOFF ESTRATÉGICO lead {lead_id}: {motivo}")
+
+    return {"processado": True, "intencao": intencao, "score": intent_score, "lead_id": lead_id}
+
+
+# ============================================================
+# ENVIO HELPERS
+# ============================================================
 
 def _enviar_e_salvar(conversa_id: int, numero: str, texto: str, grok: bool = False, instance: str = ""):
     """Envia mensagem via Evolution/Cloud API e salva no banco UMA VEZ."""
@@ -723,28 +1008,7 @@ def _responder_inbound(conversa_id: int, mensagem: str) -> dict:
     if httpx is None:
         return {"erro": "httpx não instalado"}
 
-    system_prompt = """Você é o Klenilton da Derekh Food. Alguém mandou mensagem no WhatsApp.
-
-REGRAS CRÍTICAS:
-1. Mensagem CURTA — máximo 2-3 frases. É WhatsApp, não email.
-2. Cumprimente, diga seu nome (Klenilton) e pergunte como pode ajudar.
-3. NÃO liste preços nem funcionalidades na primeira mensagem. Espere perguntarem.
-4. Seja natural e informal como um humano no WhatsApp.
-5. Seja caloroso e acolhedor. Faça a pessoa se sentir especial.
-
-SOBRE A DEREKH FOOD (use só quando perguntarem):
-• Sistema delivery próprio para restaurantes — 0% comissão (iFood cobra 27%)
-• 7 apps integrados: Painel, Site Pedidos, Motoboy, KDS Cozinha, Garçom, Pix Online, WhatsApp Humanoide
-• Planos: Básico R$169,90 · Essencial R$279,90 · Avançado R$329,90 · Premium R$527/mês
-• WhatsApp Humanoide: incluso no Premium, nos demais +R$99,45/mês (atendimento IA humanizado 24h, sem menus robotizados)
-• Setup em 48h, sem fidelidade, PWA (sem app store)
-• Site: https://superfood-api.fly.dev
-• Se quiser contratar: coletar nome do restaurante, cidade e tipo de comida
-
-Regras:
-- Português brasileiro
-- Nunca invente dados
-- Se pedir humano, diga que vai transferir"""
+    system_prompt = _build_system_prompt_inbound()
 
     try:
         resp = httpx.post(
@@ -757,7 +1021,7 @@ Regras:
                     {"role": "user", "content": mensagem},
                 ],
                 "max_tokens": 100,
-                "temperature": 0.7,
+                "temperature": 0.85,
             },
             timeout=20,
         )
@@ -769,6 +1033,10 @@ Regras:
         log.error(f"Erro Grok IA inbound: {e}")
         return {"erro": f"Falha na IA: {e}"}
 
+
+# ============================================================
+# NOTIFICAÇÕES
+# ============================================================
 
 def _notificar_trial(lead_id: int, numero_lead: str, instance: str = ""):
     """Notifica o dono (Klenilton) quando lead pede teste grátis."""
@@ -802,30 +1070,33 @@ def _notificar_trial(lead_id: int, numero_lead: str, instance: str = ""):
         log.warning(f"Falha ao notificar dono sobre trial lead {lead_id}: {resultado.get('erro')}")
 
 
-def avaliar_handoff(conversa_id: int) -> tuple:
-    """Avalia se deve fazer handoff para humano.
-    Retorna (bool, motivo)."""
-    conversa = obter_conversa_wa(conversa_id)
-    if not conversa:
-        return False, ""
+def _notificar_handoff(lead_id: int, numero_lead: str, motivo: str, instance: str = ""):
+    """Notifica o dono quando um lead precisa de atendimento humano."""
+    lead = obter_lead(lead_id)
+    nome_rest = "Restaurante"
+    cidade = ""
+    if lead:
+        nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "Restaurante"
+        cidade = lead.get("cidade") or ""
 
-    msgs_recebidas = conversa.get("msgs_recebidas", 0)
-    intencao = conversa.get("intencao_detectada", "")
-    score = conversa.get("lead_score", 0)
+    numero_dono = obter_configuracao("telefone_usuario") or os.environ.get("WA_SALES_NUMERO", "")
+    numero_dono = _limpar_telefone(numero_dono)
+    if not numero_dono:
+        log.warning("Não há número do dono configurado para notificação de handoff")
+        return
 
-    # Lead pediu demo
-    for msg in (conversa.get("mensagens") or []):
-        if msg["direcao"] == "recebida":
-            txt = (msg.get("conteudo") or "").lower()
-            if any(w in txt for w in ("demo", "agendar", "reunião", "reuniao", "amanhã", "amanha", "horário", "horario")):
-                return True, "Lead pediu demo/reunião"
+    texto = (
+        f"🔥 HANDOFF!\n\n"
+        f"*{nome_rest}*"
+        + (f" ({cidade})" if cidade else "") +
+        f"\nMotivo: {motivo}\n\n"
+        f"Número: {numero_lead}\n"
+        f"Lead ID: {lead_id}\n\n"
+        f"⚡ Esse lead precisa de atenção AGORA!"
+    )
 
-    # 3+ respostas com interesse
-    if msgs_recebidas >= 3 and intencao == "interesse":
-        return True, "Lead engajado (3+ respostas de interesse)"
-
-    # Score muito alto
-    if score >= 85 and msgs_recebidas >= 1:
-        return True, f"Lead HOT (score={score}) respondeu"
-
-    return False, ""
+    resultado = _enviar_direto(numero_dono, texto, instance=instance)
+    if resultado.get("sucesso"):
+        log.info(f"Notificação handoff enviada ao dono para lead {lead_id}")
+    else:
+        log.warning(f"Falha ao notificar dono sobre handoff lead {lead_id}: {resultado.get('erro')}")
