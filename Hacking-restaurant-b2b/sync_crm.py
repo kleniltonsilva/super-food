@@ -263,6 +263,77 @@ def sync(cidade: str = None, uf: str = None, full: bool = False, batch_size: int
     print(f"  Filtro: {'cidade=' + cidade if cidade else ''} {'uf=' + uf if uf else ''} {'(todos)' if not cidade and not uf else ''}")
 
 
+def auto_sync(cidade: str, uf: str) -> dict:
+    """Sync programático chamável pelo auto_pipeline.
+    Faz sync incremental (só registros novos/alterados desde último sync).
+    Retorna dict com stats.
+
+    Args:
+        cidade: nome da cidade (UPPERCASE)
+        uf: sigla UF (UPPERCASE)
+
+    Returns:
+        {"sincronizados": int, "erros": int, "total": int}
+    """
+    cidade = cidade.upper()
+    uf = uf.upper()
+
+    # Verificar se DATABASE_URL está disponível
+    db_url = os.environ.get("DATABASE_URL", "")
+    if not db_url:
+        # Tentar ler de config local
+        config_path = os.path.expanduser("~/.derekh_crm_config")
+        if os.path.exists(config_path):
+            with open(config_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("DATABASE_URL="):
+                        db_url = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        os.environ["DATABASE_URL"] = db_url
+                        break
+
+    if not db_url and not DATABASE_URL:
+        return {"sincronizados": 0, "erros": 0, "total": 0, "msg": "DATABASE_URL não configurada"}
+
+    # Buscar last_sync_at da tabela sync_control
+    sqlite_conn = get_sqlite_conn()
+    try:
+        row = sqlite_conn.execute(
+            "SELECT last_sync_at FROM sync_control WHERE cidade = ? AND uf = ?",
+            (cidade, uf)
+        ).fetchone()
+        last_sync = row["last_sync_at"] if row else None
+    except Exception:
+        last_sync = None
+
+    # Executar sync padrão (reutiliza função existente)
+    try:
+        sync(cidade=cidade, uf=uf)
+    except Exception as e:
+        sqlite_conn.close()
+        return {"sincronizados": 0, "erros": 1, "total": 0, "msg": str(e)}
+
+    # Contar registros sincronizados
+    total = sqlite_conn.execute(
+        "SELECT COUNT(*) as c FROM cnpjs_receita WHERE cidade = ? AND uf = ?",
+        (cidade, uf)
+    ).fetchone()["c"]
+
+    # Atualizar sync_control
+    now = datetime.now().isoformat()
+    sqlite_conn.execute("""
+        INSERT INTO sync_control (cidade, uf, last_sync_at, last_sync_count)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT (cidade, uf) DO UPDATE SET
+            last_sync_at = excluded.last_sync_at,
+            last_sync_count = excluded.last_sync_count
+    """, (cidade, uf, now, total))
+    sqlite_conn.commit()
+    sqlite_conn.close()
+
+    return {"sincronizados": total, "erros": 0, "total": total}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Sync SQLite local → PostgreSQL CRM")
     parser.add_argument("--cidade", type=str, help="Filtrar por cidade (ex: MACEIO)")

@@ -139,30 +139,93 @@ def gerar_link_unsub(tracking_id: str) -> str:
     return f"{BASE_URL}/tracking/unsub/{tracking_id}"
 
 
-def _injetar_tracking(corpo_html: str, tracking_id: str, landing_url: str = None) -> str:
-    """Injeta pixel de abertura e link de unsubscribe no corpo do email."""
+def _extrair_corpo_html(html: str) -> str:
+    """Extrai conteúdo do <body> se existir, senão retorna como está.
+    Remove tags html/head/body para que o wrapper branded funcione."""
+    import re
+    # Se tem <body>, extrair conteúdo interno
+    match = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    # Se tem <html> mas sem body, extrair conteúdo
+    match = re.search(r'<html[^>]*>(.*?)</html>', html, re.DOTALL | re.IGNORECASE)
+    if match:
+        inner = match.group(1).strip()
+        # Remover <head>...</head> se existir
+        inner = re.sub(r'<head[^>]*>.*?</head>', '', inner, flags=re.DOTALL | re.IGNORECASE)
+        return inner.strip()
+    return html
+
+
+WHATSAPP_INBOUND = "5511971765565"
+LANDING_URL_DEFAULT = "https://derekh.com.br/food"
+
+
+def _envolver_email_branded(corpo_html: str, tracking_id: str) -> str:
+    """Envolve QUALQUER corpo de email no template branded Derekh Food.
+    Header verde + corpo + link site + botão WA + unsub + pixel tracking."""
+    import urllib.parse
+
+    # Se corpo já tem <html>, extrair apenas o body
+    if '</html>' in corpo_html.lower() or '</body>' in corpo_html.lower():
+        corpo_html = _extrair_corpo_html(corpo_html)
+
     pixel = gerar_pixel_url(tracking_id)
     unsub = gerar_link_unsub(tracking_id)
+    landing = obter_configuracao("outreach_landing_url") or LANDING_URL_DEFAULT
+    link_site = gerar_link_rastreado(landing, tracking_id, "site")
+    wa_text = "Olá! Gostaria de saber mais sobre a Derekh Food"
+    wa_link = f"https://wa.me/{WHATSAPP_INBOUND}?text={urllib.parse.quote(wa_text)}"
+    link_wa = gerar_link_rastreado(wa_link, tracking_id, "wa")
 
-    # Pixel transparente no final
     pixel_tag = f'<img src="{pixel}" width="1" height="1" style="display:none;" alt="" />'
 
-    # Rodapé com unsubscribe
-    rodape = f'''
-    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:11px;color:#9ca3af;">
-        <p>Derekh Food — Delivery inteligente para restaurantes</p>
-        <p><a href="{unsub}" style="color:#6b7280;text-decoration:underline;">Não quero mais receber estes emails</a></p>
-    </div>
-    '''
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
 
-    # Inserir antes do </body> ou no final
-    if '</body>' in corpo_html.lower():
-        corpo_html = corpo_html.replace('</body>', f'{pixel_tag}{rodape}</body>')
-        corpo_html = corpo_html.replace('</BODY>', f'{pixel_tag}{rodape}</BODY>')
-    else:
-        corpo_html += f'{pixel_tag}{rodape}'
+<!-- HEADER -->
+<tr><td style="background:linear-gradient(135deg,#00b894,#00d4aa);padding:20px 28px;">
+  <table width="100%" cellpadding="0" cellspacing="0"><tr>
+    <td style="font-size:22px;font-weight:800;color:#ffffff;font-family:'Segoe UI',Helvetica,sans-serif;">Derekh Food</td>
+    <td align="right" style="font-size:11px;color:#ffffffcc;font-family:'Segoe UI',Helvetica,sans-serif;">Delivery sem comissão</td>
+  </tr></table>
+</td></tr>
 
-    return corpo_html
+<!-- CORPO -->
+<tr><td style="padding:28px 28px 20px;font-size:14px;line-height:1.7;color:#374151;">
+{corpo_html}
+</td></tr>
+
+<!-- DIVIDER -->
+<tr><td style="padding:0 28px;"><div style="border-top:1px solid #e5e7eb;"></div></td></tr>
+
+<!-- CTA: SITE + WHATSAPP -->
+<tr><td style="padding:20px 28px;text-align:center;">
+  <p style="margin:0 0 14px;font-size:13px;color:#6b7280;">Conheça a Derekh Food — delivery próprio para seu restaurante</p>
+  <a href="{link_site}" style="display:inline-block;padding:10px 24px;background:#00d4aa;color:#ffffff;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;margin-right:8px;">Visitar Site</a>
+  <a href="{link_wa}" style="display:inline-block;padding:10px 24px;background:#25D366;color:#ffffff;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">💬 Fale no WhatsApp</a>
+</td></tr>
+
+<!-- FOOTER -->
+<tr><td style="padding:16px 28px;background:#f9fafb;text-align:center;font-size:11px;color:#9ca3af;">
+  <p style="margin:0 0 4px;">Derekh Food · Delivery sem comissão para restaurantes</p>
+  <p style="margin:0;"><a href="{unsub}" style="color:#6b7280;text-decoration:underline;">Cancelar inscrição</a></p>
+</td></tr>
+
+</table>
+{pixel_tag}
+</td></tr></table>
+</body></html>"""
+
+
+def _injetar_tracking(corpo_html: str, tracking_id: str, landing_url: str = None) -> str:
+    """Envolve email no template branded Derekh Food com tracking completo."""
+    return _envolver_email_branded(corpo_html, tracking_id)
 
 
 # ============================================================
@@ -235,6 +298,69 @@ def enviar_email(lead_id: int, template_id: int, campanha_id: int = None) -> dic
         )
 
         # Atualizar campanha se aplicável
+        if campanha_id:
+            atualizar_campanha_contadores(campanha_id, "total_enviados")
+
+        return {"sucesso": True, "message_id": message_id, "tracking_id": tracking_id}
+
+    except Exception as e:
+        return {"erro": str(e)}
+
+
+def enviar_email_personalizado(lead_id: int, assunto: str, corpo: str,
+                               campanha_id: int = None) -> dict:
+    """Envia email personalizado (gerado por pattern_library) para um lead.
+    Inclui pixel tracking + link unsub. Fallback-free — corpo/assunto já vêm prontos."""
+    lead = obter_lead(lead_id)
+    if not lead:
+        return {"erro": "Lead não encontrado"}
+
+    email_dest = lead.get("email")
+    if not email_dest or not email_dest.strip():
+        return {"erro": "Lead sem email"}
+
+    if lead.get("email_invalido"):
+        return {"erro": "Email marcado como inválido (bounced)"}
+
+    if lead.get("opt_out_email"):
+        return {"erro": "Lead fez opt-out de email"}
+
+    # Gerar tracking
+    tracking_id = gerar_tracking_id()
+    pixel_url = gerar_pixel_url(tracking_id)
+
+    # Injetar tracking no corpo
+    corpo_final = _injetar_tracking(corpo, tracking_id)
+
+    try:
+        resultado = resend.Emails.send({
+            "from": f"{FROM_NAME} <{FROM_EMAIL}>",
+            "to": [email_dest],
+            "subject": assunto,
+            "html": corpo_final,
+        })
+
+        message_id = resultado.get("id", "")
+
+        criar_email_enviado(
+            lead_id=lead_id,
+            template_id=None,
+            assunto=assunto,
+            tracking_id=tracking_id,
+            pixel_url=pixel_url,
+            resend_message_id=message_id,
+            campanha_id=campanha_id,
+        )
+
+        registrar_interacao(
+            lead_id=lead_id,
+            tipo="email",
+            canal="email",
+            conteudo=f"Assunto: {assunto} (personalizado 3F)",
+            resultado="enviado",
+            email_message_id=message_id,
+        )
+
         if campanha_id:
             atualizar_campanha_contadores(campanha_id, "total_enviados")
 

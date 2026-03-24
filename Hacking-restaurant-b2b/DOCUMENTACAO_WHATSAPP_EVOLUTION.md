@@ -1,6 +1,6 @@
 # Documentação Técnica — WhatsApp Dual-Number (Evolution API + Meta Cloud API)
 
-> **Última atualização:** 22/03/2026
+> **Última atualização:** 24/03/2026
 > **Autor:** Klenilton Silva / Claude AI
 > **Projeto:** Derekh Food — Sales Autopilot CRM
 
@@ -261,6 +261,12 @@ AUTHENTICATION_API_KEY=81d537f83e77ba61f4efb9c6f403bbe056c060065943995b8da8e22c8
 | POST | `/api/outreach/forcar-execucao` | Força worker de outreach |
 | GET | `/api/outreach/stats` | Stats de outreach (7 dias) |
 | GET | `/api/outreach/pendentes` | Ações pendentes |
+| GET | `/api/outreach/regras` | Listar regras de outreach |
+| POST | `/api/outreach/regras` | Criar regra {nome, condicao, acoes, prioridade} |
+| PUT | `/api/outreach/regras/{id}` | Atualizar regra |
+| DELETE | `/api/outreach/regras/{id}` | Deletar regra |
+| POST | `/api/outreach/ativar` | Ativar autopilot (outreach_ativo=true) |
+| POST | `/api/outreach/desativar` | Desativar autopilot |
 
 ---
 
@@ -280,8 +286,9 @@ Funções de recebimento:
 - responder_com_ia(conversa_id, mensagem)      → IA para lead existente
 
 Detecção:
-- detectar_intencao(mensagem)                  → opt_out|recusa|interesse|duvida|outro
+- detectar_intencao(mensagem)                  → opt_out|recusa|trial|interesse|duvida|outro
 - avaliar_handoff(conversa_id)                 → Quando escalar para humano
+- _notificar_trial(lead_id, numero, instance)  → Notifica dono via WA quando lead quer trial
 
 Helpers:
 - _formatar_numero_wa(telefone)                → Formato internacional
@@ -301,7 +308,11 @@ Helpers:
 ```
 - importar_leads_para_outreach(cidade, uf)     → Importa leads + cria sequências
 - criar_sequencia_lead(lead_id, tier, score)   → Sequência por tier (hot/warm/cold)
-- executar_acoes_pendentes()                   → Worker (a cada 5 min)
+- criar_sequencia_com_regras(lead_id, lead_data) → Sequência por regras configuráveis
+- _avaliar_condicao(condicao, lead)            → Avalia condição da regra vs dados do lead
+- _calcular_horario_wa(data_base, lead)        → Agenda WA para 09:30 (antes restaurante abrir)
+- _lead_ja_abriu_email(lead_id)                → Verifica se lead abriu email nos últimos 7 dias
+- executar_acoes_pendentes()                   → Worker (a cada 5 min), skip WA se já abriu
 ```
 
 ### email_service.py (Email Marketing)
@@ -310,6 +321,8 @@ Helpers:
 - enviar_email(lead_id, template_id)           → Email individual (Resend)
 - enviar_campanha(campanha_id, filtros)        → Batch com tracking
 - processar_webhook_resend(payload)            → Open/click/bounce
+- _extrair_corpo_html(html)                    → Extrai body de HTML Grok (strip html/head)
+- _envolver_email_branded(corpo, tracking_id)  → Wrapper HTML branded (header + WA + site + unsub)
 ```
 
 ---
@@ -325,12 +338,19 @@ Helpers:
 | **Max tokens** | 250-300 |
 | **Temperature** | 0.7 |
 
-### Prompts do Bot
+### Prompts do Bot (WhatsApp Humanoide)
+
+**Conceito:** O WhatsApp Humanoide é um atendente IA que conversa como gente de verdade. Sem menus robotizados ("aperte 1 ou 2"), sem "digite o número da opção". Atendimento natural e humanizado 24h/7 dias.
+
+**Precificação:**
+- **Premium (R$527/mês):** WhatsApp Humanoide já incluso gratuitamente
+- **Demais planos:** Add-on opcional por R$99,45/mês
 
 **Vendedor (outbound — leads existentes):**
-- Tom informal, breve (max 3 parágrafos)
-- Usa dados reais: nome restaurante, rating Google, nº avaliações
-- Benefícios: delivery sem comissão, IA 24h, setup 48h, plano R$50/mês
+- Tom informal, breve (max 2-3 frases por mensagem)
+- Usa dados reais: nome restaurante, rating Google/iFood, nº avaliações
+- Benefícios: delivery sem comissão, IA 24h, setup 48h, planos a partir de R$169,90/mês
+- WhatsApp Humanoide: incluso no Premium, add-on R$99,45/mês nos demais
 
 **Atendente (inbound — contato novo do site):**
 - Tom caloroso e profissional

@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sales Autopilot — Derekh Food</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#060a10;--bg2:#0d1219;--bg3:#151c26;--bg4:#1e2736;
+  --accent:#00d4aa;--accentD:#009977;
+  --text:#e6edf3;--dim:#7d8590;--mute:#484f58;--border:#1e2531;
+  --red:#f85149;--yellow:#d29922;--green:#3fb950;--blue:#58a6ff;
+  --purple:#a371f7;--orange:#d18616;--pink:#f778ba;--cyan:#39d2f5;
+}
+@keyframes pS{0%,100%{opacity:1}50%{opacity:.7}}
+@keyframes pD{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:#21262d;border-radius:2px}
+::-webkit-scrollbar-track{background:transparent}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,sans-serif;margin:0;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+.app{max-width:760px;margin:0 auto;padding:16px}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.header-left{display:flex;align-items:center;gap:8px}
+.header-title{font-size:20px;font-weight:800;color:#fff}
+.selo{display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;font-size:10px;font-weight:700}
+.selo-auto{background:#3fb95018;color:#3fb950;animation:pS 2s infinite}
+.header-right{font-size:11px;color:var(--mute)}
+
+.tab-bar{display:flex;background:var(--bg2);padding:3px;border-radius:12px;border:1px solid var(--border);margin-bottom:14px;gap:2px}
+.tab-btn{flex:1;padding:10px 6px;border-radius:10px;border:none;background:transparent;color:var(--dim);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{background:var(--accent);color:var(--bg)}
+
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:10px}
+.card-title{font-size:12px;font-weight:800;color:#fff;margin-bottom:10px;text-transform:uppercase;letter-spacing:.03em}
+.tag{display:inline-flex;align-items:center;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700}
+
+/* ===== CHAT ===== */
+.chat-area{display:flex;flex-direction:column;height:calc(100vh - 140px);min-height:500px}
+.chat-msgs{flex:1;overflow-y:auto;padding:8px 0;display:flex;flex-direction:column;gap:8px}
+.msg{display:flex;gap:8px;max-width:88%}
+.msg-bot{align-self:flex-start}
+.msg-user{align-self:flex-end;flex-direction:row-reverse}
+.msg-avatar{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.msg-avatar-bot{background:linear-gradient(135deg,var(--accentD),var(--accent))}
+.msg-bubble{padding:10px 14px;border-radius:16px;font-size:13px;line-height:1.7;white-space:pre-wrap}
+.msg-bubble-bot{background:var(--bg3);border:1px solid var(--border);border-bottom-left-radius:4px}
+.msg-bubble-user{background:#58a6ff20;border:1px solid #58a6ff33;border-bottom-right-radius:4px}
+.msg-bubble-audio{background:#a371f715;border:1px solid #a371f733}
+.msg-bubble-lead{background:#005c4b;border:1px solid #005c4b55}
+.msg-bubble-system{background:var(--bg3);border:1px solid var(--border);text-align:center;font-size:10px;color:var(--dim);max-width:100%;align-self:center}
+.msg-label{font-size:9px;font-weight:700;margin-bottom:2px}
+.msg-time{font-size:9px;color:var(--mute);margin-top:2px}
+
+.suggestions{display:flex;flex-wrap:wrap;gap:6px;padding:8px 0}
+.suggestion-chip{padding:5px 11px;border-radius:20px;border:1px solid #00d4aa33;background:#00d4aa10;color:var(--accent);font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s}
+.suggestion-chip:hover{background:#00d4aa25;border-color:#00d4aa55}
+
+.chat-input-area{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
+.chat-input{flex:1;padding:11px 14px;border-radius:14px;border:2px solid var(--border);background:var(--bg);color:var(--text);font-size:13px;outline:none;font-family:inherit;resize:none}
+.chat-input:focus{border-color:var(--accent)}
+.chat-input::placeholder{color:var(--mute)}
+.chat-send{padding:10px 18px;border-radius:14px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+.chat-send.enabled{background:linear-gradient(135deg,var(--accentD),var(--accent));color:var(--bg)}
+.chat-send.disabled{background:#484f5830;color:var(--mute);cursor:not-allowed}
+
+.typing{color:var(--dim);font-size:12px;font-style:italic;padding:4px 0}
+
+/* ===== PAINEL ===== */
+.pilot-card{background:#00d4aa10;border:1px solid #00d4aa33;border-radius:14px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.pilot-avatar{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,var(--accentD),var(--accent));display:flex;align-items:center;justify-content:center;font-size:20px;animation:pS 3s infinite}
+.pilot-info{flex:1}
+.pilot-title{font-weight:800;font-size:15px;color:#fff;display:flex;align-items:center;gap:8px}
+.pilot-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pD 1s infinite}
+.pilot-sub{font-size:11px;color:var(--dim);margin-top:2px}
+
+.metrics-grid{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.metric-card{background:var(--bg3);border-radius:10px;padding:10px;min-width:80px;flex:1}
+.metric-label{font-size:8px;text-transform:uppercase;color:var(--mute);font-weight:700;letter-spacing:.05em}
+.metric-value{font-size:18px;font-weight:800;font-family:monospace;margin-top:3px}
+
+.funnel-item{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.funnel-label{width:55px;font-size:10px;color:var(--dim);font-weight:600;text-align:right;flex-shrink:0}
+.funnel-bar-bg{flex:1;height:14px;background:var(--bg);border-radius:4px;position:relative;overflow:hidden}
+.funnel-bar{height:100%;background:#00d4aa30;border-radius:4px;transition:width .5s}
+.funnel-num{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:9px;color:var(--accent);font-family:monospace;font-weight:700}
+
+.exp-item{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:7px 10px;margin-bottom:4px;display:flex;align-items:center;justify-content:space-between;font-size:11px}
+.exp-name{color:var(--text);font-weight:600;flex:1}
+.exp-winner{color:var(--accent);font-weight:700;margin:0 10px}
+.exp-conf{font-family:monospace;font-weight:700;margin:0 10px}
+
+.decision-item{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px;color:var(--dim)}
+.decision-item:last-child{border-bottom:none}
+
+.hot-lead{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:4px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:background .15s}
+.hot-lead:hover{background:var(--bg3)}
+.hot-avatar{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;font-family:monospace;flex-shrink:0}
+.hot-info{flex:1}
+.hot-name{font-size:12px;font-weight:700;color:#fff}
+.hot-event{font-size:10px;color:var(--dim);margin-top:1px}
+
+/* ===== CONVERSAS ===== */
+.conv-header-text{font-size:12px;color:var(--dim);margin-bottom:12px;line-height:1.6}
+.conv-item{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px;cursor:pointer;transition:all .15s}
+.conv-item:hover{background:var(--bg3)}
+.conv-item.nova{background:#3fb95008;border-color:#3fb95033}
+.conv-avatar{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;font-family:monospace;flex-shrink:0;position:relative}
+.conv-dot{position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:var(--green);border:2px solid var(--bg2)}
+.conv-info{flex:1;min-width:0}
+.conv-name{font-size:13px;font-weight:700;color:#fff}
+.conv-preview{font-size:11px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.conv-badges{display:flex;gap:4px;margin-top:4px;flex-wrap:wrap}
+.conv-arrow{color:var(--mute);font-size:14px;flex-shrink:0}
+
+.conv-detail-header{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.conv-detail-back{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:11px;color:var(--dim);cursor:pointer;font-family:inherit;font-weight:600}
+.conv-detail-back:hover{color:var(--text)}
+.conv-detail-name{font-size:15px;font-weight:800;color:#fff;flex:1}
+.conv-controls{display:flex;gap:6px;margin-bottom:10px}
+.conv-control-btn{flex:1;padding:8px 12px;border-radius:10px;border:none;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .15s}
+
+.conv-msgs{max-height:calc(100vh - 340px);overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:8px 0}
+.conv-manual-alert{background:#d2992210;border:1px solid #d2992233;border-radius:10px;padding:8px 12px;font-size:11px;color:var(--yellow);margin-bottom:8px}
+.conv-manual-input{display:flex;gap:8px;padding-top:10px;border-top:1px solid var(--border)}
+.conv-manual-input input{flex:1;padding:10px 14px;border-radius:12px;border:2px solid var(--yellow);background:var(--bg);color:var(--text);font-size:12px;outline:none;font-family:inherit}
+.conv-manual-input button{padding:8px 16px;border-radius:12px;border:none;background:linear-gradient(135deg,var(--orange),var(--yellow));color:var(--bg);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+
+/* ===== AJUSTES ===== */
+.config-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.config-item{background:var(--bg);border-radius:10px;padding:9px 11px}
+.config-label{font-size:9px;text-transform:uppercase;color:var(--mute);font-weight:700;letter-spacing:.03em}
+.config-value{font-size:13px;font-weight:700;color:var(--accent);margin-top:2px}
+.config-note{font-size:10px;color:var(--dim);font-style:italic;margin-top:8px}
+
+.limit-value{font-size:12px;font-weight:700;color:var(--green)}
+.infra-block{background:var(--bg);border-radius:10px;padding:12px;font-family:monospace;font-size:10px;line-height:1.8;color:var(--dim)}
+
+.link-crm{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;background:var(--bg3);border:1px solid var(--border);color:var(--dim);font-size:11px;font-weight:600;margin-top:14px;transition:all .15s}
+.link-crm:hover{background:var(--bg4);color:var(--text);text-decoration:none}
+</style>
+</head>
+<body>
+<div class="app">
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <span style="font-size:18px">🚀</span>
+            <span class="header-title">Sales Autopilot</span>
+            <span class="selo selo-auto">AUTÔNOMO</span>
+        </div>
+        <span class="header-right">Derekh Food B2B</span>
+    </div>
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('chat')">💬 Chat</button>
+        <button class="tab-btn" onclick="switchTab('painel')">📊 Painel</button>
+        <button class="tab-btn" onclick="switchTab('conversas')">🗨️ Conversas</button>
+        <button class="tab-btn" onclick="switchTab('ajustes')">⚙️ Ajustes</button>
+    </div>
+
+    <!-- ==================== TAB: CHAT ==================== -->
+    <div id="tab-chat" class="tab-content active">
+        <div class="chat-area">
+            <div class="chat-msgs" id="chatMsgs">
+                <!-- Mensagem inicial do bot -->
+                <div class="msg msg-bot">
+                    <div class="msg-avatar msg-avatar-bot">🤖</div>
+                    <div>
+                        <div class="msg-label" style="color:var(--accent)">Sales Autopilot</div>
+                        <div class="msg-bubble msg-bubble-bot" id="welcomeMsg">Bom dia! 🤖 Sou o Sales Autopilot.
+
+📊 Resumo de hoje:
+• {{ metricas.emails_hoje }} emails enviados ({{ config.horario_envio }})
+• {{ metricas.wa_enviados_7d }} mensagens WA (7 dias)
+• {{ metricas.demos }} demos agendadas
+• Taxa de abertura: {{ "%.1f"|format(metricas.taxa_abertura) }}%
+
+🧠 Decisões autônomas recentes:
+{% for d in decisoes[:3] %}• {{ d.descricao }}
+{% endfor %}
+Me pergunte qualquer coisa, peça métricas, mude regras ou dê instruções.</div>
+                        <div class="msg-time">agora</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sugestões rápidas -->
+            <div class="suggestions" id="suggestions">
+                <button class="suggestion-chip" onclick="enviarSugestao(this)">Relatório de hoje</button>
+                <button class="suggestion-chip" onclick="enviarSugestao(this)">Mostra leads quentes</button>
+                <button class="suggestion-chip" onclick="enviarSugestao(this)">Muda horário pra 10h</button>
+                <button class="suggestion-chip" onclick="enviarSugestao(this)">Quais experimentos rodam?</button>
+                <button class="suggestion-chip" onclick="enviarSugestao(this)">Pausa envios</button>
+                <button class="suggestion-chip" onclick="enviarSugestao(this)">Aquecimento pra 50/dia</button>
+            </div>
+
+            <!-- Input -->
+            <div class="chat-input-area">
+                <input type="text" class="chat-input" id="chatInput"
+                       placeholder="Pergunte, instrua ou mude regras..."
+                       onkeydown="if(event.key==='Enter')enviarChat()">
+                <button class="chat-send disabled" id="chatSend" onclick="enviarChat()">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== TAB: PAINEL ==================== -->
+    <div id="tab-painel" class="tab-content">
+        <!-- Piloto Automático -->
+        <div class="pilot-card">
+            <div class="pilot-avatar">🤖</div>
+            <div class="pilot-info">
+                <div class="pilot-title">
+                    PILOTO AUTOMÁTICO ATIVO
+                    <span class="pilot-dot"></span>
+                </div>
+                <div class="pilot-sub">{{ metricas.total_decisoes }} decisões autônomas · Ativo há {{ metricas.dias_ativo }} dias</div>
+            </div>
+        </div>
+
+        <!-- Métricas -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Abertura</div>
+                <div class="metric-value" style="color:var(--purple)">{{ "%.1f"|format(metricas.taxa_abertura) }}%</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Resposta WA</div>
+                <div class="metric-value" style="color:var(--green)">{{ "%.1f"|format(metricas.taxa_resposta_wa) }}%</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Demos</div>
+                <div class="metric-value" style="color:var(--orange)">{{ metricas.demos }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Receita</div>
+                <div class="metric-value" style="color:var(--accent)">R${{ metricas.receita }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Custo</div>
+                <div class="metric-value" style="color:var(--green)">R${{ metricas.custo }}</div>
+            </div>
+        </div>
+
+        <!-- Funil de Conversão -->
+        <div class="card">
+            <div class="card-title">Funil de Conversão</div>
+            {% for item in funil %}
+            <div class="funnel-item">
+                <div class="funnel-label">{{ item.estagio }}</div>
+                <div class="funnel-bar-bg">
+                    <div class="funnel-bar" style="width:{{ item.pct }}%"></div>
+                    <span class="funnel-num">{{ item.numero }}</span>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Experimentos de Aprendizado -->
+        <div class="card">
+            <div class="card-title">Experimentos de Aprendizado</div>
+            {% for exp in experimentos %}
+            <div class="exp-item">
+                <span class="exp-name">{{ exp.variavel }}</span>
+                <span class="exp-winner">{{ exp.vencedor or "—" }}</span>
+                <span class="exp-conf" style="color:{% if exp.confianca >= 95 %}var(--green){% else %}var(--yellow){% endif %}">{{ "%.1f"|format(exp.confianca) }}%</span>
+                <span class="tag" style="background:{% if exp.status == 'aplicado' %}var(--green){% else %}var(--yellow){% endif %}15;color:{% if exp.status == 'aplicado' %}var(--green){% else %}var(--yellow){% endif %};border:1px solid {% if exp.status == 'aplicado' %}var(--green){% else %}var(--yellow){% endif %}22">{{ exp.status }}</span>
+            </div>
+            {% endfor %}
+            {% if not experimentos %}
+            <div style="font-size:11px;color:var(--dim);text-align:center;padding:12px">Nenhum experimento ainda. O agente criará experimentos automaticamente.</div>
+            {% endif %}
+        </div>
+
+        <!-- Decisões Autônomas Recentes -->
+        <div class="card">
+            <div class="card-title">Decisões Autônomas Recentes</div>
+            {% for d in decisoes %}
+            <div class="decision-item">
+                <span>🧠</span>
+                <span>{{ d.descricao }}</span>
+            </div>
+            {% endfor %}
+            {% if not decisoes %}
+            <div style="font-size:11px;color:var(--dim);text-align:center;padding:12px">Nenhuma decisão ainda. O agente decidirá conforme coleta dados.</div>
+            {% endif %}
+        </div>
+
+        <!-- Leads Quentes -->
+        <div class="card" style="border-color:#f8514933">
+            <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+                Leads Quentes
+                <span class="tag" style="background:var(--red)15;color:var(--red);border:1px solid var(--red)22">Prioridade</span>
+            </div>
+            {% for lead in leads_quentes %}
+            <a href="/lead/{{ lead.id }}" style="text-decoration:none">
+                <div class="hot-lead">
+                    <div class="hot-avatar" style="background:{% if lead.score >= 80 %}var(--red){% elif lead.score >= 60 %}var(--yellow){% else %}var(--mute){% endif %}15;color:{% if lead.score >= 80 %}var(--red){% elif lead.score >= 60 %}var(--yellow){% else %}var(--mute){% endif %}">{{ lead.score }}</div>
+                    <div class="hot-info">
+                        <div class="hot-name">{{ lead.nome }}</div>
+                        <div class="hot-event">{{ lead.ultimo_evento or lead.cidade ~ "/" ~ lead.uf }}</div>
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+            {% if not leads_quentes %}
+            <div style="font-size:11px;color:var(--dim);text-align:center;padding:12px">Nenhum lead quente no momento.</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- ==================== TAB: CONVERSAS ==================== -->
+    <div id="tab-conversas" class="tab-content">
+        <div id="convLista">
+            <div class="conv-header-text">
+                O robô gerencia 95% das conversas sozinho. Toque em uma conversa para ver os detalhes e assumir o controle se necessário.
+            </div>
+
+            {% for conv in conversas %}
+            <div class="conv-item {% if conv.nova_msg %}nova{% endif %}" onclick="abrirConversa({{ conv.id }})">
+                <div class="conv-avatar" style="background:{% if conv.score >= 80 %}var(--red){% elif conv.score >= 60 %}var(--yellow){% else %}var(--mute){% endif %}15;color:{% if conv.score >= 80 %}var(--red){% elif conv.score >= 60 %}var(--yellow){% else %}var(--mute){% endif %}">
+                    {{ conv.score or "—" }}
+                    {% if conv.nova_msg %}<span class="conv-dot"></span>{% endif %}
+                </div>
+                <div class="conv-info">
+                    <div class="conv-name">{{ conv.lead_nome }}</div>
+                    <div class="conv-preview">{{ conv.preview or "Sem mensagens" }}</div>
+                    <div class="conv-badges">
+                        <span class="tag" style="background:{% if conv.situacao == 'demo_agendada' %}var(--green){% elif conv.situacao == 'engajado' %}var(--blue){% elif conv.situacao == 'respondeu' %}var(--accent){% else %}var(--mute){% endif %}15;color:{% if conv.situacao == 'demo_agendada' %}var(--green){% elif conv.situacao == 'engajado' %}var(--blue){% elif conv.situacao == 'respondeu' %}var(--accent){% else %}var(--mute){% endif %}">{{ conv.situacao }}</span>
+                        <span class="tag" style="background:{% if conv.canal == 'whatsapp' %}var(--green){% else %}var(--blue){% endif %}15;color:{% if conv.canal == 'whatsapp' %}var(--green){% else %}var(--blue){% endif %}">{{ conv.canal }}</span>
+                        <span class="tag" style="background:{% if conv.modo == 'auto' %}var(--cyan){% else %}var(--yellow){% endif %}15;color:{% if conv.modo == 'auto' %}var(--cyan){% else %}var(--yellow){% endif %}">{{ "automático" if conv.modo == "auto" else "manual" }}</span>
+                    </div>
+                </div>
+                <span class="conv-arrow">→</span>
+            </div>
+            {% endfor %}
+            {% if not conversas %}
+            <div style="font-size:12px;color:var(--dim);text-align:center;padding:30px">Nenhuma conversa ainda. O autopilot iniciará conversas conforme o outreach avança.</div>
+            {% endif %}
+        </div>
+
+        <!-- Detalhe da conversa (oculto inicialmente) -->
+        <div id="convDetalhe" style="display:none">
+            <div class="conv-detail-header">
+                <button class="conv-detail-back" onclick="fecharConversa()">← Voltar</button>
+                <span id="convDetalheScore" class="hot-avatar" style="width:32px;height:32px;font-size:11px"></span>
+                <span class="conv-detail-name" id="convDetalheNome"></span>
+                <span id="convDetalheSituacao" class="tag"></span>
+                <span id="convDetalheModo" class="tag"></span>
+            </div>
+
+            <!-- Controles -->
+            <div class="conv-controls" id="convControles"></div>
+
+            <!-- Alerta manual -->
+            <div class="conv-manual-alert" id="convAlertaManual" style="display:none">
+                ⚠️ Você assumiu o controle. O robô não vai responder até você devolver.
+            </div>
+
+            <!-- Mensagens -->
+            <div class="conv-msgs" id="convMsgs"></div>
+
+            <!-- Input manual -->
+            <div class="conv-manual-input" id="convInputManual" style="display:none">
+                <input type="text" id="convManualInput" placeholder="Digite sua mensagem manual..."
+                       onkeydown="if(event.key==='Enter')enviarManual()">
+                <button onclick="enviarManual()">Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== TAB: AJUSTES ==================== -->
+    <div id="tab-ajustes" class="tab-content">
+        <!-- Toggle Autopilot -->
+        <div class="card" style="border-color:{% if outreach_ativo %}var(--green){% else %}var(--red){% endif %}33">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+                <div>
+                    <div class="card-title" style="margin-bottom:4px">Autopilot Outreach</div>
+                    <div style="font-size:11px;color:var(--dim)">
+                        {% if outreach_ativo %}
+                        Auto-import a cada 30 min · Execução a cada 5 min · WA às 09:30
+                        {% else %}
+                        Desativado — nenhuma ação automática será executada
+                        {% endif %}
+                    </div>
+                </div>
+                <button id="toggleOutreach" onclick="toggleOutreach()" style="padding:8px 18px;border-radius:10px;border:none;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;background:{% if outreach_ativo %}var(--red)15{% else %}var(--green)15{% endif %};color:{% if outreach_ativo %}var(--red){% else %}var(--green){% endif %};border:1px solid {% if outreach_ativo %}var(--red){% else %}var(--green){% endif %}33">
+                    {% if outreach_ativo %}Desativar{% else %}Ativar{% endif %}
+                </button>
+            </div>
+        </div>
+
+        <!-- Regras de Outreach -->
+        <div class="card">
+            <div class="card-title" style="display:flex;align-items:center;justify-content:space-between">
+                Regras de Outreach
+                <button onclick="document.getElementById('novaRegraForm').style.display=document.getElementById('novaRegraForm').style.display==='none'?'block':'none'" style="padding:4px 10px;border-radius:6px;border:1px solid var(--accent)33;background:var(--accent)10;color:var(--accent);font-size:10px;font-weight:700;cursor:pointer;font-family:inherit">+ Nova Regra</button>
+            </div>
+
+            <!-- Lista de regras -->
+            {% for regra in regras %}
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:6px">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                    <span style="font-size:12px;font-weight:700;color:#fff">{{ regra.nome }}</span>
+                    <div style="display:flex;gap:4px;align-items:center">
+                        <span class="tag" style="background:var(--purple)15;color:var(--purple)">P{{ regra.prioridade }}</span>
+                        <button onclick="toggleRegra({{ regra.id }}, {{ 'false' if regra.ativo else 'true' }})" class="tag" style="background:{% if regra.ativo %}var(--green){% else %}var(--mute){% endif %}15;color:{% if regra.ativo %}var(--green){% else %}var(--mute){% endif %};cursor:pointer;border:1px solid {% if regra.ativo %}var(--green){% else %}var(--mute){% endif %}22">{{ "Ativo" if regra.ativo else "Inativo" }}</button>
+                        <button onclick="deletarRegra({{ regra.id }})" style="background:var(--red)15;color:var(--red);border:1px solid var(--red)22;border-radius:6px;padding:2px 6px;font-size:9px;font-weight:700;cursor:pointer;font-family:inherit">✕</button>
+                    </div>
+                </div>
+                <!-- Condições -->
+                <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px">
+                    {% if regra.condicao %}
+                        {% if regra.condicao.get('tem_ifood') %}<span class="tag" style="background:var(--red)15;color:var(--red);border:1px solid var(--red)22">tem iFood</span>{% endif %}
+                        {% if regra.condicao.get('sem_delivery') %}<span class="tag" style="background:var(--yellow)15;color:var(--yellow);border:1px solid var(--yellow)22">Sem Delivery</span>{% endif %}
+                        {% if regra.condicao.get('score_min') %}<span class="tag" style="background:var(--blue)15;color:var(--blue);border:1px solid var(--blue)22">Score ≥ {{ regra.condicao.score_min }}</span>{% endif %}
+                        {% if not regra.condicao or regra.condicao == {} %}<span class="tag" style="background:var(--mute)15;color:var(--dim)">Match-all</span>{% endif %}
+                    {% else %}
+                        <span class="tag" style="background:var(--mute)15;color:var(--dim)">Match-all</span>
+                    {% endif %}
+                </div>
+                <!-- Ações -->
+                <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+                    {% if regra.acoes %}
+                        {% for acao in regra.acoes %}
+                        <span style="font-size:10px;color:var(--dim)">
+                            {% if acao.tipo == 'enviar_email' %}📧{% elif acao.tipo == 'reenviar_email' %}📧🔄{% elif acao.tipo == 'enviar_wa' %}💬{% elif acao.tipo == 'enviar_audio' %}🎙️{% endif %}
+                            {{ acao.tipo|replace('_',' ')|title }} D+{{ acao.delay_dias }}
+                            {% if acao.get('condicao') == 'nao_abriu' %}<span style="color:var(--yellow)">(se não abriu)</span>{% endif %}
+                        </span>
+                        {% if not loop.last %}<span style="color:var(--mute)">→</span>{% endif %}
+                        {% endfor %}
+                    {% else %}
+                        <span style="font-size:10px;color:var(--dim);font-style:italic">Usa lógica de tier existente</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+            {% if not regras %}
+            <div style="font-size:11px;color:var(--dim);text-align:center;padding:12px">Nenhuma regra configurada. Clique em "+ Nova Regra" para criar.</div>
+            {% endif %}
+
+            <!-- Formulário nova regra (oculto) -->
+            <div id="novaRegraForm" style="display:none;margin-top:10px;background:var(--bg);border:1px solid var(--accent)33;border-radius:10px;padding:12px">
+                <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px">Nova Regra</div>
+                <input type="text" id="regraNome" placeholder="Nome da regra" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:12px;margin-bottom:6px;font-family:inherit;outline:none">
+                <div style="display:flex;gap:6px;margin-bottom:6px">
+                    <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="regraIfood"> tem iFood</label>
+                    <label style="font-size:10px;color:var(--dim);display:flex;align-items:center;gap:4px"><input type="checkbox" id="regraSemDelivery"> Sem Delivery</label>
+                    <input type="number" id="regraScoreMin" placeholder="Score mín" style="width:70px;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:10px;font-family:inherit;outline:none">
+                </div>
+                <div style="font-size:10px;color:var(--dim);margin-bottom:4px">Ações (JSON): ex: [{"tipo":"enviar_email","delay_dias":0},{"tipo":"enviar_wa","delay_dias":3,"condicao":"nao_abriu"}]</div>
+                <textarea id="regraAcoes" rows="2" placeholder='[{"tipo":"enviar_email","delay_dias":0}]' style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:11px;margin-bottom:6px;font-family:monospace;outline:none;resize:vertical"></textarea>
+                <div style="display:flex;gap:6px;align-items:center">
+                    <input type="number" id="regraPrioridade" value="5" style="width:50px;padding:4px 6px;border-radius:6px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-size:11px;font-family:inherit;outline:none">
+                    <span style="font-size:10px;color:var(--dim)">Prioridade</span>
+                    <div style="flex:1"></div>
+                    <button onclick="criarRegra()" style="padding:6px 14px;border-radius:8px;border:none;background:var(--accent);color:var(--bg);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Salvar</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Configuração ativa -->
+        <div class="card">
+            <div class="card-title">Configuração ativa <span style="font-weight:400;font-size:10px;color:var(--dim)">(definida pelo aprendizado)</span></div>
+            <div class="config-grid">
+                <div class="config-item">
+                    <div class="config-label">Horário de envio</div>
+                    <div class="config-value">{{ config.horario_envio or "18:00-20:00" }}</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Tom da conversa</div>
+                    <div class="config-value">{{ config.tom_conversa or "Consultivo" }}</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Voz do áudio</div>
+                    <div class="config-value">{{ config.voz_audio or "Ara" }}</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Momento do áudio</div>
+                    <div class="config-value">{{ config.momento_audio or "1ª mensagem" }}</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Recontato</div>
+                    <div class="config-value">{{ config.recontato or "D+2" }}</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Aquecimento diário</div>
+                    <div class="config-value">{{ config.aquecimento_diario or 35 }}</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Nota mínima p/ WA</div>
+                    <div class="config-value">{{ config.nota_minima_wa or 60 }}</div>
+                </div>
+            </div>
+            <div class="config-note">Para mudar, converse com o agente na aba Chat.</div>
+        </div>
+
+        <!-- Limites de segurança -->
+        <div class="card">
+            <div class="card-title">Limites de segurança</div>
+            <div class="config-grid">
+                <div class="config-item">
+                    <div class="config-label">Emails/dia</div>
+                    <div class="limit-value">{{ metricas.emails_hoje }}/{{ config.limite_emails_dia or 100 }}</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Gasto voz/dia</div>
+                    <div class="limit-value">${{ "%.2f"|format(metricas.gasto_voz or 0) }}/${{ config.limite_gasto_voz or 5 }}</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Taxa rejeição</div>
+                    <div class="limit-value">{{ "%.1f"|format(metricas.taxa_bounce or 0) }}% <span style="font-weight:400;color:var(--dim)">(meta &lt;4%)</span></div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Descadastro</div>
+                    <div class="limit-value">100% respeitado</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">LGPD</div>
+                    <div class="limit-value">Ativo</div>
+                </div>
+                <div class="config-item">
+                    <div class="config-label">Max tentativas/lead</div>
+                    <div class="limit-value">3</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Infraestrutura -->
+        <div class="card">
+            <div class="card-title">Infraestrutura e custos</div>
+            <div class="infra-block">MOTOR:  Multi-Armed Bandit (epsilon-greedy)
+INFRA:  Fly.io (mesmo servidor SaaS) + PostgreSQL
+LLM:    Grok (xAI) — emails e WA personalizados
+VOZ:    Grok TTS — {{ config.voz_audio or "Ara" }}
+EMAIL:  Resend (grátis: 3k/mês)
+WA:     Evolution API (próprio)
+CUSTO:  R${{ metricas.custo }}/mês (créditos xAI)
+CRM:    Sales Autopilot (PostgreSQL)</div>
+        </div>
+
+        <!-- Link para CRM clássico -->
+        <a href="/" class="link-crm">📋 Abrir CRM Clássico (Busca, Ficha, Pipeline, Scanner)</a>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// TAB SWITCHING
+// ============================================================
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    event.target.classList.add('active');
+
+    // Carregar dados dinâmicos ao trocar de tab
+    if (tab === 'painel') carregarPainel();
+    if (tab === 'conversas') carregarConversas();
+}
+
+// ============================================================
+// CHAT (Brain)
+// ============================================================
+let chatHistorico = [];
+let chatEnviando = false;
+
+const chatMsgs = document.getElementById('chatMsgs');
+const chatInput = document.getElementById('chatInput');
+const chatSend = document.getElementById('chatSend');
+const suggestions = document.getElementById('suggestions');
+
+chatInput.addEventListener('input', () => {
+    chatSend.className = chatInput.value.trim() ? 'chat-send enabled' : 'chat-send disabled';
+});
+
+function enviarSugestao(btn) {
+    chatInput.value = btn.textContent;
+    enviarChat();
+}
+
+async function enviarChat() {
+    const texto = chatInput.value.trim();
+    if (!texto || chatEnviando) return;
+
+    chatEnviando = true;
+    chatInput.value = '';
+    chatSend.className = 'chat-send disabled';
+    suggestions.style.display = 'none';
+
+    // Mensagem do usuário
+    adicionarMsg('user', texto);
+    chatHistorico.push({role: 'user', content: texto});
+
+    // Typing indicator
+    const typing = document.createElement('div');
+    typing.className = 'typing';
+    typing.textContent = 'Pensando...';
+    chatMsgs.appendChild(typing);
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+
+    try {
+        const res = await fetch('/api/admin/brain/chat', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                mensagem: texto,
+                historico: chatHistorico.slice(-10)
+            })
+        });
+        const data = await res.json();
+        typing.remove();
+
+        const resposta = data.resposta || data.erro || 'Sem resposta';
+        adicionarMsg('bot', resposta);
+        chatHistorico.push({role: 'assistant', content: resposta});
+
+        if (data.funcoes_chamadas && data.funcoes_chamadas.length > 0) {
+            const funcoes = '🔧 Funções: ' + data.funcoes_chamadas.join(', ');
+            adicionarMsg('system', funcoes);
+        }
+    } catch (err) {
+        typing.remove();
+        adicionarMsg('bot', '❌ Erro de conexão: ' + err.message);
+    }
+
+    chatEnviando = false;
+}
+
+function adicionarMsg(tipo, texto) {
+    const div = document.createElement('div');
+
+    if (tipo === 'system') {
+        div.className = 'msg';
+        div.style.alignSelf = 'center';
+        div.innerHTML = `<div class="msg-bubble msg-bubble-system">${escHtml(texto)}</div>`;
+    } else if (tipo === 'user') {
+        div.className = 'msg msg-user';
+        div.innerHTML = `<div><div class="msg-bubble msg-bubble-user">${escHtml(texto)}</div></div>`;
+    } else {
+        div.className = 'msg msg-bot';
+        div.innerHTML = `
+            <div class="msg-avatar msg-avatar-bot">🤖</div>
+            <div>
+                <div class="msg-label" style="color:var(--accent)">Sales Autopilot</div>
+                <div class="msg-bubble msg-bubble-bot">${formatarMarkdown(texto)}</div>
+            </div>`;
+    }
+
+    chatMsgs.appendChild(div);
+    chatMsgs.scrollTop = chatMsgs.scrollHeight;
+}
+
+function escHtml(t) {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+}
+
+function formatarMarkdown(t) {
+    let s = escHtml(t);
+    s = s.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    s = s.replace(/`([^`]+)`/g, '<code style="background:var(--bg);padding:1px 4px;border-radius:3px;font-size:11px">$1</code>');
+    return s;
+}
+
+// ============================================================
+// PAINEL (carrega via API)
+// ============================================================
+async function carregarPainel() {
+    // Dados já renderizados pelo Jinja2 no carregamento inicial
+    // Refresh via AJAX quando necessário
+}
+
+// ============================================================
+// CONVERSAS
+// ============================================================
+let conversaAtual = null;
+
+async function carregarConversas() {
+    try {
+        const res = await fetch('/api/autopilot/conversas');
+        if (!res.ok) return;
+        const data = await res.json();
+        // Re-render seria complexo, usar reload simples por enquanto
+    } catch(e) {}
+}
+
+async function abrirConversa(id) {
+    document.getElementById('convLista').style.display = 'none';
+    document.getElementById('convDetalhe').style.display = 'block';
+
+    try {
+        const res = await fetch('/api/autopilot/conversa/' + id);
+        if (!res.ok) throw new Error('Erro ao carregar conversa');
+        const data = await res.json();
+        conversaAtual = data;
+        renderizarConversa(data);
+    } catch(e) {
+        document.getElementById('convMsgs').innerHTML =
+            '<div style="color:var(--red);text-align:center;padding:20px">' + e.message + '</div>';
+    }
+}
+
+function renderizarConversa(data) {
+    const scoreEl = document.getElementById('convDetalheScore');
+    const score = data.score || 0;
+    scoreEl.textContent = score;
+    scoreEl.style.background = (score >= 80 ? 'var(--red)' : score >= 60 ? 'var(--yellow)' : 'var(--mute)') + '15';
+    scoreEl.style.color = score >= 80 ? 'var(--red)' : score >= 60 ? 'var(--yellow)' : 'var(--mute)';
+
+    document.getElementById('convDetalheNome').textContent = data.lead_nome || 'Lead';
+
+    const situEl = document.getElementById('convDetalheSituacao');
+    situEl.textContent = data.situacao || 'ativa';
+    situEl.style.background = 'var(--accent)15';
+    situEl.style.color = 'var(--accent)';
+
+    const modoEl = document.getElementById('convDetalheModo');
+    const isAuto = data.modo === 'auto';
+    modoEl.textContent = isAuto ? 'Automático' : 'Você controla';
+    modoEl.style.background = (isAuto ? 'var(--cyan)' : 'var(--yellow)') + '15';
+    modoEl.style.color = isAuto ? 'var(--cyan)' : 'var(--yellow)';
+
+    // Controles
+    const controles = document.getElementById('convControles');
+    if (isAuto) {
+        controles.innerHTML = `
+            <button class="conv-control-btn" style="background:#d2992218;color:var(--yellow);border:1px solid #d2992233" onclick="assumirControle(${data.id})">🎯 Assumir controle</button>
+            <button class="conv-control-btn" style="background:var(--red)18;color:var(--red);border:1px solid var(--red)33;flex:none;width:auto;padding:8px 14px" onclick="pausarConversa(${data.id})">⏸ Pausar</button>`;
+    } else {
+        controles.innerHTML = `
+            <button class="conv-control-btn" style="background:#3fb95018;color:var(--green);border:1px solid #3fb95033" onclick="devolverControle(${data.id})">🤖 Devolver ao robô</button>
+            <button class="conv-control-btn" style="background:var(--red)18;color:var(--red);border:1px solid var(--red)33;flex:none;width:auto;padding:8px 14px" onclick="pausarConversa(${data.id})">⏸ Pausar</button>`;
+    }
+
+    // Alerta manual
+    document.getElementById('convAlertaManual').style.display = isAuto ? 'none' : 'block';
+    document.getElementById('convInputManual').style.display = isAuto ? 'none' : 'flex';
+
+    // Mensagens
+    const msgsEl = document.getElementById('convMsgs');
+    msgsEl.innerHTML = '';
+
+    (data.mensagens || []).forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'msg';
+
+        if (m.tipo === 'sistema') {
+            div.style.alignSelf = 'center';
+            div.innerHTML = `<div class="msg-bubble msg-bubble-system">${escHtml(m.conteudo)}</div>`;
+        } else if (m.tipo === 'lead') {
+            div.className = 'msg msg-bot';
+            div.innerHTML = `<div>
+                <div class="msg-label" style="color:var(--green)">Lead</div>
+                <div class="msg-bubble msg-bubble-lead">${escHtml(m.conteudo)}</div>
+                <div class="msg-time">${m.hora || ''}</div>
+            </div>`;
+        } else if (m.tipo === 'audio') {
+            div.className = 'msg msg-bot';
+            div.innerHTML = `<div class="msg-avatar msg-avatar-bot">🤖</div><div>
+                <div class="msg-label" style="color:var(--purple)">Robô · Áudio TTS</div>
+                <div class="msg-bubble msg-bubble-audio">🎤 [Áudio ${m.duracao || ''}s — Voz ${m.voz || 'Ara'}]</div>
+                <div class="msg-time">${m.hora || ''}</div>
+            </div>`;
+        } else {
+            div.className = 'msg msg-bot';
+            div.innerHTML = `<div class="msg-avatar msg-avatar-bot">🤖</div><div>
+                <div class="msg-label" style="color:var(--accent)">Robô (auto)</div>
+                <div class="msg-bubble msg-bubble-bot">${escHtml(m.conteudo)}</div>
+                <div class="msg-time">${m.hora || ''}</div>
+            </div>`;
+        }
+
+        msgsEl.appendChild(div);
+    });
+
+    msgsEl.scrollTop = msgsEl.scrollHeight;
+}
+
+function fecharConversa() {
+    document.getElementById('convLista').style.display = 'block';
+    document.getElementById('convDetalhe').style.display = 'none';
+    conversaAtual = null;
+}
+
+async function assumirControle(id) {
+    await fetch('/api/autopilot/conversa/' + id + '/assumir', {method: 'POST'});
+    abrirConversa(id);
+}
+
+async function devolverControle(id) {
+    await fetch('/api/autopilot/conversa/' + id + '/devolver', {method: 'POST'});
+    abrirConversa(id);
+}
+
+async function pausarConversa(id) {
+    await fetch('/api/autopilot/conversa/' + id + '/pausar', {method: 'POST'});
+    abrirConversa(id);
+}
+
+async function enviarManual() {
+    if (!conversaAtual) return;
+    const input = document.getElementById('convManualInput');
+    const texto = input.value.trim();
+    if (!texto) return;
+
+    input.value = '';
+    try {
+        await fetch('/api/autopilot/conversa/' + conversaAtual.id + '/enviar', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mensagem: texto})
+        });
+        abrirConversa(conversaAtual.id);
+    } catch(e) {}
+}
+
+// ============================================================
+// REGRAS DE OUTREACH
+// ============================================================
+let outreachAtivo = {{ 'true' if outreach_ativo else 'false' }};
+
+async function toggleOutreach() {
+    const btn = document.getElementById('toggleOutreach');
+    btn.disabled = true;
+    btn.textContent = 'Aguarde...';
+
+    try {
+        const endpoint = outreachAtivo ? '/api/outreach/desativar' : '/api/outreach/ativar';
+        const res = await fetch(endpoint, {method: 'POST'});
+        if (!res.ok) throw new Error('Erro ao alterar status');
+        // Recarrega a página para atualizar estado Jinja2
+        location.reload();
+    } catch(e) {
+        alert('Erro: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = outreachAtivo ? 'Desativar' : 'Ativar';
+    }
+}
+
+async function toggleRegra(id, novoEstado) {
+    try {
+        const res = await fetch('/api/outreach/regras/' + id, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ativo: novoEstado})
+        });
+        if (!res.ok) throw new Error('Erro ao alterar regra');
+        location.reload();
+    } catch(e) {
+        alert('Erro: ' + e.message);
+    }
+}
+
+async function deletarRegra(id) {
+    if (!confirm('Tem certeza que deseja excluir esta regra?')) return;
+    try {
+        const res = await fetch('/api/outreach/regras/' + id, {method: 'DELETE'});
+        if (!res.ok) throw new Error('Erro ao excluir regra');
+        location.reload();
+    } catch(e) {
+        alert('Erro: ' + e.message);
+    }
+}
+
+async function criarRegra() {
+    const nome = document.getElementById('regraNome').value.trim();
+    if (!nome) { alert('Informe o nome da regra'); return; }
+
+    // Montar condição
+    const condicao = {};
+    if (document.getElementById('regraIfood').checked) condicao.tem_ifood = true;
+    if (document.getElementById('regraSemDelivery').checked) condicao.sem_delivery = true;
+    const scoreMin = parseInt(document.getElementById('regraScoreMin').value);
+    if (scoreMin > 0) condicao.score_min = scoreMin;
+
+    // Montar ações
+    let acoes = null;
+    const acoesText = document.getElementById('regraAcoes').value.trim();
+    if (acoesText) {
+        try {
+            acoes = JSON.parse(acoesText);
+        } catch(e) {
+            alert('JSON de ações inválido: ' + e.message);
+            return;
+        }
+    }
+
+    const prioridade = parseInt(document.getElementById('regraPrioridade').value) || 5;
+
+    try {
+        const res = await fetch('/api/outreach/regras', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({nome, condicao, acoes, prioridade})
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.erro || 'Erro ao criar regra');
+        }
+        location.reload();
+    } catch(e) {
+        alert('Erro: ' + e.message);
+    }
+}
+</script>
+</body>
+</html>

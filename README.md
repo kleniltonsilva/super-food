@@ -11,10 +11,10 @@ Sistema multi-tenant completo para gestao de restaurantes com entregas inteligen
 
 ## Visao Geral
 
-O Derekh Food e composto por **8 aplicacoes principais**, todas em React + FastAPI:
+O Derekh Food e composto por **10 aplicacoes principais**:
 
-| Aplicacao | Tecnologia | Rota | Descricao |
-|-----------|------------|------|-----------|
+| Aplicacao | Tecnologia | Rota/URL | Descricao |
+|-----------|------------|----------|-----------|
 | **API Backend** | FastAPI + Uvicorn | `:8000` | API REST, WebSockets, serve React SPAs |
 | **Super Admin** | React 19 | `/superadmin` | Painel administrativo do SaaS com analytics |
 | **Painel Restaurante** | React 19 | `/admin` | Gestao completa do restaurante (22+ paginas) |
@@ -23,6 +23,8 @@ O Derekh Food e composto por **8 aplicacoes principais**, todas em React + FastA
 | **App Garcom (PWA)** | React 19 | `/garcom` | Atendimento mesa, pedidos por etapa |
 | **Site Cliente** | React 19 | `/cliente/{codigo}` | Pedido online com 8 layouts tematicos |
 | **Bridge Agent** | Python + Win32 | Windows exe | Intercepta impressoes de iFood/Rappi/etc. |
+| **Sales Autopilot CRM** | FastAPI + Jinja2 | `derekh-crm.fly.dev` | CRM B2B prospeccao automatica (email + WA + IA) |
+| **Evolution API** | Self-hosted | `derekh-evolution.fly.dev` | WhatsApp gateway (Baileys) |
 
 **Versao atual: 4.0.0 (24/03/2026) — Em producao: https://superfood-api.fly.dev**
 
@@ -32,7 +34,7 @@ O Derekh Food e composto por **8 aplicacoes principais**, todas em React + FastA
 |--------|-----------|
 | Backend API | Python 3.12+ / FastAPI / Uvicorn |
 | ORM | SQLAlchemy 2.0+ |
-| Migrations | Alembic (33 migrations) |
+| Migrations | Alembic (34 migrations) |
 | Banco (dev) | SQLite |
 | Banco (prod) | PostgreSQL 16+ / PgBouncer |
 | Frontend | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
@@ -788,6 +790,8 @@ services:
 - **Sprint 18** — KDS / Comanda Digital: app PWA cozinha, CRUD cozinheiros, auto-criacao pedidos, WebSocket tempo real, sons Web Audio API, 2 tabs (Preparo + Despacho) (migration 029)
 - **Sprint 19** — App Garcom: PWA atendimento mesa, sessoes, pedidos por etapa (course), transferencia mesa, itens esgotados, WebSocket garcom (migration 032)
 - **Sprint 21** — Bridge Agent + Smart Client Lookup: interceptacao impressoes iFood/Rappi/14 plataformas, Groq IA (Llama 3.3 70B), ciclo auto-aprendizado de patterns, busca cliente por telefone (migration 033)
+- **Sprint 22** — Feature Flags por Plano: 22 features em 4 tiers (Basico/Essencial/Avancado/Premium), 38 endpoints protegidos, useFeatureFlag hook, UpgradePrompt UI, landing page dinamica (migration 034)
+- **Sales Autopilot CRM Automatico** — Email template branded (header Derekh + footer site/WA + unsub), regras de outreach configuráveis (CRUD + prioridade + match-all), auto-import leads a cada 30 min, WA inteligente as 09:30 (fora horario restaurante), deteccao trial + notificacao ao dono, UI regras no Autopilot dashboard
 
 ### v4.0.0-rc (11/03/2026) — Mega Migracao React + Features Avancadas
 - **100% React** — Zero Streamlit. Todas 4 aplicacoes em React 19 + TypeScript
@@ -847,8 +851,9 @@ services:
 - [x] Fase 15: KDS / Comanda Digital (app cozinha PWA, WebSocket, sons) ✅
 - [x] Fase 16: App Garcom (atendimento mesa, sessoes, pedidos por etapa) ✅
 - [x] Fase 17: Bridge Agent + Smart Client Lookup (interceptacao impressoes, Groq IA, auto-aprendizado) ✅
-- [ ] Fase 18: Bot WhatsApp IA (pedido por conversa, STT, Pix integrado)
-- [ ] Fase 19: Sales Autopilot (CRM B2B, prospeccao automatica)
+- [x] Fase 18: Feature Flags por Plano (22 features, 4 tiers, 38 endpoints protegidos) ✅
+- [x] Fase 19: Sales Autopilot CRM Automatico (email branded + regras outreach + WA inteligente + auto-import + trial detection) ✅
+- [ ] Fase 20: WhatsApp Humanoide (atendimento IA humanizado 24h, sem menus robotizados — Premium incluso, demais +R$99,45/mês)
 
 ---
 

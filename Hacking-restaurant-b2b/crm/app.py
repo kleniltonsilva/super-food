@@ -8,16 +8,20 @@ import math
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import hashlib
+import secrets
+from starlette.middleware.base import BaseHTTPMiddleware
+
 from fastapi import FastAPI, Request, Form, Query, BackgroundTasks
-from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from crm.database import (
-    init_pool, close_pool, init_schema,
+    init_pool, close_pool, init_schema, criar_lead_quiz,
     kpis_dashboard, funil_pipeline, distribuicao_segmento,
     top_cidades, followups_hoje, leads_quentes_sem_contato,
-    stats_delivery, stats_delivery_por_cidade, cidades_escaneadas_ifood,
+    stats_delivery, stats_delivery_por_cidade, cidades_escaneadas_ifood, top_categorias_ifood,
     buscar_leads, listar_ufs_disponiveis, listar_cidades_disponiveis,
     obter_lead, obter_interacoes_lead, obter_socios_lead,
     atualizar_status_pipeline, agendar_followup,
@@ -41,6 +45,15 @@ from crm.database import (
     # Agente (Fase 7)
     listar_experimentos, listar_decisoes_pendentes,
     aprovar_decisao, rejeitar_decisao, obter_ultimo_relatorio,
+    # Autopilot
+    autopilot_metricas, autopilot_funil, autopilot_config,
+    autopilot_decisoes_recentes, autopilot_leads_quentes,
+    autopilot_conversas_formatadas, autopilot_conversa_detalhe,
+    atualizar_conversa_wa,
+    # Outreach Regras
+    listar_outreach_regras_todas, criar_outreach_regra,
+    atualizar_outreach_regra, deletar_outreach_regra,
+    leads_novos_sem_outreach,
 )
 from crm.models import (
     PIPELINE_STATUS, PIPELINE_LABELS, PIPELINE_CORES,
@@ -57,7 +70,75 @@ from db_pg import (
     atualizar_scan_job,
 )
 
+# ============================================================
+# AUTENTICAÇÃO — Senha de acesso ao CRM
+# ============================================================
+CRM_PASSWORD = os.environ.get("CRM_PASSWORD", "893618@")
+CRM_SESSION_SECRET = os.environ.get("CRM_SESSION_SECRET", secrets.token_hex(32))
+
+# Sessões ativas (token → True)
+_active_sessions: dict[str, bool] = {}
+
+# Rotas públicas (sem autenticação)
+PUBLIC_PATHS = {
+    "/login",
+    "/tracking/",      # Pixel/clique/unsub (prefixo)
+    "/webhooks/",      # Webhooks Resend (prefixo)
+    "/wa-sales/webhook",  # Webhook WhatsApp (prefixo)
+    "/api/leads/quiz",    # Quiz diagnóstico landing page (público)
+}
+
+
+def _is_public(path: str) -> bool:
+    """Verifica se o path é público (sem autenticação)."""
+    if path == "/login":
+        return True
+    for prefix in PUBLIC_PATHS:
+        if prefix.endswith("/") and path.startswith(prefix):
+            return True
+    if path == "/wa-sales/webhook":
+        return True
+    if path == "/api/leads/quiz":
+        return True
+    return False
+
+
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+
+        # Rotas públicas passam direto
+        if _is_public(path) or path.startswith("/static"):
+            return await call_next(request)
+
+        # Verificar cookie de sessão
+        session_token = request.cookies.get("crm_session", "")
+        if session_token and session_token in _active_sessions:
+            return await call_next(request)
+
+        # Não autenticado → redirecionar para login
+        if request.method == "GET":
+            return RedirectResponse("/login", status_code=302)
+        else:
+            return JSONResponse({"erro": "Não autenticado"}, status_code=401)
+
+
 app = FastAPI(title="Derekh CRM")
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://superfood-api.fly.dev",
+        "https://derekhfood.com.br",
+        "http://localhost:8000",
+        "http://localhost:5173",
+    ],
+    allow_methods=["POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
+)
+app.add_middleware(AuthMiddleware)
 
 CRM_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -118,6 +199,8 @@ async def startup():
     import asyncio
     asyncio.create_task(_outreach_loop())
     asyncio.create_task(_agente_loop())
+    asyncio.create_task(_validacao_loop())
+    asyncio.create_task(_auto_import_loop())
 
 
 async def _outreach_loop():
@@ -153,9 +236,133 @@ async def _agente_loop():
                 print(f"[AGENTE-WORKER] Erro: {e}")
         await asyncio.sleep(60)  # Verifica a cada 1 minuto
 
+async def _validacao_loop():
+    """Worker que valida contatos de leads a cada 6 horas.
+    Roda em thread separada para NÃO bloquear o event loop do uvicorn."""
+    import asyncio
+    await asyncio.sleep(120)  # Esperar app inicializar
+    while True:
+        try:
+            loop = asyncio.get_running_loop()
+            from crm.contact_validator import validar_lote
+            stats = await loop.run_in_executor(
+                None, lambda: validar_lote(limite=200)
+            )
+            if stats.get("validados", 0) > 0:
+                print(f"[VALIDATOR-WORKER] {stats}")
+        except Exception as e:
+            print(f"[VALIDATOR-WORKER] Erro: {e}")
+        await asyncio.sleep(21600)  # 6 horas
+
+
+async def _auto_import_loop():
+    """Worker que auto-importa leads novos para outreach a cada 30 minutos.
+    Verifica se outreach está ativo, busca leads sem ações e cria sequências."""
+    import asyncio
+    await asyncio.sleep(60)  # Esperar app inicializar
+    while True:
+        try:
+            from crm.database import obter_configuracao, leads_novos_sem_outreach
+            from crm.outreach_engine import criar_sequencia_com_regras
+            from crm.scoring import calcular_tier
+
+            outreach_ativo = (obter_configuracao("outreach_ativo") or "false").lower() == "true"
+            if not outreach_ativo:
+                await asyncio.sleep(1800)
+                continue
+
+            leads = leads_novos_sem_outreach(50)
+            if not leads:
+                await asyncio.sleep(1800)
+                continue
+
+            total_acoes = 0
+            for lead in leads:
+                acoes = criar_sequencia_com_regras(lead["id"], lead)
+                total_acoes += len(acoes)
+
+            if leads:
+                print(f"[AUTO-IMPORT] Importados {len(leads)} leads, {total_acoes} ações criadas")
+
+        except Exception as e:
+            print(f"[AUTO-IMPORT] Erro: {e}")
+
+        await asyncio.sleep(1800)  # 30 minutos
+
+
 @app.on_event("shutdown")
 async def shutdown():
     close_pool()
+
+
+# ============================================================
+# LOGIN / LOGOUT
+# ============================================================
+
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request, erro: str = ""):
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Login — Derekh CRM</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script>
+            tailwind.config = {{
+                theme: {{ extend: {{ colors: {{
+                    dk: {{ bg: '#060a10', bg2: '#0d1219', bg3: '#151c26', accent: '#00d4aa', text: '#e6edf3', dim: '#7d8590', border: '#1e2531' }}
+                }} }} }}
+            }}
+        </script>
+    </head>
+    <body class="bg-dk-bg min-h-screen flex items-center justify-center">
+        <div class="bg-dk-bg2 border border-dk-border rounded-2xl p-8 w-full max-w-sm shadow-xl">
+            <div class="text-center mb-6">
+                <div class="text-3xl font-bold text-dk-accent mb-1">Derekh CRM</div>
+                <p class="text-dk-dim text-sm">Sales Autopilot</p>
+            </div>
+            {'<div class="bg-red-900/30 border border-red-700 rounded-lg p-3 mb-4 text-red-300 text-sm text-center">Senha incorreta</div>' if erro else ''}
+            <form method="POST" action="/login">
+                <label class="block text-dk-dim text-xs uppercase tracking-wider mb-2">Senha de acesso</label>
+                <input type="password" name="senha" autofocus required
+                    class="w-full bg-dk-bg3 border border-dk-border rounded-lg px-4 py-3 text-dk-text focus:outline-none focus:border-dk-accent transition mb-4"
+                    placeholder="Digite a senha">
+                <button type="submit"
+                    class="w-full bg-dk-accent hover:bg-dk-accent/80 text-dk-bg font-bold py-3 rounded-lg transition">
+                    Entrar
+                </button>
+            </form>
+        </div>
+    </body>
+    </html>
+    """
+    return HTMLResponse(html)
+
+
+@app.post("/login")
+async def login_submit(senha: str = Form(...)):
+    if senha.strip() == CRM_PASSWORD:
+        token = secrets.token_hex(32)
+        _active_sessions[token] = True
+        response = RedirectResponse("/", status_code=302)
+        response.set_cookie(
+            key="crm_session", value=token,
+            httponly=True, samesite="lax",
+            max_age=86400 * 7,  # 7 dias
+        )
+        return response
+    return RedirectResponse("/login?erro=1", status_code=302)
+
+
+@app.get("/logout")
+async def logout(request: Request):
+    token = request.cookies.get("crm_session", "")
+    _active_sessions.pop(token, None)
+    response = RedirectResponse("/login", status_code=302)
+    response.delete_cookie("crm_session")
+    return response
 
 
 # ============================================================
@@ -175,6 +382,7 @@ async def dashboard(request: Request):
     delivery = stats_delivery()
     delivery_cidades = stats_delivery_por_cidade(50)
     cidades_ifood = cidades_escaneadas_ifood()
+    ifood_categorias = top_categorias_ifood(10)
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
@@ -187,11 +395,13 @@ async def dashboard(request: Request):
         "delivery": delivery,
         "delivery_cidades": delivery_cidades,
         "cidades_ifood": cidades_ifood,
+        "ifood_categorias": ifood_categorias,
         "funil_json": json.dumps(funil, default=str),
         "segmentos_json": json.dumps(segmentos, default=str),
         "cidades_json": json.dumps(cidades, default=str),
         "delivery_json": json.dumps(delivery, default=str),
         "delivery_cidades_json": json.dumps(delivery_cidades, default=str),
+        "ifood_categorias_json": json.dumps(ifood_categorias, default=str),
         "pagina_ativa": "dashboard",
     })
 
@@ -978,22 +1188,103 @@ async def wa_sales_webhook_verify(request: Request):
     return PlainTextResponse("Forbidden", status_code=403)
 
 
+# Deduplicação: cache de message IDs processados (TTL ~5 min)
+_webhook_msg_ids = {}
+_WEBHOOK_DEDUP_MAX = 500
+
+# Números dos próprios bots — ignorar para evitar loop cross-instance
+# (quando bot A envia para número de bot B, bot B recebe como incoming e responderia → loop infinito)
+_BOT_PHONE_NUMBERS = set()
+
+
+def _init_bot_phone_numbers():
+    """Carrega números dos bots conectados ao Evolution API."""
+    import re
+    nums = [
+        os.environ.get("EVOLUTION_PHONE_1", "554599713063"),    # derekh-whatsapp
+        os.environ.get("EVOLUTION_PHONE_2", "5511971765565"),   # derekh-inbound
+    ]
+    for n in nums:
+        clean = re.sub(r"\D", "", n)
+        if clean:
+            _BOT_PHONE_NUMBERS.add(clean)
+
+
+_init_bot_phone_numbers()
+
+
 @app.post("/wa-sales/webhook")
 async def wa_sales_webhook(request: Request):
-    """Webhook WhatsApp Cloud API — mensagem recebida do lead."""
+    """Webhook WhatsApp — suporta Evolution API + Meta Cloud API."""
     from crm.wa_sales_bot import processar_resposta_wa, verificar_webhook_meta
+    import time
 
     raw_body = await request.body()
+    body = json.loads(raw_body)
 
-    # Verificar assinatura HMAC-SHA256 (se configurado)
+    event = body.get("event", "")
+
+    # --- EVOLUTION API FORMAT ---
+    if event == "messages.upsert":
+        data = body.get("data", {})
+        key = data.get("key", {})
+
+        # Extrair nome da instância (para responder pelo mesmo número)
+        instance = body.get("instance", "")
+
+        # Ignorar mensagens enviadas por nós (fromMe=true)
+        if key.get("fromMe"):
+            return JSONResponse({"status": "ok"})
+
+        # Deduplicação por message ID
+        msg_id = key.get("id", "")
+        if msg_id:
+            now = time.time()
+            if msg_id in _webhook_msg_ids:
+                return JSONResponse({"status": "ok"})  # Já processado
+            _webhook_msg_ids[msg_id] = now
+            # Limpar cache antigo
+            if len(_webhook_msg_ids) > _WEBHOOK_DEDUP_MAX:
+                cutoff = now - 300  # 5 min
+                _webhook_msg_ids.clear()
+
+        # Extrair número (remoteJid: "5511999999999@s.whatsapp.net")
+        jid = key.get("remoteJid", "")
+        numero = jid.split("@")[0] if "@" in jid else ""
+
+        # Ignorar grupos
+        if "@g.us" in jid:
+            return JSONResponse({"status": "ok"})
+
+        # Ignorar mensagens vindas dos próprios números do bot (evita loop cross-instance)
+        if numero in _BOT_PHONE_NUMBERS:
+            print(f"[WA-WEBHOOK] [{instance}] IGNORANDO msg do próprio bot: {numero}")
+            return JSONResponse({"status": "ok"})
+
+        # Extrair texto da mensagem
+        msg = data.get("message", {})
+        texto = (
+            msg.get("conversation")
+            or msg.get("extendedTextMessage", {}).get("text")
+            or ""
+        )
+
+        if numero and texto:
+            print(f"[WA-WEBHOOK] [{instance}] {numero} -> {texto[:80]}")
+            processar_resposta_wa(numero, texto, instance=instance)
+
+        return JSONResponse({"status": "ok"})
+
+    # Ignorar outros eventos Evolution (CONNECTION_UPDATE, presence, etc.)
+    if event:
+        return JSONResponse({"status": "ok"})
+
+    # --- META CLOUD API FORMAT ---
+    # {object: "whatsapp_business_account", entry: [{changes: [{value: {messages: [...]}}]}]}
     signature = request.headers.get("X-Hub-Signature-256", "")
     if signature and not verificar_webhook_meta(raw_body, signature):
         return JSONResponse({"erro": "Assinatura inválida"}, status_code=403)
 
-    body = json.loads(raw_body)
-
-    # Meta Cloud API format:
-    # {object: "whatsapp_business_account", entry: [{changes: [{value: {messages: [...]}}]}]}
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
@@ -1003,7 +1294,6 @@ async def wa_sales_webhook(request: Request):
                 if msg_type == "text":
                     texto = msg.get("text", {}).get("body", "")
                 elif msg_type == "interactive":
-                    # Resposta de botão/lista
                     texto = (msg.get("interactive", {}).get("button_reply", {}).get("title", "")
                              or msg.get("interactive", {}).get("list_reply", {}).get("title", ""))
                 else:
@@ -1011,7 +1301,6 @@ async def wa_sales_webhook(request: Request):
                 if numero and texto:
                     processar_resposta_wa(numero, texto)
 
-    # Meta espera 200 rápido
     return JSONResponse({"status": "ok"})
 
 
@@ -1038,6 +1327,85 @@ async def wa_sales_conversa_detalhe(conversa_id: int, request: Request):
         "request": request,
         "conversa": conv,
     })
+
+
+# ============================================================
+# CONTACT VALIDATOR
+# ============================================================
+
+@app.post("/api/validar/{lead_id}")
+async def api_validar_lead(lead_id: int):
+    """Valida contatos de um lead específico."""
+    from crm.contact_validator import validar_contatos_lead
+    resultado = validar_contatos_lead(lead_id)
+    if resultado.get("erro"):
+        return JSONResponse(resultado, status_code=404)
+    return JSONResponse(resultado)
+
+
+@app.post("/api/validar/lote")
+async def api_validar_lote(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    cidade: str = Query(""), uf: str = Query(""), limite: int = Query(500),
+):
+    """Valida contatos em lote (background)."""
+    from crm.contact_validator import validar_lote
+    background_tasks.add_task(
+        validar_lote,
+        cidade=cidade if cidade else None,
+        uf=uf if uf else None,
+        limite=limite,
+    )
+    return JSONResponse({"ok": True, "msg": f"Validação em background iniciada (limite={limite})"})
+
+
+# ============================================================
+# QUIZ DIAGNÓSTICO — INBOUND LANDING PAGE
+# ============================================================
+
+@app.post("/api/leads/quiz")
+async def api_lead_quiz(request: Request):
+    """Recebe dados do quiz diagnóstico da landing page. Rota pública."""
+    import re
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "erro": "JSON inválido"}, status_code=400)
+
+    nome = (body.get("nome") or "").strip()
+    nome_restaurante = (body.get("nome_restaurante") or "").strip()
+    tipo_restaurante = (body.get("tipo_restaurante") or "").strip()
+    whatsapp_raw = (body.get("whatsapp") or "").strip()
+    email = (body.get("email") or "").strip()
+    pedidos_dia = (body.get("pedidos_dia") or "").strip()
+    respostas = body.get("respostas", {})
+    diagnostico = body.get("diagnostico", {})
+
+    if not whatsapp_raw:
+        return JSONResponse({"ok": False, "erro": "WhatsApp obrigatório"}, status_code=400)
+
+    # Normalizar WhatsApp — só dígitos, prefixar 55 se necessário
+    whatsapp = re.sub(r"\D", "", whatsapp_raw)
+    if len(whatsapp) <= 11:
+        whatsapp = "55" + whatsapp
+
+    # Criar lead no CRM
+    try:
+        lead_id = criar_lead_quiz({
+            "nome": nome,
+            "nome_restaurante": nome_restaurante,
+            "tipo_restaurante": tipo_restaurante,
+            "whatsapp": whatsapp,
+            "email": email,
+            "pedidos_dia": pedidos_dia,
+            "respostas": respostas,
+            "diagnostico": diagnostico,
+        })
+        return JSONResponse({"ok": True, "lead_id": lead_id})
+    except Exception as e:
+        print(f"[QUIZ] Erro ao criar lead: {e}")
+        return JSONResponse({"ok": False, "erro": str(e)}, status_code=500)
 
 
 # ============================================================
@@ -1096,3 +1464,208 @@ async def api_agente_relatorio():
     """Último relatório do agente."""
     rel = obter_ultimo_relatorio()
     return JSONResponse(json.loads(json.dumps(rel or {}, default=str)))
+
+
+# ============================================================
+# OUTREACH REGRAS — API CRUD
+# ============================================================
+
+@app.get("/api/outreach/regras")
+async def api_outreach_regras():
+    """Lista todas as regras de outreach."""
+    regras = listar_outreach_regras_todas()
+    return JSONResponse(json.loads(json.dumps(regras, default=str)))
+
+
+@app.post("/api/outreach/regras")
+async def api_criar_outreach_regra(request: Request):
+    """Cria nova regra de outreach."""
+    body = await request.json()
+    nome = body.get("nome", "").strip()
+    condicao = body.get("condicao", {})
+    acoes = body.get("acoes")
+    prioridade = int(body.get("prioridade", 0))
+    if not nome:
+        return JSONResponse({"erro": "Nome obrigatório"}, status_code=400)
+    regra_id = criar_outreach_regra(nome, condicao, acoes, prioridade)
+    return JSONResponse({"ok": True, "id": regra_id})
+
+
+@app.put("/api/outreach/regras/{regra_id}")
+async def api_atualizar_outreach_regra(regra_id: int, request: Request):
+    """Atualiza regra de outreach."""
+    body = await request.json()
+    ok = atualizar_outreach_regra(regra_id, **body)
+    if not ok:
+        return JSONResponse({"erro": "Regra não encontrada"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/outreach/regras/{regra_id}")
+async def api_deletar_outreach_regra(regra_id: int):
+    """Deleta regra de outreach."""
+    ok = deletar_outreach_regra(regra_id)
+    if not ok:
+        return JSONResponse({"erro": "Regra não encontrada"}, status_code=404)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/outreach/ativar")
+async def api_outreach_ativar():
+    """Ativa outreach automático."""
+    salvar_configuracao("outreach_ativo", "true")
+    return JSONResponse({"ok": True, "outreach_ativo": True})
+
+
+@app.post("/api/outreach/desativar")
+async def api_outreach_desativar():
+    """Desativa outreach automático."""
+    salvar_configuracao("outreach_ativo", "false")
+    return JSONResponse({"ok": True, "outreach_ativo": False})
+
+
+# ============================================================
+# SALES AUTOPILOT — INTERFACE PRINCIPAL
+# ============================================================
+
+@app.get("/autopilot", response_class=HTMLResponse)
+async def autopilot_page(request: Request):
+    """Sales Autopilot — interface principal com 4 abas."""
+    metricas = autopilot_metricas()
+    funil = autopilot_funil()
+    config = autopilot_config()
+    decisoes = autopilot_decisoes_recentes(10)
+    leads_quentes = autopilot_leads_quentes(10)
+    conversas = autopilot_conversas_formatadas(30)
+    experimentos_data = listar_experimentos(ativo=False)
+
+    # Formatar experimentos para o template
+    exps_fmt = []
+    for e in experimentos_data[:10]:
+        exps_fmt.append({
+            "variavel": e.get("variavel", ""),
+            "vencedor": e.get("vencedor") or (e.get("variante_a", "") + " vs " + e.get("variante_b", "")),
+            "confianca": e.get("confianca_pct") or 0,
+            "status": "aplicado" if e.get("vencedor") else "rodando",
+        })
+
+    # Regras de outreach
+    regras = listar_outreach_regras_todas()
+    configs_all = obter_configuracoes_todas()
+    outreach_ativo = configs_all.get("outreach_ativo", "false") == "true"
+
+    return templates.TemplateResponse("autopilot.html", {
+        "request": request,
+        "metricas": metricas,
+        "funil": funil,
+        "config": config,
+        "decisoes": decisoes,
+        "leads_quentes": leads_quentes,
+        "conversas": conversas,
+        "experimentos": exps_fmt,
+        "regras": regras,
+        "outreach_ativo": outreach_ativo,
+    })
+
+
+@app.get("/api/autopilot/conversas")
+async def api_autopilot_conversas():
+    """Lista conversas formatadas para o autopilot."""
+    convs = autopilot_conversas_formatadas(30)
+    return JSONResponse(json.loads(json.dumps(convs, default=str)))
+
+
+@app.get("/api/autopilot/conversa/{conversa_id}")
+async def api_autopilot_conversa(conversa_id: int):
+    """Detalhe de conversa para o autopilot."""
+    conv = autopilot_conversa_detalhe(conversa_id)
+    if not conv:
+        return JSONResponse({"erro": "Conversa não encontrada"}, status_code=404)
+    return JSONResponse(json.loads(json.dumps(conv, default=str)))
+
+
+@app.post("/api/autopilot/conversa/{conversa_id}/assumir")
+async def api_autopilot_assumir(conversa_id: int):
+    """Humano assume controle da conversa."""
+    from datetime import datetime
+    ok = atualizar_conversa_wa(conversa_id, handoff_at=datetime.now(),
+                                handoff_motivo="Controle manual")
+    return JSONResponse({"ok": ok})
+
+
+@app.post("/api/autopilot/conversa/{conversa_id}/devolver")
+async def api_autopilot_devolver(conversa_id: int):
+    """Devolver conversa ao robô."""
+    ok = atualizar_conversa_wa(conversa_id, status="ativo")
+    # Limpar handoff (precisa query direta)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE wa_conversas SET handoff_at = NULL, handoff_motivo = NULL
+            WHERE id = %s
+        """, (conversa_id,))
+        conn.commit()
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/autopilot/conversa/{conversa_id}/pausar")
+async def api_autopilot_pausar(conversa_id: int):
+    """Pausar conversa."""
+    ok = atualizar_conversa_wa(conversa_id, status="pausado")
+    return JSONResponse({"ok": ok})
+
+
+@app.post("/api/autopilot/conversa/{conversa_id}/enviar")
+async def api_autopilot_enviar_manual(request: Request, conversa_id: int):
+    """Enviar mensagem manual na conversa."""
+    body = await request.json()
+    texto = body.get("mensagem", "").strip()
+    if not texto:
+        return JSONResponse({"erro": "Mensagem vazia"}, status_code=400)
+
+    from crm.database import registrar_msg_wa
+    msg_id = registrar_msg_wa(conversa_id, "enviada", texto, tipo="texto")
+
+    # Enviar via WhatsApp
+    conv = obter_conversa_wa(conversa_id)
+    if conv and conv.get("numero_envio"):
+        try:
+            from crm.wa_sales_bot import enviar_mensagem_wa
+            enviar_mensagem_wa(conv["numero_envio"], texto)
+        except Exception as e:
+            print(f"[AUTOPILOT] Erro ao enviar WA: {e}")
+
+    return JSONResponse({"ok": True, "msg_id": msg_id})
+
+
+# ============================================================
+# ADMIN BRAIN — CHAT NL (Fase 5)
+# ============================================================
+
+@app.get("/brain", response_class=HTMLResponse)
+async def brain_page(request: Request):
+    """Interface de chat Brain (linguagem natural)."""
+    return templates.TemplateResponse("brain.html", {
+        "request": request,
+        "pagina_ativa": "brain",
+    })
+
+
+@app.post("/api/admin/brain/chat")
+async def api_brain_chat(request: Request):
+    """Endpoint de chat Brain — envia mensagem, recebe resposta com function calling."""
+    from crm.admin_brain import chat
+    body = await request.json()
+    mensagem = body.get("mensagem", "").strip()
+    historico = body.get("historico", [])
+
+    if not mensagem:
+        return JSONResponse({"erro": "Mensagem vazia"}, status_code=400)
+
+    try:
+        resultado = chat(mensagem, historico)
+        return JSONResponse(resultado)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"erro": str(e)}, status_code=500)

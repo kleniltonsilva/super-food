@@ -81,10 +81,11 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 24/03/2026
+- **Última sessão:** 24/03/2026 (noite)
 - **Migrations em produção:** 001-034 (última: 034_feature_flags)
 - **Migrations planejadas:** 035 (Bot)
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
+- **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
 - **Bugs conhecidos:** Nenhum crítico
 - **Pendente:** Módulos 1,4,5 (Pix → Bot → Sales), domínio próprio, configurar Resend prod
@@ -271,7 +272,7 @@ super-food/
 | 17 | Pix Online Woovi/OpenPix | ⏳ Planejado |
 | 18 | KDS / Comanda Digital | ✅ 21/03 (deploy 24/03) |
 | 19 | App Garçom (Atendimento Mesa) | ✅ 22/03 (deploy 24/03) |
-| 20 | Sales Autopilot (CRM B2B) | ⏳ Planejado |
+| 20 | Sales Autopilot CRM Automático | ✅ 24/03 (email branded, regras outreach, WA inteligente, auto-import, trial) |
 | 21 | Bridge Agent + Printer | ✅ 24/03 (deploy 24/03) |
 | 22 | Feature Flags por Plano | ✅ 24/03 (22 features, 38 endpoints, 4 tiers) |
 | 23 | Overhaul Criação Restaurante | ✅ 24/03 (CNPJ lookup, validação DDD, email Resend, onboarding) |

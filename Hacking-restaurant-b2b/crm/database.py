@@ -165,7 +165,7 @@ def leads_quentes_sem_contato() -> list:
 # ============================================================
 
 def stats_delivery(cidade: str = None, uf: str = None) -> dict:
-    """Stats globais ou por cidade de varredura delivery."""
+    """Stats globais ou por cidade de varredura delivery + agregados iFood."""
     with get_conn() as conn:
         cur = conn.cursor()
         where_parts = []
@@ -185,7 +185,16 @@ def stats_delivery(cidade: str = None, uf: str = None) -> dict:
                 COUNT(*) FILTER (WHERE tem_rappi = 1) as com_rappi,
                 COUNT(*) FILTER (WHERE tem_99food = 1) as com_99food,
                 COUNT(*) FILTER (WHERE tem_ifood = 1 OR tem_rappi = 1 OR tem_99food = 1) as com_algum_delivery,
-                COUNT(*) FILTER (WHERE COALESCE(tem_ifood, 0) = 0 AND COALESCE(tem_rappi, 0) = 0 AND COALESCE(tem_99food, 0) = 0) as sem_nenhum_delivery
+                COUNT(*) FILTER (WHERE COALESCE(tem_ifood, 0) = 0 AND COALESCE(tem_rappi, 0) = 0 AND COALESCE(tem_99food, 0) = 0) as sem_nenhum_delivery,
+                -- Agregados iFood enriquecido
+                ROUND(AVG(ifood_rating)::numeric, 2) as ifood_rating_medio,
+                COUNT(*) FILTER (WHERE ifood_rating IS NOT NULL) as com_rating_ifood,
+                COUNT(*) FILTER (WHERE ifood_reviews IS NOT NULL AND ifood_reviews > 0) as com_reviews_ifood,
+                COUNT(*) FILTER (WHERE ifood_aberto = 1 AND tem_ifood = 1) as ifood_abertos,
+                COUNT(*) FILTER (WHERE ifood_aberto = 0 AND tem_ifood = 1) as ifood_fechados,
+                COUNT(*) FILTER (WHERE ifood_preco = '$') as ifood_preco_baixo,
+                COUNT(*) FILTER (WHERE ifood_preco = '$$') as ifood_preco_medio,
+                COUNT(*) FILTER (WHERE ifood_preco = '$$$' OR ifood_preco = '$$$$') as ifood_preco_alto
             FROM leads
             {where}
         """, params)
@@ -207,6 +216,22 @@ def stats_delivery_por_cidade(limite: int = 50) -> list:
             FROM leads
             WHERE cidade IS NOT NULL AND cidade != ''
             GROUP BY cidade, uf
+            ORDER BY total DESC
+            LIMIT %s
+        """, (limite,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def top_categorias_ifood(limite: int = 10) -> list:
+    """Top categorias iFood (explode string CSV em categorias individuais)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT TRIM(cat) as categoria, COUNT(*) as total
+            FROM leads, LATERAL unnest(string_to_array(ifood_categorias, ',')) AS cat
+            WHERE ifood_categorias IS NOT NULL AND ifood_categorias != ''
+            AND tem_ifood = 1
+            GROUP BY TRIM(cat)
             ORDER BY total DESC
             LIMIT %s
         """, (limite,))
@@ -283,6 +308,26 @@ def buscar_leads(filtros: dict, pagina: int = 1, por_pagina: int = 50) -> tuple:
         if filtros.get("eh_rede") == "sim":
             where.append("l.multi_restaurante = 1")
 
+        # Filtros iFood enriquecidos
+        if filtros.get("ifood_rating_min"):
+            params.append(float(filtros["ifood_rating_min"]))
+            where.append("l.ifood_rating >= %s")
+
+        if filtros.get("ifood_preco"):
+            precos = filtros["ifood_preco"] if isinstance(filtros["ifood_preco"], list) else [filtros["ifood_preco"]]
+            placeholders = ", ".join(["%s"] * len(precos))
+            params.extend(precos)
+            where.append(f"l.ifood_preco IN ({placeholders})")
+
+        if filtros.get("ifood_categorias"):
+            params.append(f"%{filtros['ifood_categorias']}%")
+            where.append("l.ifood_categorias ILIKE %s")
+
+        if filtros.get("ifood_aberto") == "sim":
+            where.append("l.ifood_aberto = 1 AND l.tem_ifood = 1")
+        elif filtros.get("ifood_aberto") == "fechado":
+            where.append("l.ifood_aberto = 0 AND l.tem_ifood = 1")
+
         if filtros.get("q"):
             termo = f"%{filtros['q']}%"
             params.extend([termo, termo, termo])
@@ -303,7 +348,9 @@ def buscar_leads(filtros: dict, pagina: int = 1, por_pagina: int = 50) -> tuple:
                    l.status_pipeline, l.telefone1, l.email,
                    l.tem_ifood, l.tem_rappi, l.tem_99food,
                    l.capital_social, l.data_abertura,
-                   l.rating, l.website, l.data_ultimo_contato
+                   l.rating, l.website, l.data_ultimo_contato,
+                   l.ifood_rating, l.ifood_reviews, l.ifood_preco,
+                   l.ifood_categorias, l.ifood_tempo_entrega, l.ifood_aberto
             FROM leads l
             WHERE {where_clause}
             ORDER BY l.lead_score DESC, l.razao_social ASC
@@ -988,7 +1035,7 @@ def listar_outreach_pendentes(limite: int = 50) -> list:
         cur.execute("""
             SELECT o.*, l.nome_fantasia, l.email, l.telefone1,
                    l.lead_score, l.opt_out_email, l.opt_out_wa,
-                   l.email_invalido
+                   l.email_invalido, l.canal_primario, l.email_tipo
             FROM outreach_sequencia o
             JOIN leads l ON o.lead_id = l.id
             WHERE o.executado = FALSE AND o.cancelado = FALSE
@@ -1068,6 +1115,117 @@ def opt_out_lead(lead_id: int, canal: str) -> bool:
         return True
 
 
+# ============================================================
+# OUTREACH REGRAS — CRUD
+# ============================================================
+
+def listar_outreach_regras() -> list:
+    """Lista regras de outreach ativas, ordenadas por prioridade DESC."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT * FROM outreach_regras
+            WHERE ativo = TRUE
+            ORDER BY prioridade DESC, id ASC
+        """)
+        rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            if isinstance(r.get("condicao"), str):
+                r["condicao"] = json.loads(r["condicao"])
+            if isinstance(r.get("acoes"), str):
+                r["acoes"] = json.loads(r["acoes"])
+        return rows
+
+
+def listar_outreach_regras_todas() -> list:
+    """Lista TODAS as regras (incluindo inativas), para UI admin."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM outreach_regras ORDER BY prioridade DESC, id ASC")
+        rows = [dict(r) for r in cur.fetchall()]
+        for r in rows:
+            if isinstance(r.get("condicao"), str):
+                r["condicao"] = json.loads(r["condicao"])
+            if isinstance(r.get("acoes"), str):
+                r["acoes"] = json.loads(r["acoes"])
+        return rows
+
+
+def criar_outreach_regra(nome: str, condicao: dict, acoes: list = None,
+                          prioridade: int = 0) -> int:
+    """Cria regra de outreach. Retorna ID."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO outreach_regras (nome, prioridade, condicao, acoes)
+            VALUES (%s, %s, %s, %s) RETURNING id
+        """, (nome, prioridade,
+              json.dumps(condicao), json.dumps(acoes) if acoes else None))
+        new_id = cur.fetchone()["id"]
+        conn.commit()
+        return new_id
+
+
+def atualizar_outreach_regra(regra_id: int, **campos) -> bool:
+    """Atualiza campos de uma regra. Campos válidos: nome, prioridade, condicao, acoes, ativo."""
+    campos_validos = {"nome", "prioridade", "condicao", "acoes", "ativo"}
+    sets = []
+    params = []
+    for k, v in campos.items():
+        if k not in campos_validos:
+            continue
+        if k in ("condicao", "acoes"):
+            v = json.dumps(v) if v is not None else None
+        sets.append(f"{k} = %s")
+        params.append(v)
+    if not sets:
+        return False
+    params.append(regra_id)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(f"""
+            UPDATE outreach_regras SET {', '.join(sets)} WHERE id = %s RETURNING id
+        """, params)
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def deletar_outreach_regra(regra_id: int) -> bool:
+    """Deleta regra de outreach. Retorna True se encontrou."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM outreach_regras WHERE id = %s RETURNING id", (regra_id,))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def leads_novos_sem_outreach(limite: int = 50) -> list:
+    """Leads criados nos últimos 7 dias SEM ações na outreach_sequencia.
+    Elegíveis: com email, sem opt_out, sem email_invalido."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT l.id, l.cnpj, l.nome_fantasia, l.razao_social,
+                   l.cidade, l.uf, l.email, l.telefone1,
+                   l.lead_score, l.segmento, l.tier,
+                   l.tem_ifood, l.tem_rappi, l.tem_99food
+            FROM leads l
+            WHERE l.created_at >= NOW() - INTERVAL '7 days'
+              AND l.opt_out_email = FALSE
+              AND l.email IS NOT NULL AND l.email != ''
+              AND l.email_invalido = 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM outreach_sequencia o
+                  WHERE o.lead_id = l.id AND o.cancelado = FALSE
+              )
+            ORDER BY l.lead_score DESC
+            LIMIT %s
+        """, (limite,))
+        return [dict(r) for r in cur.fetchall()]
+
+
 def leads_para_outreach(cidade: str = None, uf: str = None,
                         score_min: int = 30, limite: int = 100) -> list:
     """Leads elegíveis para outreach: com email, sem opt_out, score >= min."""
@@ -1107,7 +1265,9 @@ def leads_para_outreach(cidade: str = None, uf: str = None,
                    l.cidade, l.uf, l.email, l.telefone1,
                    l.lead_score, l.segmento, l.tier,
                    l.rating, l.total_reviews,
-                   l.tem_ifood, l.tem_rappi, l.tem_99food
+                   l.tem_ifood, l.tem_rappi, l.tem_99food,
+                   l.ifood_rating, l.ifood_reviews, l.ifood_preco,
+                   l.ifood_categorias, l.ifood_tempo_entrega
             FROM leads l
             WHERE {where_clause}
             ORDER BY l.lead_score DESC
@@ -1464,3 +1624,458 @@ def metricas_outreach_periodo(inicio, fim) -> dict:
         email_stats["wa_response_rate"] = round(
             email_stats.get("wa_com_resposta", 0) / max(wa_total, 1) * 100, 1)
         return email_stats
+
+
+# ============================================================
+# AUTOPILOT — MÉTRICAS CONSOLIDADAS
+# ============================================================
+
+def autopilot_metricas() -> dict:
+    """Métricas consolidadas para o painel do Sales Autopilot."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # KPIs de leads
+        cur.execute("SELECT COUNT(*) as total FROM leads")
+        total_leads = cur.fetchone()["total"]
+
+        # Emails (7 dias)
+        cur.execute("""
+            SELECT
+                COUNT(*) as enviados,
+                COUNT(*) FILTER (WHERE aberto = TRUE) as abertos,
+                COUNT(*) FILTER (WHERE clicou_site OR clicou_wa) as clicados,
+                COUNT(*) FILTER (WHERE bounced) as bounced
+            FROM emails_enviados
+            WHERE horario_enviado >= NOW() - INTERVAL '7 days'
+        """)
+        emails = dict(cur.fetchone())
+
+        # Emails hoje
+        cur.execute("""
+            SELECT COUNT(*) as total FROM emails_enviados
+            WHERE horario_enviado >= CURRENT_DATE
+        """)
+        emails_hoje = cur.fetchone()["total"]
+
+        # WA (7 dias)
+        cur.execute("""
+            SELECT
+                COUNT(*) as conversas,
+                COUNT(*) FILTER (WHERE msgs_recebidas > 0) as com_resposta,
+                COUNT(*) FILTER (WHERE status = 'handoff') as handoffs,
+                COALESCE(SUM(msgs_enviadas), 0) as enviadas,
+                COALESCE(SUM(msgs_recebidas), 0) as recebidas
+            FROM wa_conversas
+            WHERE created_at >= NOW() - INTERVAL '7 days'
+        """)
+        wa = dict(cur.fetchone())
+
+        # Demos e clientes
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE status_pipeline = 'demo_agendada') as demos,
+                COUNT(*) FILTER (WHERE status_pipeline = 'cliente') as clientes
+            FROM leads
+        """)
+        pipeline = dict(cur.fetchone())
+
+        # Decisões do agente
+        cur.execute("SELECT COUNT(*) as total FROM agente_decisoes")
+        total_decisoes = cur.fetchone()["total"]
+
+        # Dias ativo (desde primeiro relatório)
+        cur.execute("SELECT MIN(created_at) as inicio FROM agente_relatorios")
+        inicio = cur.fetchone()["inicio"]
+        dias_ativo = 0
+        if inicio:
+            from datetime import datetime
+            dias_ativo = max(1, (datetime.now(inicio.tzinfo) - inicio).days)
+
+        env = emails.get("enviados", 0) or 1
+        return {
+            "total_leads": total_leads,
+            "emails_enviados_7d": emails.get("enviados", 0),
+            "emails_abertos_7d": emails.get("abertos", 0),
+            "taxa_abertura": round(emails.get("abertos", 0) / env * 100, 1),
+            "emails_clicados_7d": emails.get("clicados", 0),
+            "taxa_clique": round(emails.get("clicados", 0) / env * 100, 1),
+            "taxa_bounce": round(emails.get("bounced", 0) / env * 100, 1),
+            "emails_hoje": emails_hoje,
+            "wa_enviados_7d": wa.get("enviadas", 0),
+            "wa_respondidos_7d": wa.get("com_resposta", 0),
+            "taxa_resposta_wa": round(wa.get("com_resposta", 0) / max(wa.get("conversas", 0), 1) * 100, 1),
+            "demos": pipeline.get("demos", 0),
+            "clientes": pipeline.get("clientes", 0),
+            "receita": pipeline.get("clientes", 0) * 149,  # MRR estimado
+            "custo": 0,  # Créditos xAI grátis
+            "total_decisoes": total_decisoes,
+            "dias_ativo": dias_ativo or 1,
+            "gasto_voz": 0,  # TODO: rastrear gastos TTS
+        }
+
+
+def autopilot_funil() -> list:
+    """Dados do funil de conversão para o autopilot."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as total FROM leads")
+        total = cur.fetchone()["total"] or 1
+
+        cur.execute("""
+            SELECT COUNT(*) as n FROM emails_enviados
+            WHERE horario_enviado >= NOW() - INTERVAL '30 days'
+        """)
+        emails = cur.fetchone()["n"]
+
+        cur.execute("""
+            SELECT COUNT(*) as n FROM emails_enviados
+            WHERE aberto = TRUE AND horario_enviado >= NOW() - INTERVAL '30 days'
+        """)
+        abriu = cur.fetchone()["n"]
+
+        cur.execute("""
+            SELECT COUNT(*) as n FROM emails_enviados
+            WHERE (clicou_site OR clicou_wa) AND horario_enviado >= NOW() - INTERVAL '30 days'
+        """)
+        clicou = cur.fetchone()["n"]
+
+        cur.execute("""
+            SELECT COUNT(*) as n FROM wa_conversas
+            WHERE created_at >= NOW() - INTERVAL '30 days'
+        """)
+        wa = cur.fetchone()["n"]
+
+        cur.execute("""
+            SELECT COUNT(*) as n FROM wa_conversas
+            WHERE msgs_recebidas > 0 AND created_at >= NOW() - INTERVAL '30 days'
+        """)
+        respondeu = cur.fetchone()["n"]
+
+        cur.execute("SELECT COUNT(*) as n FROM leads WHERE status_pipeline = 'demo_agendada'")
+        demos = cur.fetchone()["n"]
+
+        cur.execute("SELECT COUNT(*) as n FROM leads WHERE status_pipeline = 'cliente'")
+        fechou = cur.fetchone()["n"]
+
+        etapas = [
+            {"estagio": "Leads", "numero": total},
+            {"estagio": "Email", "numero": emails},
+            {"estagio": "Abriu", "numero": abriu},
+            {"estagio": "Clicou", "numero": clicou},
+            {"estagio": "WA", "numero": wa},
+            {"estagio": "Respondeu", "numero": respondeu},
+            {"estagio": "Demo", "numero": demos},
+            {"estagio": "Fechou", "numero": fechou},
+        ]
+
+        for e in etapas:
+            e["pct"] = round(e["numero"] / total * 100, 1) if total else 0
+
+        return etapas
+
+
+def autopilot_config() -> dict:
+    """Configurações aprendidas pelo agente (da tabela configuracoes)."""
+    defaults = {
+        "horario_envio": "18:00-20:00",
+        "tom_conversa": "Consultivo",
+        "voz_audio": "Ara",
+        "momento_audio": "1ª mensagem",
+        "recontato": "D+2",
+        "aquecimento_diario": "35",
+        "nota_minima_wa": "60",
+        "limite_emails_dia": "100",
+        "limite_gasto_voz": "5",
+    }
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT chave, valor FROM configuracoes")
+        rows = cur.fetchall()
+        for row in rows:
+            k = row["chave"]
+            if k in defaults:
+                defaults[k] = row["valor"]
+    return defaults
+
+
+def autopilot_decisoes_recentes(limite: int = 10) -> list:
+    """Decisões autônomas recentes do agente."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, tipo, descricao, dados, aprovado, created_at
+            FROM agente_decisoes
+            ORDER BY created_at DESC LIMIT %s
+        """, (limite,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def autopilot_leads_quentes(limite: int = 10) -> list:
+    """Top leads por score com último evento."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT l.id, COALESCE(l.nome_fantasia, l.razao_social, 'Lead') as nome,
+                   l.lead_score as score, l.cidade, l.uf, l.status_pipeline,
+                   (SELECT conteudo FROM interacoes WHERE lead_id = l.id ORDER BY created_at DESC LIMIT 1) as ultimo_evento
+            FROM leads l
+            WHERE l.lead_score >= 60
+              AND l.status_pipeline NOT IN ('perdido', 'cliente')
+            ORDER BY l.lead_score DESC
+            LIMIT %s
+        """, (limite,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def autopilot_conversas_formatadas(limite: int = 30) -> list:
+    """Conversas WA formatadas para o autopilot."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT c.id, c.status, c.msgs_enviadas, c.msgs_recebidas,
+                   c.intencao_detectada, c.handoff_at, c.voz_usada,
+                   c.created_at, c.updated_at,
+                   COALESCE(l.nome_fantasia, l.razao_social, 'Lead') as lead_nome,
+                   l.lead_score as score, l.cidade, l.uf,
+                   (SELECT conteudo FROM wa_mensagens WHERE conversa_id = c.id ORDER BY created_at DESC LIMIT 1) as preview
+            FROM wa_conversas c
+            JOIN leads l ON c.lead_id = l.id
+            ORDER BY c.updated_at DESC
+            LIMIT %s
+        """, (limite,))
+        result = []
+        for r in cur.fetchall():
+            d = dict(r)
+            # Determinar situacao
+            if d.get("handoff_at"):
+                d["situacao"] = "demo_agendada"
+            elif d.get("intencao_detectada") == "interesse":
+                d["situacao"] = "engajado"
+            elif d.get("msgs_recebidas", 0) > 0:
+                d["situacao"] = "respondeu"
+            elif d.get("msgs_enviadas", 0) > 0:
+                d["situacao"] = "WA enviado"
+            else:
+                d["situacao"] = "sem resposta"
+            # Modo e canal
+            d["modo"] = "manual" if d.get("handoff_at") else "auto"
+            d["canal"] = "whatsapp"
+            d["nova_msg"] = (d.get("msgs_recebidas", 0) > 0 and
+                             d.get("status") == "ativo")
+            # Preview
+            d["preview"] = (d.get("preview") or "")[:50]
+            result.append(d)
+        return result
+
+
+def autopilot_conversa_detalhe(conversa_id: int) -> Optional[dict]:
+    """Detalhe de conversa formatado para o autopilot."""
+    conv = obter_conversa_wa(conversa_id)
+    if not conv:
+        return None
+
+    # Formatar para o autopilot
+    resultado = {
+        "id": conv["id"],
+        "lead_nome": conv.get("nome_fantasia") or conv.get("razao_social") or "Lead",
+        "score": conv.get("lead_score", 0),
+        "situacao": "ativa",
+        "modo": "manual" if conv.get("handoff_at") else "auto",
+        "status": conv.get("status", "ativo"),
+        "mensagens": [],
+    }
+
+    for m in conv.get("mensagens", []):
+        msg = {
+            "conteudo": m.get("conteudo", ""),
+            "hora": str(m.get("created_at", ""))[:16].replace("T", " ") if m.get("created_at") else "",
+        }
+        tipo_msg = m.get("tipo", "texto")
+        direcao = m.get("direcao", "enviada")
+
+        if tipo_msg == "audio":
+            msg["tipo"] = "audio"
+            msg["duracao"] = 28
+            msg["voz"] = conv.get("voz_usada", "Ara")
+        elif direcao == "recebida":
+            msg["tipo"] = "lead"
+        elif m.get("grok_resposta"):
+            msg["tipo"] = "bot"
+        else:
+            msg["tipo"] = "bot"
+
+        resultado["mensagens"].append(msg)
+
+    return resultado
+
+
+def leads_com_mais_dados(cidade: str = None, limite: int = 50) -> list:
+    """Retorna leads com mais dados disponíveis (para geração de emails com concorrentes).
+    Prioriza: tem iFood + Maps + RF + contato."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        where = "WHERE l.status_pipeline NOT IN ('perdido', 'cliente')"
+        params = []
+        if cidade:
+            where += " AND l.cidade = %s"
+            params.append(cidade)
+        params.append(limite)
+        cur.execute(f"""
+            SELECT l.id, l.cnpj, l.nome_fantasia, l.razao_social,
+                   l.cidade, l.uf, l.bairro,
+                   l.rating, l.total_reviews, l.lead_score,
+                   l.tem_ifood, l.tem_rappi, l.tem_99food,
+                   l.ifood_rating, l.ifood_reviews, l.ifood_preco,
+                   l.ifood_categorias, l.email, l.telefone1,
+                   l.capital_social, l.porte,
+                   -- Score de completude dos dados
+                   (CASE WHEN l.rating IS NOT NULL THEN 1 ELSE 0 END
+                    + CASE WHEN l.ifood_rating IS NOT NULL THEN 2 ELSE 0 END
+                    + CASE WHEN l.email IS NOT NULL AND l.email != '' THEN 1 ELSE 0 END
+                    + CASE WHEN l.telefone1 IS NOT NULL AND l.telefone1 != '' THEN 1 ELSE 0 END
+                    + CASE WHEN l.capital_social > 0 THEN 1 ELSE 0 END
+                    + CASE WHEN l.total_reviews > 0 THEN 1 ELSE 0 END
+                    + CASE WHEN l.ifood_reviews > 0 THEN 1 ELSE 0 END
+                   ) as completude
+            FROM leads l
+            {where}
+            ORDER BY completude DESC, l.lead_score DESC
+            LIMIT %s
+        """, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
+def concorrentes_do_lead(lead_id: int, limite: int = 5) -> list:
+    """Encontra concorrentes diretos de um lead (mesmo bairro/cidade, com dados).
+    Prioriza: mesmo bairro > mesma cidade, com dados iFood/Maps."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # Pegar dados do lead alvo
+        cur.execute("""
+            SELECT id, cidade, uf, bairro, ifood_categorias
+            FROM leads WHERE id = %s
+        """, (lead_id,))
+        lead = cur.fetchone()
+        if not lead:
+            return []
+
+        cidade = lead["cidade"]
+        bairro = lead["bairro"]
+        categorias = lead["ifood_categorias"]
+
+        params = [lead_id, cidade]
+        order_parts = []
+
+        # Priorizar mesmo bairro
+        if bairro:
+            order_parts.append("(CASE WHEN l.bairro = %s THEN 0 ELSE 1 END)")
+            params.append(bairro)
+
+        # Priorizar mesma categoria iFood
+        if categorias:
+            cat_principal = categorias.split(",")[0].strip()
+            if cat_principal:
+                order_parts.append("(CASE WHEN l.ifood_categorias ILIKE %s THEN 0 ELSE 1 END)")
+                params.append(f"%{cat_principal}%")
+
+        order_clause = ", ".join(order_parts) + ", " if order_parts else ""
+        params.append(limite)
+
+        cur.execute(f"""
+            SELECT l.id, COALESCE(l.nome_fantasia, l.razao_social) as nome,
+                   l.bairro, l.rating, l.total_reviews,
+                   l.tem_ifood, l.ifood_rating, l.ifood_reviews,
+                   l.ifood_preco, l.ifood_categorias,
+                   l.tem_rappi, l.tem_99food
+            FROM leads l
+            WHERE l.id != %s
+              AND l.cidade = %s
+              AND (l.rating IS NOT NULL OR l.ifood_rating IS NOT NULL)
+              AND l.status_pipeline != 'perdido'
+            ORDER BY {order_clause}
+                     COALESCE(l.ifood_rating, 0) DESC,
+                     COALESCE(l.rating, 0) DESC
+            LIMIT %s
+        """, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
+
+# ============================================================
+# QUIZ DIAGNÓSTICO — INBOUND LANDING PAGE
+# ============================================================
+
+def criar_lead_quiz(dados: dict) -> int:
+    """Cria lead a partir do quiz diagnóstico da landing page.
+    Usa cnpj placeholder QZ_+whatsapp. Retorna lead_id."""
+    whatsapp = dados["whatsapp"]
+    cnpj_placeholder = f"QZ_{whatsapp}"[:14]
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # Verificar duplicata por cnpj ou telefone1
+        cur.execute(
+            "SELECT id FROM leads WHERE cnpj = %s OR telefone1 = %s",
+            (cnpj_placeholder, whatsapp)
+        )
+        row = cur.fetchone()
+        if row:
+            # Atualizar notas com dados do quiz
+            notas_json = json.dumps({
+                "quiz_tipo": dados.get("tipo_restaurante"),
+                "quiz_pedidos_dia": dados.get("pedidos_dia"),
+                "quiz_respostas": dados.get("respostas"),
+                "quiz_diagnostico": dados.get("diagnostico"),
+                "quiz_nome_contato": dados.get("nome"),
+                "quiz_email": dados.get("email"),
+            }, ensure_ascii=False)
+            cur.execute(
+                "UPDATE leads SET notas = %s WHERE id = %s",
+                (notas_json, row["id"])
+            )
+            conn.commit()
+            return row["id"]
+
+        # Novo lead
+        notas_json = json.dumps({
+            "quiz_tipo": dados.get("tipo_restaurante"),
+            "quiz_pedidos_dia": dados.get("pedidos_dia"),
+            "quiz_respostas": dados.get("respostas"),
+            "quiz_diagnostico": dados.get("diagnostico"),
+            "quiz_nome_contato": dados.get("nome"),
+            "quiz_email": dados.get("email"),
+        }, ensure_ascii=False)
+
+        cur.execute("""
+            INSERT INTO leads (
+                cnpj, nome_fantasia, telefone1, email,
+                status_pipeline, segmento, tier, lead_score, notas
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            cnpj_placeholder,
+            dados.get("nome_restaurante") or f"Quiz {whatsapp[-4:]}",
+            whatsapp,
+            dados.get("email") or None,
+            "contactado",
+            "inbound_quiz",
+            "hot",
+            85,
+            notas_json,
+        ))
+        new_id = cur.fetchone()["id"]
+
+        # Registrar interação
+        cur.execute("""
+            INSERT INTO interacoes (lead_id, tipo, canal, conteudo, resultado)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (
+            new_id, "inbound", "quiz",
+            f"Quiz diagnóstico: {dados.get('tipo_restaurante')} - {dados.get('pedidos_dia')} pedidos/dia",
+            "lead_criado",
+        ))
+
+        conn.commit()
+        return new_id

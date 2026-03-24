@@ -40,6 +40,16 @@ def calcular_score(lead: dict) -> int:
     if total_reviews >= 100:
         score += 15
 
+    # --- iFood Enriquecido ---
+    ifood_rating = lead.get("ifood_rating") or 0
+    ifood_reviews = lead.get("ifood_reviews") or 0
+    if ifood_rating >= 4.5:
+        score += 5  # Restaurante de qualidade no iFood
+    if ifood_reviews >= 500:
+        score += 5  # Restaurante popular no iFood
+    elif ifood_reviews >= 100:
+        score += 3  # Restaurante com boa base de clientes
+
     # --- Capital Social ---
     capital = lead.get("capital_social") or 0
     if capital >= 100000:
@@ -77,6 +87,9 @@ def calcular_score(lead: dict) -> int:
         score -= 20
     if lead.get("email_invalido"):
         score -= 10
+    # Email de contador = contato indireto, penalizar
+    if lead.get("email_tipo") == "contador":
+        score -= 15
 
     return max(0, min(100, score))
 
@@ -184,14 +197,26 @@ def personalizar_abordagem(lead: dict) -> dict:
     nome_fantasia = lead.get("nome_fantasia") or lead.get("razao_social") or "seu restaurante"
     rating = lead.get("rating") or 0
     reviews = lead.get("total_reviews") or 0
+    ifood_rating = lead.get("ifood_rating") or 0
+    ifood_reviews = lead.get("ifood_reviews") or 0
+    ifood_categorias = lead.get("ifood_categorias") or ""
+    ifood_preco = lead.get("ifood_preco") or ""
 
-    if rating > 0 and reviews > 0:
+    # Contexto — priorizar dados iFood (mais relevante para vendas)
+    if ifood_rating > 0 and ifood_reviews > 0:
+        resultado["contexto"] = (
+            f"Vi que o {nome_fantasia} tem {ifood_rating} estrelas no iFood "
+            f"com {ifood_reviews} avaliações — qualidade comprovada!"
+        )
+        if ifood_categorias:
+            resultado["contexto"] += f" Especialistas em {ifood_categorias.split(',')[0].strip()}."
+    elif rating > 0 and reviews > 0:
         resultado["contexto"] = (
             f"Vi que o {nome_fantasia} tem {rating} estrelas e "
             f"{reviews} avaliações no Google — parabéns!"
         )
 
-    # Abordagem baseada em delivery
+    # Abordagem baseada em delivery + dados iFood enriquecidos
     tem_ifood = lead.get("tem_ifood") or 0
     tem_rappi = lead.get("tem_rappi") or 0
     tem_99food = lead.get("tem_99food") or 0
@@ -201,6 +226,22 @@ def personalizar_abordagem(lead: dict) -> dict:
         resultado["abordagem"] = (
             "Percebi que vocês ainda não estão em plataformas de delivery. "
             "A Derekh cria seu delivery próprio em 48h, sem comissões."
+        )
+    elif tem_ifood and ifood_rating >= 4.5:
+        resultado["abordagem"] = (
+            f"Com nota {ifood_rating} no iFood, vocês já provaram qualidade. "
+            "Agora imagina um delivery próprio onde você fica com 100% do faturamento, "
+            "sem os 27% de comissão do iFood."
+        )
+    elif tem_ifood and ifood_reviews >= 500:
+        resultado["abordagem"] = (
+            f"Com mais de {ifood_reviews} avaliações no iFood, seus clientes já te conhecem. "
+            "Falta o canal direto — delivery próprio por WhatsApp, sem comissão."
+        )
+    elif tem_ifood and ifood_preco in ("$$$", "$$$$"):
+        resultado["abordagem"] = (
+            "Restaurantes premium como vocês perdem muito com comissão do iFood. "
+            "Em cada pedido de R$80, R$22 vai pro iFood. Com delivery próprio, fica tudo com vocês."
         )
     elif tem_ifood:
         resultado["abordagem"] = (
@@ -293,7 +334,9 @@ def calcular_scores_todos(batch_size: int = 5000) -> dict:
                        data_abertura, email, telefone1,
                        status_pipeline, email_invalido,
                        multi_restaurante, socios_json, mei,
-                       nome_fantasia, razao_social
+                       nome_fantasia, razao_social, email_tipo,
+                       ifood_rating, ifood_reviews, ifood_preco,
+                       ifood_categorias
                 FROM leads
                 ORDER BY id
                 LIMIT %s OFFSET %s
@@ -332,7 +375,9 @@ def calcular_score_lead(lead_id: int) -> dict:
                    data_abertura, email, telefone1,
                    status_pipeline, email_invalido,
                    multi_restaurante, socios_json, mei,
-                   nome_fantasia, razao_social
+                   nome_fantasia, razao_social, email_tipo,
+                   ifood_rating, ifood_reviews, ifood_preco,
+                   ifood_categorias
             FROM leads WHERE id = %s
         """, (lead_id,))
         lead = cur.fetchone()

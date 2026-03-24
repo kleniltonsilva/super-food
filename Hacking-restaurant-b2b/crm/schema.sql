@@ -304,6 +304,67 @@ CREATE TABLE IF NOT EXISTS agente_relatorios (
 );
 
 -- ============================================================
+-- iFOOD ENRIQUECIDO — dados extraídos do card de busca
+-- ============================================================
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS ifood_rating REAL;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS ifood_reviews INTEGER;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS ifood_preco TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS ifood_categorias TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS ifood_tempo_entrega TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS ifood_aberto SMALLINT DEFAULT 1;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS ifood_checked_at TIMESTAMPTZ;
+
+-- Índice para filtros iFood
+CREATE INDEX IF NOT EXISTS idx_leads_ifood_rating ON leads(ifood_rating DESC) WHERE ifood_rating IS NOT NULL;
+
+-- ============================================================
+-- CONTACT VALIDATOR — novas colunas em leads
+-- ============================================================
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS email_tipo TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS email_validado BOOLEAN DEFAULT FALSE;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS wa_verificado BOOLEAN DEFAULT FALSE;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS wa_existe BOOLEAN;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS canal_primario TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS canal_secundario TEXT;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS contato_validado_at TIMESTAMPTZ;
+
+-- ============================================================
+-- PATTERN LIBRARY — padrões vencedores + mensagens geradas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS padroes_vencedores (
+    id SERIAL PRIMARY KEY,
+    tipo TEXT NOT NULL,           -- assunto, abertura, cta, corpo
+    conteudo TEXT NOT NULL,
+    segmento_alvo TEXT,
+    tier_alvo TEXT,
+    usos INTEGER DEFAULT 0,
+    aberturas INTEGER DEFAULT 0,
+    cliques INTEGER DEFAULT 0,
+    respostas INTEGER DEFAULT 0,
+    score_eficacia FLOAT DEFAULT 0.5,
+    ativo BOOLEAN DEFAULT TRUE,
+    extraido_de TEXT,             -- campanha/email que originou o padrão
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS mensagens_geradas (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    padroes_usados JSONB,         -- [{"padrao_id": 1, "tipo": "assunto"}, ...]
+    assunto TEXT,
+    corpo TEXT,
+    canal TEXT DEFAULT 'email',
+    resultado TEXT,               -- enviado, aberto, clicou, respondeu
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Índices Pattern Library
+CREATE INDEX IF NOT EXISTS idx_padroes_tipo ON padroes_vencedores(tipo) WHERE ativo = TRUE;
+CREATE INDEX IF NOT EXISTS idx_padroes_score ON padroes_vencedores(score_eficacia DESC) WHERE ativo = TRUE;
+CREATE INDEX IF NOT EXISTS idx_msgs_geradas_lead ON mensagens_geradas(lead_id);
+
+-- ============================================================
 -- SCANNER (scan jobs + logs)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS scan_jobs (
@@ -417,6 +478,45 @@ END $$;
 DO $$ BEGIN
     CREATE TRIGGER set_updated_at_wa_conversas
         BEFORE UPDATE ON wa_conversas
+        FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- ============================================================
+-- OUTREACH REGRAS (sequências automáticas configuráveis)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS outreach_regras (
+    id SERIAL PRIMARY KEY,
+    nome TEXT NOT NULL,
+    prioridade INTEGER DEFAULT 0,
+    condicao JSONB NOT NULL DEFAULT '{}',
+    acoes JSONB,
+    ativo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_outreach_regras_ativo ON outreach_regras(prioridade DESC) WHERE ativo = TRUE;
+
+-- Seed regras padrão (idempotente)
+INSERT INTO outreach_regras (nome, prioridade, condicao, acoes) VALUES
+    ('iFood Leads — Email + WA', 10,
+     '{"tem_ifood": true}',
+     '[{"tipo":"enviar_email","delay_dias":0},{"tipo":"reenviar_email","delay_dias":1,"condicao":"nao_abriu"},{"tipo":"enviar_wa","delay_dias":3,"condicao":"nao_abriu"}]'
+    ),
+    ('Sem Delivery — Urgente', 5,
+     '{"sem_delivery": true}',
+     '[{"tipo":"enviar_email","delay_dias":0},{"tipo":"reenviar_email","delay_dias":2,"condicao":"nao_abriu"},{"tipo":"enviar_wa","delay_dias":3,"condicao":"nao_abriu"}]'
+    ),
+    ('Default — Tier', 0,
+     '{}',
+     null
+    )
+ON CONFLICT DO NOTHING;
+
+DO $$ BEGIN
+    CREATE TRIGGER set_updated_at_outreach_regras
+        BEFORE UPDATE ON outreach_regras
         FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;

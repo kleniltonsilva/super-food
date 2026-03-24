@@ -183,6 +183,17 @@ def ciclo_diario() -> dict:
     metricas = metricas_outreach_periodo(inicio, fim)
     log.info(f"Métricas de {ontem}: {metricas}")
 
+    # 1.5. Extrair padrões vencedores + decaimento
+    try:
+        from crm.pattern_library import extrair_padroes_diario, decaimento_diario
+        pattern_stats = extrair_padroes_diario()
+        decay_stats = decaimento_diario()
+        log.info(f"Pattern Library: {pattern_stats} | Decaimento: {decay_stats}")
+    except Exception as e:
+        log.warning(f"Pattern Library erro: {e}")
+        pattern_stats = {}
+        decay_stats = {}
+
     # 2. Avaliar experimentos ativos
     experimentos = listar_experimentos(ativo=True)
     avaliacoes = []

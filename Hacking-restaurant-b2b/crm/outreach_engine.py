@@ -11,6 +11,7 @@ from crm.database import (
     emails_enviados_hoje, obter_configuracao, obter_lead,
     buscar_email_por_tracking, atualizar_tier_lead,
     obter_email_template, listar_email_templates,
+    listar_outreach_regras, leads_novos_sem_outreach,
 )
 from crm.scoring import calcular_tier, calcular_score
 from crm.email_service import enviar_email
@@ -111,8 +112,103 @@ def criar_sequencia_lead(lead_id: int, tier: str, score: int) -> list:
 
 
 # ============================================================
+# RULE MATCHING (regras configuráveis)
+# ============================================================
+
+def _avaliar_condicao(condicao: dict, lead: dict) -> bool:
+    """Avalia se um lead atende a condição de uma regra.
+    Condição vazia ({}) = match-all."""
+    if not condicao:
+        return True
+
+    if condicao.get("tem_ifood") and not lead.get("tem_ifood"):
+        return False
+
+    if condicao.get("sem_delivery"):
+        tem_delivery = (lead.get("tem_ifood") or 0) + (lead.get("tem_rappi") or 0) + (lead.get("tem_99food") or 0)
+        if tem_delivery > 0:
+            return False
+
+    if "score_min" in condicao:
+        if (lead.get("lead_score") or 0) < condicao["score_min"]:
+            return False
+
+    if "tier" in condicao:
+        if lead.get("tier") != condicao["tier"]:
+            return False
+
+    return True
+
+
+def _calcular_horario_wa(data_base, lead: dict = None):
+    """Calcula horário ideal para WA: 09:30 (antes do restaurante abrir).
+    Retorna datetime com hora ajustada."""
+    return data_base.replace(hour=9, minute=30, second=0, microsecond=0)
+
+
+def criar_sequencia_com_regras(lead_id: int, lead_data: dict) -> list:
+    """Cria sequência de ações baseada nas regras configuráveis.
+    Para cada regra (por prioridade), avalia condição contra dados do lead.
+    Primeira regra que dá match ganha. Se acoes=null → fallback para tier.
+    Retorna lista de IDs de ações criadas."""
+    regras = listar_outreach_regras()
+    agora = datetime.now(timezone.utc)
+    template_id = _escolher_template()
+
+    for regra in regras:
+        if not _avaliar_condicao(regra.get("condicao") or {}, lead_data):
+            continue
+
+        acoes = regra.get("acoes")
+        if acoes is None:
+            # Fallback para lógica de tier existente
+            score = lead_data.get("lead_score", 0)
+            tier = calcular_tier(score)
+            atualizar_tier_lead(lead_id, tier)
+            return criar_sequencia_lead(lead_id, tier, score)
+
+        # Criar ações conforme a regra
+        acoes_criadas = []
+        for acao_def in acoes:
+            tipo = acao_def.get("tipo", "enviar_email")
+            delay = acao_def.get("delay_dias", 0)
+            data_agendada = agora + timedelta(days=delay)
+
+            # Para WA, agendar para 09:30 (fora horário comercial)
+            if tipo == "enviar_wa":
+                data_agendada = _calcular_horario_wa(data_agendada, lead_data)
+
+            aid = criar_outreach_acao(lead_id, tipo, regra.get("nome", "regra"),
+                                       data_agendada, template_id)
+            acoes_criadas.append(aid)
+
+        log.info(f"Lead {lead_id}: regra '{regra['nome']}' matched, {len(acoes_criadas)} ações criadas.")
+        return acoes_criadas
+
+    # Nenhuma regra matched — fallback tier
+    score = lead_data.get("lead_score", 0)
+    tier = calcular_tier(score)
+    atualizar_tier_lead(lead_id, tier)
+    return criar_sequencia_lead(lead_id, tier, score)
+
+
+# ============================================================
 # EXECUTAR AÇÕES PENDENTES
 # ============================================================
+
+def _lead_ja_abriu_email(lead_id: int) -> bool:
+    """Verifica se o lead já abriu algum email recente (7 dias).
+    Usado para condição 'nao_abriu' — se abriu, pula ação de push."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT aberto FROM emails_enviados
+            WHERE lead_id = %s AND horario_enviado >= NOW() - INTERVAL '7 days'
+            ORDER BY horario_enviado DESC LIMIT 1
+        """, (lead_id,))
+        row = cur.fetchone()
+        return bool(row and row.get("aberto"))
+
 
 def executar_acoes_pendentes() -> dict:
     """Executa ações de outreach pendentes (agendado_para <= NOW).
@@ -158,6 +254,13 @@ def executar_acoes_pendentes() -> dict:
             stats["pular_sem_email"] += 1
             continue
 
+        # Guardrail: checar canal_primario (se validado, respeitar canal preferido)
+        if acao_tipo in ("enviar_email", "reenviar_email", "followup"):
+            canal_prim = acao.get("canal_primario")
+            if canal_prim and canal_prim != "email" and canal_prim != "telefone":
+                # Canal primário é whatsapp e ação é email — pular se lead tem wa
+                pass  # Ainda envia email como secundário
+
         # Guardrail: email invalido
         if acao.get("email_invalido"):
             marcar_outreach_executado(acao_id, "erro", "Email invalido")
@@ -196,6 +299,16 @@ def executar_acoes_pendentes() -> dict:
                     stats["erros"] += 1
 
             elif acao_tipo == "enviar_wa":
+                # Verificar se lead já abriu email (condição "nao_abriu")
+                if _lead_ja_abriu_email(lead_id):
+                    marcar_outreach_executado(acao_id, "pular_ja_abriu")
+                    stats["executadas"] += 1
+                    continue
+                # Verificar opt_out WA
+                if acao.get("opt_out_wa"):
+                    marcar_outreach_executado(acao_id, "pular_opt_out_wa")
+                    stats["pular_opt_out"] += 1
+                    continue
                 resultado = _executar_enviar_wa(acao)
                 if resultado.get("sucesso"):
                     marcar_outreach_executado(acao_id, "enviado")
@@ -227,10 +340,42 @@ def executar_acoes_pendentes() -> dict:
 
 
 def _executar_enviar_email(acao: dict) -> dict:
-    """Executa envio de email para uma ação de outreach."""
+    """Executa envio de email para uma ação de outreach.
+    Prioridade: Grok competitivo > Pattern Library > Template estático.
+    O Grok gera email com análise de concorrentes (entrega valor antes de vender)."""
     lead_id = acao["lead_id"]
-    template_id = acao.get("template_id")
 
+    # Fonte 1 (PRINCIPAL): Email competitivo gerado pelo Grok
+    try:
+        from crm.grok_email import enviar_email_grok
+        resultado = enviar_email_grok(lead_id)
+        if resultado.get("sucesso"):
+            log.info(
+                f"Lead {lead_id}: email Grok competitivo enviado "
+                f"({resultado.get('concorrentes_usados', 0)} concorrentes)")
+            return resultado
+        else:
+            log.warning(f"Lead {lead_id}: Grok falhou ({resultado.get('erro')}), tentando fallbacks")
+    except Exception as e:
+        log.warning(f"Lead {lead_id}: erro Grok ({e}), tentando fallbacks")
+
+    # Fonte 2: Pattern Library (mensagem personalizada sem IA)
+    try:
+        from crm.pattern_library import gerar_mensagem_personalizada
+        msg = gerar_mensagem_personalizada(lead_id)
+        if msg and not msg.get("erro") and msg.get("assunto") and msg.get("corpo"):
+            from crm.email_service import enviar_email_personalizado
+            resultado = enviar_email_personalizado(
+                lead_id, msg["assunto"], msg["corpo"]
+            )
+            if resultado.get("sucesso"):
+                log.info(f"Lead {lead_id}: email Pattern Library enviado")
+            return resultado
+    except Exception as e:
+        log.warning(f"Lead {lead_id}: Pattern Library falhou ({e}), usando template")
+
+    # Fonte 3 (FALLBACK): template estático
+    template_id = acao.get("template_id")
     if not template_id:
         template_id = _escolher_template()
     if not template_id:
@@ -242,7 +387,8 @@ def _executar_enviar_email(acao: dict) -> dict:
 
 def _executar_reenviar_email(acao: dict) -> dict:
     """Reenvia email se o lead não abriu o anterior.
-    Se já abriu, pula (não reenvia)."""
+    Se já abriu, pula (não reenvia).
+    Reenvio usa Grok para gerar novo email (diferente do primeiro)."""
     lead_id = acao["lead_id"]
 
     # Verificar se lead já abriu algum email recente
@@ -259,7 +405,27 @@ def _executar_reenviar_email(acao: dict) -> dict:
         # Lead já abriu → não reenviar, pular
         return {"pular": "ja_abriu"}
 
-    # Lead não abriu → reenviar com template
+    # Lead não abriu → gerar novo email com Grok (diferente do anterior)
+    try:
+        from crm.grok_email import enviar_email_grok
+        resultado = enviar_email_grok(lead_id)
+        if resultado.get("sucesso"):
+            log.info(f"Lead {lead_id}: reenvio Grok competitivo enviado")
+            return resultado
+    except Exception:
+        pass
+
+    # Fallback: Pattern Library
+    try:
+        from crm.pattern_library import gerar_mensagem_personalizada
+        msg = gerar_mensagem_personalizada(lead_id)
+        if msg and not msg.get("erro") and msg.get("assunto") and msg.get("corpo"):
+            from crm.email_service import enviar_email_personalizado
+            return enviar_email_personalizado(lead_id, msg["assunto"], msg["corpo"])
+    except Exception:
+        pass
+
+    # Fallback template estático
     template_id = acao.get("template_id")
     if not template_id:
         template_id = _escolher_template()
