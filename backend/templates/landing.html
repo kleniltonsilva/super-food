@@ -42,7 +42,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Nunito:wght@400;600;700;800;900&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet">
   <style>
     /* Custom styles */
     .gradient-text {
@@ -179,6 +179,117 @@
     ::-webkit-scrollbar-track { background: #f1f5f9; }
     ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
     ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Blur de preços nos planos */
+    .plan-price-blur {
+      filter: blur(8px);
+      user-select: none;
+      pointer-events: none;
+    }
+
+    /* Quiz Modal */
+    .quiz-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(4px);
+      display: none; align-items: center; justify-content: center;
+      padding: 16px;
+    }
+    .quiz-overlay.active { display: flex; }
+    .quiz-container {
+      background: rgb(250,250,247);
+      border-radius: 20px;
+      max-width: 540px; width: 100%;
+      max-height: 90vh; overflow-y: auto;
+      padding: 32px 28px;
+      position: relative;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.2);
+      font-family: 'Nunito', 'Inter', sans-serif;
+    }
+    .quiz-container::-webkit-scrollbar { width: 6px; }
+    .quiz-container::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+    .quiz-close {
+      position: absolute; top: 12px; right: 16px;
+      background: none; border: none; font-size: 24px; color: #999;
+      cursor: pointer; line-height: 1; padding: 4px;
+    }
+    .quiz-close:hover { color: #333; }
+    .quiz-step { display: none; animation: fadeUp 0.28s ease-out; }
+    .quiz-step.active { display: block; }
+    .quiz-title { font-size: 1.4rem; font-weight: 800; color: #1a1a1a; margin-bottom: 8px; }
+    .quiz-sub { font-size: 0.95rem; color: #666; margin-bottom: 24px; line-height: 1.5; }
+    .quiz-footer { text-align: center; color: #999; font-size: 0.8rem; margin-top: 20px; }
+    .quiz-type-grid {
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .quiz-type-card {
+      background: #fff; border: 2px solid #e5e5e5; border-radius: 14px;
+      padding: 16px 12px; text-align: center; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .quiz-type-card:hover { border-color: rgb(255,107,53); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(255,107,53,0.15); }
+    .quiz-type-card.selected { border-color: rgb(255,107,53); background: rgba(255,107,53,0.06); }
+    .quiz-type-emoji { font-size: 2rem; margin-bottom: 6px; }
+    .quiz-type-label { font-size: 0.85rem; font-weight: 700; color: #333; }
+    .quiz-input {
+      width: 100%; padding: 14px 16px;
+      border: 2px solid #e5e5e5; border-radius: 12px;
+      font-size: 1rem; background: #fff; outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    .quiz-input:focus { border-color: rgb(255,107,53); }
+    .quiz-input::placeholder { color: #bbb; }
+    .quiz-btn {
+      width: 100%; padding: 16px;
+      background: rgb(255,107,53); color: #fff;
+      font-size: 1rem; font-weight: 700;
+      border: none; border-radius: 14px; cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+    .quiz-btn:hover { background: rgb(230,90,40); transform: translateY(-1px); }
+    .quiz-btn:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+    .quiz-btn-wa {
+      background: #25D366; display: inline-flex; align-items: center;
+      justify-content: center; gap: 10px;
+    }
+    .quiz-btn-wa:hover { background: #20bd5a; }
+    .quiz-option {
+      background: #fff; border: 2px solid #e5e5e5; border-radius: 12px;
+      padding: 14px 16px; cursor: pointer; transition: all 0.2s;
+      font-size: 0.95rem; color: #333; text-align: left;
+    }
+    .quiz-option:hover { border-color: rgb(255,107,53); }
+    .quiz-option.selected { border-color: rgb(255,107,53); background: rgba(255,107,53,0.06); font-weight: 600; }
+    .quiz-progress {
+      height: 4px; background: #e5e5e5; border-radius: 2px;
+      margin-bottom: 24px; overflow: hidden;
+    }
+    .quiz-progress-bar {
+      height: 100%; background: rgb(255,107,53);
+      border-radius: 2px; transition: width 0.3s ease;
+    }
+    .quiz-result-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; background: #fff; border-radius: 10px;
+      margin-bottom: 8px; font-size: 0.9rem;
+    }
+    .quiz-result-label { color: #555; }
+    .quiz-result-value { font-weight: 700; color: rgb(255,107,53); }
+    .quiz-result-total {
+      background: linear-gradient(135deg, rgb(255,107,53), #ea580c);
+      color: #fff; border-radius: 14px; padding: 20px;
+      text-align: center; margin: 16px 0;
+    }
+    .quiz-result-total .big { font-size: 1.6rem; font-weight: 800; }
+    @media (max-width: 480px) {
+      .quiz-container { padding: 24px 18px; }
+      .quiz-type-grid { gap: 8px; }
+      .quiz-type-card { padding: 12px 8px; }
+      .quiz-title { font-size: 1.2rem; }
+    }
   </style>
 </head>
 <body class="bg-white text-slate-800 font-sans antialiased overflow-x-hidden">
@@ -233,9 +344,9 @@
             </div>
           </div>
         </div>
-        <a href="#contato"
+        <a href="#" onclick="abrirQuiz(); return false;"
           class="text-sm font-semibold text-white bg-gradient-to-r from-orange-500 to-orange-600 px-5 py-2.5 rounded-xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-lg shadow-orange-500/20">
-          Começar Grátis
+          Diagnóstico Grátis
         </a>
       </div>
 
@@ -271,8 +382,8 @@
             Entrar
           </button>
         </form>
-        <a href="#contato" class="block mx-4 py-2.5 text-center bg-slate-900 text-white font-semibold rounded-xl text-sm">
-          Começar Grátis
+        <a href="#" onclick="abrirQuiz(); return false;" class="block mx-4 py-2.5 text-center bg-slate-900 text-white font-semibold rounded-xl text-sm">
+          Diagnóstico Grátis
         </a>
       </div>
     </div>
@@ -303,9 +414,9 @@
               Site personalizado, app para entregadores com GPS, cozinha digital, Pix online e muito mais. Tudo em um só lugar.
             </p>
             <div class="flex flex-col sm:flex-row items-center gap-4 justify-center lg:justify-start">
-              <a href="#contato"
+              <a href="#" onclick="abrirQuiz(); return false;"
                 class="w-full sm:w-auto px-8 py-4 bg-gradient-to-r from-orange-500 to-orange-600 text-white font-bold rounded-2xl hover:from-orange-600 hover:to-orange-700 transition-all shadow-xl shadow-orange-500/25 text-center text-lg">
-                Começar Grátis
+                Diagnóstico Grátis
               </a>
               <a href="#temas"
                 class="w-full sm:w-auto px-8 py-4 bg-white text-slate-700 font-bold rounded-2xl border-2 border-slate-200 hover:border-orange-300 hover:text-orange-600 transition-all text-center text-lg">
@@ -664,9 +775,72 @@
           <div class="bg-white rounded-2xl border border-slate-200 p-8 animate-pulse"><div class="h-6 bg-slate-200 rounded w-1/2 mb-4"></div><div class="h-10 bg-slate-200 rounded w-3/4 mb-6"></div><div class="space-y-3"><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div><div class="h-4 bg-slate-100 rounded"></div></div></div>
         </div>
 
+        <!-- WhatsApp Humanoide Add-on Banner -->
+        <div class="mt-12 scroll-reveal">
+          <div class="relative bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 rounded-3xl p-8 lg:p-10 overflow-hidden shadow-xl shadow-emerald-500/15">
+            <div class="absolute inset-0 opacity-10">
+              <div class="absolute -top-10 -right-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
+              <div class="absolute -bottom-10 -left-10 w-60 h-60 bg-white rounded-full blur-3xl"></div>
+            </div>
+            <div class="relative z-10 flex flex-col lg:flex-row items-center gap-8">
+              <!-- Ícone -->
+              <div class="shrink-0">
+                <div class="w-20 h-20 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center">
+                  <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                </div>
+              </div>
+              <!-- Texto -->
+              <div class="flex-grow text-center lg:text-left">
+                <div class="inline-flex items-center gap-2 bg-white/20 backdrop-blur rounded-full px-4 py-1 mb-3">
+                  <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                  <span class="text-xs font-semibold text-white uppercase tracking-wider">Novo — Atendimento inteligente</span>
+                </div>
+                <h3 class="text-2xl lg:text-3xl font-display font-extrabold text-white mb-3">
+                  WhatsApp Humanoide
+                </h3>
+                <p class="text-emerald-100 text-base lg:text-lg leading-relaxed max-w-2xl mb-2">
+                  Atendimento por inteligência artificial que conversa como gente de verdade. Sem menus, sem "aperte 1 ou 2", sem "digite o numero da opcao". <strong class="text-white">Isso ficou no passado.</strong>
+                </p>
+                <p class="text-emerald-100 text-sm leading-relaxed max-w-2xl">
+                  Seu cliente manda uma mensagem no WhatsApp e e atendido de forma natural e humanizada — faz pedido, tira duvidas, recebe acompanhamento. Funciona 24 horas, 7 dias por semana.
+                </p>
+              </div>
+              <!-- Preco + CTA -->
+              <div class="shrink-0 text-center">
+                <div class="bg-white rounded-2xl p-6 shadow-lg min-w-[220px]">
+                  <p class="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Adicione ao seu plano</p>
+                  <div class="mb-1">
+                    <span class="text-3xl font-extrabold text-slate-900">R$99</span>
+                    <span class="text-lg font-bold text-slate-400">,45</span>
+                    <span class="text-sm text-slate-400">/mes</span>
+                  </div>
+                  <p class="text-xs text-emerald-600 font-semibold mb-4">Gratis no plano Premium</p>
+                  <div class="space-y-2">
+                    <div class="flex items-center gap-2 text-xs text-slate-600">
+                      <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                      Atendimento humanizado 24h
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-600">
+                      <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                      Pedidos via conversa natural
+                    </div>
+                    <div class="flex items-center gap-2 text-xs text-slate-600">
+                      <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                      Zero menus robotizados
+                    </div>
+                  </div>
+                  <a href="#contato" class="block mt-4 py-2.5 bg-emerald-500 text-white text-sm font-semibold rounded-xl hover:bg-emerald-600 transition-all">
+                    Quero ativar
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Notes -->
         <div class="mt-10 text-center space-y-2">
-          <p class="text-sm text-slate-500">Todos os planos incluem <strong>período de teste grátis</strong>. Cancele quando quiser.</p>
+          <p class="text-sm text-slate-500">Todos os planos incluem <strong>periodo de teste gratis</strong>. Cancele quando quiser.</p>
           <p class="text-sm text-slate-400">Pagamento via Pix ou Boleto. Desconto especial no plano anual.</p>
         </div>
       </div>
@@ -783,7 +957,19 @@
               </div>
             </div>
           </div>
-          <!-- FAQ 7 -->
+          <!-- FAQ 7 - WhatsApp Humanoide -->
+          <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
+            <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
+              <span class="font-semibold text-slate-900">O que e o WhatsApp Humanoide?</span>
+              <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="faq-content">
+              <div class="px-6 pb-5 text-slate-500 leading-relaxed">
+                O WhatsApp Humanoide e um atendente inteligente que conversa com seus clientes de forma natural, como se fosse uma pessoa real. Nada de "aperte 1 para pedidos" ou "digite um numero do menu" — isso ficou no passado. O cliente simplesmente manda uma mensagem e e atendido: faz pedido, tira duvidas, recebe acompanhamento da entrega. Funciona 24h, 7 dias por semana. No plano <strong>Premium</strong> ele ja vem incluso gratuitamente. Nos demais planos, pode ser adicionado por <strong>R$99,45/mes</strong>.
+              </div>
+            </div>
+          </div>
+          <!-- FAQ 8 -->
           <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
             <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
               <span class="font-semibold text-slate-900">E se eu precisar de suporte?</span>
@@ -816,7 +1002,7 @@
             Comece agora com teste grátis. Sem cartão de crédito, sem burocracia. Monte seu cardápio e comece a receber pedidos em minutos.
           </p>
           <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <a href="https://wa.me/15559004563?text=Olá! Tenho interesse no Derekh Food para meu restaurante." target="_blank"
+            <a href="https://wa.me/5511971765565?text=Olá! Tenho interesse no Derekh Food para meu restaurante." target="_blank"
               class="w-full sm:w-auto inline-flex items-center justify-center gap-3 px-8 py-4 bg-white text-orange-600 font-bold rounded-2xl hover:bg-orange-50 transition-all text-lg shadow-xl">
               <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
               Falar no WhatsApp
@@ -872,7 +1058,7 @@
           <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">Contato</h4>
           <ul class="space-y-3">
             <li>
-              <a href="https://wa.me/15559004563" target="_blank" class="text-sm text-slate-400 hover:text-orange-400 transition-colors flex items-center gap-2">
+              <a href="https://wa.me/5511971765565" target="_blank" class="text-sm text-slate-400 hover:text-orange-400 transition-colors flex items-center gap-2">
                 <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                 WhatsApp
               </a>
@@ -888,9 +1074,9 @@
       </div>
 
       <!-- Bottom -->
-      <div class="border-t border-slate-800 mt-10 pt-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="border-t border-slate-800 mt-10 pt-8 flex flex-col items-center gap-3">
         <p class="text-xs text-slate-500">© <span id="currentYear"></span> Derekh Food. Todos os direitos reservados.</p>
-        <p class="text-xs text-slate-500">Desenvolvido por <strong class="text-slate-400">Derekh Food LTDA</strong></p>
+        <p class="text-xs text-slate-600">D ALVES FREITAS DOS SANTOS DESENVOLVIMENTO DE SOFTWARE LTDA — CNPJ 65.642.226/0001-31</p>
       </div>
     </div>
   </footer>
@@ -898,10 +1084,112 @@
   <!-- ============================================================ -->
   <!-- WhatsApp Floating Button                                       -->
   <!-- ============================================================ -->
-  <a href="https://wa.me/15559004563?text=Olá! Tenho interesse no Derekh Food." target="_blank"
+  <a href="https://wa.me/5511971765565?text=Olá! Tenho interesse no Derekh Food." target="_blank"
     class="fixed bottom-6 right-6 w-14 h-14 bg-emerald-500 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 hover:scale-110 transition-all z-50">
     <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
   </a>
+
+  <!-- ============================================================ -->
+  <!-- QUIZ DIAGNÓSTICO MODAL                                        -->
+  <!-- ============================================================ -->
+  <div id="quizOverlay" class="quiz-overlay" onclick="if(event.target===this)fecharQuiz()">
+    <div class="quiz-container">
+      <button class="quiz-close" onclick="fecharQuiz()">&times;</button>
+      <div class="quiz-progress"><div id="quizProgressBar" class="quiz-progress-bar" style="width:0%"></div></div>
+
+      <!-- STEP 0: Tipo de restaurante -->
+      <div id="quizStep0" class="quiz-step active">
+        <div class="quiz-title">Diagnóstico do seu restaurante</div>
+        <div class="quiz-sub">Descubra quanto tempo e dinheiro você perde — e de onde vem cada centavo.</div>
+        <div class="quiz-type-grid" id="quizTypeGrid">
+          <div class="quiz-type-card" data-tipo="pizzaria"><div class="quiz-type-emoji">🍕</div><div class="quiz-type-label">Pizzaria</div></div>
+          <div class="quiz-type-card" data-tipo="hamburgueria"><div class="quiz-type-emoji">🍔</div><div class="quiz-type-label">Hamburgueria</div></div>
+          <div class="quiz-type-card" data-tipo="restaurante"><div class="quiz-type-emoji">🍛</div><div class="quiz-type-label">Restaurante / Marmitaria</div></div>
+          <div class="quiz-type-card" data-tipo="acaiteria"><div class="quiz-type-emoji">🍇</div><div class="quiz-type-label">Açaíteria / Sorveteria</div></div>
+          <div class="quiz-type-card" data-tipo="sushi"><div class="quiz-type-emoji">🍣</div><div class="quiz-type-label">Sushi / Japonês</div></div>
+          <div class="quiz-type-card" data-tipo="padaria"><div class="quiz-type-emoji">🥐</div><div class="quiz-type-label">Padaria / Confeitaria</div></div>
+          <div class="quiz-type-card" data-tipo="bar"><div class="quiz-type-emoji">🍻</div><div class="quiz-type-label">Bar / Petiscaria</div></div>
+          <div class="quiz-type-card" data-tipo="lanchonete"><div class="quiz-type-emoji">🥪</div><div class="quiz-type-label">Lanchonete / Pastelaria</div></div>
+        </div>
+        <div class="quiz-footer">⏱️ 2 minutos • 100% gratuito</div>
+      </div>
+
+      <!-- STEP 1: Nome + Restaurante -->
+      <div id="quizStep1" class="quiz-step">
+        <div class="quiz-title">Sobre você</div>
+        <div class="quiz-sub">Precisamos de alguns dados para personalizar seu diagnóstico.</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <input type="text" id="quizNome" class="quiz-input" placeholder="Seu nome">
+          <input type="text" id="quizRestaurante" class="quiz-input" placeholder="Nome do restaurante">
+          <button class="quiz-btn" onclick="quizAvancar(2)" id="quizBtn1">Continuar</button>
+        </div>
+      </div>
+
+      <!-- STEP 2: Pedidos por dia -->
+      <div id="quizStep2" class="quiz-step">
+        <div class="quiz-title">Quantos pedidos seu restaurante recebe por dia?</div>
+        <div class="quiz-sub">Uma estimativa está ótimo.</div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div class="quiz-option" data-key="pedidos_dia" data-value="0-30" onclick="quizSelectOption(this)">Até 30 pedidos</div>
+          <div class="quiz-option" data-key="pedidos_dia" data-value="30-60" onclick="quizSelectOption(this)">30 a 60 pedidos</div>
+          <div class="quiz-option" data-key="pedidos_dia" data-value="60-100" onclick="quizSelectOption(this)">60 a 100 pedidos</div>
+          <div class="quiz-option" data-key="pedidos_dia" data-value="100+" onclick="quizSelectOption(this)">Mais de 100 pedidos</div>
+        </div>
+      </div>
+
+      <!-- STEP 3: Perguntas universais -->
+      <div id="quizStep3" class="quiz-step">
+        <div class="quiz-title">Sobre a operação do dia a dia</div>
+        <div class="quiz-sub" id="quizUniv1Label">Alguém na equipe copia pedidos manualmente de um sistema para outro?</div>
+        <div style="display:flex;flex-direction:column;gap:10px" id="quizUniv1Options">
+          <div class="quiz-option" data-key="copia_manual" data-value="sempre" onclick="quizSelectOption(this)">Sim, sempre</div>
+          <div class="quiz-option" data-key="copia_manual" data-value="as_vezes" onclick="quizSelectOption(this)">Às vezes</div>
+          <div class="quiz-option" data-key="copia_manual" data-value="nao" onclick="quizSelectOption(this)">Não</div>
+        </div>
+        <div id="quizUniv2" style="display:none;margin-top:20px">
+          <div class="quiz-sub">Como seus motoboys recebem informações do pedido?</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div class="quiz-option" data-key="motoboy_info" data-value="whatsapp" onclick="quizSelectOption(this)">WhatsApp</div>
+            <div class="quiz-option" data-key="motoboy_info" data-value="papel" onclick="quizSelectOption(this)">Papel impresso</div>
+            <div class="quiz-option" data-key="motoboy_info" data-value="sistema" onclick="quizSelectOption(this)">Sistema/App</div>
+            <div class="quiz-option" data-key="motoboy_info" data-value="gritando" onclick="quizSelectOption(this)">Gritando / de boca</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 4: Perguntas específicas do tipo -->
+      <div id="quizStep4" class="quiz-step">
+        <div class="quiz-title" id="quizSpecTitle">Perguntas sobre seu negócio</div>
+        <div id="quizSpecQuestions"></div>
+      </div>
+
+      <!-- STEP 5: Contato -->
+      <div id="quizStep5" class="quiz-step">
+        <div class="quiz-title">Quase lá! Onde enviamos o resultado?</div>
+        <div class="quiz-sub">Seu diagnóstico personalizado aparecerá na próxima tela.</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <input type="tel" id="quizWhatsapp" class="quiz-input" placeholder="WhatsApp (obrigatório)" required>
+          <input type="email" id="quizEmail" class="quiz-input" placeholder="E-mail (opcional)">
+          <button class="quiz-btn" onclick="quizVerResultado()" id="quizBtnResultado">Ver meu diagnóstico</button>
+        </div>
+      </div>
+
+      <!-- STEP 6: Resultado -->
+      <div id="quizStep6" class="quiz-step">
+        <div class="quiz-title" id="quizResultTitle">Diagnóstico</div>
+        <div id="quizResultItems"></div>
+        <div class="quiz-result-total" id="quizResultTotal"></div>
+        <p style="font-size:0.78rem;color:#888;text-align:center;margin-bottom:16px">
+          Cálculo baseado em R$12/hora (custo médio funcionário com encargos) × 26 dias úteis
+        </p>
+        <a id="quizWhatsappLink" href="#" target="_blank" class="quiz-btn quiz-btn-wa" style="text-decoration:none;display:flex">
+          <svg width="22" height="22" fill="#fff" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+          Falar com especialista no WhatsApp
+        </a>
+        <p style="font-size:0.85rem;color:#666;text-align:center;margin-top:12px">Quer resolver isso? A <strong>Derekh Food</strong> automatiza tudo.</p>
+      </div>
+    </div>
+  </div>
 
   <!-- ============================================================ -->
   <!-- SCRIPTS                                                        -->
@@ -1057,34 +1345,40 @@
         'Básico': [
           '{motoboys}',
           'Pedidos ilimitados',
-          'Site personalizado',
-          'Cardápio digital',
-          'Relatórios',
+          'Site e Cardapio digital',
+          'Dashboard de vendas',
+          'Controle de Caixa',
+          'Bairros e Taxas de entrega',
+          'Relatorios basicos',
+          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mes</span>',
         ],
         'Essencial': [
           '{motoboys}',
-          'Pedidos ilimitados',
-          'Site personalizado',
-          'KDS Cozinha Digital',
-          'Controle de Caixa',
-          'Programa de Fidelidade',
+          'Tudo do Basico',
+          '<strong>Cupons e Promocoes</strong>',
+          '<strong>Programa de Fidelidade</strong>',
+          '<strong>Combos</strong>',
+          '<strong>Relatorios avancados</strong>',
+          '<strong>Operadores de Caixa</strong>',
+          '<strong>KDS Cozinha Digital</strong>',
+          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mes</span>',
         ],
         'Avançado': [
           '{motoboys}',
-          'Pedidos ilimitados',
           'Tudo do Essencial',
+          '<strong>App Garcom</strong> (mesas)',
+          '<strong>Integracoes iFood</strong>',
           '<strong>Pix Online</strong> integrado',
-          'Analytics avançado',
-          'Cupons e Promoções',
-          'Suporte prioritário',
+          '<strong>Dominio personalizado</strong>',
+          '<strong>Analytics avancado</strong>',
+          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mes</span>',
         ],
         'Premium': [
           'Motoboys <strong>ilimitados</strong>',
-          'Tudo do Avançado',
-          '<strong>Bot WhatsApp IA</strong> <span class="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded-full ml-1">Em breve</span>',
-          '<strong>Domínio personalizado</strong>',
-          '<strong>App Garçom</strong> <span class="text-xs bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded-full ml-1">Em breve</span>',
-          'Suporte dedicado',
+          'Tudo do Avancado',
+          '<strong>Bridge Printer IA</strong>',
+          '<strong>WhatsApp Humanoide incluso</strong> <span class="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full ml-1">Gratis</span>',
+          '<strong>Suporte dedicado</strong>',
         ],
       };
 
@@ -1101,8 +1395,24 @@
         const motoboysText = plano.limite_motoboys >= 999
           ? 'Motoboys <strong>ilimitados</strong>'
           : `Até <strong>${plano.limite_motoboys} motoboys</strong>`;
-        const features = (featuresPorPlano[plano.nome] || featuresPorPlano['Básico'])
-          .map(f => f.replace('{motoboys}', motoboysText));
+        // Usa features dinâmicas da API se disponível, senão fallback hardcoded
+        let features;
+        if (plano.features && plano.features.length) {
+          features = [motoboysText];
+          plano.features.forEach(f => {
+            if (f.key === 'motoboys' || f.key === 'site_cardapio' || f.key === 'pedidos' || f.key === 'dashboard') return;
+            const label = f.new ? `<strong>${f.label}</strong>` : f.label;
+            features.push(label);
+          });
+          if (plano.nome !== 'Premium') {
+            features.push('WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mes</span>');
+          } else {
+            features.push('<strong>WhatsApp Humanoide incluso</strong> <span class="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full ml-1">Gratis</span>');
+          }
+        } else {
+          features = (featuresPorPlano[plano.nome] || featuresPorPlano['Básico'])
+            .map(f => f.replace('{motoboys}', motoboysText));
+        }
 
         const iconColor = isPremium ? 'text-orange-400' : 'text-emerald-500';
         const textColor = isPremium ? 'text-slate-300' : 'text-slate-600';
@@ -1112,13 +1422,13 @@
         let wrapperClass, btnHtml;
         if (isPremium) {
           wrapperClass = 'card-hover bg-slate-900 rounded-2xl border border-slate-700 p-8 flex flex-col';
-          btnHtml = `<a href="#contato" class="block text-center py-3 rounded-xl bg-white text-slate-900 font-semibold hover:bg-slate-100 transition-all text-sm">Começar Grátis</a>`;
+          btnHtml = `<a href="#" onclick="abrirQuiz(); return false;" class="block text-center py-3 rounded-xl bg-white text-slate-900 font-semibold hover:bg-slate-100 transition-all text-sm">Diagnóstico Grátis</a>`;
         } else if (isDestaque) {
           wrapperClass = 'card-hover plan-popular bg-white rounded-2xl p-8 flex flex-col shadow-lg';
-          btnHtml = `<a href="#contato" class="block text-center py-3 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold hover:from-orange-600 hover:to-orange-700 transition-all text-sm shadow-lg shadow-orange-500/20">Começar Grátis</a>`;
+          btnHtml = `<a href="#" onclick="abrirQuiz(); return false;" class="block text-center py-3 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold hover:from-orange-600 hover:to-orange-700 transition-all text-sm shadow-lg shadow-orange-500/20">Diagnóstico Grátis</a>`;
         } else {
           wrapperClass = 'card-hover bg-white rounded-2xl border border-slate-200 p-8 flex flex-col';
-          btnHtml = `<a href="#contato" class="block text-center py-3 rounded-xl border-2 border-slate-200 text-slate-700 font-semibold hover:border-orange-300 hover:text-orange-600 transition-all text-sm">Começar Grátis</a>`;
+          btnHtml = `<a href="#" onclick="abrirQuiz(); return false;" class="block text-center py-3 rounded-xl border-2 border-slate-200 text-slate-700 font-semibold hover:border-orange-300 hover:text-orange-600 transition-all text-sm">Diagnóstico Grátis</a>`;
         }
 
         const nameColor = isPremium ? 'text-white' : 'text-slate-900';
@@ -1130,7 +1440,7 @@
               <h3 class="text-lg font-bold ${nameColor}">${plano.nome}</h3>
               <p class="text-sm ${descColor} mt-1">${plano.descricao}</p>
             </div>
-            <div class="mb-6">
+            <div class="mb-6 plan-price-blur" aria-label="Preço disponível após diagnóstico">
               <span class="text-4xl font-extrabold ${priceColor}">R$${inteiro}</span>
               ${centavos ? `<span class="text-xl font-bold ${centColor}">${centavos}</span>` : ''}
               <span class="text-sm text-slate-400">/mês</span>
@@ -1198,7 +1508,9 @@
     // ===== Smooth scroll for anchor links =====
     document.querySelectorAll('a[href^="#"]').forEach(anchor => {
       anchor.addEventListener('click', function(e) {
-        const target = document.querySelector(this.getAttribute('href'));
+        const href = this.getAttribute('href');
+        if (href === '#') return; // Quiz buttons
+        const target = document.querySelector(href);
         if (target) {
           e.preventDefault();
           const offset = 80;
@@ -1207,6 +1519,380 @@
         }
       });
     });
+
+    // ===================================================================
+    // QUIZ DIAGNÓSTICO
+    // ===================================================================
+    const QUIZ_DATA = {
+      pedidosFaixa: { '0-30': 20, '30-60': 45, '60-100': 80, '100+': 120 },
+      tipoLabels: {
+        pizzaria: 'Pizzaria', hamburgueria: 'Hamburgueria',
+        restaurante: 'Restaurante', acaiteria: 'Açaíteria',
+        sushi: 'Sushi / Japonês', padaria: 'Padaria',
+        bar: 'Bar / Petiscaria', lanchonete: 'Lanchonete',
+      },
+      painLevels: { low: 0.3, medium: 0.7, high: 1.2, critical: 2 },
+      perguntas: {
+        pizzaria: [
+          { q: 'Na sexta à noite, com fila no forno, o que acontece?', opts: [
+            { t: 'Tudo flui bem', pain: 'low' }, { t: 'Alguns atrasos', pain: 'medium' },
+            { t: 'Caos total', pain: 'high' }, { t: 'Já perdi cliente por isso', pain: 'critical' }
+          ]},
+          { q: 'Pedidos meio-a-meio saem certos?', opts: [
+            { t: 'Sempre', pain: 'low' }, { t: 'Na maioria', pain: 'medium' },
+            { t: 'Erramos bastante', pain: 'high' }, { t: 'É a maior reclamação', pain: 'critical' }
+          ]},
+          { q: 'Já perdeu pedido por confusão de tamanho (P/M/G/GG)?', opts: [
+            { t: 'Nunca', pain: 'low' }, { t: 'Raramente', pain: 'medium' },
+            { t: 'Toda semana', pain: 'high' }, { t: 'Todo dia', pain: 'critical' }
+          ]},
+        ],
+        hamburgueria: [
+          { q: 'Cliente recebe carne no ponto errado com que frequência?', opts: [
+            { t: 'Nunca', pain: 'low' }, { t: 'Raramente', pain: 'medium' },
+            { t: 'Toda semana', pain: 'high' }, { t: 'Reclamação frequente', pain: 'critical' }
+          ]},
+          { q: 'No pico do horário, quanto tempo de atraso?', opts: [
+            { t: 'Sem atraso', pain: 'low' }, { t: '10-15 minutos', pain: 'medium' },
+            { t: '20-30 minutos', pain: 'high' }, { t: 'Mais de 30 minutos', pain: 'critical' }
+          ]},
+          { q: 'Pedidos por WhatsApp causam confusão?', opts: [
+            { t: 'Nunca', pain: 'low' }, { t: 'Às vezes', pain: 'medium' },
+            { t: 'Sempre', pain: 'high' }, { t: 'Já desisti de atender por WA', pain: 'critical' }
+          ]},
+        ],
+        restaurante: [
+          { q: 'Quantas marmitas/pratos saem errados por dia?', opts: [
+            { t: 'Nenhum', pain: 'low' }, { t: '1-2', pain: 'medium' },
+            { t: '3-5', pain: 'high' }, { t: 'Mais de 5', pain: 'critical' }
+          ]},
+          { q: 'Consegue saber o que mais vende sem contar na mão?', opts: [
+            { t: 'Tenho sistema', pain: 'low' }, { t: 'Planilha', pain: 'medium' },
+            { t: 'Acho que sei', pain: 'high' }, { t: 'Não faço ideia', pain: 'critical' }
+          ]},
+          { q: 'Já fez mais comida do que vendeu?', opts: [
+            { t: 'Nunca', pain: 'low' }, { t: 'Raramente', pain: 'medium' },
+            { t: 'Toda semana', pain: 'high' }, { t: 'Todo dia sobra', pain: 'critical' }
+          ]},
+        ],
+        acaiteria: [
+          { q: 'No calor, a fila assusta clientes?', opts: [
+            { t: 'Nunca', pain: 'low' }, { t: 'Às vezes', pain: 'medium' },
+            { t: 'Sempre', pain: 'high' }, { t: 'Já perdi muita venda', pain: 'critical' }
+          ]},
+          { q: 'Montagem personalizada (açaí/sorvete) atrasa o atendimento?', opts: [
+            { t: 'Flui bem', pain: 'low' }, { t: 'Um pouco', pain: 'medium' },
+            { t: 'Bastante', pain: 'high' }, { t: 'É o gargalo', pain: 'critical' }
+          ]},
+          { q: 'Controle de estoque de frutas/complementos funciona?', opts: [
+            { t: 'Perfeito', pain: 'low' }, { t: 'Mais ou menos', pain: 'medium' },
+            { t: 'Falta coisa toda hora', pain: 'high' }, { t: 'Já vendi o que não tinha', pain: 'critical' }
+          ]},
+        ],
+        sushi: [
+          { q: 'Pedidos combinados (rodízio/mix) saem certos?', opts: [
+            { t: 'Sempre', pain: 'low' }, { t: 'Na maioria', pain: 'medium' },
+            { t: 'Erramos bastante', pain: 'high' }, { t: 'Confusão garantida', pain: 'critical' }
+          ]},
+          { q: 'Tempo de preparo do sushi está controlado?', opts: [
+            { t: 'Sim, sempre', pain: 'low' }, { t: 'Quase sempre', pain: 'medium' },
+            { t: 'No pico atrasa muito', pain: 'high' }, { t: 'Reclamam da demora', pain: 'critical' }
+          ]},
+          { q: 'Itens especiais (sem lactose, vegano) são rastreados?', opts: [
+            { t: 'Sim, com sistema', pain: 'low' }, { t: 'Na memória', pain: 'medium' },
+            { t: 'Já erramos', pain: 'high' }, { t: 'Risco constante', pain: 'critical' }
+          ]},
+        ],
+        padaria: [
+          { q: 'Controle de produção do dia funciona?', opts: [
+            { t: 'Perfeito', pain: 'low' }, { t: 'Mais ou menos', pain: 'medium' },
+            { t: 'Sempre sobra ou falta', pain: 'high' }, { t: 'No escuro total', pain: 'critical' }
+          ]},
+          { q: 'Encomendas atrasam?', opts: [
+            { t: 'Nunca', pain: 'low' }, { t: 'Raramente', pain: 'medium' },
+            { t: 'Todo mês', pain: 'high' }, { t: 'É comum', pain: 'critical' }
+          ]},
+          { q: 'Sabe o lucro real de cada produto?', opts: [
+            { t: 'Sim', pain: 'low' }, { t: 'Mais ou menos', pain: 'medium' },
+            { t: 'Não', pain: 'high' }, { t: 'Nem quero saber', pain: 'critical' }
+          ]},
+        ],
+        bar: [
+          { q: 'Comanda perdida é problema?', opts: [
+            { t: 'Nunca', pain: 'low' }, { t: 'Às vezes', pain: 'medium' },
+            { t: 'Todo fim de semana', pain: 'high' }, { t: 'É crônico', pain: 'critical' }
+          ]},
+          { q: 'Cliente reclama de demora no happy hour?', opts: [
+            { t: 'Nunca', pain: 'low' }, { t: 'Às vezes', pain: 'medium' },
+            { t: 'Sempre', pain: 'high' }, { t: 'Já perdi cliente', pain: 'critical' }
+          ]},
+          { q: 'Controla o que cada mesa consumiu?', opts: [
+            { t: 'Sim, sistema', pain: 'low' }, { t: 'Papel/comanda', pain: 'medium' },
+            { t: 'De cabeça', pain: 'high' }, { t: 'Já dei coisa grátis sem querer', pain: 'critical' }
+          ]},
+        ],
+        lanchonete: [
+          { q: 'No horário de pico, qual o tempo médio de espera?', opts: [
+            { t: 'Até 10 min', pain: 'low' }, { t: '15-20 min', pain: 'medium' },
+            { t: '20-30 min', pain: 'high' }, { t: 'Mais de 30 min', pain: 'critical' }
+          ]},
+          { q: 'Pedido sai errado com que frequência?', opts: [
+            { t: 'Quase nunca', pain: 'low' }, { t: '1-2 por dia', pain: 'medium' },
+            { t: 'Vários por dia', pain: 'high' }, { t: 'Maior problema', pain: 'critical' }
+          ]},
+          { q: 'Consegue atender delivery e balcão ao mesmo tempo?', opts: [
+            { t: 'Tranquilo', pain: 'low' }, { t: 'Com esforço', pain: 'medium' },
+            { t: 'Um atrasa o outro', pain: 'high' }, { t: 'Impossível', pain: 'critical' }
+          ]},
+        ],
+      },
+      dorEmojis: {
+        pizzaria: '🍕', hamburgueria: '🍔', restaurante: '🍛', acaiteria: '🍇',
+        sushi: '🍣', padaria: '🥐', bar: '🍻', lanchonete: '🥪',
+      },
+    };
+
+    let quizState = { step: 0, tipo: '', respostas: {}, specIndex: 0 };
+
+    function abrirQuiz() {
+      quizState = { step: 0, tipo: '', respostas: {}, specIndex: 0 };
+      document.querySelectorAll('.quiz-step').forEach(s => s.classList.remove('active'));
+      document.getElementById('quizStep0').classList.add('active');
+      document.querySelectorAll('.quiz-type-card').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('.quiz-option').forEach(o => o.classList.remove('selected'));
+      document.getElementById('quizProgressBar').style.width = '0%';
+      document.getElementById('quizOverlay').classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function fecharQuiz() {
+      document.getElementById('quizOverlay').classList.remove('active');
+      document.body.style.overflow = '';
+    }
+
+    function quizGoStep(n) {
+      quizState.step = n;
+      document.querySelectorAll('.quiz-step').forEach(s => s.classList.remove('active'));
+      const el = document.getElementById('quizStep' + n);
+      if (el) el.classList.add('active');
+      const pct = Math.round((n / 6) * 100);
+      document.getElementById('quizProgressBar').style.width = pct + '%';
+    }
+
+    // Step 0: Seleção de tipo
+    document.querySelectorAll('.quiz-type-card').forEach(card => {
+      card.addEventListener('click', () => {
+        document.querySelectorAll('.quiz-type-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        quizState.tipo = card.dataset.tipo;
+        setTimeout(() => quizGoStep(1), 200);
+      });
+    });
+
+    // Step 1: Nome + Restaurante
+    function quizAvancar(toStep) {
+      const nome = document.getElementById('quizNome').value.trim();
+      const rest = document.getElementById('quizRestaurante').value.trim();
+      if (!nome || !rest) {
+        document.getElementById('quizNome').style.borderColor = nome ? '#e5e5e5' : '#ef4444';
+        document.getElementById('quizRestaurante').style.borderColor = rest ? '#e5e5e5' : '#ef4444';
+        return;
+      }
+      quizState.respostas.nome = nome;
+      quizState.respostas.nome_restaurante = rest;
+      quizGoStep(toStep);
+    }
+
+    // Generic option select (for steps 2, 3, 4)
+    function quizSelectOption(el) {
+      const key = el.dataset.key;
+      const value = el.dataset.value;
+      const pain = el.dataset.pain || '';
+
+      // Deselect siblings
+      el.parentElement.querySelectorAll('.quiz-option').forEach(o => o.classList.remove('selected'));
+      el.classList.add('selected');
+      quizState.respostas[key] = value;
+      if (pain) quizState.respostas[key + '_pain'] = pain;
+
+      // Auto-advance logic
+      setTimeout(() => {
+        if (quizState.step === 2) {
+          // Pedidos dia selected → go step 3
+          quizGoStep(3);
+        } else if (quizState.step === 3 && key === 'copia_manual') {
+          // Show motoboy question
+          document.getElementById('quizUniv2').style.display = 'block';
+        } else if (quizState.step === 3 && key === 'motoboy_info') {
+          // Both universal answered → go to specific questions
+          quizState.specIndex = 0;
+          renderSpecificQuestion();
+          quizGoStep(4);
+        } else if (quizState.step === 4) {
+          // Specific question answered
+          quizState.specIndex++;
+          const perguntas = QUIZ_DATA.perguntas[quizState.tipo] || [];
+          if (quizState.specIndex < perguntas.length) {
+            renderSpecificQuestion();
+          } else {
+            quizGoStep(5);
+          }
+        }
+      }, 250);
+    }
+
+    function renderSpecificQuestion() {
+      const perguntas = QUIZ_DATA.perguntas[quizState.tipo] || [];
+      const idx = quizState.specIndex;
+      if (idx >= perguntas.length) return;
+      const p = perguntas[idx];
+      const container = document.getElementById('quizSpecQuestions');
+      const titulo = document.getElementById('quizSpecTitle');
+      titulo.textContent = p.q;
+      container.innerHTML = '<div style="display:flex;flex-direction:column;gap:10px">' +
+        p.opts.map((o, i) =>
+          `<div class="quiz-option" data-key="spec_${idx}" data-value="${o.t}" data-pain="${o.pain}" onclick="quizSelectOption(this)">${o.t}</div>`
+        ).join('') + '</div>';
+    }
+
+    // Step 5: WhatsApp mask + submit
+    document.getElementById('quizWhatsapp').addEventListener('input', function() {
+      let v = this.value.replace(/\D/g, '');
+      if (v.length > 11) v = v.slice(0, 11);
+      if (v.length > 7) v = `(${v.slice(0,2)}) ${v.slice(2,7)}-${v.slice(7)}`;
+      else if (v.length > 2) v = `(${v.slice(0,2)}) ${v.slice(2)}`;
+      this.value = v;
+    });
+
+    function quizVerResultado() {
+      const waInput = document.getElementById('quizWhatsapp');
+      const waRaw = waInput.value.replace(/\D/g, '');
+      if (waRaw.length < 10) {
+        waInput.style.borderColor = '#ef4444';
+        return;
+      }
+      waInput.style.borderColor = '#e5e5e5';
+      quizState.respostas.whatsapp = waRaw;
+      quizState.respostas.email = document.getElementById('quizEmail').value.trim();
+
+      // Calcular diagnóstico
+      const diag = calcularDiagnostico();
+
+      // Renderizar resultado
+      renderResultado(diag);
+
+      // Enviar ao CRM (fire-and-forget)
+      enviarQuizCRM(diag);
+
+      quizGoStep(6);
+    }
+
+    function calcularDiagnostico() {
+      const CUSTO_HORA = 312; // R$12/h × 26 dias
+      const pedidosFaixa = quizState.respostas.pedidos_dia || '30-60';
+      const pedidosDia = QUIZ_DATA.pedidosFaixa[pedidosFaixa] || 45;
+      const itens = [];
+      let totalHoras = 0;
+
+      // 1. Cópia manual de pedidos
+      const copia = quizState.respostas.copia_manual;
+      if (copia === 'sempre') {
+        const h = pedidosDia * 3 / 60;
+        itens.push({ emoji: '📋', label: `Copiar ${pedidosDia} pedidos/dia × 3 min`, horas: h, custo: h * CUSTO_HORA });
+        totalHoras += h;
+      } else if (copia === 'as_vezes') {
+        const h = pedidosDia * 1.5 / 60;
+        itens.push({ emoji: '📋', label: `Copiar pedidos (parcial) × 1.5 min`, horas: h, custo: h * CUSTO_HORA });
+        totalHoras += h;
+      }
+
+      // 2. Informar motoboy
+      const motoboy = quizState.respostas.motoboy_info;
+      if (motoboy === 'whatsapp') {
+        const h = pedidosDia * 1 / 60;
+        itens.push({ emoji: '💬', label: `Informar motoboy via WhatsApp × 1 min`, horas: h, custo: h * CUSTO_HORA });
+        totalHoras += h;
+      } else if (motoboy === 'papel') {
+        const h = pedidosDia * 0.5 / 60;
+        itens.push({ emoji: '📄', label: `Imprimir/escrever para motoboy × 30s`, horas: h, custo: h * 156 });
+        totalHoras += h;
+      } else if (motoboy === 'gritando') {
+        const h = pedidosDia * 1.5 / 60;
+        itens.push({ emoji: '📢', label: `Comunicar pedidos verbalmente × 1.5 min`, horas: h, custo: h * CUSTO_HORA });
+        totalHoras += h;
+      }
+
+      // 3. Dores específicas (3 perguntas)
+      const perguntas = QUIZ_DATA.perguntas[quizState.tipo] || [];
+      const tipoEmoji = QUIZ_DATA.dorEmojis[quizState.tipo] || '🏪';
+      perguntas.forEach((p, i) => {
+        const painKey = quizState.respostas['spec_' + i + '_pain'];
+        if (painKey && painKey !== 'low') {
+          const h = QUIZ_DATA.painLevels[painKey] || 0;
+          const label = p.q.length > 50 ? p.q.slice(0, 47) + '...' : p.q;
+          itens.push({ emoji: tipoEmoji, label: label, horas: h, custo: h * CUSTO_HORA });
+          totalHoras += h;
+        }
+      });
+
+      // Garantir mínimo se nenhuma dor detectada
+      if (itens.length === 0) {
+        itens.push({ emoji: '⏱️', label: 'Gestão manual do dia a dia', horas: 0.5, custo: 0.5 * CUSTO_HORA });
+        totalHoras = 0.5;
+      }
+
+      const totalCusto = itens.reduce((s, i) => s + i.custo, 0);
+      return { itens, totalHoras: Math.round(totalHoras * 10) / 10, totalCusto: Math.round(totalCusto), pedidosDia };
+    }
+
+    function renderResultado(diag) {
+      const nomeRest = quizState.respostas.nome_restaurante || 'Seu restaurante';
+      document.getElementById('quizResultTitle').textContent = '📊 Diagnóstico: ' + nomeRest;
+
+      const itemsHtml = diag.itens.map(i =>
+        `<div class="quiz-result-item">
+          <span class="quiz-result-label">${i.emoji} ${i.label}</span>
+          <span class="quiz-result-value">${i.horas.toFixed(1)}h → R$${Math.round(i.custo)}/mês</span>
+        </div>`
+      ).join('');
+      document.getElementById('quizResultItems').innerHTML = itemsHtml;
+
+      document.getElementById('quizResultTotal').innerHTML =
+        `<div style="font-size:0.9rem;opacity:0.85;margin-bottom:4px">Você perde aproximadamente</div>
+         <div class="big">~${diag.totalHoras}h/dia e ~R$${diag.totalCusto.toLocaleString('pt-BR')}/mês</div>`;
+
+      // WhatsApp link
+      const nome = quizState.respostas.nome || '';
+      const tipo = QUIZ_DATA.tipoLabels[quizState.tipo] || quizState.tipo;
+      const texto = encodeURIComponent(
+        `Olá! Sou ${nome}, tenho uma ${tipo.toLowerCase()} (${nomeRest}). ` +
+        `Fiz o diagnóstico no site e descobri que perco ~${diag.totalHoras}h/dia (~R$${diag.totalCusto}/mês). ` +
+        `Quero saber como a Derekh Food pode resolver isso!`
+      );
+      document.getElementById('quizWhatsappLink').href = `https://wa.me/5511971765565?text=${texto}`;
+    }
+
+    function enviarQuizCRM(diag) {
+      const payload = {
+        nome: quizState.respostas.nome || '',
+        nome_restaurante: quizState.respostas.nome_restaurante || '',
+        tipo_restaurante: quizState.tipo,
+        whatsapp: quizState.respostas.whatsapp || '',
+        email: quizState.respostas.email || '',
+        pedidos_dia: quizState.respostas.pedidos_dia || '',
+        respostas: quizState.respostas,
+        diagnostico: {
+          horas_dia: diag.totalHoras,
+          custo_mensal: diag.totalCusto,
+          itens: diag.itens.map(i => ({ label: i.label, horas: i.horas, custo: Math.round(i.custo) })),
+        },
+      };
+      fetch('https://derekh-crm.fly.dev/api/leads/quiz', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      }).catch(err => console.warn('[Quiz] CRM envio falhou:', err));
+    }
   </script>
 </body>
 </html>

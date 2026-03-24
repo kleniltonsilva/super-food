@@ -10,6 +10,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from .. import models, database, auth
+from ..feature_flags import has_feature, get_tier
 
 COZINHEIRO_TOKEN_DAYS = 7
 
@@ -86,6 +87,23 @@ def login_cozinheiro(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="KDS não está ativo neste restaurante"
         )
+
+    # Verificar feature flag do plano (trial = acesso total)
+    if restaurante.billing_status != "trial":
+        tier = getattr(restaurante, "plano_tier", None) or get_tier(restaurante.plano)
+        overrides = getattr(restaurante, "features_override", None)
+        if not has_feature(restaurante.plano, "kds_cozinha", overrides=overrides, plano_tier=tier):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "type": "feature_blocked",
+                    "feature": "kds_cozinha",
+                    "feature_label": "KDS Cozinha Digital",
+                    "current_plano": restaurante.plano,
+                    "required_plano": "Essencial",
+                    "message": "O KDS Cozinha Digital requer o plano Essencial ou superior.",
+                },
+            )
 
     # Buscar produto_ids vinculados
     produto_ids = [cp.produto_id for cp in cozinheiro.produtos]

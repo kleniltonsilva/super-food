@@ -81,12 +81,12 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 21/03/2026
-- **Migrations em produção:** 001-027 (última: 027_operadores_caixa)
-- **Migrations locais:** 028 (Pix), 029 (KDS), 030 (Planos), 031 (KDS pausa), 032 (Garçom)
-- **Migrations planejadas:** 033 (Bridge — criada), 034 (Bot)
+- **Última sessão:** 24/03/2026
+- **Migrations em produção:** 001-034 (última: 034_feature_flags)
+- **Migrations planejadas:** 035 (Bot)
+- **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** 6 módulos (Pix → KDS → Garçom → Bot → Sales → Printer), domínio próprio
+- **Pendente:** Módulos 1,4,5 (Pix → Bot → Sales), domínio próprio, deploy Feature Flags
 
 ---
 
@@ -176,7 +176,10 @@ super-food/
 │   │   ├── auth_motoboy.py    # Login/cadastro motoboy
 │   │   ├── auth_admin.py      # Login super admin
 │   │   ├── upload.py          # Upload imagem JWT protegido
+│   │   ├── bridge.py          # Bridge Printer (/painel/bridge/*)
 │   │   └── motoboys.py       # Endpoints motoboy
+│   ├── feature_flags.py       # Registry central features (PlanTier, FEATURE_TIERS, 22 features)
+│   ├── feature_guard.py       # FastAPI Depends factory (verificar_feature)
 │   ├── billing/               # Sistema de cobrança Asaas
 │   │   ├── asaas_client.py    # httpx async client (sandbox/prod)
 │   │   ├── billing_service.py # Lógica trial/plano/pagamento/suspensão
@@ -190,9 +193,9 @@ super-food/
 │   ├── admin/                 # Painel restaurante (20+ páginas)
 │   │   ├── pages/             # Todas as páginas admin
 │   │   ├── components/        # Componentes específicos admin
-│   │   ├── hooks/             # useAdminQueries.ts (57 hooks)
+│   │   ├── hooks/             # useAdminQueries.ts (57 hooks) + useFeatureFlag.ts
 │   │   ├── contexts/          # AdminAuthContext, ThemeContext
-│   │   └── lib/               # adminApiClient.ts
+│   │   └── lib/               # adminApiClient.ts (interceptor feature_blocked)
 │   ├── superadmin/            # Super Admin (5+ páginas)
 │   │   ├── pages/
 │   │   ├── hooks/             # useSuperAdminQueries.ts
@@ -207,7 +210,8 @@ super-food/
 │   └── lib/                   # apiClient.ts (30+ funções)
 ├── database/models.py         # SQLAlchemy ORM models (source of truth, 28+ modelos)
 ├── printer_agent/             # Agent impressão Windows (ESC/POS)
-├── migrations/versions/       # Alembic 001-027
+├── bridge_agent/              # Agent Bridge Windows (spooler + ESC/POS + REST)
+├── migrations/versions/       # Alembic 001-034
 ├── requirements.txt           # Dependencies Python
 ├── Dockerfile                 # Multi-stage build (Node + Python)
 └── fly.toml                   # Config Fly.io
@@ -233,7 +237,7 @@ super-food/
 | 5 | Site Cliente | React | /cliente/{codigo} | Produção |
 | 6 | App KDS (Cozinha) | React PWA | /cozinha | Implementado |
 | 7 | App Garçom | React PWA | /garcom | Implementado |
-| 8 | Bot WhatsApp | FastAPI (micro) | derekh-bot.fly.dev | Planejado |
+| 8 | WhatsApp Humanoide (Bot IA) | FastAPI (micro) | derekh-bot.fly.dev | Planejado |
 | 9 | Sales Autopilot | FastAPI | derekh-crm.fly.dev | Em deploy |
 | 10 | Printer Agent | Windows Service | localhost:8765 | Planejado |
 
@@ -260,18 +264,19 @@ super-food/
 | 14 | Refatoração integrações (credenciais plataforma) | ✅ 16/03 |
 | 15 | Billing/Assinatura Asaas (PIX+Boleto) | ✅ 16/03 |
 | 15.1 | Operadores de Caixa (autenticação abrir/fechar) | ✅ 18/03 |
-| 16 | Bot WhatsApp IA (Plano Premium) | ⏳ Planejado |
+| 16 | WhatsApp Humanoide — Bot IA (Premium incluso, demais +R$99,45/mês) | ⏳ Planejado |
 | 17 | Pix Online Woovi/OpenPix | ⏳ Planejado |
-| 18 | KDS / Comanda Digital | ✅ 21/03 (falta deploy) |
-| 19 | App Garçom (Atendimento Mesa) | ✅ 22/03 (falta deploy) |
+| 18 | KDS / Comanda Digital | ✅ 21/03 (deploy 24/03) |
+| 19 | App Garçom (Atendimento Mesa) | ✅ 22/03 (deploy 24/03) |
 | 20 | Sales Autopilot (CRM B2B) | ⏳ Planejado |
-| 21 | Printer Agent (Windows Service) | ⏳ Planejado |
+| 21 | Bridge Agent + Printer | ✅ 24/03 (deploy 24/03) |
+| 22 | Feature Flags por Plano | ✅ 24/03 (22 features, 38 endpoints, 4 tiers) |
 
 ---
 
 ## PLANO MESTRE DE IMPLEMENTAÇÃO
 
-> **Ordem de prioridade:** Pix → KDS → Garçom → Bot WhatsApp → Sales Autopilot → Printer Agent
+> **Ordem de prioridade:** Pix → KDS → Garçom → WhatsApp Humanoide → Sales Autopilot → Printer Agent
 >
 > **Regras de adaptação (TODOS os módulos):** tabelas em português, PKs Integer autoincrement, FK `restaurante_id` (multi-tenant), rotas `/painel/*` e `/api/admin/*` (sem `/api/v1/`), TanStack Query hooks, wouter nest, shadcn/radix-ui, migrations com `IF EXISTS`/`IF NOT EXISTS`
 
@@ -442,7 +447,7 @@ super-food/
 - [x] WebSocket: kds:pedido_pausado, kds:pedido_despausado
 
 **Fase 8: Deploy**
-- [ ] Deploy migrations 029-031 + testar fluxo pedido → cozinha → pausa → despacho
+- [x] Deploy migrations 029-031 (24/03) + fluxo operacional
 
 ---
 
@@ -486,12 +491,14 @@ super-food/
 - [x] Repetir rodada
 
 **Fase 7: Deploy**
-- [ ] Deploy migration 032 + testar fluxo garçom → mesa → pedido → KDS → pronto
+- [x] Deploy migration 032 (24/03) + fluxo operacional
 
 ---
 
-### MÓDULO 4 — Bot WhatsApp IA — Sprint 16 — Migration 031
+### MÓDULO 4 — WhatsApp Humanoide (Bot IA) — Sprint 16 — Migration 031
 
+> **Nome comercial:** WhatsApp Humanoide (atendimento IA humanizado, sem menus robotizados)
+> **Precificação:** Incluso grátis no plano Premium (R$527/mês). Demais planos: add-on R$99,45/mês.
 > Plano detalhado: `PLANO_BOT_WHATSAPP.md` (10 etapas, 67 tarefas)
 > Docs: `atualização geral do sistema/DEREKH Bot Technical Documentation.html`
 
@@ -501,7 +508,7 @@ super-food/
 
 **Etapa 2: Migration + Guard**
 - [ ] Migration 031: campos bot em `config_restaurante` (bot_ativo, nome_atendente, whatsapp_phone_id, etc.)
-- [ ] Billing guard: só Premium + billing_status active/trial + bot_ativo=True
+- [ ] Billing guard: Premium (incluso grátis) OU qualquer plano com add-on WA Humanoide (R$99,45/mês) + billing_status active/trial + bot_ativo=True
 
 **Etapa 3: LLM + Context**
 - [ ] `context_builder.py` (3 camadas prompt), `atendente.txt`
@@ -592,7 +599,7 @@ super-food/
 - [x] DOCUMENTACAO_TECNICA.md — seção Bridge completa (arquitetura, fluxo, tabelas, endpoints)
 
 **Pendente:**
-- [ ] Deploy migration 033 + testar com cupom real
+- [x] Deploy migration 033 (24/03)
 - [ ] `build.bat` → PyInstaller → `DerekhFood-Bridge.exe`
 - [ ] Super Admin dashboard impressoras
 - [ ] Groq Learning cycle (pattern auto-creation)

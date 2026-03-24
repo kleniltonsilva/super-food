@@ -16,8 +16,9 @@ import logging
 from database import models
 from ..database import get_db
 from .. import auth
+from ..feature_guard import verificar_feature
 
-def get_rest(current_restaurante=Depends(auth.get_current_restaurante)):
+def get_rest(current_restaurante=Depends(verificar_feature("integracoes_marketplace"))):
     return current_restaurante
 
 logger = logging.getLogger(__name__)

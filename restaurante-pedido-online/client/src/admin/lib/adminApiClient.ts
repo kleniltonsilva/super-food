@@ -29,6 +29,12 @@ adminApi.interceptors.response.use(
         );
       }
     }
+    // Feature blocked → dispatch evento para UI
+    if (err.response?.status === 403 && err.response?.data?.detail?.type === "feature_blocked") {
+      window.dispatchEvent(
+        new CustomEvent("feature_blocked", { detail: err.response.data.detail })
+      );
+    }
     // Breadcrumb Sentry para erros 5xx
     if (err.response?.status >= 500) {
       sentryBreadcrumbFromAxiosError("admin", err.config?.method || "get", err.config?.url || "", err.response.status);

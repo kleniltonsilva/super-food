@@ -13,6 +13,9 @@ export interface Restaurante {
   trial_fim?: string;
   billing_bloqueado?: boolean;
   dias_vencido?: number;
+  plano?: string;
+  plano_tier?: number;
+  features?: Record<string, boolean>;
 }
 
 interface AdminAuthContextType {

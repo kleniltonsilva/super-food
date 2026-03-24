@@ -18,13 +18,14 @@ import os
 import httpx
 
 from .. import models, database, auth
+from ..feature_guard import verificar_feature
 
 logger = logging.getLogger("superfood.bridge")
 
 router = APIRouter(prefix="/painel/bridge", tags=["Bridge Printer"])
 
 
-def get_rest(current_restaurante=Depends(auth.get_current_restaurante)):
+def get_rest(current_restaurante=Depends(verificar_feature("bridge_printer"))):
     return current_restaurante
 
 

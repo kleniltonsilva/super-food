@@ -12,6 +12,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from .. import models, database, auth
+from ..feature_flags import get_all_features, get_tier
 
 # Token do restaurante dura 30 dias para sessão persistente
 RESTAURANTE_TOKEN_EXPIRE = timedelta(days=30)
@@ -58,6 +59,8 @@ class RestauranteMeResponse(BaseModel):
     trial_fim: Optional[datetime] = None
     dias_vencido: Optional[int] = None
     plano_ciclo: Optional[str] = None
+    plano_tier: Optional[int] = None
+    features: Optional[dict] = None
 
     class Config:
         from_attributes = True
@@ -109,6 +112,13 @@ def login_restaurante(
 
     billing_bloqueado = restaurante.billing_status in ("suspended_billing", "canceled_billing")
 
+    tier = getattr(restaurante, "plano_tier", None) or get_tier(restaurante.plano)
+    overrides = getattr(restaurante, "features_override", None)
+    features = get_all_features(restaurante.plano, overrides=overrides, plano_tier=tier)
+    # Trial → tudo True
+    if restaurante.billing_status == "trial":
+        features = {k: True for k in features}
+
     return RestauranteLoginResponse(
         access_token=token,
         restaurante={
@@ -118,11 +128,13 @@ def login_restaurante(
             "email": restaurante.email,
             "codigo_acesso": restaurante.codigo_acesso,
             "plano": restaurante.plano,
+            "plano_tier": tier,
             "ativo": restaurante.ativo,
             "billing_status": restaurante.billing_status,
             "trial_fim": restaurante.trial_fim.isoformat() if restaurante.trial_fim else None,
             "billing_bloqueado": billing_bloqueado,
             "dias_vencido": restaurante.dias_vencido or 0,
+            "features": features,
         }
     )
 
@@ -140,6 +152,14 @@ def me_restaurante(
     data = RestauranteMeResponse.model_validate(current_restaurante).model_dump()
     data["refreshed_token"] = new_token
     data["billing_bloqueado"] = current_restaurante.billing_status in ("suspended_billing", "canceled_billing")
+
+    tier = getattr(current_restaurante, "plano_tier", None) or get_tier(current_restaurante.plano)
+    overrides = getattr(current_restaurante, "features_override", None)
+    features = get_all_features(current_restaurante.plano, overrides=overrides, plano_tier=tier)
+    if current_restaurante.billing_status == "trial":
+        features = {k: True for k in features}
+    data["plano_tier"] = tier
+    data["features"] = features
     return data
 
 

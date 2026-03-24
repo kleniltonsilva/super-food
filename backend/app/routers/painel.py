@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, date
 
 from .. import models, database, auth
 from ..cache import invalidate_cardapio
+from ..feature_guard import verificar_feature
 
 router = APIRouter(prefix="/painel", tags=["Painel Restaurante"])
 
@@ -1467,7 +1468,7 @@ class ComboRequest(BaseModel):
 
 @router.get("/combos")
 def listar_combos(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("combos")),
     db: Session = Depends(database.get_db)
 ):
     combos = db.query(models.Combo).options(
@@ -1489,7 +1490,7 @@ def listar_combos(
 @router.post("/combos")
 def criar_combo(
     dados: ComboRequest,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("combos")),
     db: Session = Depends(database.get_db)
 ):
     combo = models.Combo(
@@ -1511,7 +1512,7 @@ def criar_combo(
 @router.put("/combos/{combo_id}")
 def editar_combo(
     combo_id: int, dados: ComboRequest,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("combos")),
     db: Session = Depends(database.get_db)
 ):
     combo = db.query(models.Combo).filter(
@@ -1539,7 +1540,7 @@ def editar_combo(
 @router.delete("/combos/{combo_id}")
 def desativar_combo(
     combo_id: int,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("combos")),
     db: Session = Depends(database.get_db)
 ):
     combo = db.query(models.Combo).filter(
@@ -1593,6 +1594,30 @@ def cadastrar_motoboy(
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
 ):
+    # Verificar limite de motoboys do plano
+    motoboys_ativos = db.query(func.count(models.Motoboy.id)).filter(
+        models.Motoboy.restaurante_id == rest.id,
+        models.Motoboy.status.in_(["ativo", "pendente"]),
+    ).scalar() or 0
+    limite = rest.limite_motoboys or 2
+    if motoboys_ativos >= limite:
+        from ..feature_flags import TIER_TO_PLANO, MOTOBOYS_POR_TIER
+        tier_atual = getattr(rest, "plano_tier", None) or 1
+        proximo_tier = min(tier_atual + 1, 4)
+        proximo_plano = TIER_TO_PLANO.get(proximo_tier, "Premium")
+        proximo_limite = MOTOBOYS_POR_TIER.get(proximo_tier, 999)
+        raise HTTPException(
+            403,
+            detail={
+                "type": "feature_blocked",
+                "feature": "motoboys",
+                "feature_label": "Limite de Motoboys",
+                "current_plano": rest.plano,
+                "required_plano": proximo_plano,
+                "message": f"Limite de {limite} motoboy{'s' if limite > 1 else ''} atingido. Faça upgrade para o plano {proximo_plano} ({proximo_limite if proximo_limite < 999 else 'ilimitados'} motoboys).",
+            },
+        )
+
     # Validar CPF se fornecido
     cpf_limpo = None
     if dados.cpf:
@@ -1980,7 +2005,7 @@ def historico_caixa(
 
 @router.get("/caixa/operadores")
 def listar_operadores_caixa(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("operadores_caixa")),
     db: Session = Depends(database.get_db)
 ):
     ops = db.query(models.OperadorCaixa).filter(
@@ -1998,7 +2023,7 @@ class CriarOperadorCaixaRequest(BaseModel):
 @router.post("/caixa/operadores")
 def criar_operador_caixa(
     dados: CriarOperadorCaixaRequest,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("operadores_caixa")),
     db: Session = Depends(database.get_db)
 ):
     nome = dados.nome.strip()
@@ -2029,7 +2054,7 @@ def criar_operador_caixa(
 def deletar_operador_caixa(
     operador_id: int,
     senha: str = Query(..., min_length=1),
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("operadores_caixa")),
     db: Session = Depends(database.get_db)
 ):
     if not rest.verificar_senha(senha):
@@ -2366,7 +2391,7 @@ class PromocaoRequest(BaseModel):
 
 @router.get("/promocoes")
 def listar_promocoes(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("cupons_promocoes")),
     db: Session = Depends(database.get_db)
 ):
     promos = db.query(models.Promocao).filter(
@@ -2388,7 +2413,7 @@ def listar_promocoes(
 @router.post("/promocoes")
 def criar_promocao(
     dados: PromocaoRequest,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("cupons_promocoes")),
     db: Session = Depends(database.get_db)
 ):
     promo = models.Promocao(
@@ -2409,7 +2434,7 @@ def criar_promocao(
 @router.put("/promocoes/{promo_id}")
 def editar_promocao(
     promo_id: int, dados: PromocaoRequest,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("cupons_promocoes")),
     db: Session = Depends(database.get_db)
 ):
     promo = db.query(models.Promocao).filter(
@@ -2435,7 +2460,7 @@ def editar_promocao(
 @router.delete("/promocoes/{promo_id}")
 def desativar_promocao(
     promo_id: int,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("cupons_promocoes")),
     db: Session = Depends(database.get_db)
 ):
     promo = db.query(models.Promocao).filter(
@@ -2463,7 +2488,7 @@ class PremioRequest(BaseModel):
 
 @router.get("/fidelidade/premios")
 def listar_premios(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("fidelidade")),
     db: Session = Depends(database.get_db)
 ):
     premios = db.query(models.PremioFidelidade).filter(
@@ -2480,7 +2505,7 @@ def listar_premios(
 @router.post("/fidelidade/premios")
 def criar_premio(
     dados: PremioRequest,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("fidelidade")),
     db: Session = Depends(database.get_db)
 ):
     premio = models.PremioFidelidade(
@@ -2495,7 +2520,7 @@ def criar_premio(
 @router.put("/fidelidade/premios/{premio_id}")
 def editar_premio(
     premio_id: int, dados: PremioRequest,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("fidelidade")),
     db: Session = Depends(database.get_db)
 ):
     premio = db.query(models.PremioFidelidade).filter(
@@ -2513,7 +2538,7 @@ def editar_premio(
 @router.delete("/fidelidade/premios/{premio_id}")
 def desativar_premio(
     premio_id: int,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("fidelidade")),
     db: Session = Depends(database.get_db)
 ):
     premio = db.query(models.PremioFidelidade).filter(
@@ -2661,7 +2686,7 @@ class DominioCreate(BaseModel):
 
 @router.get("/dominios")
 def listar_dominios(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("dominio_personalizado")),
     db: Session = Depends(database.get_db)
 ):
     """Lista dominios personalizados do restaurante"""
@@ -2687,7 +2712,7 @@ def listar_dominios(
 @router.post("/dominios")
 def criar_dominio(
     dados: DominioCreate,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("dominio_personalizado")),
     db: Session = Depends(database.get_db)
 ):
     """Adiciona dominio personalizado ao restaurante"""
@@ -2729,7 +2754,7 @@ def criar_dominio(
 @router.post("/dominios/{dominio_id}/verificar")
 def verificar_dns_dominio(
     dominio_id: int,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("dominio_personalizado")),
     db: Session = Depends(database.get_db)
 ):
     """Verifica se o DNS do dominio esta configurado corretamente"""
@@ -2766,7 +2791,7 @@ def verificar_dns_dominio(
 @router.delete("/dominios/{dominio_id}")
 def remover_dominio(
     dominio_id: int,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("dominio_personalizado")),
     db: Session = Depends(database.get_db)
 ):
     """Remove dominio personalizado"""
@@ -2791,7 +2816,7 @@ def remover_dominio(
 def relatorio_analytics(
     senha: str = Query(..., description="Senha do restaurante para autenticação dupla"),
     periodo: str = Query("30d", description="Período: 30d, 90d, 12m, anual"),
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("analytics_avancado")),
     db: Session = Depends(database.get_db)
 ):
     """
@@ -4123,7 +4148,7 @@ class CozinheiroUpdate(BaseModel):
 
 @router.get("/cozinha/cozinheiros")
 def listar_cozinheiros(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Lista cozinheiros do restaurante com produto_ids atribuídos."""
@@ -4152,7 +4177,7 @@ def listar_cozinheiros(
 @router.post("/cozinha/cozinheiros")
 def criar_cozinheiro(
     dados: CozinheiroCreate,
-    rest: models.Restaurante = Depends(verificar_billing_ativo),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Cria cozinheiro com login e senha definidos pelo admin."""
@@ -4209,7 +4234,7 @@ def criar_cozinheiro(
 def atualizar_cozinheiro(
     cozinheiro_id: int,
     dados: CozinheiroUpdate,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Atualiza cozinheiro. Senha só se enviada, replace produto_ids."""
@@ -4273,7 +4298,7 @@ def atualizar_cozinheiro(
 @router.delete("/cozinha/cozinheiros/{cozinheiro_id}")
 def deletar_cozinheiro(
     cozinheiro_id: int,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Soft-delete (ativo=False)."""
@@ -4300,7 +4325,7 @@ class ConfigCozinhaUpdate(BaseModel):
 
 @router.get("/cozinha/config")
 def get_config_cozinha(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Retorna config KDS (cria default se não existe)."""
@@ -4325,7 +4350,7 @@ def get_config_cozinha(
 @router.put("/cozinha/config")
 def atualizar_config_cozinha(
     dados: ConfigCozinhaUpdate,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Atualiza config KDS."""
@@ -4360,7 +4385,7 @@ def atualizar_config_cozinha(
 
 @router.get("/cozinha/dashboard")
 def get_dashboard_cozinha(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Dashboard KDS: contagens por status + tempo médio + cozinheiros ativos."""
@@ -4418,7 +4443,7 @@ def get_dashboard_cozinha(
 async def pausar_pedido_cozinha(
     pedido_id: int,
     request: Request,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Pausa pedido na cozinha (só se status NOVO). Admin envia para final da fila."""
@@ -4471,7 +4496,7 @@ async def pausar_pedido_cozinha(
 async def despausar_pedido_cozinha(
     pedido_id: int,
     request: Request,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Despausa pedido na cozinha — volta para fila na posição original por criado_em."""
@@ -4515,7 +4540,7 @@ async def despausar_pedido_cozinha(
 @router.get("/cozinha/desempenho")
 def get_desempenho_cozinheiros(
     periodo: str = "hoje",
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("kds_cozinha")),
     db: Session = Depends(database.get_db)
 ):
     """Rankings e métricas dos cozinheiros. Calcula em tempo real."""
@@ -4610,7 +4635,7 @@ def get_desempenho_cozinheiros(
 
 @router.get("/garcom/garcons")
 def listar_garcons(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("app_garcom")),
     db: Session = Depends(database.get_db),
 ):
     """Lista garçons do restaurante."""
@@ -4638,7 +4663,7 @@ def listar_garcons(
 @router.post("/garcom/garcons")
 def criar_garcom(
     dados: dict,
-    rest: models.Restaurante = Depends(verificar_billing_ativo),
+    rest: models.Restaurante = Depends(verificar_feature("app_garcom")),
     db: Session = Depends(database.get_db),
 ):
     """Cria um novo garçom."""
@@ -4691,7 +4716,7 @@ def criar_garcom(
 def atualizar_garcom(
     garcom_id: int,
     dados: dict,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("app_garcom")),
     db: Session = Depends(database.get_db),
 ):
     """Atualiza um garçom."""
@@ -4744,7 +4769,7 @@ def atualizar_garcom(
 @router.delete("/garcom/garcons/{garcom_id}")
 def deletar_garcom(
     garcom_id: int,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("app_garcom")),
     db: Session = Depends(database.get_db),
 ):
     """Deleta um garçom."""
@@ -4763,7 +4788,7 @@ def deletar_garcom(
 
 @router.get("/garcom/config")
 def get_config_garcom(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("app_garcom")),
     db: Session = Depends(database.get_db),
 ):
     """Retorna configuração do app garçom."""
@@ -4796,7 +4821,7 @@ def get_config_garcom(
 @router.put("/garcom/config")
 def atualizar_config_garcom(
     dados: dict,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("app_garcom")),
     db: Session = Depends(database.get_db),
 ):
     """Atualiza configuração do app garçom."""
@@ -4830,7 +4855,7 @@ def atualizar_config_garcom(
 
 @router.get("/garcom/sessoes")
 def listar_sessoes_ativas(
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("app_garcom")),
     db: Session = Depends(database.get_db),
 ):
     """Monitor: lista sessões de mesa ativas."""
@@ -4867,7 +4892,7 @@ def listar_sessoes_ativas(
 async def fechar_sessao_admin(
     sessao_id: int,
     request: Request,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("app_garcom")),
     db: Session = Depends(database.get_db),
 ):
     """Admin fecha uma sessão de mesa."""

@@ -350,6 +350,8 @@ def planos_publicos(db: Session = Depends(get_db)):
     if not planos_db:
         return JSONResponse(content=[])
 
+    from .feature_flags import get_features_list_for_plano, get_new_features_for_plano, FEATURE_LABELS, get_tier
+
     return [
         {
             "nome": p.nome,
@@ -359,6 +361,11 @@ def planos_publicos(db: Session = Depends(get_db)):
             "destaque": p.destaque,
             "ordem": p.ordem,
             "desconto_anual": desconto_anual,
+            "tier": get_tier(p.nome),
+            "features": [
+                {"key": f, "label": FEATURE_LABELS.get(f, f), "new": f in get_new_features_for_plano(p.nome)}
+                for f in get_features_list_for_plano(p.nome)
+            ],
         }
         for p in planos_db
     ]

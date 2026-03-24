@@ -23,9 +23,11 @@ import {
   ChefHat,
   Users,
   Printer,
+  Lock,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ROUTE_FEATURE_MAP } from "@/admin/hooks/useFeatureFlag";
 
 interface AdminSidebarProps {
   open: boolean;
@@ -130,6 +132,10 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
                 item.path === "/"
                   ? location === "/"
                   : location.startsWith(item.path);
+              const featureKey = ROUTE_FEATURE_MAP[item.path];
+              const features = restaurante?.features as Record<string, boolean> | undefined;
+              const isLocked = featureKey && features ? features[featureKey] === false : false;
+
               return (
                 <li key={item.path}>
                   <button
@@ -138,11 +144,20 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
                       "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                       isActive
                         ? "bg-[var(--cor-primaria)] text-white"
-                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
+                        : isLocked
+                          ? "text-[var(--text-muted)] opacity-60 hover:bg-[var(--bg-card-hover)]"
+                          : "text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)] hover:text-[var(--text-primary)]"
                     )}
                   >
-                    <item.icon className="h-5 w-5 shrink-0" />
+                    {isLocked ? (
+                      <Lock className="h-5 w-5 shrink-0" />
+                    ) : (
+                      <item.icon className="h-5 w-5 shrink-0" />
+                    )}
                     {item.label}
+                    {isLocked && (
+                      <span className="ml-auto text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">PRO</span>
+                    )}
                   </button>
                 </li>
               );

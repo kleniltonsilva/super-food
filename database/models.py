@@ -68,6 +68,8 @@ class Restaurante(Base):
     dias_vencido = Column(Integer, default=0)
     trial_fim = Column(DateTime)
     plano_ciclo = Column(String(20), default='MONTHLY')  # MONTHLY, YEARLY
+    plano_tier = Column(Integer, default=1)  # 1=Básico, 2=Essencial, 3=Avançado, 4=Premium
+    features_override = Column(Text)  # JSON string para overrides do Super Admin
     # Relacionamentos
     config = relationship("ConfigRestaurante", back_populates="restaurante", uselist=False, cascade="all, delete-orphan")
     site_config = relationship("SiteConfig", back_populates="restaurante", uselist=False, cascade="all, delete-orphan")
@@ -1062,6 +1064,7 @@ class Plano(Base):
     ordem = Column(Integer, default=0)
     ativo = Column(Boolean, default=True)
     criado_em = Column(DateTime, default=datetime.utcnow)
+    features_json = Column(Text)  # JSON array de feature keys do plano
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

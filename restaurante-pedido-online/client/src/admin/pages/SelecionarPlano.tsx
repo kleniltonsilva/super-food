@@ -133,11 +133,24 @@ export default function SelecionarPlano() {
                     )}
                   </div>
 
-                  <ul className="text-sm text-[var(--text-secondary)] space-y-1 text-left">
-                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-400" /> {plano.limite_motoboys >= 999 ? "Motoboys ilimitados" : `Ate ${plano.limite_motoboys} motoboys`}</li>
-                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-400" /> Pedidos ilimitados</li>
-                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-400" /> Site personalizado</li>
-                    <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-400" /> Relatorios completos</li>
+                  <ul className="text-sm text-[var(--text-secondary)] space-y-1.5 text-left max-h-48 overflow-y-auto">
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-400 shrink-0" />
+                      {plano.limite_motoboys >= 999 ? "Motoboys ilimitados" : `Ate ${plano.limite_motoboys} motoboys`}
+                    </li>
+                    {plano.features?.map((f: any) => (
+                      <li key={f.key} className="flex items-center gap-2">
+                        <Check className={`h-4 w-4 shrink-0 ${f.new ? "text-[var(--cor-primaria)]" : "text-green-400"}`} />
+                        <span className={f.new ? "font-medium text-[var(--text-primary)]" : ""}>
+                          {f.label}
+                        </span>
+                      </li>
+                    )) ?? (
+                      <>
+                        <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-400 shrink-0" /> Pedidos ilimitados</li>
+                        <li className="flex items-center gap-2"><Check className="h-4 w-4 text-green-400 shrink-0" /> Site personalizado</li>
+                      </>
+                    )}
                   </ul>
 
                   <Button

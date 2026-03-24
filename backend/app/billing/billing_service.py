@@ -11,15 +11,19 @@ from sqlalchemy.orm import Session
 
 from .. import models
 from .asaas_client import asaas_client
+from ..feature_flags import (
+    get_tier, get_features_list_for_plano, get_new_features_for_plano,
+    FEATURE_LABELS, MOTOBOYS_POR_TIER, PlanTier,
+)
 
 logger = logging.getLogger("superfood.billing")
 
 # Planos fallback (usado quando tabela planos ainda não existe no BD)
 PLANOS_FALLBACK = {
-    "Básico": {"valor": 169.90, "limite_motoboys": 2, "descricao": "Ideal para começar"},
-    "Essencial": {"valor": 279.90, "limite_motoboys": 5, "descricao": "Para restaurantes em crescimento"},
-    "Avançado": {"valor": 329.90, "limite_motoboys": 10, "descricao": "Para operações maiores"},
-    "Premium": {"valor": 527.00, "limite_motoboys": 999, "descricao": "Sem limites"},
+    "Básico": {"valor": 169.90, "limite_motoboys": 2, "descricao": "Ideal para começar", "tier": 1},
+    "Essencial": {"valor": 279.90, "limite_motoboys": 5, "descricao": "Para restaurantes em crescimento", "tier": 2},
+    "Avançado": {"valor": 329.90, "limite_motoboys": 10, "descricao": "Para operações maiores", "tier": 3},
+    "Premium": {"valor": 527.00, "limite_motoboys": 999, "descricao": "Sem limites", "tier": 4},
 }
 
 
@@ -85,6 +89,7 @@ async def iniciar_trial(restaurante_id: int, db: Session, admin_id: Optional[int
     restaurante.plano = config.trial_plano
     restaurante.trial_fim = trial_fim
     restaurante.dias_vencido = 0
+    restaurante.plano_tier = PlanTier.PREMIUM  # Trial = acesso total
 
     # Atualizar limites conforme plano do trial
     planos = get_planos(db)
@@ -170,6 +175,7 @@ async def selecionar_plano(
     restaurante.plano_ciclo = ciclo
     restaurante.valor_plano = valor  # valor por ciclo: mensal ou anual total
     restaurante.limite_motoboys = plano_info["limite_motoboys"]
+    restaurante.plano_tier = get_tier(plano)
     restaurante.data_vencimento = proximo_vencimento
 
     # Criar assinatura no Asaas
@@ -553,7 +559,7 @@ async def migrar_restaurante_asaas(restaurante_id: int, db: Session, admin_id: O
 
 
 def get_planos_disponiveis(db: Session) -> list:
-    """Retorna lista de planos com preços mensal e anual."""
+    """Retorna lista de planos com preços mensal e anual + features."""
     config = _get_config(db)
     desconto = config.desconto_anual_percentual
     planos = get_planos(db)
@@ -563,6 +569,13 @@ def get_planos_disponiveis(db: Session) -> list:
         valor_mensal = info["valor"]
         valor_anual_total = round(valor_mensal * 12 * (1 - desconto / 100), 2)
         valor_anual_mensal = round(valor_anual_total / 12, 2)
+        tier = info.get("tier") or get_tier(nome)
+
+        # Features cumulativas (todas do tier e abaixo)
+        all_features = get_features_list_for_plano(nome)
+        # Features novas neste tier
+        new_features = get_new_features_for_plano(nome)
+
         resultado.append({
             "nome": nome,
             "descricao": info["descricao"],
@@ -571,5 +584,14 @@ def get_planos_disponiveis(db: Session) -> list:
             "valor_anual_total": valor_anual_total,
             "valor_anual_mensal": valor_anual_mensal,
             "desconto_anual_percentual": desconto,
+            "tier": tier,
+            "features": [
+                {"key": f, "label": FEATURE_LABELS.get(f, f), "new": f in new_features}
+                for f in all_features
+            ],
+            "new_features": [
+                {"key": f, "label": FEATURE_LABELS.get(f, f)}
+                for f in new_features
+            ],
         })
     return resultado

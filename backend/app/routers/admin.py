@@ -18,6 +18,7 @@ import hashlib
 import socket
 
 from .. import models, database, auth
+from ..feature_flags import get_all_features, get_tier, FEATURE_LABELS, TIER_TO_PLANO
 
 
 def _validar_cpf_cnpj(valor: str) -> bool:
@@ -2138,4 +2139,87 @@ def reset_demo(
         "mensagem": "Demo resetado",
         "pedidos_removidos": deleted_pedidos,
         "clientes_removidos": deleted_clientes,
+    }
+
+
+# ============================================================
+# FEATURE FLAGS — Override por restaurante
+# ============================================================
+
+@router.get("/restaurantes/{restaurante_id}/features")
+def get_features_restaurante(
+    restaurante_id: int,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Retorna features atuais do restaurante (plan-based + overrides)."""
+    rest = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
+    if not rest:
+        raise HTTPException(404, "Restaurante não encontrado")
+
+    tier = getattr(rest, "plano_tier", None) or get_tier(rest.plano)
+    overrides = getattr(rest, "features_override", None)
+    features = get_all_features(rest.plano, overrides=overrides, plano_tier=tier)
+
+    override_dict = {}
+    if overrides:
+        try:
+            import json
+            override_dict = json.loads(overrides) if isinstance(overrides, str) else overrides
+        except Exception:
+            pass
+
+    return {
+        "restaurante_id": rest.id,
+        "plano": rest.plano,
+        "plano_tier": tier,
+        "billing_status": rest.billing_status,
+        "features": features,
+        "overrides": override_dict,
+        "feature_labels": FEATURE_LABELS,
+        "tier_planos": TIER_TO_PLANO,
+    }
+
+
+class FeatureOverrideRequest(BaseModel):
+    overrides: dict  # {"kds_cozinha": true, "bridge_printer": false}
+
+
+@router.put("/restaurantes/{restaurante_id}/features")
+def set_features_override(
+    restaurante_id: int,
+    dados: FeatureOverrideRequest,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Define overrides de features para um restaurante. Super Admin pode dar/tirar features."""
+    rest = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
+    if not rest:
+        raise HTTPException(404, "Restaurante não encontrado")
+
+    import json
+    # Merge com overrides existentes
+    existing = {}
+    if rest.features_override:
+        try:
+            existing = json.loads(rest.features_override) if isinstance(rest.features_override, str) else rest.features_override
+        except Exception:
+            existing = {}
+
+    for key, val in dados.overrides.items():
+        if val is None:
+            existing.pop(key, None)  # None remove o override
+        else:
+            existing[key] = bool(val)
+
+    rest.features_override = json.dumps(existing) if existing else None
+    db.commit()
+
+    tier = getattr(rest, "plano_tier", None) or get_tier(rest.plano)
+    features = get_all_features(rest.plano, overrides=rest.features_override, plano_tier=tier)
+
+    return {
+        "restaurante_id": rest.id,
+        "overrides": existing,
+        "features": features,
     }

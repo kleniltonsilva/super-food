@@ -9,7 +9,7 @@
 
 - Derekh Food é um SaaS multi-tenant de delivery completo para restaurantes
 - Público-alvo: pizzarias, lanchonetes, hamburguerias, açaiterias, padarias, restaurantes em geral
-- 7 aplicações integradas num único sistema:
+- 8 aplicações integradas num único sistema:
   1. API Backend (FastAPI)
   2. Super Admin (gestão da plataforma)
   3. Painel do Restaurante (gestão completa)
@@ -17,6 +17,7 @@
   5. Site do Cliente (cardápio online)
   6. Cozinha Digital KDS (PWA)
   7. App Garçom (PWA)
+  8. Bridge Printer Agent (Windows — intercepta impressões de plataformas externas)
 
 ### Diferenciais
 - Sistema 100% brasileiro, desenvolvido em português
@@ -27,6 +28,8 @@
 - Integrações marketplace: iFood, 99Food, Rappi, Keeta
 - Sistema de billing integrado (Asaas)
 - Pix Online para clientes (Woovi/OpenPix)
+- Feature Flags por plano: 4 tiers (Básico→Essencial→Avançado→Premium) com 22 features controladas
+- Bridge Printer IA: intercepta cupons de iFood/Rappi e converte em pedidos Derekh automaticamente
 
 ---
 
@@ -607,29 +610,37 @@ Admin escolhe:
 - **BD desenvolvimento:** SQLite
 - **BD produção:** PostgreSQL 16
 
-### 9.2 Endpoints por Módulo (95+)
+### 9.2 Endpoints por Módulo (145+)
 | Módulo | Prefixo | Endpoints | Descrição |
 |--------|---------|-----------|-----------|
 | Painel Admin | `/painel/*` | ~30 | CRUD pedidos, produtos, categorias, motoboys, config |
-| Auth Restaurante | `/auth/restaurante/*` | 3 | Login, perfil, alterar senha |
+| Auth Restaurante | `/auth/restaurante/*` | 3 | Login, perfil (com features dict), alterar senha |
 | Auth Cliente | `/auth/cliente/*` | 4 | Registro, login, perfil, alterar senha |
 | Auth Motoboy | `/auth/motoboy/*` | 3 | Login, cadastro, perfil |
-| Auth Cozinheiro | `/auth/cozinheiro/*` | 2 | Login, perfil (me) |
+| Auth Cozinheiro | `/auth/cozinheiro/*` | 2 | Login (gate kds_cozinha), perfil (me) |
+| Auth Garçom | `/garcom/auth/*` | 2 | Login (gate app_garcom), perfil (me) |
 | Auth Admin | `/auth/admin/*` | 2 | Login, perfil |
 | Carrinho | `/carrinho/*` | 6 | CRUD carrinho, finalizar (criar pedido) |
 | Site Cliente | `/cliente/{codigo}/*` | 8 | Cardápio, busca, rastreamento, endereços |
 | Motoboy | `/motoboy/*` | 6 | Entregas, GPS, ganhos, finalizar |
 | KDS | `/kds/*` | 5 | Pedidos cozinha, status, assumir, refazer |
-| Super Admin | `/api/admin/*` | 12 | CRUD restaurantes, planos, billing, integrações |
-| Billing | `/painel/billing/*` | 5 | Assinatura, faturas, pagamento |
+| Super Admin | `/api/admin/*` | 14 | CRUD restaurantes, planos, billing, integrações, **features override** |
+| Billing | `/painel/billing/*` | 5 | Assinatura, faturas, pagamento, planos disponíveis (com features) |
 | Billing Admin | `/api/admin/billing/*` | 6 | MRR, inadimplentes, ações billing |
 | Webhooks | `/webhooks/*` | 2 | Asaas, Woovi |
-| Integrações | `/painel/integracoes/*` | 4 | Connect/disconnect marketplace |
+| Integrações | `/painel/integracoes/*` | 4 | Connect/disconnect marketplace (gate: `integracoes_marketplace`) |
 | Upload | `/painel/upload` | 1 | Upload de imagens |
-| Cozinha Admin | `/painel/cozinha/*` | 7 | CRUD cozinheiros, config, dashboard |
-| Auth Garçom | `/garcom/auth/*` | 2 | Login, perfil (me) |
+| Cozinha Admin | `/painel/cozinha/*` | 7 | CRUD cozinheiros, config, dashboard (gate: `kds_cozinha`) |
 | App Garçom | `/garcom/*` | 10 | Mesas, sessões, pedidos, itens esgotados, cardápio |
-| Garçom Admin | `/painel/garcom/*` | 6 | CRUD garçons, config, sessões, fechar sessão |
+| Garçom Admin | `/painel/garcom/*` | 6 | CRUD garçons, config, sessões (gate: `app_garcom`) |
+| Bridge Printer | `/painel/bridge/*` | 10 | Parse cupom, orders, patterns CRUD, status (gate: `bridge_printer`) |
+| Combos | `/painel/combos/*` | 4 | CRUD combos (gate: `combos`) |
+| Promoções | `/painel/promocoes/*` | 4 | CRUD cupons/promoções (gate: `cupons_promocoes`) |
+| Fidelidade | `/painel/fidelidade/*` | 4 | CRUD prêmios fidelidade (gate: `fidelidade`) |
+| Domínios | `/painel/dominios/*` | 4 | CRUD domínios personalizados (gate: `dominio_personalizado`) |
+| Analytics | `/painel/relatorios/analytics` | 1 | Analytics avançado (gate: `analytics_avancado`) |
+| Operadores Caixa | `/painel/caixa/operadores/*` | 3 | CRUD operadores (gate: `operadores_caixa`) |
+| Público | `/api/public/*` | 2 | Planos (com features) e demos para landing page |
 
 ### 9.3 WebSocket Channels
 | Canal | Auth | Eventos |
@@ -782,6 +793,10 @@ Restaurante saca (manual ou automático)
 - Página de vendas com design moderno (Tailwind CSS)
 - Seções: hero, funcionalidades, tipos de restaurante, planos, depoimentos, FAQ, CTA
 - Botão WhatsApp flutuante (SVG) para contato comercial
+- Banner "WhatsApp Humanoide" na seção de planos (add-on R$99,45/mês, grátis no Premium)
+- **Planos dinâmicos:** features carregadas via `GET /api/public/planos` (com fallback hardcoded)
+- Cada plano exibe features cumulativas do tier, com destaque (bold) para features novas
+- FAQ com 8 perguntas incluindo explicação do WhatsApp Humanoide
 - Responsivo para mobile, tablet e desktop
 - SEO otimizado (meta tags, Open Graph)
 
@@ -799,32 +814,77 @@ Restaurante saca (manual ou automático)
 
 ---
 
-## 13. FUNCIONALIDADES POR PLANO
+## 13. FUNCIONALIDADES POR PLANO (Feature Flags)
 
-| Funcionalidade | Básico | Profissional | Premium |
-|---------------|--------|-------------|---------|
-| Site do cliente | ✅ | ✅ | ✅ |
-| Painel admin | ✅ | ✅ | ✅ |
-| Pedidos online | ✅ | ✅ | ✅ |
-| Categorias e produtos | ✅ | ✅ | ✅ |
-| Caixa | ✅ | ✅ | ✅ |
-| Relatórios básicos | ✅ | ✅ | ✅ |
-| App motoboy | — | ✅ | ✅ |
-| Mapa GPS motoboys | — | ✅ | ✅ |
-| Promoções/cupons | — | ✅ | ✅ |
-| Fidelidade | — | ✅ | ✅ |
-| Bairros/taxas | — | ✅ | ✅ |
-| Cozinha Digital (KDS) | — | ✅ | ✅ |
-| App Garçom | — | ✅ | ✅ |
-| Pix Online | — | — | ✅ |
-| Integrações marketplace | — | — | ✅ |
-| Bot WhatsApp IA | — | — | ✅ |
-| Relatórios avançados | — | — | ✅ |
-| Motoboys ilimitados | 2 | 5 | Ilimitado |
+### 13.1 Sistema de Feature Flags
+
+O sistema usa **comparação por tier inteiro** (1-4) com hierarquia cumulativa. Cada plano inclui tudo dos anteriores.
+
+**Arquivos-chave:**
+- `backend/app/feature_flags.py` — Registry central (PlanTier, FEATURE_TIERS, funções)
+- `backend/app/feature_guard.py` — FastAPI Depends factory (`verificar_feature("key")`)
+- Migration 034 — `plano_tier`, `features_override`, `features_json`
+
+**Fluxo:**
+1. Restaurante se cadastra → `plano_tier = 1` (Básico)
+2. Inicia trial → `plano_tier = 4` (Premium, acesso total)
+3. Seleciona plano → `plano_tier` atualizado automaticamente
+4. Acessa endpoint protegido → `verificar_feature()` compara tier
+5. Feature bloqueada → 403 `{"type": "feature_blocked", ...}`
+6. Super Admin pode dar override via `features_override` (JSON)
+
+### 13.2 Tabela Features por Plano
+
+| Funcionalidade | Key | Básico (T1) | Essencial (T2) | Avançado (T3) | Premium (T4) |
+|---------------|-----|:-----------:|:--------------:|:-------------:|:------------:|
+| Site e Cardápio | `site_cardapio` | ✅ | ✅ | ✅ | ✅ |
+| Pedidos | `pedidos` | ✅ | ✅ | ✅ | ✅ |
+| Dashboard | `dashboard` | ✅ | ✅ | ✅ | ✅ |
+| Caixa | `caixa` | ✅ | ✅ | ✅ | ✅ |
+| Bairros e Taxas | `bairros_taxas` | ✅ | ✅ | ✅ | ✅ |
+| Motoboys | `motoboys` | ✅ (2) | ✅ (5) | ✅ (10) | ✅ (ilimitados) |
+| Configurações | `configuracoes` | ✅ | ✅ | ✅ | ✅ |
+| Relatórios Básicos | `relatorios_basicos` | ✅ | ✅ | ✅ | ✅ |
+| Cupons e Promoções | `cupons_promocoes` | — | ✅ | ✅ | ✅ |
+| Programa de Fidelidade | `fidelidade` | — | ✅ | ✅ | ✅ |
+| Combos Promocionais | `combos` | — | ✅ | ✅ | ✅ |
+| Relatórios Avançados | `relatorios_avancados` | — | ✅ | ✅ | ✅ |
+| Operadores de Caixa | `operadores_caixa` | — | ✅ | ✅ | ✅ |
+| KDS Cozinha Digital | `kds_cozinha` | — | ✅ | ✅ | ✅ |
+| App Garçom | `app_garcom` | — | — | ✅ | ✅ |
+| Integrações Marketplace | `integracoes_marketplace` | — | — | ✅ | ✅ |
+| Pix Online | `pix_online` | — | — | ✅ | ✅ |
+| Domínio Personalizado | `dominio_personalizado` | — | — | ✅ | ✅ |
+| Analytics Avançado | `analytics_avancado` | — | — | ✅ | ✅ |
+| Bridge Printer IA | `bridge_printer` | — | — | — | ✅ |
+| Bot WhatsApp IA | `bot_whatsapp` | — | — | — | ✅ |
+| Suporte Dedicado | `suporte_dedicado` | — | — | — | ✅ |
+
+### 13.3 Endpoints Protegidos
+
+| Feature | Endpoints | Guard |
+|---------|-----------|-------|
+| `combos` | GET/POST/PUT/DELETE `/painel/combos` | `verificar_feature("combos")` |
+| `operadores_caixa` | GET/POST/DELETE `/painel/caixa/operadores` | `verificar_feature("operadores_caixa")` |
+| `cupons_promocoes` | GET/POST/PUT/DELETE `/painel/promocoes` | `verificar_feature("cupons_promocoes")` |
+| `fidelidade` | GET/POST/PUT/DELETE `/painel/fidelidade/premios` | `verificar_feature("fidelidade")` |
+| `dominio_personalizado` | GET/POST/DELETE `/painel/dominios` | `verificar_feature("dominio_personalizado")` |
+| `analytics_avancado` | GET `/painel/relatorios/analytics` | `verificar_feature("analytics_avancado")` |
+| `kds_cozinha` | Todos `/painel/cozinha/*` + login cozinheiro | `verificar_feature("kds_cozinha")` |
+| `app_garcom` | Todos `/painel/garcom/*` + login garçom | `verificar_feature("app_garcom")` |
+| `bridge_printer` | Todos `/painel/bridge/*` | `verificar_feature("bridge_printer")` |
+| `integracoes_marketplace` | Todos `/painel/integracoes/*` | `verificar_feature("integracoes_marketplace")` |
+
+### 13.4 Super Admin Override
+
+- `GET /api/admin/restaurantes/{id}/features` — lista features + overrides
+- `PUT /api/admin/restaurantes/{id}/features` — body `{"kds_cozinha": true}` → dá acesso
+- Override com `null` remove o override (volta ao plano)
+- Armazenado em `restaurantes.features_override` (JSON)
 
 ---
 
-## Bridge Printer Agent — Sprint 21
+## 14. Bridge Printer Agent — Sprint 21
 
 ### Arquitetura
 

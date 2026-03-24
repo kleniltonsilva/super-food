@@ -10,6 +10,7 @@ from typing import Optional
 from datetime import datetime, timedelta
 
 from .. import models, database, auth
+from ..feature_flags import has_feature, get_tier
 
 GARCOM_TOKEN_DAYS = 7
 
@@ -88,6 +89,23 @@ def login_garcom(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="App Garçom não está ativo neste restaurante"
         )
+
+    # Verificar feature flag do plano (trial = acesso total)
+    if restaurante.billing_status != "trial":
+        tier = getattr(restaurante, "plano_tier", None) or get_tier(restaurante.plano)
+        overrides = getattr(restaurante, "features_override", None)
+        if not has_feature(restaurante.plano, "app_garcom", overrides=overrides, plano_tier=tier):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "type": "feature_blocked",
+                    "feature": "app_garcom",
+                    "feature_label": "App Garçom",
+                    "current_plano": restaurante.plano,
+                    "required_plano": "Avançado",
+                    "message": "O App Garçom requer o plano Avançado ou superior.",
+                },
+            )
 
     # Buscar mesa_ids vinculados (modo CUSTOM)
     mesa_ids = [gm.mesa_id for gm in garcom.mesas_custom]
