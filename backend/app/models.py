@@ -93,6 +93,10 @@ from database.models import (
     SessaoMesa,
     SessaoPedido,
     ItemEsgotado,
+
+    # Bridge Printer
+    BridgePattern,
+    BridgeInterceptedOrder,
 )
 
 # Para compatibilidade com imports existentes
@@ -147,4 +151,6 @@ __all__ = [
     'SessaoMesa',
     'SessaoPedido',
     'ItemEsgotado',
+    'BridgePattern',
+    'BridgeInterceptedOrder',
 ]

@@ -47,6 +47,9 @@ export const ADMIN_QUERY_KEYS = {
   garcons: ["admin", "garcom", "garcons"] as const,
   configGarcom: ["admin", "garcom", "config"] as const,
   sessoesGarcom: ["admin", "garcom", "sessoes"] as const,
+  buscarCliente: (q: string) => ["admin", "clientes", "buscar", q] as const,
+  bridgePatterns: ["admin", "bridge", "patterns"] as const,
+  bridgeOrders: ["admin", "bridge", "orders"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -1102,5 +1105,80 @@ export function useFecharSessaoGarcom() {
   return useMutation({
     mutationFn: api.fecharSessaoGarcom,
     onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.sessoesGarcom }),
+  });
+}
+
+// ─── Smart Client Lookup ────────────────────────────────
+export function useBuscarCliente(q: string) {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.buscarCliente(q),
+    queryFn: () => api.buscarCliente(q),
+    enabled: q.length >= 3,
+    staleTime: 60_000,
+  });
+}
+
+// ─── Bridge Printer ─────────────────────────────────────
+export function useBridgePatterns() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.bridgePatterns,
+    queryFn: api.getBridgePatterns,
+    staleTime: 30_000,
+  });
+}
+
+export function useDeletarBridgePattern() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.deletarBridgePattern,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.bridgePatterns }),
+  });
+}
+
+export function useBridgeOrders(params?: { status?: string; limit?: number; offset?: number }) {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.bridgeOrders, params],
+    queryFn: () => api.getBridgeOrders(params),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useCriarPedidoFromBridge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.criarPedidoFromBridge,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.bridgeOrders });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+    },
+  });
+}
+
+export function useValidarEAprenderBridge() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, gerarPattern }: { orderId: number; gerarPattern?: boolean }) =>
+      api.validarEAprenderBridge(orderId, gerarPattern),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.bridgeOrders });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.bridgePatterns });
+    },
+  });
+}
+
+export function useReparseBridgeOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.reparseBridgeOrder,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.bridgeOrders }),
+  });
+}
+
+export function useBridgeStatus() {
+  return useQuery({
+    queryKey: ["admin", "bridge", "status"] as const,
+    queryFn: api.getBridgeStatus,
+    staleTime: 30_000,
   });
 }

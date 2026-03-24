@@ -84,7 +84,7 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Última sessão:** 21/03/2026
 - **Migrations em produção:** 001-027 (última: 027_operadores_caixa)
 - **Migrations locais:** 028 (Pix), 029 (KDS), 030 (Planos), 031 (KDS pausa), 032 (Garçom)
-- **Migrations planejadas:** 033 (Bot), 034 (Bridge)
+- **Migrations planejadas:** 033 (Bridge — criada), 034 (Bot)
 - **Bugs conhecidos:** Nenhum crítico
 - **Pendente:** 6 módulos (Pix → KDS → Garçom → Bot → Sales → Printer), domínio próprio
 
@@ -557,29 +557,45 @@ super-food/
 
 ---
 
-### MÓDULO 6 — Printer Agent (Windows Service) — Sprint 21 — Migration 032
+### MÓDULO 6 — Bridge Agent + Printer — Sprint 21 — Migration 033
 
-> Sistema separado (Windows). Bridge endpoints no backend SaaS.
+> Bridge Agent intercepta impressões de plataformas externas. Printer Agent existente mantido separado.
 
-**Fase 1: Bridge Backend**
-- [ ] Migration 032: tabelas `bridge_patterns`, `bridge_raw_examples`, `bridge_groq_usage`, `bridge_learning_events`
-- [ ] Router: `POST /api/bridge/parse`, `POST /api/bridge/orders`, `GET /api/bridge/config`
-- [ ] Services: `groq_service.py` + `pattern_engine.py`
+**Fase 1: Smart Client Lookup (Painel Admin)**
+- [x] Endpoint `GET /painel/clientes/buscar?q=TELEFONE` — busca parcial por telefone
+- [x] `cliente_id` no `PedidoManualRequest` — vincula cliente ao pedido manual
+- [x] Hook `useBuscarCliente` + debounce 500ms no NovoPedido.tsx
+- [x] Card verde ao encontrar cliente + botão "Usar este cliente" + badge vinculado
 
-**Fase 2: Windows Service**
-- [ ] `derekh-printer-agent/`: spooler_monitor, escpos_parser, platform_detector
-- [ ] HTTP server local (porta 8765) para receber pedidos do SaaS
-- [ ] Windows Service (pywin32)
+**Fase 2: Bridge Backend**
+- [x] Migration 033: tabelas `bridge_patterns`, `bridge_intercepted_orders`
+- [x] Models ORM: `BridgePattern`, `BridgeInterceptedOrder` + re-export
+- [x] Router `bridge.py`: parse (pattern → IA Grok), orders, patterns CRUD
+- [x] Detecção plataforma por keywords + parser regex + parser IA (xAI Grok Mini)
+- [x] Registrado em main.py
 
-**Fase 3: Groq Learning**
-- [ ] Ciclo 3 fases: Cego → Aprendendo → Autônomo (confidence >= 0.90)
-- [ ] Pattern cache local + sync com backend
+**Fase 3: Bridge Agent (Windows — `bridge_agent/`)**
+- [x] `config.py` — config JSON em %APPDATA%/DerekhBridge/
+- [x] `spooler_monitor.py` — Win32 spooler polling (2s)
+- [x] `text_extractor.py` — ESC/POS → texto limpo (CP860/UTF-8)
+- [x] `bridge_client.py` — REST client → backend parse + orders
+- [x] `main.py` — orquestrador + system tray (pystray)
+- [x] `ui/config_window.py` — Tkinter login + seleção impressoras
 
-**Fase 4: Super Admin Dashboard**
-- [ ] Endpoints `/api/admin/bridge/*` + página "Impressoras" no super admin
+**Fase 4: Frontend Admin**
+- [x] API functions: getBridgePatterns, deletarBridgePattern, getBridgeOrders, criarPedidoFromBridge
+- [x] Hooks: useBridgePatterns, useDeletarBridgePattern, useBridgeOrders, useCriarPedidoFromBridge
+- [x] Página BridgePrinter.tsx — 2 abas (Interceptados + Padrões), badges plataforma, filtros
+- [x] Rota `/bridge` no AdminApp.tsx + "Bridge Impressora" no sidebar
 
-**Fase 5: Instalador**
-- [ ] Setup wizard + Inno Setup + PyInstaller → `.exe`
+**Fase 5: Documentação**
+- [x] DOCUMENTACAO_TECNICA.md — seção Bridge completa (arquitetura, fluxo, tabelas, endpoints)
+
+**Pendente:**
+- [ ] Deploy migration 033 + testar com cupom real
+- [ ] `build.bat` → PyInstaller → `DerekhFood-Bridge.exe`
+- [ ] Super Admin dashboard impressoras
+- [ ] Groq Learning cycle (pattern auto-creation)
 
 ---
 

@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import AdminLayout from "@/admin/components/AdminLayout";
-import { useCriarPedido, useProdutos, useCategorias, useVariacoes } from "@/admin/hooks/useAdminQueries";
+import { useCriarPedido, useProdutos, useCategorias, useVariacoes, useBuscarCliente } from "@/admin/hooks/useAdminQueries";
 import { getVariacoes } from "@/admin/lib/adminApiClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +22,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Plus, Minus, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Minus, Trash2, UserCheck, X as XIcon } from "lucide-react";
 import { toast } from "sonner";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { autocompleteEndereco } from "@/admin/lib/adminApiClient";
@@ -62,6 +62,37 @@ export default function NovoPedido() {
   const [observacoes, setObservacoes] = useState("");
   const [itens, setItens] = useState<ItemPedido[]>([]);
   const [catFilter, setCatFilter] = useState<string>("todas");
+  const [clienteId, setClienteId] = useState<number | null>(null);
+  const [clienteVinculado, setClienteVinculado] = useState<string | null>(null);
+
+  // Debounce telefone para busca de cliente
+  const [telDebounced, setTelDebounced] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      const limpo = clienteTelefone.replace(/\D/g, "");
+      setTelDebounced(limpo.length >= 3 ? limpo : "");
+    }, 500);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [clienteTelefone]);
+
+  const { data: clienteLookup } = useBuscarCliente(telDebounced);
+
+  function usarCliente(c: { id: number; nome: string; telefone: string; ultimo_endereco?: string }) {
+    setClienteId(c.id);
+    setClienteNome(c.nome);
+    setClienteVinculado(c.nome);
+    if (c.ultimo_endereco && tipoEntrega === "entrega") {
+      setEnderecoEntrega(c.ultimo_endereco);
+    }
+    toast.success(`Cliente "${c.nome}" vinculado`);
+  }
+
+  function desvincularCliente() {
+    setClienteId(null);
+    setClienteVinculado(null);
+  }
 
   // Variação dialog
   const [varDialogOpen, setVarDialogOpen] = useState(false);
@@ -178,6 +209,7 @@ export default function NovoPedido() {
       valor_total: valorTotal,
       forma_pagamento: formaPagamento || undefined,
       observacoes: observacoes.trim() || undefined,
+      cliente_id: clienteId || undefined,
     };
 
     if (formaPagamento === "dinheiro" && trocoPara) {
@@ -380,6 +412,45 @@ export default function NovoPedido() {
                     placeholder="(00) 00000-0000"
                   />
                 </div>
+
+                {/* Smart Client Lookup */}
+                {clienteVinculado ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-2.5">
+                    <UserCheck className="h-4 w-4 text-green-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-green-300 truncate">
+                        Cliente vinculado: {clienteVinculado}
+                      </p>
+                    </div>
+                    <Button variant="ghost" size="icon-sm" onClick={desvincularCliente}>
+                      <XIcon className="h-3.5 w-3.5 text-green-400" />
+                    </Button>
+                  </div>
+                ) : clienteLookup?.encontrado && !clienteId ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 space-y-2">
+                    <p className="text-xs font-medium text-emerald-400">Cliente encontrado!</p>
+                    <div className="text-sm text-[var(--text-primary)]">
+                      <p className="font-medium">{clienteLookup.cliente.nome}</p>
+                      <p className="text-xs text-[var(--text-muted)]">
+                        {clienteLookup.cliente.total_pedidos} pedido(s) anteriores
+                      </p>
+                      {clienteLookup.cliente.ultimo_endereco && (
+                        <p className="text-xs text-[var(--text-muted)] truncate mt-0.5">
+                          Endereço: {clienteLookup.cliente.ultimo_endereco}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-xs h-7"
+                        onClick={() => usarCliente(clienteLookup.cliente)}
+                      >
+                        Usar este cliente
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
 
                 {tipoEntrega === "entrega" && (
                   <div className="space-y-1.5">

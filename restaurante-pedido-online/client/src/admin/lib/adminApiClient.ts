@@ -738,6 +738,59 @@ export async function getPixSaques(params?: { limit?: number; offset?: number })
   return data;
 }
 
+// ─── Smart Client Lookup ────────────────────────────────
+export async function buscarCliente(q: string) {
+  const { data } = await adminApi.get("/painel/clientes/buscar", { params: { q } });
+  return data;
+}
+
+// ─── Bridge Printer ─────────────────────────────────────
+export async function getBridgePatterns() {
+  const { data } = await adminApi.get("/painel/bridge/patterns");
+  return data;
+}
+
+export async function deletarBridgePattern(id: number) {
+  const { data } = await adminApi.delete(`/painel/bridge/patterns/${id}`);
+  return data;
+}
+
+export async function getBridgeOrders(params?: { status?: string; limit?: number; offset?: number }) {
+  const { data } = await adminApi.get("/painel/bridge/orders", { params });
+  return data;
+}
+
+export async function criarPedidoFromBridge(intercepted_order_id: number) {
+  const { data } = await adminApi.post("/painel/bridge/orders", { intercepted_order_id });
+  return data;
+}
+
+export async function validarEAprenderBridge(orderId: number, gerarPattern: boolean = true) {
+  const { data } = await adminApi.post(`/painel/bridge/orders/${orderId}/validar`, { gerar_pattern: gerarPattern });
+  return data;
+}
+
+export async function reparseBridgeOrder(orderId: number) {
+  const { data } = await adminApi.post(`/painel/bridge/orders/${orderId}/reparse`);
+  return data;
+}
+
+export async function getBridgeStatus() {
+  const { data } = await adminApi.get("/painel/bridge/status");
+  return data;
+}
+
+export async function criarBridgePattern(payload: {
+  plataforma: string;
+  nome_pattern?: string;
+  regex_detectar: string;
+  mapeamento_json: Record<string, string>;
+  confianca?: number;
+}) {
+  const { data } = await adminApi.post("/painel/bridge/patterns", payload);
+  return data;
+}
+
 export async function uploadImagem(file: File, tipo: string = "produto") {
   // Obter restaurante_id do localStorage
   const restauranteStr = localStorage.getItem("sf_admin_restaurante");

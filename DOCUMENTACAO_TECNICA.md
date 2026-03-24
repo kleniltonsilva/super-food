@@ -824,7 +824,129 @@ Restaurante saca (manual ou automático)
 
 ---
 
+## Bridge Printer Agent — Sprint 21
+
+### Arquitetura
+
+```
+┌─────────────────────┐     ┌──────────────────────┐     ┌─────────────────┐
+│  Impressora Térmica  │────▶│  Bridge Agent (Win)   │────▶│  Backend Derekh │
+│  (iFood/Rappi/etc)   │     │  spooler_monitor.py   │     │  /painel/bridge │
+└─────────────────────┘     │  text_extractor.py    │     │  parse + orders │
+                            │  bridge_client.py     │     └────────┬────────┘
+                            └──────────────────────┘              │
+                                                           ┌──────▼──────┐
+                                                           │  Pedido no  │
+                                                           │  Painel Admin│
+                                                           └─────────────┘
+```
+
+### Fluxo de Interceptação
+
+1. **Spooler Monitor** detecta novo job de impressão no Windows (polling 2s)
+2. Ignora jobs com prefixo "Derekh_" (impressões do próprio sistema)
+3. **Text Extractor** remove comandos ESC/POS e decodifica texto (CP860/UTF-8)
+4. **Bridge Client** envia texto para `POST /painel/bridge/parse`
+5. Backend tenta **padrões aprendidos** (regex por confiança decrescente)
+6. Se nenhum casou → **Groq IA (Llama 3.3 70B)** extrai JSON estruturado
+7. Registro salvo em `bridge_intercepted_orders` com status `pendente`
+8. Operador revisa no painel e clica "Criar Pedido" (ou automático se configurado)
+9. Backend cria `Pedido` com `origem=bridge_{plataforma}`, vincula cliente por telefone
+
+### Motor de IA — Groq (NÃO Grok)
+
+```
+Prioridade:
+1. GROQ_API_KEY → Groq Llama 3.3 70B (principal) + Llama 3.1 8B (fallback rate limit)
+2. XAI_API_KEY  → xAI Grok Mini Fast (fallback legado)
+3. Nenhuma      → Só regex patterns salvos
+```
+
+- **Groq** (groq.com) — LPU inference ultra-rápido, free tier 30 req/min
+- **API:** `https://api.groq.com/openai/v1/chat/completions` (compatível OpenAI)
+- **response_format:** `{"type": "json_object"}` — garante JSON válido
+- **Campos extraídos:** cliente_nome, cliente_telefone, endereco, itens[], valor_total, forma_pagamento
+
+### Ciclo de Aprendizado
+
+```
+1. Cupom novo → nenhum pattern → Groq parseia (confiança 0.3)
+2. Admin clica "Validar e Aprender" no painel
+3. Sistema analisa texto original + dados parseados → gera regex automáticos
+4. Salva BridgePattern (confiança 0.7 — validado por humano)
+5. Próximos cupons iguais → regex pega direto (sem chamar Groq)
+6. Confiança sobe +0.1 a cada validação (até 1.0)
+```
+
+- Padrões são armazenados em `bridge_patterns` com regex de detecção + mapeamento de campos
+- Cada uso incrementa o contador e a confiança cresce
+- Padrões com confiança alta são usados antes da IA (economia de API)
+- Operador pode remover padrões ruins ou re-parsear registros que falharam
+
+### 14 Plataformas Detectadas
+
+ifood, rappi, 99food, aiqfome, ubereats, keeta, zdelivery, anota_ai, goomer, neemo, deliverymuch, menudigital, cardapio_digital, james
+
+### Tabelas de Banco
+
+| Tabela | Campos principais | Descrição |
+|--------|-------------------|-----------|
+| `bridge_patterns` | plataforma, regex_detectar, mapeamento_json, confianca, usos | Padrões de parsing aprendidos |
+| `bridge_intercepted_orders` | texto_bruto, dados_parseados, plataforma_detectada, status, pedido_id | Pedidos interceptados |
+
+### Endpoints
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| POST | `/painel/bridge/parse` | Recebe texto bruto, tenta pattern/IA, salva registro |
+| POST | `/painel/bridge/orders` | Cria pedido Derekh a partir de intercepted_order |
+| POST | `/painel/bridge/orders/{id}/validar` | Valida parse IA + auto-gera regex pattern |
+| POST | `/painel/bridge/orders/{id}/reparse` | Re-parseia com IA (para registros que falharam) |
+| GET | `/painel/bridge/patterns` | Lista padrões aprendidos |
+| POST | `/painel/bridge/patterns` | Criar padrão manualmente |
+| PUT | `/painel/bridge/patterns/{id}` | Editar confiança/validação |
+| DELETE | `/painel/bridge/patterns/{id}` | Remove padrão |
+| GET | `/painel/bridge/orders` | Lista pedidos interceptados (filtro por status) |
+| GET | `/painel/bridge/status` | Dashboard: estatísticas + motor IA disponível |
+
+### Smart Client Lookup
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/painel/clientes/buscar?q=TELEFONE` | Busca cliente por telefone (min 3 chars) |
+
+O endpoint retorna `{encontrado, cliente: {id, nome, telefone, total_pedidos, ultimo_endereco}}`.
+No **NovoPedido.tsx**, ao digitar telefone, debounce 500ms busca cliente existente e exibe card verde com opção de vincular.
+
+### Política de Cancelamentos
+
+Pedidos criados pelo Bridge são pedidos normais do sistema. Cancelamentos devem ser feitos manualmente pelo painel (página Pedidos), não há cancelamento automático.
+
+### Configuração no Windows
+
+1. Instalar `DerekhFood-Bridge.exe`
+2. Na janela de configuração: login com email/senha do restaurante
+3. Selecionar impressoras a monitorar (checkbox)
+4. Opcionalmente ativar "Criar pedido automaticamente"
+5. Config salva em `%APPDATA%/DerekhBridge/bridge_config.json`
+
+### Estrutura do Bridge Agent
+
+```
+bridge_agent/
+├── main.py              — Orquestrador + system tray
+├── spooler_monitor.py   — Win32 spooler polling
+├── text_extractor.py    — ESC/POS → texto limpo
+├── bridge_client.py     — REST client → backend
+├── config.py            — Config JSON persistente
+├── ui/config_window.py  — Tkinter login + settings
+├── requirements.txt     — requests, pywin32, pystray, Pillow
+└── build.bat            — PyInstaller → .exe
+```
+
+---
+
 *Documento gerado automaticamente pelo sistema Derekh Food v4.0.0*
-*Última atualização: 22/03/2026*
+*Última atualização: 24/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
 *WhatsApp comercial: +1 555-900-4563*

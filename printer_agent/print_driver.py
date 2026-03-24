@@ -45,7 +45,7 @@ def impressora_padrao() -> Optional[str]:
         return None
 
 
-def imprimir_raw(printer_name: str, data: bytes, doc_name: str = "Comanda") -> bool:
+def imprimir_raw(printer_name: str, data: bytes, doc_name: str = "Derekh_Comanda") -> bool:
     """Envia dados RAW para a impressora (ESC/POS direto).
 
     Args:

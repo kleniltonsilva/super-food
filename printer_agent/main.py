@@ -233,7 +233,8 @@ class PrinterAgent:
 
                 dados = json.loads(job["dados_json"])
                 raw_bytes = bytes.fromhex(dados.get("raw_bytes_hex", ""))
-                doc_name = dados.get("doc_name", "Comanda")
+                doc_name_raw = dados.get("doc_name", "Comanda")
+                doc_name = f"Derekh_{doc_name_raw}" if not doc_name_raw.startswith("Derekh_") else doc_name_raw
                 printer_name = job["impressora"]
 
                 # Imprimir N cópias

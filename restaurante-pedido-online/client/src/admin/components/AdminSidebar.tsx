@@ -22,6 +22,7 @@ import {
   QrCode,
   ChefHat,
   Users,
+  Printer,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ const menuItems = [
   { path: "/motoboys/mapa", label: "Mapa Motoboys", icon: Map },
   { path: "/cozinha", label: "Cozinha Digital", icon: ChefHat },
   { path: "/garcons", label: "Garçons", icon: Users },
+  { path: "/bridge", label: "Bridge Impressora", icon: Printer },
   { path: "/caixa", label: "Caixa", icon: DollarSign },
   { path: "/promocoes", label: "Promoções", icon: Percent },
   { path: "/fidelidade", label: "Fidelidade", icon: Star },

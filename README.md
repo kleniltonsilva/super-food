@@ -11,18 +11,20 @@ Sistema multi-tenant completo para gestao de restaurantes com entregas inteligen
 
 ## Visao Geral
 
-O Derekh Food e composto por **6 aplicacoes principais**, todas em React + FastAPI:
+O Derekh Food e composto por **8 aplicacoes principais**, todas em React + FastAPI:
 
 | Aplicacao | Tecnologia | Rota | Descricao |
 |-----------|------------|------|-----------|
 | **API Backend** | FastAPI + Uvicorn | `:8000` | API REST, WebSockets, serve React SPAs |
 | **Super Admin** | React 19 | `/superadmin` | Painel administrativo do SaaS com analytics |
-| **Painel Restaurante** | React 19 | `/admin` | Gestao completa do restaurante (20+ paginas) |
+| **Painel Restaurante** | React 19 | `/admin` | Gestao completa do restaurante (22+ paginas) |
 | **App Motoboy (PWA)** | React 19 | `/entregador` | App mobile para entregadores com GPS |
 | **App KDS Cozinha (PWA)** | React 19 | `/cozinha` | Kitchen Display System para cozinheiros |
+| **App Garcom (PWA)** | React 19 | `/garcom` | Atendimento mesa, pedidos por etapa |
 | **Site Cliente** | React 19 | `/cliente/{codigo}` | Pedido online com 8 layouts tematicos |
+| **Bridge Agent** | Python + Win32 | Windows exe | Intercepta impressoes de iFood/Rappi/etc. |
 
-**Versao atual: 4.0.0 (21/03/2026) — Em producao: https://superfood-api.fly.dev**
+**Versao atual: 4.0.0 (24/03/2026) — Em producao: https://superfood-api.fly.dev**
 
 ### Stack Tecnologica
 
@@ -30,7 +32,7 @@ O Derekh Food e composto por **6 aplicacoes principais**, todas em React + FastA
 |--------|-----------|
 | Backend API | Python 3.12+ / FastAPI / Uvicorn |
 | ORM | SQLAlchemy 2.0+ |
-| Migrations | Alembic (29 migrations) |
+| Migrations | Alembic (33 migrations) |
 | Banco (dev) | SQLite |
 | Banco (prod) | PostgreSQL 16+ / PgBouncer |
 | Frontend | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
@@ -40,7 +42,8 @@ O Derekh Food e composto por **6 aplicacoes principais**, todas em React + FastA
 | Graficos | recharts (LineChart, PieChart, BarChart) |
 | Carousel | embla-carousel |
 | Mapas | Mapbox GL JS (mapas) + Mapbox API (geocoding, rotas) |
-| Auth | JWT (HS256) via authlib + bcrypt |
+| Auth | JWT (HS256) via authlib + bcrypt (6 roles) |
+| IA Parsing | Groq (Llama 3.3 70B) — parsing de cupons delivery |
 | Imagens | Pillow (resize + WebP) / Cloudflare R2 (prod) |
 | Cache | Redis (menus, sessoes, rate limit, Pub/Sub WS) |
 | Algoritmos | TSP (Nearest Neighbor), Haversine, GPS antifraude |
@@ -602,6 +605,11 @@ Todas as configuracoes do painel restaurante possuem tooltips (icone ℹ️) com
 | `/webhooks/woovi` | pix_webhooks.py | 1 | Webhook Woovi/OpenPix (pagamentos Pix) |
 | `/ws/{id}` | main.py | 1 | WebSocket por restaurante |
 | `/ws/kds/{id}` | main.py | 1 | WebSocket KDS cozinha |
+| `/garcom` | garcom.py | 12 | Mesas, sessoes, pedidos por etapa, itens esgotados |
+| `/garcom/auth` | auth_garcom.py | 2 | Login, me (garcom) |
+| `/painel/garcom` | painel.py | 6 | CRUD garcons, config, monitor mesas |
+| `/painel/bridge` | bridge.py | 10 | Parse cupom (Groq IA), orders, patterns, status |
+| `/ws/garcom/{id}` | main.py | 1 | WebSocket garcom |
 | `/health` | main.py | 3 | Health check (live, ready, full) |
 
 **Novos endpoints v4.0:**
@@ -778,6 +786,8 @@ services:
 - **Sprint 15.1** — Operadores de Caixa com autenticacao (abrir/fechar caixa com senha, migration 027)
 - **Sprint 17** — Pix Online Woovi/OpenPix: subcontas, split de pagamento, saque automatico, QR Code, webhook (migration 028)
 - **Sprint 18** — KDS / Comanda Digital: app PWA cozinha, CRUD cozinheiros, auto-criacao pedidos, WebSocket tempo real, sons Web Audio API, 2 tabs (Preparo + Despacho) (migration 029)
+- **Sprint 19** — App Garcom: PWA atendimento mesa, sessoes, pedidos por etapa (course), transferencia mesa, itens esgotados, WebSocket garcom (migration 032)
+- **Sprint 21** — Bridge Agent + Smart Client Lookup: interceptacao impressoes iFood/Rappi/14 plataformas, Groq IA (Llama 3.3 70B), ciclo auto-aprendizado de patterns, busca cliente por telefone (migration 033)
 
 ### v4.0.0-rc (11/03/2026) — Mega Migracao React + Features Avancadas
 - **100% React** — Zero Streamlit. Todas 4 aplicacoes em React 19 + TypeScript
@@ -835,10 +845,10 @@ services:
 - [x] Fase 13.1: Operadores de Caixa (autenticacao abrir/fechar) ✅
 - [x] Fase 14: Pix Online Woovi/OpenPix (split, subcontas, QR Code) ✅
 - [x] Fase 15: KDS / Comanda Digital (app cozinha PWA, WebSocket, sons) ✅
-- [ ] Fase 16: App Garcom (atendimento mesa, sessoes, pedidos por etapa)
-- [ ] Fase 17: Bot WhatsApp IA (pedido por conversa, STT, Pix integrado)
-- [ ] Fase 18: Sales Autopilot (CRM B2B, prospeccao automatica)
-- [ ] Fase 19: Printer Agent (impressao ESC/POS, bridge API, Windows Service)
+- [x] Fase 16: App Garcom (atendimento mesa, sessoes, pedidos por etapa) ✅
+- [x] Fase 17: Bridge Agent + Smart Client Lookup (interceptacao impressoes, Groq IA, auto-aprendizado) ✅
+- [ ] Fase 18: Bot WhatsApp IA (pedido por conversa, STT, Pix integrado)
+- [ ] Fase 19: Sales Autopilot (CRM B2B, prospeccao automatica)
 
 ---
 

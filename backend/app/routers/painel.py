@@ -245,6 +245,56 @@ class PedidoManualRequest(BaseModel):
     troco_para: Optional[float] = None
     tempo_estimado: Optional[int] = None
     observacoes: Optional[str] = None
+    cliente_id: Optional[int] = None
+
+
+# ============================================================
+# BUSCA DE CLIENTE (Smart Lookup)
+# ============================================================
+
+@router.get("/clientes/buscar")
+def buscar_cliente(
+    q: str = Query(..., min_length=3),
+    rest: models.Restaurante = Depends(get_rest),
+    db: Session = Depends(database.get_db)
+):
+    """Busca parcial de cliente por telefone. Retorna dados + total de pedidos."""
+    cliente = db.query(models.Cliente).filter(
+        models.Cliente.restaurante_id == rest.id,
+        models.Cliente.telefone.ilike(f"%{q}%"),
+        models.Cliente.ativo == True
+    ).first()
+
+    if not cliente:
+        return {"encontrado": False, "cliente": None}
+
+    total_pedidos = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.cliente_id == cliente.id
+    ).scalar() or 0
+
+    ultimo_pedido = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.cliente_id == cliente.id
+    ).order_by(desc(models.Pedido.data_criacao)).first()
+
+    ultimo_endereco = None
+    if ultimo_pedido and ultimo_pedido.endereco_entrega:
+        ultimo_endereco = ultimo_pedido.endereco_entrega
+    elif cliente.enderecos:
+        end_principal = next((e for e in cliente.enderecos if e.principal), None) or cliente.enderecos[0]
+        ultimo_endereco = end_principal.endereco_completo
+
+    return {
+        "encontrado": True,
+        "cliente": {
+            "id": cliente.id,
+            "nome": cliente.nome,
+            "telefone": cliente.telefone,
+            "total_pedidos": total_pedidos,
+            "ultimo_endereco": ultimo_endereco,
+        }
+    }
 
 
 @router.post("/pedidos")
@@ -255,6 +305,17 @@ async def criar_pedido_manual(
     db: Session = Depends(database.get_db)
 ):
     proxima_comanda = _gerar_proxima_comanda(db, rest.id)
+
+    # Validar cliente_id pertence ao restaurante (multi-tenant)
+    cliente_id_validado = None
+    if dados.cliente_id:
+        cliente = db.query(models.Cliente).filter(
+            models.Cliente.id == dados.cliente_id,
+            models.Cliente.restaurante_id == rest.id
+        ).first()
+        if not cliente:
+            raise HTTPException(status_code=400, detail="Cliente não encontrado neste restaurante")
+        cliente_id_validado = cliente.id
 
     pedido = models.Pedido(
         restaurante_id=rest.id,
@@ -272,6 +333,7 @@ async def criar_pedido_manual(
         troco_para=dados.troco_para,
         tempo_estimado=dados.tempo_estimado,
         observacoes=dados.observacoes,
+        cliente_id=cliente_id_validado,
         status='pendente',
         historico_status=[{"status": "pendente", "timestamp": datetime.utcnow().isoformat()}],
         data_criacao=datetime.utcnow()

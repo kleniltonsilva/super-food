@@ -30,6 +30,7 @@ from .routers import auth_cozinheiro as auth_cozinheiro_router
 from .routers import kds as kds_router
 from .routers import auth_garcom as auth_garcom_router
 from .routers import garcom as garcom_router
+from .routers import bridge as bridge_router
 from .billing.billing_tasks import verificar_billing_periodico
 from .pix.pix_tasks import verificar_pix_periodico
 from .integrations.manager import integration_manager
@@ -325,6 +326,7 @@ app.include_router(auth_cozinheiro_router.router)
 app.include_router(kds_router.router)
 app.include_router(auth_garcom_router.router)
 app.include_router(garcom_router.router)
+app.include_router(bridge_router.router)
 
 # ==================== Endpoint público — Planos (landing page) ====================
 @app.get("/api/public/planos")

@@ -1486,6 +1486,53 @@ class ItemEsgotado(Base):
     )
 
 
+# ==================== BRIDGE PRINTER ====================
+class BridgePattern(Base):
+    """Padrões aprendidos para parsear cupons de plataformas externas"""
+    __tablename__ = "bridge_patterns"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    plataforma = Column(String(50), nullable=False)  # ifood, rappi, 99food, aiqfome, desconhecido
+    nome_pattern = Column(String(100))
+    regex_detectar = Column(Text, nullable=False)
+    mapeamento_json = Column(JSON, nullable=False)  # {campo: regex_extrator}
+    confianca = Column(Float, default=0.5)
+    usos = Column(Integer, default=0)
+    validado = Column(Boolean, default=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_bridge_patterns_restaurante', 'restaurante_id'),
+        Index('idx_bridge_patterns_plataforma', 'restaurante_id', 'plataforma'),
+    )
+
+
+class BridgeInterceptedOrder(Base):
+    """Pedidos interceptados pelo Bridge Agent (impressões de plataformas externas)"""
+    __tablename__ = "bridge_intercepted_orders"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    impressora_origem = Column(String(200))
+    plataforma_detectada = Column(String(50))
+    texto_bruto = Column(Text, nullable=False)
+    dados_parseados = Column(JSON)
+    pattern_id = Column(Integer, ForeignKey("bridge_patterns.id", ondelete="SET NULL"))
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
+    status = Column(String(30), default='pendente')  # pendente, processado, falhou, ignorado
+    erro_mensagem = Column(Text)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    pattern = relationship("BridgePattern")
+    pedido = relationship("Pedido")
+    __table_args__ = (
+        Index('idx_bridge_orders_restaurante', 'restaurante_id'),
+        Index('idx_bridge_orders_status', 'restaurante_id', 'status'),
+    )
+
+
 class PixEventLog(Base):
     """Log de eventos webhook Woovi (idempotência)"""
     __tablename__ = "pix_event_log"
