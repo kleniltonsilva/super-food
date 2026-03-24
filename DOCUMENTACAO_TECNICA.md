@@ -780,7 +780,24 @@ Restaurante saca (manual ou automático)
 | Pix Online | Woovi/OpenPix |
 | Marketplaces | iFood, 99Food, Rappi, Keeta |
 
----
+### Gerenciamento de Dependências
+
+**REGRA:** Todas as dependências são pinnadas com versão exata (`==`) para evitar breaking changes silenciosos em deploy.
+
+| Arquivo | App | Starlette | FastAPI |
+|---------|-----|-----------|---------|
+| `requirements.txt` | API principal | 1.0.0 | 0.135.2 |
+| `Hacking-restaurant-b2b/requirements-crm.txt` | CRM Sales | 0.38.6 | 0.115.0 |
+
+**Procedimento para atualizar dependências:**
+1. Verificar changelog da dependência (breaking changes)
+2. Atualizar versão no `requirements.txt`
+3. `pip install -r requirements.txt` local
+4. Testar servidor local (`uvicorn backend.app.main:app`)
+5. Testar rotas críticas (landing, health, login, SPAs)
+6. Deploy e testar em produção
+
+**Nota histórica:** Em 24/03/2026, Starlette 1.0.0 foi instalado automaticamente em produção (dep indireta do FastAPI sem teto `>=0.46.0`), quebrando a landing page. Causa: `TemplateResponse` mudou assinatura. Fix: pinnar Starlette explicitamente + corrigir API.
 
 ---
 
@@ -1078,6 +1095,91 @@ bridge_agent/
 | `src/superadmin/pages/NovoRestaurante.tsx` | Reescrito | Formulário com máscaras, CNPJ lookup, email, tela sucesso |
 | `src/admin/pages/Onboarding.tsx` | Novo | Página onboarding 6 seções |
 | `src/admin/AdminApp.tsx` | Modificado | Rota /inicio |
+
+---
+
+## 16. Sales Autopilot — WA Sales Bot v2.0
+
+### 16.1 Visão Geral
+
+Bot de vendas WhatsApp para prospecção B2B de restaurantes, integrado ao CRM Sales Autopilot (`derekh-crm.fly.dev`). Estratégia dual-number: outbound (prospecção) e inbound (Fale Conosco).
+
+### 16.2 Arquitetura
+
+- **Arquivo principal:** `Hacking-restaurant-b2b/crm/wa_sales_bot.py`
+- **Webhook:** `Hacking-restaurant-b2b/crm/app.py`
+- **LLM:** Grok 3 Fast (xAI) — temperature 0.8 (conversa) / 0.85 (inbound)
+- **Envio:** Evolution API (prioritário) → WhatsApp Cloud API Meta (fallback)
+- **TTS:** Grok 3 Fast TTS (voz "ara") — áudio personalizado com dados iFood
+
+### 16.3 Prompts Humanizados
+
+O bot se apresenta como "Klenilton, vendedor humano da Derekh Food". Características:
+- Tom oral com gírias brasileiras ("show", "massa", "kkk"), abreviações ("vc", "tbm", "qdo")
+- Frases curtas (2-3 por mensagem), sem emojis corporativos, sem bullet points
+- Táticas de venda integradas: espelhamento, dor específica, escassez real, prova social, micro-compromissos
+- Dois prompts separados: `_build_system_prompt_conversa()` (conversas em andamento) e `_build_system_prompt_inbound()` (primeiro contato)
+
+### 16.4 Intent Scoring Contextual
+
+Substitui keywords binárias por scoring cumulativo (`INTENT_PATTERNS`):
+
+| Categoria | Score | Descrição |
+|-----------|-------|-----------|
+| `high_intent` | +30 | "quanto custa", "quero contratar", "teste grátis" |
+| `medium_intent` | +15 | "como funciona", "me interessa", "quero saber mais" |
+| `competitor_pain` | +20 | "ifood", "comissão", "27%", "delivery tá caro" |
+| `objection` | oportunidade | "caro", "vou pensar" — IA contorna, não encerra |
+| `opt_out` | encerra definitivo | "sair", "stop" — remove da lista para sempre |
+| `hard_no` | encerra com classe | "sem interesse", "já disse que não" — pode reativar se voltar |
+
+Classificação: score >= 50 = interesse_alto, >= 30 = interesse, objeções = objecao, ? = duvida.
+
+### 16.5 Handoff Gradual
+
+3 níveis de escalação para atendimento humano:
+
+1. **Immediate:** lead pediu demo/reunião/humano → handoff imediato + notificação ao dono
+2. **Warm:** score acumulado >= 60 + 3 msgs, ou CRM score >= 85 → bot faz transição natural ("deixa eu te passar pro time técnico")
+3. **Strategic:** 2+ objeções não resolvidas → "vou pedir pro meu gerente te dar um toque"
+
+Todos os handoffs disparam `_notificar_handoff()` — envia WA ao dono com nome do restaurante, cidade, motivo e número do lead.
+
+### 16.6 Delay Humano
+
+`_calcular_delay_humano()`: 3-15 segundos proporcional ao tamanho da mensagem do lead (n_palavras * 0.8). Evita respostas instantâneas que denunciam automação.
+
+### 16.7 Contexto do Lead
+
+`_build_lead_context()` monta resumo injetado no system prompt: nome do restaurante, ratings Google/iFood, categorias, cenário (sem delivery / nota alta / popular), mensagens trocadas, objeções anteriores.
+
+### 16.8 Anti-Loop Cross-Instance
+
+`_BOT_PHONE_NUMBERS` em `app.py`: set com números dos próprios bots (outbound + inbound). No webhook, se remetente é um dos números do bot, ignora a mensagem — evita loop infinito quando bot A envia para número monitorado por bot B.
+
+### 16.9 Fluxo de Processamento
+
+```
+Mensagem chega (webhook Evolution)
+    |
+    v
+Anti-loop: é número do bot? → ignora
+    |
+    v
+Buscar conversa (ativa → encerrada/handoff → nova)
+    |
+    v
+Detectar intenção (scoring contextual)
+    |-- opt_out → remove definitivo, despedida
+    |-- hard_no → encerra com classe
+    |-- outro → delay humano → IA responde
+                    |
+                    v
+               Avaliar handoff
+                    |-- immediate → notifica dono
+                    |-- warm → transição natural + notifica
+                    |-- strategic → escala para gerente
+```
 
 ---
 

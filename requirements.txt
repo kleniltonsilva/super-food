@@ -19,8 +19,9 @@ python-dotenv==1.2.2
 
 # ==================== BACKEND API ====================
 
-# FastAPI + Uvicorn
+# FastAPI + Starlette + Uvicorn (Starlette pinnado — dep indireta do FastAPI sem teto)
 fastapi==0.135.2
+starlette==1.0.0
 uvicorn[standard]==0.42.0
 
 # Autenticação JWT
