@@ -803,7 +803,7 @@ async def serve_root(request: Request):
     domain_tenant_id = getattr(request.state, "domain_tenant_id", None)
     if domain_tenant_id:
         return _serve_tenant_site(domain_tenant_id)
-    return templates.TemplateResponse("landing.html", {"request": request})
+    return templates.TemplateResponse(request, "landing.html")
 
 
 @app.get("/{path:path}", response_class=HTMLResponse)
