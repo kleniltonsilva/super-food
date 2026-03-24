@@ -1072,7 +1072,7 @@ class ConfigBilling(Base):
     """Configurações globais de billing (1 row, gerenciada pelo Super Admin)"""
     __tablename__ = "config_billing"
     id = Column(Integer, primary_key=True, index=True)
-    trial_dias = Column(Integer, default=20)
+    trial_dias = Column(Integer, default=15)
     trial_plano = Column(String(50), default='Premium')
     dias_lembrete_antes = Column(Integer, default=5)
     dias_suspensao = Column(Integer, default=2)

@@ -85,8 +85,9 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Migrations em produção:** 001-034 (última: 034_feature_flags)
 - **Migrations planejadas:** 035 (Bot)
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
+- **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** Módulos 1,4,5 (Pix → Bot → Sales), domínio próprio, deploy Feature Flags
+- **Pendente:** Módulos 1,4,5 (Pix → Bot → Sales), domínio próprio, configurar Resend prod
 
 ---
 
@@ -178,6 +179,8 @@ super-food/
 │   │   ├── upload.py          # Upload imagem JWT protegido
 │   │   ├── bridge.py          # Bridge Printer (/painel/bridge/*)
 │   │   └── motoboys.py       # Endpoints motoboy
+│   ├── email_service.py       # Serviço email transacional Resend (boas-vindas, genérico)
+│   ├── email_templates.py     # Templates HTML emails (boas-vindas com credenciais)
 │   ├── feature_flags.py       # Registry central features (PlanTier, FEATURE_TIERS, 22 features)
 │   ├── feature_guard.py       # FastAPI Depends factory (verificar_feature)
 │   ├── billing/               # Sistema de cobrança Asaas
@@ -271,6 +274,7 @@ super-food/
 | 20 | Sales Autopilot (CRM B2B) | ⏳ Planejado |
 | 21 | Bridge Agent + Printer | ✅ 24/03 (deploy 24/03) |
 | 22 | Feature Flags por Plano | ✅ 24/03 (22 features, 38 endpoints, 4 tiers) |
+| 23 | Overhaul Criação Restaurante | ✅ 24/03 (CNPJ lookup, validação DDD, email Resend, onboarding) |
 
 ---
 

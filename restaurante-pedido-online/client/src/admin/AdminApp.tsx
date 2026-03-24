@@ -26,6 +26,7 @@ import CozinhaDigital from "@/admin/pages/CozinhaDigital";
 import Garcons from "@/admin/pages/Garcons";
 import BridgePrinter from "@/admin/pages/BridgePrinter";
 import SelecionarPlano from "@/admin/pages/SelecionarPlano";
+import Onboarding from "@/admin/pages/Onboarding";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -228,6 +229,10 @@ function AdminRouter() {
 
       <Route path="/pix">
         <PrivateRoute><PagamentoPix /></PrivateRoute>
+      </Route>
+
+      <Route path="/inicio">
+        <PrivateRoute><Onboarding /></PrivateRoute>
       </Route>
 
       <Route path="/billing/planos">

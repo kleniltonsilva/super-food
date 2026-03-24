@@ -16,9 +16,33 @@ import re, os, logging, requests as http_requests
 import secrets
 import hashlib
 import socket
+import httpx
 
 from .. import models, database, auth
 from ..feature_flags import get_all_features, get_tier, FEATURE_LABELS, TIER_TO_PLANO
+from ..email_service import enviar_email_boas_vindas, BASE_URL
+
+# DDDs brasileiros válidos (67 DDDs)
+DDDS_VALIDOS = {
+    11, 12, 13, 14, 15, 16, 17, 18, 19,  # SP
+    21, 22, 24,                            # RJ
+    27, 28,                                # ES
+    31, 32, 33, 34, 35, 37, 38,           # MG
+    41, 42, 43, 44, 45, 46,               # PR
+    47, 48, 49,                            # SC
+    51, 53, 54, 55,                        # RS
+    61,                                    # DF
+    62, 64,                                # GO
+    63,                                    # TO
+    65, 66,                                # MT
+    67,                                    # MS
+    68,                                    # AC
+    69,                                    # RO
+    71, 73, 74, 75, 77,                   # BA
+    79,                                    # SE
+    81, 82, 83, 84, 85, 86, 87, 88, 89,  # PE/AL/PB/RN/CE/PI
+    91, 92, 93, 94, 95, 96, 97, 98, 99,  # PA/AM/AP/RR/MA
+}
 
 
 def _validar_cpf_cnpj(valor: str) -> bool:
@@ -103,6 +127,26 @@ class RestauranteCreateRequest(BaseModel):
     whatsapp: Optional[str] = None
     # Billing
     iniciar_trial: bool = True
+    # Email
+    enviar_email: bool = True
+
+
+class CnpjLookupResponse(BaseModel):
+    cnpj: str
+    razao_social: Optional[str] = None
+    nome_fantasia: Optional[str] = None
+    logradouro: Optional[str] = None
+    numero: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = None
+    municipio: Optional[str] = None
+    uf: Optional[str] = None
+    cep: Optional[str] = None
+    telefone_1: Optional[str] = None
+    telefone_2: Optional[str] = None
+    email: Optional[str] = None
+    situacao_cadastral: Optional[str] = None
+    data_inicio_atividade: Optional[str] = None
 
 
 class RestauranteUpdateRequest(BaseModel):
@@ -285,6 +329,77 @@ def listar_restaurantes(
     return resultado
 
 
+# --- CNPJ Lookup via BrasilAPI ---
+
+@router.get("/cnpj/{cnpj}", response_model=CnpjLookupResponse)
+async def consultar_cnpj(
+    cnpj: str,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+):
+    """Consulta dados do CNPJ via BrasilAPI."""
+    digits = re.sub(r'\D', '', cnpj)
+    if len(digits) != 14:
+        raise HTTPException(status_code=400, detail="CNPJ deve ter 14 dígitos")
+    if not _validar_cpf_cnpj(digits):
+        raise HTTPException(status_code=400, detail="CNPJ inválido — dígitos verificadores incorretos")
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"https://brasilapi.com.br/api/cnpj/v2/{digits}")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Timeout ao consultar BrasilAPI")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao consultar BrasilAPI: {str(e)}")
+
+    if resp.status_code == 404:
+        raise HTTPException(status_code=404, detail="CNPJ não encontrado na Receita Federal")
+    if resp.status_code == 429:
+        raise HTTPException(status_code=429, detail="Limite de consultas atingido. Tente novamente em 1 minuto.")
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"BrasilAPI retornou status {resp.status_code}")
+
+    data = resp.json()
+
+    # Montar endereço completo
+    logradouro = data.get("logradouro") or ""
+    numero = data.get("numero") or ""
+    complemento = data.get("complemento") or ""
+
+    # Montar telefone: pegar ddd_telefone_1
+    telefone_1 = ""
+    ddd_tel = data.get("ddd_telefone_1") or ""
+    if ddd_tel:
+        # BrasilAPI retorna no formato "DDXXXXXXXX" ou "DD XXXXXXXX"
+        tel_digits = re.sub(r'\D', '', ddd_tel)
+        if len(tel_digits) >= 10:
+            telefone_1 = tel_digits
+
+    telefone_2 = ""
+    ddd_tel2 = data.get("ddd_telefone_2") or ""
+    if ddd_tel2:
+        tel_digits2 = re.sub(r'\D', '', ddd_tel2)
+        if len(tel_digits2) >= 10:
+            telefone_2 = tel_digits2
+
+    return CnpjLookupResponse(
+        cnpj=digits,
+        razao_social=data.get("razao_social"),
+        nome_fantasia=data.get("nome_fantasia") or None,
+        logradouro=logradouro or None,
+        numero=numero or None,
+        complemento=complemento or None,
+        bairro=data.get("bairro") or None,
+        municipio=data.get("municipio") or None,
+        uf=data.get("uf") or None,
+        cep=data.get("cep") or None,
+        telefone_1=telefone_1 or None,
+        telefone_2=telefone_2 or None,
+        email=data.get("email") or None,
+        situacao_cadastral=str(data.get("descricao_situacao_cadastral", "")) or None,
+        data_inicio_atividade=data.get("data_inicio_atividade") or None,
+    )
+
+
 # --- 132: POST /admin/restaurantes ---
 
 @router.post("/restaurantes")
@@ -320,10 +435,18 @@ async def criar_restaurante(
                     detail=f"CNPJ já cadastrado no restaurante '{existe_cnpj.nome_fantasia}'"
                 )
 
-    # Validar telefone
+    # Validar telefone com DDD
     telefone_limpo = re.sub(r'\D', '', dados.telefone.strip())
-    if len(telefone_limpo) < 10:
-        raise HTTPException(status_code=400, detail="Telefone inválido (mínimo 10 dígitos)")
+    if len(telefone_limpo) < 10 or len(telefone_limpo) > 11:
+        raise HTTPException(status_code=400, detail="Telefone inválido (10 ou 11 dígitos com DDD)")
+    ddd = int(telefone_limpo[:2])
+    if ddd not in DDDS_VALIDOS:
+        raise HTTPException(status_code=400, detail=f"DDD {ddd:02d} inválido")
+    numero_sem_ddd = telefone_limpo[2:]
+    if len(telefone_limpo) == 11 and numero_sem_ddd[0] != '9':
+        raise HTTPException(status_code=400, detail="Celular (11 dígitos) deve começar com 9 após o DDD")
+    if len(telefone_limpo) == 10 and numero_sem_ddd[0] not in '2345':
+        raise HTTPException(status_code=400, detail="Telefone fixo (10 dígitos) deve começar com 2-5 após o DDD")
 
     # Validar nome
     if len(dados.nome_fantasia.strip()) < 3:
@@ -387,18 +510,42 @@ async def criar_restaurante(
             db.refresh(restaurante)
 
     # Iniciar trial se solicitado
+    trial_dias = 15
     if dados.iniciar_trial:
         try:
             from ..billing.billing_service import iniciar_trial
             await iniciar_trial(restaurante.id, db, admin_id=current_admin.id)
             db.refresh(restaurante)
+            # Ler trial_dias da config
+            config_billing = db.query(models.ConfigBilling).first()
+            if config_billing:
+                trial_dias = config_billing.trial_dias or 15
         except Exception as e:
-            import logging
             logging.getLogger(__name__).warning(f"Erro ao iniciar trial: {e}")
+
+    # Enviar email de boas-vindas
+    email_enviado = False
+    if dados.enviar_email and email_limpo:
+        try:
+            link_painel = f"{BASE_URL}/admin/login"
+            link_onboarding = f"{BASE_URL}/admin/inicio"
+            resultado_email = await enviar_email_boas_vindas(
+                email_destino=email_limpo,
+                nome_fantasia=dados.nome_fantasia.strip(),
+                codigo_acesso=restaurante.codigo_acesso,
+                senha_padrao=senha_padrao,
+                link_painel=link_painel,
+                link_onboarding=link_onboarding,
+            )
+            email_enviado = resultado_email.get("enviado", False)
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Erro ao enviar email boas-vindas: {e}")
 
     return {
         **RestauranteDetalhe.model_validate(restaurante).model_dump(),
         "senha_padrao": senha_padrao,
+        "email_enviado": email_enviado,
+        "trial_dias": trial_dias,
     }
 
 

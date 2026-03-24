@@ -36,6 +36,7 @@ import {
   atualizarProdutoDemo,
   atualizarSiteConfigDemo,
   resetDemo,
+  consultarCnpj,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -342,6 +343,13 @@ export function useCancelarAssinatura() {
       qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
       qc.invalidateQueries({ queryKey: ["superadmin", "billing-dashboard"] });
     },
+  });
+}
+
+// ─── CNPJ Lookup ──────────────────────────────────────
+export function useConsultarCnpj() {
+  return useMutation({
+    mutationFn: consultarCnpj,
   });
 }
 

@@ -74,8 +74,34 @@ export async function criarRestaurante(payload: {
   criar_site?: boolean;
   tipo_restaurante?: string;
   whatsapp?: string;
+  enviar_email?: boolean;
 }) {
   const { data } = await superAdminApi.post("/api/admin/restaurantes", payload);
+  return data;
+}
+
+// ─── CNPJ Lookup ──────────────────────────────────────
+export interface CnpjData {
+  cnpj: string;
+  razao_social: string | null;
+  nome_fantasia: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
+  municipio: string | null;
+  uf: string | null;
+  cep: string | null;
+  telefone_1: string | null;
+  telefone_2: string | null;
+  email: string | null;
+  situacao_cadastral: string | null;
+  data_inicio_atividade: string | null;
+}
+
+export async function consultarCnpj(cnpj: string): Promise<CnpjData> {
+  const digits = cnpj.replace(/\D/g, "");
+  const { data } = await superAdminApi.get<CnpjData>(`/api/admin/cnpj/${digits}`);
   return data;
 }
 

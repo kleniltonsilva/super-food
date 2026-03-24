@@ -624,7 +624,7 @@ Admin escolhe:
 | Site Cliente | `/cliente/{codigo}/*` | 8 | Cardápio, busca, rastreamento, endereços |
 | Motoboy | `/motoboy/*` | 6 | Entregas, GPS, ganhos, finalizar |
 | KDS | `/kds/*` | 5 | Pedidos cozinha, status, assumir, refazer |
-| Super Admin | `/api/admin/*` | 14 | CRUD restaurantes, planos, billing, integrações, **features override** |
+| Super Admin | `/api/admin/*` | 15 | CRUD restaurantes, planos, billing, integrações, **features override**, **CNPJ lookup** |
 | Billing | `/painel/billing/*` | 5 | Assinatura, faturas, pagamento, planos disponíveis (com features) |
 | Billing Admin | `/api/admin/billing/*` | 6 | MRR, inadimplentes, ações billing |
 | Webhooks | `/webhooks/*` | 2 | Asaas, Woovi |
@@ -1003,6 +1003,81 @@ bridge_agent/
 ├── requirements.txt     — requests, pywin32, pystray, Pillow
 └── build.bat            — PyInstaller → .exe
 ```
+
+---
+
+## 15. OVERHAUL CRIAÇÃO DE RESTAURANTE (Super Admin)
+
+### 15.1 Endpoint CNPJ — BrasilAPI
+
+- **`GET /api/admin/cnpj/{cnpj}`** — consulta dados do CNPJ via BrasilAPI
+- Auth: requer super admin JWT
+- Valida checksum do CNPJ antes de consultar
+- Retorna: razão social, nome fantasia, endereço (logradouro, número, complemento, bairro, município, UF, CEP), telefones, email, situação cadastral
+- Erros: 400 (CNPJ inválido), 404 (não encontrado), 429 (rate limit), 502/504 (BrasilAPI)
+
+### 15.2 Validação de Telefone com DDD
+
+- 67 DDDs brasileiros válidos no backend e frontend
+- Celular (11 dígitos): deve começar com 9 após DDD
+- Fixo (10 dígitos): deve começar com 2-5 após DDD
+- Máscaras automáticas no frontend: `(XX) XXXXX-XXXX` / `(XX) XXXX-XXXX`
+
+### 15.3 Validação CPF/CNPJ Frontend
+
+- Checksum módulo 11 em tempo real (borda verde/vermelha)
+- Máscara automática: `XXX.XXX.XXX-XX` (CPF) / `XX.XXX.XXX/XXXX-XX` (CNPJ)
+- CNPJ válido habilita botão "Consultar Receita Federal" → auto-preenche formulário
+
+### 15.4 Email de Boas-Vindas (Resend)
+
+- **Serviço:** `backend/app/email_service.py` — Resend SDK
+- **Template:** `backend/app/email_templates.py` — HTML responsivo
+- Enviado automaticamente ao criar restaurante (checkbox "Enviar email" no form)
+- Conteúdo: credenciais (código de acesso + senha), botões CTA (Painel + Guia de Início), checklist
+- Graceful degradation: se `RESEND_API_KEY` não configurada, log warning, não quebra
+- Secrets Fly.io: `RESEND_API_KEY`, `DEREKH_FROM_EMAIL`
+
+### 15.5 Trial Configurável
+
+- Default alterado de 20 para **15 dias** (`ConfigBilling.trial_dias`)
+- Label dinâmico no formulário via `useBillingConfig()`
+- Resposta do endpoint retorna `trial_dias` e `email_enviado`
+
+### 15.6 Tela de Sucesso Melhorada
+
+- Credenciais com botão copiar (clipboard)
+- Badge "Email enviado para {email}" (verde) ou "Email não enviado" (amarelo)
+- Badge "Trial de {N} dias iniciado" (azul)
+- Botão "Abrir Guia de Início" (link para `/admin/inicio`)
+
+### 15.7 Página de Onboarding (`/admin/inicio`)
+
+- **Arquivo:** `src/admin/pages/Onboarding.tsx`
+- **Rota:** `/admin/inicio` (protegida por PrivateRoute)
+- 6 seções em Accordion:
+  1. **Primeiros Passos** — configurar restaurante, cardápio, bairros
+  2. **Instalar Apps (PWA)** — Motoboy, KDS, Garçom com URLs e passo-a-passo
+  3. **Impressora de Cupons** — requisitos, download, configuração
+  4. **Bridge Agent** — interceptar pedidos iFood/Rappi
+  5. **Integrações** — iFood, Pix Online, WhatsApp Humanoide
+  6. **Manual de Uso Básico** — pedidos, despacho, cardápio, relatórios
+
+### 15.8 Arquivos do Módulo
+
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `backend/app/email_service.py` | Novo | Serviço Resend (enviar_email_boas_vindas, enviar_email_generico) |
+| `backend/app/email_templates.py` | Novo | Template HTML email boas-vindas |
+| `backend/app/routers/admin.py` | Modificado | Endpoint CNPJ, validação DDD, envio email, campo enviar_email |
+| `database/models.py` | Modificado | ConfigBilling.trial_dias default 20→15 |
+| `requirements.txt` | Modificado | Adicionado resend>=2.0.0 |
+| `src/superadmin/lib/validators.ts` | Novo | Máscaras + validações CPF/CNPJ/telefone/CEP/DDD |
+| `src/superadmin/lib/superAdminApiClient.ts` | Modificado | consultarCnpj(), CnpjData, enviar_email |
+| `src/superadmin/hooks/useSuperAdminQueries.ts` | Modificado | useConsultarCnpj() |
+| `src/superadmin/pages/NovoRestaurante.tsx` | Reescrito | Formulário com máscaras, CNPJ lookup, email, tela sucesso |
+| `src/admin/pages/Onboarding.tsx` | Novo | Página onboarding 6 seções |
+| `src/admin/AdminApp.tsx` | Modificado | Rota /inicio |
 
 ---
 
