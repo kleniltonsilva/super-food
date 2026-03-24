@@ -21,7 +21,7 @@ from crm.competitor_service import dados_mercado_cidade, percentual_delivery_bai
 from crm.scoring import personalizar_abordagem
 
 XAI_API_KEY = os.environ.get("XAI_API_KEY", "")
-XAI_MODEL = os.environ.get("XAI_MODEL", "grok-3-fast")
+XAI_MODEL = os.environ.get("XAI_MODEL", "grok-3-mini")
 XAI_BASE_URL = "https://api.x.ai/v1"
 
 

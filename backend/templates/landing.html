@@ -829,7 +829,10 @@
                       Zero menus robotizados
                     </div>
                   </div>
-                  <a href="#contato" class="block mt-4 py-2.5 bg-emerald-500 text-white text-sm font-semibold rounded-xl hover:bg-emerald-600 transition-all">
+                  <button onclick="abrirHumanoideDemo()" class="block w-full mt-4 py-2.5 bg-emerald-500 text-white text-sm font-semibold rounded-xl hover:bg-emerald-600 transition-all cursor-pointer border-0">
+                    Ver Humanoide em Ação
+                  </button>
+                  <a href="#contato" class="block mt-2 py-2 text-emerald-600 text-xs font-semibold rounded-xl hover:text-emerald-800 transition-all text-center">
                     Quero ativar
                   </a>
                 </div>
@@ -966,6 +969,10 @@
             <div class="faq-content">
               <div class="px-6 pb-5 text-slate-500 leading-relaxed">
                 O WhatsApp Humanoide e um atendente inteligente que conversa com seus clientes de forma natural, como se fosse uma pessoa real. Nada de "aperte 1 para pedidos" ou "digite um numero do menu" — isso ficou no passado. O cliente simplesmente manda uma mensagem e e atendido: faz pedido, tira duvidas, recebe acompanhamento da entrega. Funciona 24h, 7 dias por semana. No plano <strong>Premium</strong> ele ja vem incluso gratuitamente. Nos demais planos, pode ser adicionado por <strong>R$99,45/mes</strong>.
+                <button onclick="abrirHumanoideDemo()" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white text-xs font-semibold rounded-lg hover:bg-emerald-600 transition-all cursor-pointer border-0">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                  Teste agora — veja o humanoide em ação 24/7
+                </button>
               </div>
             </div>
           </div>
@@ -1187,6 +1194,138 @@
           Falar com especialista no WhatsApp
         </a>
         <p style="font-size:0.85rem;color:#666;text-align:center;margin-top:12px">Quer resolver isso? A <strong>Derekh Food</strong> automatiza tudo.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- WHATSAPP HUMANOIDE DEMO MODAL                                  -->
+  <!-- ============================================================ -->
+  <div id="humanoideOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);justify-content:center;align-items:center;padding:16px;" onclick="if(event.target===this)fecharHumanoideDemo()">
+    <style>
+      .hd-phone{position:relative;width:380px;max-width:100%;height:720px;max-height:90vh;background:#0b141a;border-radius:40px;overflow:hidden;box-shadow:0 25px 80px rgba(0,0,0,0.5),inset 0 0 0 3px #2a2a2a;display:flex;flex-direction:column;font-family:'Segoe UI',-apple-system,sans-serif}
+      @media(max-width:500px){.hd-phone{width:100%;height:100%;max-height:100vh;border-radius:0;box-shadow:none}#humanoideOverlay{padding:0!important}}
+      .hd-notch{height:32px;background:#0b141a;display:flex;align-items:center;justify-content:center;gap:8px;font-size:11px;color:#8696a0;flex-shrink:0}
+      .hd-close{position:absolute;top:6px;right:12px;width:28px;height:28px;background:rgba(255,255,255,0.15);border:0;border-radius:50%;color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:10}
+      .hd-close:hover{background:rgba(255,255,255,0.3)}
+      .hd-body{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+      .hd-select{padding:24px 16px 32px;text-align:center;flex:1;overflow-y:auto}
+      .hd-logo{width:80px;height:80px;border-radius:20px;object-fit:contain;margin:0 auto 12px}
+      .hd-title{font-size:22px;font-weight:800;color:#e9edec;margin:0;letter-spacing:-0.5px}
+      .hd-sub{font-size:12px;color:#8696a0;margin:6px 0 0;line-height:1.5}
+      .hd-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:20px}
+      .hd-opt{background:#1f2c34;border:1px solid #2a3942;border-radius:14px;padding:16px 10px;cursor:pointer;text-align:center;transition:0.15s;color:#e9edec;font-family:inherit}
+      .hd-opt:hover{background:#2a3942;transform:scale(1.03)}
+      .hd-opt:active{transform:scale(0.97)}
+      .hd-opt-emoji{font-size:30px;margin-bottom:4px}
+      .hd-opt-name{font-size:13px;font-weight:700}
+      .hd-opt-desc{font-size:10px;color:#8696a0;margin-top:2px}
+      .hd-footer-text{text-align:center;margin-top:16px;font-size:10px;color:rgba(134,150,160,0.33)}
+      /* Scenario list */
+      .hd-scn-header{display:flex;align-items:center;gap:10px;padding:12px 16px 0;text-align:left}
+      .hd-scn-back{background:0;border:0;color:#00a884;font-size:22px;cursor:pointer;padding:0}
+      .hd-scn-list{display:flex;flex-direction:column;gap:6px;padding:12px 16px 24px}
+      .hd-scn-item{background:#1f2c34;border:1px solid #2a3942;border-radius:12px;padding:12px 14px;cursor:pointer;display:flex;align-items:center;gap:12px;text-align:left;transition:0.15s;color:#e9edec;font-family:inherit}
+      .hd-scn-item:hover{background:#2a3942}
+      .hd-scn-item:active{transform:scale(0.98)}
+      .hd-scn-emoji{font-size:22px;flex-shrink:0;width:32px;text-align:center}
+      .hd-scn-txt{flex:1;min-width:0}
+      .hd-scn-name{font-size:13px;font-weight:600}
+      .hd-scn-desc{font-size:10px;color:#8696a0;margin-top:1px}
+      /* Chat screen */
+      .hd-chat{display:none;flex-direction:column;flex:1;min-height:0}
+      .hd-chat.active{display:flex}
+      .hd-wa-header{background:#1f2c34;padding:10px 12px;display:flex;align-items:center;gap:10px;flex-shrink:0;border-bottom:1px solid #2a3942}
+      .hd-wa-back{background:0;border:0;color:#00a884;font-size:20px;cursor:pointer;padding:0 4px}
+      .hd-wa-avatar{width:38px;height:38px;border-radius:50%;object-fit:cover;background:#2a3942}
+      .hd-wa-info{flex:1}
+      .hd-wa-name{font-size:14px;font-weight:600;color:#e9edec}
+      .hd-wa-status{font-size:11px;color:#8696a0}
+      .hd-wa-msgs{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:4px;background:#0b141a;background-image:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%231a2730' fill-opacity='0.3'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")}
+      .hd-msg{max-width:82%;padding:7px 10px 4px;border-radius:8px;font-size:13px;line-height:1.45;word-wrap:break-word}
+      .hd-msg-in{background:#1f2c34;color:#e9edec;align-self:flex-start;border-top-left-radius:2px}
+      .hd-msg-out{background:#005c4b;color:#e9edec;align-self:flex-end;border-top-right-radius:2px}
+      .hd-msg-time{font-size:10px;color:#8696a0;text-align:right;margin-top:2px}
+      .hd-msg-out .hd-msg-time{color:rgba(255,255,255,0.5)}
+      .hd-typing{align-self:flex-start;background:#1f2c34;border-radius:8px;padding:10px 14px;display:flex;gap:4px;border-top-left-radius:2px}
+      .hd-typing span{width:7px;height:7px;background:#8696a0;border-radius:50%;animation:hdTyping 1.4s infinite}
+      .hd-typing span:nth-child(2){animation-delay:0.2s}
+      .hd-typing span:nth-child(3){animation-delay:0.4s}
+      @keyframes hdTyping{0%,60%,100%{opacity:0.3;transform:scale(0.8)}30%{opacity:1;transform:scale(1)}}
+      .hd-wa-bottom{background:#1f2c34;padding:8px 10px;display:flex;align-items:center;gap:8px;flex-shrink:0;border-top:1px solid #2a3942}
+      .hd-wa-input{flex:1;background:#2a3942;border:0;border-radius:20px;padding:8px 14px;color:#e9edec;font-size:13px;outline:0}
+      .hd-wa-input::placeholder{color:#8696a0}
+      .hd-wa-icons{display:flex;gap:6px;color:#8696a0}
+      .hd-wa-icons svg{width:20px;height:20px}
+      /* Brain thought block */
+      .hd-brain-block{align-self:stretch;background:#1a0a2e;border:1px solid #2d1b4e;border-radius:10px;padding:8px 12px;margin:4px 0}
+      .hd-brain-label{font-size:9px;color:#a78bfa;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:4px}
+      .hd-brain-txt{font-size:11px;color:#c4b5fd;line-height:1.4}
+      /* End state */
+      .hd-end{text-align:center;padding:20px 16px;flex-shrink:0}
+      .hd-end-title{font-size:16px;font-weight:700;color:#e9edec;margin-bottom:12px}
+      .hd-end-brain{background:linear-gradient(135deg,#7c3aed,#a78bfa);border:0;color:#fff;font-size:14px;font-weight:700;padding:12px 24px;border-radius:14px;cursor:pointer;animation:hdPulse 2s infinite;font-family:inherit;width:100%}
+      .hd-end-btn{background:#1f2c34;border:1px solid #2a3942;color:#8696a0;font-size:12px;padding:8px 16px;border-radius:10px;cursor:pointer;margin-top:8px;font-family:inherit}
+      .hd-end-btn:hover{background:#2a3942;color:#e9edec}
+      @keyframes hdPulse{0%,100%{box-shadow:0 0 0 0 rgba(124,58,237,0.4)}50%{box-shadow:0 0 0 10px rgba(124,58,237,0)}}
+      @keyframes hdFadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+      .hd-msg,.hd-typing,.hd-brain-block{animation:hdFadeUp 0.3s ease}
+    </style>
+
+    <div class="hd-phone">
+      <div class="hd-notch"><span id="hdClock"></span></div>
+      <button class="hd-close" onclick="fecharHumanoideDemo()" aria-label="Fechar">&times;</button>
+
+      <!-- SCREEN 1: Restaurant type selection -->
+      <div id="hdScreen1" class="hd-body">
+        <div class="hd-select">
+          <img src="/static/chefe-robo-derekh.png" alt="Derekh Food Humanoide" class="hd-logo">
+          <h2 class="hd-title">WhatsApp Humanoide</h2>
+          <p class="hd-sub">Escolha o tipo do seu restaurante e veja o<br>humanoide atendendo clientes reais</p>
+          <div class="hd-grid" id="hdGrid"></div>
+          <div class="hd-footer-text">Simulação · Dados fictícios · Derekh Food</div>
+        </div>
+      </div>
+
+      <!-- SCREEN 2: Scenario selection -->
+      <div id="hdScreen2" class="hd-body" style="display:none">
+        <div class="hd-scn-header">
+          <button class="hd-scn-back" onclick="hdVoltarTipos()">&#8249;</button>
+          <div>
+            <h2 class="hd-title" style="font-size:18px" id="hdScnTitle">Pizzaria</h2>
+            <p class="hd-sub" style="margin:2px 0 0">Escolha uma situação do dia a dia</p>
+          </div>
+        </div>
+        <div class="hd-scn-list" id="hdScnList"></div>
+      </div>
+
+      <!-- SCREEN 3: WhatsApp chat -->
+      <div id="hdScreen3" class="hd-chat">
+        <div class="hd-wa-header">
+          <button class="hd-wa-back" onclick="hdVoltarCenarios()">&#8249;</button>
+          <img src="/static/chefe-robo-derekh.png" alt="" class="hd-wa-avatar">
+          <div class="hd-wa-info">
+            <div class="hd-wa-name" id="hdRestName">Restaurante</div>
+            <div class="hd-wa-status" id="hdWaStatus">online</div>
+          </div>
+          <div class="hd-wa-icons">
+            <svg fill="currentColor" viewBox="0 0 24 24"><path d="M15.9 14.3H15l-.3-.3c1-1.1 1.6-2.7 1.6-4.3 0-3.7-3-6.7-6.7-6.7S3 6 3 9.7s3 6.7 6.7 6.7c1.6 0 3.2-.6 4.3-1.6l.3.3v.8l5.1 5.1 1.5-1.5-5-5.2zm-6.2 0c-2.6 0-4.6-2.1-4.6-4.6s2.1-4.6 4.6-4.6 4.6 2.1 4.6 4.6-2 4.6-4.6 4.6z"/></svg>
+          </div>
+        </div>
+        <div class="hd-wa-msgs" id="hdMsgs"></div>
+        <div id="hdEndState" class="hd-end" style="display:none">
+          <div class="hd-end-title">✅ Conversa finalizada!</div>
+          <button class="hd-end-brain" onclick="hdReplayBrain()">🧠 Veja como o humanoide pensa</button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="hd-end-btn" style="flex:1" onclick="hdRestart()">Assistir novamente</button>
+            <button class="hd-end-btn" style="flex:1" onclick="hdVoltarCenarios()">Outro cenário</button>
+          </div>
+        </div>
+        <div class="hd-wa-bottom" id="hdWaBottom">
+          <svg width="24" height="24" fill="#8696a0" viewBox="0 0 24 24"><circle cx="9.5" cy="9.5" r="1.5"/><circle cx="14.5" cy="9.5" r="1.5"/><path d="M8.5 14c.8 1 2 1.5 3.5 1.5s2.7-.5 3.5-1.5" fill="none" stroke="#8696a0" stroke-width="1.5" stroke-linecap="round"/></svg>
+          <input class="hd-wa-input" placeholder="Mensagem" readonly>
+          <svg width="24" height="24" fill="#8696a0" viewBox="0 0 24 24"><path d="M12 15c1.66 0 3-1.34 3-3V6c0-1.66-1.34-3-3-3S9 4.34 9 6v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V6zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-2.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+        </div>
       </div>
     </div>
   </div>
@@ -1519,6 +1658,719 @@
         }
       });
     });
+
+    // ===================================================================
+    // WHATSAPP HUMANOIDE DEMO
+    // ===================================================================
+    const HD_TIPOS = [
+      { id:'pizzaria', emoji:'🍕', nome:'Pizzaria', desc:'Italiano clássico' },
+      { id:'esfiharia', emoji:'🧆', nome:'Esfiharia', desc:'Árabe quente' },
+      { id:'hamburgueria', emoji:'🍔', nome:'Hamburgueria', desc:'Dark urbano' },
+      { id:'sushi', emoji:'🍣', nome:'Sushi', desc:'Japonês moderno' },
+      { id:'restaurante', emoji:'🍽️', nome:'Restaurante', desc:'Casual quente' },
+      { id:'acai', emoji:'🍨', nome:'Açaí / Sorvetes', desc:'Tropical dessert' },
+      { id:'bebidas', emoji:'🥤', nome:'Bebidas', desc:'Clean & fresh' },
+      { id:'salgados', emoji:'🧁', nome:'Salgados / Doces', desc:'Artesanal festa' },
+    ];
+
+    const HD_REST = {
+      pizzaria: {
+        nome:'Pizzaria Bella Napoli',
+        top:[{n:'Calabresa Especial',p:'R$42,90'},{n:'Marguerita',p:'R$45,90'},{n:'Quatro Queijos',p:'R$49,90'}],
+        popular:{n:'Calabresa Grande',p:'R$42,90',d:'calabresa defumada, mozzarella, cebola roxa'},
+        extra:'borda catupiry (+R$8)',
+        esgotado:'Quatro Queijos',alt:'Frango com Catupiry (R$44,90)',
+        ingItem:'Calabresa Especial',ings:'calabresa defumada artesanal, mozzarella de búfala, cebola roxa caramelizada, orégano fresco e molho de tomate San Marzano',
+        festa:{n:'Kit Festa 30 fatias mistas',p:'R$189,90'},
+        horario:'18h às 00h',tempo:'35-45 min',taxa:'R$5,00',area:'8km',
+        rec:{n:'Pepperoni Trufada',p:'R$54,90',d:'pepperoni importado com azeite trufado'},
+        rest:{n:'Pizza sem Glúten Marguerita',p:'R$52,90',d:'massa de arroz, mozzarella, manjericão'},
+        emoji:'🍕',unidade:'pizza',pedidoEx:'#347'
+      },
+      esfiharia: {
+        nome:'Esfiharia Habibi',
+        top:[{n:'Esfirra Carne',p:'R$6,50'},{n:'Frango c/ Catupiry',p:'R$7,00'},{n:'Esfiha Árabe',p:'R$7,50'}],
+        popular:{n:'Combo 10 Esfirras Misto',p:'R$55,00',d:'5 carne + 5 frango catupiry'},
+        extra:'Guaraná 1L (+R$8)',
+        esgotado:'Esfiha Árabe',alt:'Esfiha de Queijo (R$6,00)',
+        ingItem:'Esfiha Árabe Especial',ings:'carne moída temperada com hortelã, cebola, pimenta síria, tahine e limão siciliano',
+        festa:{n:'Cento de Esfirras Mistas',p:'R$320,00'},
+        horario:'11h às 23h',tempo:'25-35 min',taxa:'R$4,00',area:'6km',
+        rec:{n:'Combo Família 20 esfirras',p:'R$95,00',d:'mix dos sabores mais vendidos + molho especial'},
+        rest:{n:'Esfirra de Queijo (sem carne)',p:'R$6,00',d:'queijo minas, ricota e orégano'},
+        emoji:'🧆',unidade:'esfirra',pedidoEx:'#218'
+      },
+      hamburgueria: {
+        nome:'Smash Burger House',
+        top:[{n:'Smash Duplo',p:'R$32,90'},{n:'Classic Bacon',p:'R$28,90'},{n:'Veggie Smash',p:'R$29,90'}],
+        popular:{n:'Smash Duplo',p:'R$32,90',d:'dois discos 90g, cheddar, bacon, cebola caramelizada'},
+        extra:'Batata Frita Grande (+R$15,90)',
+        esgotado:'Bacon',alt:'Cheddar Crispy (R$30,90) com cebola empanada',
+        ingItem:'Smash Duplo',ings:'2 discos de blend bovino 90g smashados na chapa, queijo cheddar, bacon crocante, cebola caramelizada e molho especial da casa',
+        festa:{n:'Box 10 Smash + 3 Batatas',p:'R$299,90'},
+        horario:'18h às 01h',tempo:'30-40 min',taxa:'R$6,00',area:'7km',
+        rec:{n:'Truffle Burger',p:'R$42,90',d:'blend wagyu, brie derretido, cogumelo e aioli trufado'},
+        rest:{n:'Veggie Smash',p:'R$29,90',d:'hambúrguer de grão-de-bico, queijo, tomate e alface'},
+        emoji:'🍔',unidade:'burger',pedidoEx:'#512'
+      },
+      sushi: {
+        nome:'Sushi Kento',
+        top:[{n:'Combo Kento 30pçs',p:'R$79,90'},{n:'Combo Especial 40pçs',p:'R$99,90'},{n:'Temaki Salmão',p:'R$22,90'}],
+        popular:{n:'Combo Especial 40 peças',p:'R$99,90',d:'hot roll, sashimi salmão, uramaki + temaki'},
+        extra:'Temaki Salmão avulso (+R$22,90)',
+        esgotado:'Sashimi de Atum',alt:'Sashimi de Salmão (R$34,90)',
+        ingItem:'Uramaki Filadélfia',ings:'arroz japonês, salmão fresco, cream cheese, cebolinha e gergelim tostado',
+        festa:{n:'Barco Especial 100 peças',p:'R$259,90'},
+        horario:'18h às 23h30',tempo:'40-50 min',taxa:'R$5,00',area:'8km',
+        rec:{n:'Jyo Salmão Especial',p:'R$38,90',d:'salmão maçaricado com cream cheese e crispy de alho'},
+        rest:{n:'Combo Vegano 30pçs',p:'R$74,90',d:'uramaki de pepino, abacate, cenoura e tofu defumado'},
+        emoji:'🍣',unidade:'combo',pedidoEx:'#089'
+      },
+      restaurante: {
+        nome:'Sabor da Vovó',
+        top:[{n:'Frango Grelhado',p:'R$18,90'},{n:'Bife Acebolado',p:'R$22,90'},{n:'Peixe Grelhado',p:'R$24,90'}],
+        popular:{n:'Bife Acebolado c/ purê',p:'R$22,90',d:'bife + purê + arroz + feijão + vinagrete'},
+        extra:'Farofa caseira extra (+R$3)',
+        esgotado:'Peixe Grelhado',alt:'Frango à Parmegiana (R$24,90)',
+        ingItem:'Bife Acebolado',ings:'bife de contra-filé grelhado, cebola caramelizada na manteiga, purê de batata caseiro, arroz soltinho e feijão carioca',
+        festa:{n:'Kit Marmitex 20 unidades',p:'R$340,00'},
+        horario:'11h às 15h / 18h às 22h',tempo:'20-30 min',taxa:'R$4,00',area:'5km',
+        rec:{n:'Picanha Grelhada',p:'R$34,90',d:'picanha no ponto com arroz, farofa e vinagrete'},
+        rest:{n:'Marmita Vegana',p:'R$19,90',d:'arroz integral, feijão preto, legumes grelhados e salada'},
+        emoji:'🍽️',unidade:'marmita',pedidoEx:'#156'
+      },
+      acai: {
+        nome:'Açaí Tropical',
+        top:[{n:'Açaí 300ml',p:'R$14,90'},{n:'Açaí 500ml',p:'R$19,90'},{n:'Açaí 700ml',p:'R$24,90'}],
+        popular:{n:'Açaí 500ml com 3 complementos',p:'R$19,90',d:'banana, morango e granola'},
+        extra:'Leite condensado ou Nutella (+R$3)',
+        esgotado:'Morango',alt:'Mirtilo (sem custo extra)',
+        ingItem:'Açaí Premium 700ml',ings:'polpa de açaí puro do Pará, banana, morango, granola artesanal, mel orgânico e leite de coco',
+        festa:{n:'Balde de Açaí 5L + 10 complementos',p:'R$159,90'},
+        horario:'10h às 22h',tempo:'15-25 min',taxa:'R$3,00',area:'5km',
+        rec:{n:'Açaí Premium 700ml',p:'R$29,90',d:'base premium com polpa extra + Nutella + paçoca + leite condensado'},
+        rest:{n:'Açaí Zero Açúcar 500ml',p:'R$22,90',d:'adoçado com stevia, banana e granola sem glúten'},
+        emoji:'🍨',unidade:'açaí',pedidoEx:'#073'
+      },
+      bebidas: {
+        nome:'Drink Express',
+        top:[{n:'Coca-Cola 600ml',p:'R$7,90'},{n:'Guaraná 2L',p:'R$11,90'},{n:'Suco Natural 500ml',p:'R$9,90'}],
+        popular:{n:'Combo Família 3 refris',p:'R$27,70',d:'2x Coca 600ml + 1x Guaraná 2L'},
+        extra:'Gelo extra (+R$1)',
+        esgotado:'Coca-Cola Zero',alt:'Guaraná Zero (R$7,90)',
+        ingItem:'Suco Detox',ings:'couve orgânica, maçã verde, gengibre fresco, limão siciliano e hortelã',
+        festa:{n:'Kit Festa 20 refris + gelo',p:'R$149,90'},
+        horario:'8h às 23h',tempo:'15-20 min',taxa:'R$3,00',area:'6km',
+        rec:{n:'Suco Natural de Açaí com Banana',p:'R$12,90',d:'polpa de açaí, banana e mel — energético natural'},
+        rest:{n:'Água de Coco Natural',p:'R$6,90',d:'100% natural, sem conservantes, sem açúcar'},
+        emoji:'🥤',unidade:'bebida',pedidoEx:'#401'
+      },
+      salgados: {
+        nome:'Delícias da Lê',
+        top:[{n:'Cento de Coxinha',p:'R$85'},{n:'Cento de Bolinha de Queijo',p:'R$80'},{n:'Cento de Risole',p:'R$90'}],
+        popular:{n:'Cento Misto',p:'R$85,00',d:'você escolhe os sabores'},
+        extra:'Molho especial (+R$5)',
+        esgotado:'Risole de Camarão',alt:'Risole de Palmito (R$90)',
+        ingItem:'Coxinha Especial',ings:'frango desfiado temperado com requeijão cremoso, massa de batata caseira, empanado crocante',
+        festa:{n:'Kit Festa 500 salgados + doces',p:'R$599,90'},
+        horario:'8h às 20h',tempo:'30-40 min',taxa:'R$5,00',area:'7km',
+        rec:{n:'Mini Churros Recheados 50un',p:'R$65,00',d:'doce de leite e Nutella — sucesso em festas'},
+        rest:{n:'Kit Salgado Vegano 50un',p:'R$55,00',d:'coxinha de jaca, bolinha de espinafre, risole de palmito'},
+        emoji:'🧁',unidade:'salgado',pedidoEx:'#045'
+      }
+    };
+
+    const HD_CENARIOS = [
+      {emoji:'🎙️',nome:'Pedido por Áudio',desc:'Cliente manda áudio com o pedido'},
+      {emoji:'👤',nome:'Cliente Novo',desc:'Primeiro contato, quer ver o cardápio'},
+      {emoji:'✏️',nome:'Alterar Pedido',desc:'Mudar pedido já em preparo'},
+      {emoji:'⏰',nome:'Atraso Proativo',desc:'Bot avisa atraso antes do cliente'},
+      {emoji:'⭐',nome:'Avaliação 5 Estrelas',desc:'Follow-up de cliente satisfeito'},
+      {emoji:'😞',nome:'Reclamação',desc:'Avaliação negativa + resolução'},
+      {emoji:'🚫',nome:'Item Esgotado',desc:'Produto acabou, sugerir alternativa'},
+      {emoji:'🔄',nome:'Repescagem CRM',desc:'Win-back de cliente sumido'},
+      {emoji:'🕐',nome:'Fora do Horário',desc:'Mensagem quando está fechado'},
+      {emoji:'⚠️',nome:'Restrição Alimentar',desc:'Alergia ou intolerância'},
+      {emoji:'❌',nome:'Cancelamento',desc:'Cliente quer cancelar pedido'},
+      {emoji:'🏠',nome:'Trocar Endereço',desc:'Alterar endereço da entrega'},
+      {emoji:'🎉',nome:'Pedido pra Festa',desc:'Encomenda grande para evento'},
+      {emoji:'🍕',nome:'Recomendação',desc:'Pede sugestão do chef'},
+      {emoji:'📦',nome:'Pedido Errado',desc:'Entrega com item trocado'},
+      {emoji:'🤖',nome:'"Isso é robô?"',desc:'Cliente desconfia da IA'},
+      {emoji:'👨‍🍳',nome:'Falar com Humano',desc:'Escalar para atendente real'},
+      {emoji:'📍',nome:'Fora da Área',desc:'Endereço fora do raio de entrega'},
+      {emoji:'💬',nome:'Dúvida Ingredientes',desc:'Perguntas sobre composição'},
+      {emoji:'🛵',nome:'Rastreio do Pedido',desc:'Acompanhar entrega em tempo real'}
+    ];
+
+    // Gera mensagens de conversa baseado no tipo de restaurante e cenário
+    function hdGenMsgs(tipoId, cenIdx) {
+      const r = HD_REST[tipoId];
+      if (!r) return [];
+      switch(cenIdx) {
+        case 0: return hdGenAudio(r);
+        case 1: return hdGenNovoCliente(r);
+        case 2: return hdGenAlterarPedido(r);
+        case 3: return hdGenAtrasoProativo(r);
+        case 4: return hdGenAvaliacao5(r);
+        case 5: return hdGenReclamacao(r);
+        case 6: return hdGenItemEsgotado(r);
+        case 7: return hdGenRepescagem(r);
+        case 8: return hdGenForaHorario(r);
+        case 9: return hdGenRestricao(r);
+        case 10: return hdGenCancelamento(r);
+        case 11: return hdGenTrocarEndereco(r);
+        case 12: return hdGenFesta(r);
+        case 13: return hdGenRecomendacao(r);
+        case 14: return hdGenPedidoErrado(r);
+        case 15: return hdGenEhRobo(r);
+        case 16: return hdGenHandoff(r);
+        case 17: return hdGenForaArea(r);
+        case 18: return hdGenDuvidaIngredientes(r);
+        case 19: return hdGenRastreio(r);
+        default: return [];
+      }
+    }
+
+    // 0 - Pedido por Áudio
+    function hdGenAudio(r) {
+      return [
+        {de:'cli',txt:'🎤 [Áudio 0:12]',delay:800},
+        {brain:'Áudio recebido. Transcrevi via Whisper: "quero pedir um(a) '+r.popular.n+'". Confirmar transcrição com cliente antes de processar.',delay:600},
+        {de:'bot',txt:'Recebi seu áudio! 😊 Entendi assim:\n\n'+r.emoji+' 1x '+r.popular.n+' — '+r.popular.p+'\n\nÉ isso mesmo? Quer acrescentar algo?',delay:1800},
+        {de:'cli',txt:'isso! manda assim msm',delay:1500},
+        {brain:'Confirmou o pedido. Pedir endereço para entrega. Calcular taxa.',delay:500},
+        {de:'bot',txt:'Perfeito! '+r.emoji+' Pedido anotado!\n\n💰 '+r.popular.p+'\n⏱️ Entrega em '+r.tempo+'\n\nMe passa o endereço? 📍',delay:1800},
+        {de:'cli',txt:'rua das flores 123, centro',delay:1400},
+        {brain:'Endereço recebido. Centro está dentro da área ('+r.area+'). Taxa: '+r.taxa+'. Finalizar pedido.',delay:500},
+        {de:'bot',txt:'Fechou! ✅ Pedido '+r.pedidoEx+' confirmado!\n📍 Rua das Flores, 123 — Centro\n🚚 Taxa: '+r.taxa+'\n💰 Total com entrega: calculado!\n\nTe aviso quando sair! '+r.emoji,delay:2200}
+      ];
+    }
+
+    // 1 - Cliente Novo + Cardápio
+    function hdGenNovoCliente(r) {
+      return [
+        {de:'cli',txt:'oi, é a primeira vez que peço aqui. oq vcs tem?',delay:800},
+        {brain:'Novo cliente detectado. Saudação calorosa + mostrar top 3 itens mais vendidos com preço. Tom consultivo e acolhedor.',delay:600},
+        {de:'bot',txt:'Oi! Que bom ter você aqui pela primeira vez! 😊🎉\n\nNossos campeões de venda:\n\n'+r.top.map((t,i)=>(i+1)+'. '+r.emoji+' '+t.n+' — '+t.p).join('\n')+'\n\nQuer saber mais de algum? Ou já quer pedir?',delay:2200},
+        {de:'cli',txt:'me fala mais do primeiro',delay:1500},
+        {brain:'Interesse no item mais vendido. Dar descrição detalhada e perguntar se quer pedir.',delay:500},
+        {de:'bot',txt:r.top[0].n+' '+r.emoji+'\n\n'+r.popular.d+'\n\nÉ o nosso mais vendido, nota 4.9 dos clientes! Quer experimentar?',delay:2000},
+        {de:'cli',txt:'quero sim!',delay:1200},
+        {brain:'Cliente quer o item. Pedir endereço e forma de pagamento.',delay:400},
+        {de:'bot',txt:'Boa escolha! 🔥\n\n'+r.emoji+' 1x '+r.top[0].n+' — '+r.top[0].p+'\n⏱️ Entrega em '+r.tempo+'\n\nMe manda o endereço que já encaminho! 📍',delay:1800},
+        {de:'cli',txt:'av paulista 1000 apt 42',delay:1300},
+        {de:'bot',txt:'Pedido '+r.pedidoEx+' confirmado! ✅\n📍 Av Paulista, 1000 apt 42\n🚚 Taxa: '+r.taxa+'\n\nSeja muito bem-vindo(a)! Tenho certeza que vai adorar 😊'+r.emoji,delay:2200}
+      ];
+    }
+
+    // 2 - Alterar Pedido em Preparo
+    function hdGenAlterarPedido(r) {
+      return [
+        {de:'cli',txt:'oi! fiz um pedido agora ('+r.pedidoEx+') mas quero mudar uma coisa',delay:800},
+        {brain:'Cliente quer alterar pedido. Verificar status — se já está em preparo, avaliar viabilidade. Ser empático.',delay:600},
+        {de:'bot',txt:'Oi! Deixa eu verificar... 🔍\n\nPedido '+r.pedidoEx+' — Status: Em preparo\n\nAinda dá tempo de ajustar! O que quer mudar? 😊',delay:1800},
+        {de:'cli',txt:'quero adicionar mais um '+r.top[1].n,delay:1500},
+        {brain:'Quer adicionar item. Pedido em preparo mas ainda viável. Calcular novo total e confirmar.',delay:500},
+        {de:'bot',txt:'Claro! Vou adicionar:\n\n➕ 1x '+r.top[1].n+' — '+r.top[1].p+'\n\nNovo total atualizado! A cozinha já foi avisada ✅\n⏱️ Pode adicionar uns 5-10 min no tempo, tá?',delay:2000},
+        {de:'cli',txt:'show, sem problema!',delay:1000},
+        {de:'bot',txt:'Feito! Pedido '+r.pedidoEx+' atualizado! 📝\nTe aviso quando sair pra entrega. Bom apetite! '+r.emoji,delay:1800}
+      ];
+    }
+
+    // 3 - Atraso Proativo
+    function hdGenAtrasoProativo(r) {
+      return [
+        {de:'bot',txt:'Oi! Passando pra te dar um update sobre seu pedido '+r.pedidoEx+' 📋\n\nTivemos um volume alto de pedidos agora e seu '+r.unidade+' vai demorar mais uns 15 minutinhos do previsto 😅\n\nNovo prazo: '+r.tempo.replace(/\d+-/,'')+ ' no máximo\n\nDesculpa pelo transtorno! 🙏',delay:800},
+        {brain:'Notificação proativa de atraso. Enviei antes do cliente reclamar — reduz insatisfação em 73%. Aguardar reação.',delay:600},
+        {de:'cli',txt:'ah que saco... mas ok, obrigado por avisar pelo menos',delay:2000},
+        {brain:'Cliente chateado mas agradeceu o aviso. Reforçar pedido de desculpas e oferecer benefício.',delay:500},
+        {de:'bot',txt:'Total compreensão! 😊 Pra compensar, vou te dar 10% de desconto no próximo pedido! O cupom VOLTASEMPRE já tá ativo na sua conta.\n\nTe aviso assim que sair do forno! '+r.emoji,delay:2200},
+        {de:'cli',txt:'opa valeu! aí sim',delay:1200},
+        {de:'bot',txt:'🏍️ UPDATE: Seu pedido acabou de sair pra entrega! Chegando aí em ~10 min. Bom apetite! '+r.emoji+'🎉',delay:3000}
+      ];
+    }
+
+    // 4 - Avaliação 5 Estrelas
+    function hdGenAvaliacao5(r) {
+      return [
+        {de:'bot',txt:'Oi! 😊 Vi que você avaliou a gente com 5 estrelas ⭐⭐⭐⭐⭐\n\nMuito obrigado! Isso faz toda a diferença pra nossa equipe! 🙏',delay:800},
+        {brain:'Cliente deu 5 estrelas. Agradecer genuinamente + pedir feedback específico + fidelizar com oferta.',delay:600},
+        {de:'cli',txt:'adorei msm! tudo perfeito',delay:1500},
+        {de:'bot',txt:'Que alegria ler isso! 🥰 O que mais te agradou? A comida, o tempo de entrega, o atendimento?\n\nSeu feedback nos ajuda a continuar melhorando! '+r.emoji,delay:2000},
+        {de:'cli',txt:'a comida tava incrível e chegou super rápido',delay:1800},
+        {brain:'Feedback positivo sobre comida e entrega. Fidelizar com cupom e incentivar indicação.',delay:500},
+        {de:'bot',txt:'Maravilha! 🔥 A cozinha vai adorar saber disso!\n\nPra agradecer, tem um cupom AMIGO15 com 15% off no próximo pedido 🎁\n\nE se indicar um amigo, vocês dois ganham desconto! Volte sempre! 😊'+r.emoji,delay:2400}
+      ];
+    }
+
+    // 5 - Reclamação / Avaliação Negativa
+    function hdGenReclamacao(r) {
+      return [
+        {de:'cli',txt:'péssimo atendimento! meu pedido veio frio e demorou 1 hora. nota 1!',delay:800},
+        {brain:'Reclamação grave: comida fria + atraso. PRIORIDADE MÁXIMA. Pedir desculpa genuína, não defensiva. Oferecer resolução concreta (reenvio ou reembolso). Tom humilde.',delay:600},
+        {de:'bot',txt:'Poxa, sinto muito MESMO por essa experiência 😔 Isso não é o padrão que a gente quer entregar.\n\nMe conta: prefere que eu reenvie o pedido agora (sem custo) ou prefere reembolso total?',delay:2200},
+        {de:'cli',txt:'quero reembolso',delay:1200},
+        {brain:'Solicitou reembolso. Processar imediatamente sem questionar. Rapidez na resolução recupera 68% dos clientes insatisfeitos.',delay:500},
+        {de:'bot',txt:'Reembolso total processado agora! ✅ Vai cair em até 2 dias úteis.\n\nAlém disso, quero te dar um cupom DESCULPA30 com 30% off no próximo pedido, pra ter a chance de mostrar que a gente é melhor que isso 🙏',delay:2200},
+        {de:'cli',txt:'ok obrigado pela agilidade',delay:1500},
+        {de:'bot',txt:'Obrigado pela paciência! Vou reportar isso internamente pra não acontecer de novo. Qualquer coisa, só chamar aqui. Abraço! 🙏',delay:2000}
+      ];
+    }
+
+    // 6 - Item Esgotado
+    function hdGenItemEsgotado(r) {
+      return [
+        {de:'cli',txt:'quero pedir um(a) '+r.esgotado,delay:800},
+        {brain:'Cliente pediu '+r.esgotado+' — ESGOTADO no momento. Informar com empatia e já oferecer alternativa similar antes que desista.',delay:600},
+        {de:'bot',txt:'Poxa, que pena! 😅 O(a) '+r.esgotado+' esgotou agora há pouco (tava voando hoje!).\n\nMas tenho uma alternativa incrível: '+r.alt+'\n\nO pessoal tá amando! Quer experimentar? '+r.emoji,delay:2200},
+        {de:'cli',txt:'hmm pode ser, manda',delay:1500},
+        {brain:'Aceitou a alternativa. Fechar pedido rápido antes que mude de ideia. Agradecer a flexibilidade.',delay:500},
+        {de:'bot',txt:'Boa! Tenho certeza que vai gostar! 😊\n\nPedido anotado ✅\n⏱️ Sai em '+r.tempo+'\n\nMe manda o endereço! 📍',delay:1800},
+        {de:'cli',txt:'rua boa vista 200',delay:1200},
+        {de:'bot',txt:'Pedido confirmado! '+r.emoji+' Rua Boa Vista, 200\nTaxa: '+r.taxa+'\n\nTe aviso quando sair! E prometo que na próxima vai ter '+r.esgotado+' te esperando 😉',delay:2200}
+      ];
+    }
+
+    // 7 - Repescagem CRM
+    function hdGenRepescagem(r) {
+      return [
+        {de:'bot',txt:'Oi! 😊 Tudo bem? Faz um tempinho que você não aparece por aqui na '+r.nome+'...\n\nSentimos sua falta! '+r.emoji,delay:800},
+        {brain:'Repescagem CRM. Cliente inativo há 30+ dias. Tom saudoso, não insistente. Oferecer incentivo personalizado baseado no último pedido.',delay:600},
+        {de:'cli',txt:'oi! é verdade, andei sem tempo',delay:1800},
+        {de:'bot',txt:'Te entendo! Correria do dia a dia né? 😄\n\nPra matar a saudade, separei um cupom VOLTEI20 com 20% off só pra você! Válido até domingo.\n\nNovidade: '+r.rec.n+' — '+r.rec.d+' '+r.emoji,delay:2400},
+        {de:'cli',txt:'eita, parece bom! vou pedir hoje',delay:1500},
+        {brain:'Reativação com sucesso! Cliente vai pedir. Cupom converteu. Registrar win no CRM.',delay:500},
+        {de:'bot',txt:'Aee! 🎉 Quando quiser é só chamar aqui que eu monto seu pedido rapidinho! O cupom já tá ativo.\n\nBom ter você de volta! 😊🙏',delay:2000}
+      ];
+    }
+
+    // 8 - Fora do Horário
+    function hdGenForaHorario(r) {
+      return [
+        {de:'cli',txt:'oi, quero fazer um pedido',delay:800},
+        {brain:'Mensagem fora do horário de funcionamento ('+r.horario+'). Informar horário, sugerir que agende ou volte depois. Não perder o lead.',delay:600},
+        {de:'bot',txt:'Oi! 😊 Que pena, agora estamos fechados 😅\n\nNosso horário: '+r.horario+'\n\nMas já posso te ajudar a montar o pedido e deixar agendado! Assim quando abrir, é só confirmar e sai voando! '+r.emoji,delay:2200},
+        {de:'cli',txt:'ah legal! então quero agendar',delay:1500},
+        {brain:'Ótimo, cliente aceitou agendar. Pegar detalhes do pedido para salvar como rascunho.',delay:500},
+        {de:'bot',txt:'Perfeito! Me conta o que vai querer:\n\n'+r.top.map(t=>'• '+t.n+' — '+t.p).join('\n')+'\n\nE mais opções no nosso cardápio completo! 📋',delay:2000},
+        {de:'cli',txt:'quero o '+r.top[0].n+'!',delay:1300},
+        {de:'bot',txt:'Anotado! ✅ Salvei seu pedido:\n\n'+r.emoji+' 1x '+r.top[0].n+' — '+r.top[0].p+'\n\nAmanhã às '+r.horario.split(' ')[0]+' te mando uma mensagem pra confirmar, ok? Boa noite! 😊🌙',delay:2200}
+      ];
+    }
+
+    // 9 - Restrição Alimentar
+    function hdGenRestricao(r) {
+      return [
+        {de:'cli',txt:'oi, sou intolerante a glúten. vcs tem opção pra mim?',delay:800},
+        {brain:'ALERTA: Restrição alimentar — intolerância a glúten. CUIDADO REDOBRADO. Verificar opções sem glúten no cardápio. Nunca arriscar — só confirmar o que tem certeza.',delay:600},
+        {de:'bot',txt:'Oi! Claro, levamos restrições alimentares muito a sério! 💚\n\nTemos sim opção pra você:\n\n'+r.rest.n+' — '+r.rest.p+'\n'+r.rest.d+'\n\n⚠️ Preparado em área separada pra evitar contaminação cruzada!',delay:2400},
+        {de:'cli',txt:'que bom! quero esse então',delay:1300},
+        {brain:'Pedido com restrição alimentar. Marcar flag especial na comanda para cozinha ter cuidado extra. Confirmar novamente.',delay:500},
+        {de:'bot',txt:'Ótimo! 😊 Só confirmando:\n\n✅ '+r.rest.n+'\n⚠️ SEM GLÚTEN — preparação separada\n💰 '+r.rest.p+'\n\nVou marcar destaque especial na sua comanda! Pode ficar tranquilo(a)! 💚\n\nMe passa o endereço? 📍',delay:2200},
+        {de:'cli',txt:'rua augusta 500',delay:1100},
+        {de:'bot',txt:'Pedido confirmado! ✅ '+r.emoji+'\n📍 Rua Augusta, 500\n⏱️ '+r.tempo+'\n\nCozinha avisada sobre a restrição! Bom apetite! 💚'+r.emoji,delay:2000}
+      ];
+    }
+
+    // 10 - Cancelamento
+    function hdGenCancelamento(r) {
+      return [
+        {de:'cli',txt:'oi preciso cancelar meu pedido '+r.pedidoEx,delay:800},
+        {brain:'Cliente quer cancelar. Verificar status: se PENDENTE → cancelar sem atrito. Se EM PREPARO → informar que já começou mas oferecer opções. Nunca forçar o cliente.',delay:600},
+        {de:'bot',txt:'Oi! Entendi. Deixa eu verificar o status... 🔍\n\nPedido '+r.pedidoEx+' — Status: Pendente\n\nConsigo cancelar sem problema! Quer mesmo cancelar? 😊',delay:1800},
+        {de:'cli',txt:'sim, pode cancelar',delay:1200},
+        {brain:'Confirmou cancelamento. Processar imediato. Perguntar motivo (dado útil) mas sem pressionar.',delay:500},
+        {de:'bot',txt:'Pronto, cancelado! ✅ Nenhuma cobrança foi feita.\n\nSe puder me dizer rapidinho o motivo (só pra gente melhorar):\n\n1. Desisti\n2. Achei caro\n3. Demora no tempo\n4. Outro motivo',delay:2000},
+        {de:'cli',txt:'desisti mesmo, sem fome mais rs',delay:1300},
+        {de:'bot',txt:'Haha entendo! 😄 Quando a fome voltar, estaremos aqui! '+r.emoji+'\nBoa noite! 🌙',delay:1800}
+      ];
+    }
+
+    // 11 - Trocar Endereço
+    function hdGenTrocarEndereco(r) {
+      return [
+        {de:'cli',txt:'ei! preciso trocar o endereço do meu pedido '+r.pedidoEx+'! mandei pro endereço errado',delay:800},
+        {brain:'Troca de endereço pós-pedido. Verificar se motoboy já saiu. Se não saiu → alterar sem problemas. Se saiu → verificar viabilidade.',delay:600},
+        {de:'bot',txt:'Opa, sem pânico! 😊 Deixa eu ver...\n\nPedido '+r.pedidoEx+' — Motoboy ainda não saiu! ✅\n\nDá tempo de trocar! Qual o endereço correto?',delay:1800},
+        {de:'cli',txt:'rua sao jorge 88, bairro jardim',delay:1400},
+        {brain:'Novo endereço recebido. Verificar se está dentro da área de entrega ('+r.area+'). Calcular nova taxa se necessário.',delay:500},
+        {de:'bot',txt:'Endereço atualizado! ✅\n\n📍 Novo: Rua São Jorge, 88 — Jardim\n🚚 Taxa mantida: '+r.taxa+' (dentro da área)\n\nFique tranquilo, tudo certo agora! '+r.emoji,delay:2000},
+        {de:'cli',txt:'ufa! obrigado pela rapidez!',delay:1200},
+        {de:'bot',txt:'Imagina! Pra isso que a gente tá aqui 😊 Bom apetite! '+r.emoji,delay:1500}
+      ];
+    }
+
+    // 12 - Pedido pra Festa
+    function hdGenFesta(r) {
+      return [
+        {de:'cli',txt:'oi! vou fazer uma festa sábado pra 30 pessoas. vcs tem algo especial?',delay:800},
+        {brain:'Pedido para festa — alto ticket. Calcular para 30 pessoas, oferecer kit festa. Atenção ao prazo (sábado). Upsell natural.',delay:600},
+        {de:'bot',txt:'Oi! Que legal, parabéns pela festa! 🎉\n\nPra 30 pessoas, recomendo nosso:\n\n🎊 '+r.festa.n+' — '+r.festa.p+'\n\nInclui tudo certinho pra galera! Quer que eu monte o pedido?',delay:2200},
+        {de:'cli',txt:'quero! que horas vcs entregam?',delay:1500},
+        {brain:'Interessado. Confirmar logística: dia, horário, endereço. Encomendas grandes precisam ser feitas com antecedência.',delay:500},
+        {de:'bot',txt:'Entregamos no horário que preferir! 🚗\n\nPra sábado, preciso que confirme até quinta-feira às 18h.\n\nMe passa:\n📍 Endereço da festa\n🕐 Horário que quer receber\n\nE posso personalizar o kit se quiser! 😊',delay:2200},
+        {de:'cli',txt:'rua alegria 300, entrega 14h',delay:1300},
+        {de:'bot',txt:'Perfeito! 🎉 Encomenda anotada:\n\n'+r.emoji+' '+r.festa.n+'\n📍 Rua Alegria, 300\n📅 Sábado às 14h\n💰 '+r.festa.p+'\n\nTe mando confirmação na sexta! Vai ser um sucesso! 🎊'+r.emoji,delay:2400}
+      ];
+    }
+
+    // 13 - Recomendação
+    function hdGenRecomendacao(r) {
+      return [
+        {de:'cli',txt:'oi! to em dúvida do que pedir, oq vc recomenda?',delay:800},
+        {brain:'Cliente pediu recomendação. Analisar perfil: primeira vez ou recorrente. Recomendar item premium com descrição sensorial. Tom de sommelier/chef.',delay:600},
+        {de:'bot',txt:'Opa, adoro essa pergunta! 😊✨\n\nHoje minha recomendação especial é:\n\n🏆 '+r.rec.n+' — '+r.rec.p+'\n'+r.rec.d+'\n\nNota 4.9 ⭐ dos clientes! É de comer rezando! '+r.emoji,delay:2200},
+        {de:'cli',txt:'nossa, parece incrível! quero!',delay:1500},
+        {brain:'Aceitou a recomendação premium. Ótimo ticket médio. Oferecer complemento e fechar.',delay:500},
+        {de:'bot',txt:'Excelente escolha! 🔥\n\nQuer acompanhar com algo? '+r.extra+' combina demais!\n\nOu só o '+r.rec.n+' mesmo?',delay:1800},
+        {de:'cli',txt:'manda o extra tb!',delay:1200},
+        {de:'bot',txt:'Top! Pedido montado! '+r.emoji+'✨\n\n🏆 '+r.rec.n+' — '+r.rec.p+'\n➕ '+r.extra+'\n⏱️ '+r.tempo+'\n\nMe manda o endereço que já encaminho! 📍',delay:2000},
+        {de:'cli',txt:'rua das acácias 77',delay:1100},
+        {de:'bot',txt:'Confirmado! ✅ Pedido '+r.pedidoEx+'\n📍 Rua das Acácias, 77\nVai amar, garanto! Bom apetite! 😊'+r.emoji,delay:2000}
+      ];
+    }
+
+    // 14 - Pedido Errado Entregue
+    function hdGenPedidoErrado(r) {
+      return [
+        {de:'cli',txt:'meu pedido veio errado!! pedi '+r.top[0].n+' e veio '+r.top[1].n,delay:800},
+        {brain:'ERRO DE PEDIDO. Prioridade alta. Pedir desculpas imediato + oferecer reenvio do item correto OU reembolso. Nunca questionar o cliente.',delay:600},
+        {de:'bot',txt:'Poxa, mil desculpas pelo erro! 😔 Isso não deveria acontecer.\n\nVou resolver agora! Você prefere:\n\n1️⃣ Reenvio do '+r.top[0].n+' correto (grátis + fica com o que recebeu)\n2️⃣ Reembolso total',delay:2200},
+        {de:'cli',txt:'reenvio pf, quero o que pedi',delay:1500},
+        {brain:'Quer reenvio. Priorizar na cozinha. Marcar pedido como URGENTE + compensação automática.',delay:500},
+        {de:'bot',txt:'Já mandei refazer com PRIORIDADE! 🏃‍♂️\n\n'+r.emoji+' 1x '+r.top[0].n+' — saindo AGORA\n⏱️ Chega em ~20 min (prioridade máxima)\n💰 Sem custo nenhum + pode ficar com o '+r.top[1].n+'!\n\nE te dei cupom DESCULPA20 com 20% off no próximo 🙏',delay:2400},
+        {de:'cli',txt:'ok obrigado pela agilidade',delay:1300},
+        {de:'bot',txt:'A gente que agradece a paciência! Não vai acontecer de novo. '+r.emoji+'🙏\nTe aviso quando sair!',delay:1800}
+      ];
+    }
+
+    // 15 - "É Robô?"
+    function hdGenEhRobo(r) {
+      return [
+        {de:'cli',txt:'perae... vc é um robô? 🤨',delay:800},
+        {brain:'Cliente perguntou se é robô. Responder com HONESTIDADE + humor. Não mentir, mas mostrar que a experiência é excepcional independente.',delay:600},
+        {de:'bot',txt:'Haha boa pergunta! 😄 Eu sou uma IA treinada especialmente pra atender os clientes da '+r.nome+'!\n\nMas pode ficar tranquilo — sei tudo do cardápio, entendo áudios, lembro dos seus pedidos anteriores e to disponível 24/7 💪\n\nSe preferir falar com um humano, é só pedir! 👨‍🍳',delay:2600},
+        {de:'cli',txt:'kk sério? nem parece robô',delay:1500},
+        {brain:'Elogio à naturalidade. Reforçar valor + retomar atendimento naturalmente.',delay:500},
+        {de:'bot',txt:'Esse é o objetivo! 😊 Atendimento bom de verdade, sem menu chato de "digite 1, 2, 3..."\n\nEnfim, posso te ajudar com algum pedido? Nosso '+r.top[0].n+' tá saindo muito hoje! '+r.emoji+'🔥',delay:2200},
+        {de:'cli',txt:'kkk ok me convenceu. manda esse ai!',delay:1400},
+        {de:'bot',txt:'Haha! 🎉 Anotado:\n\n'+r.emoji+' 1x '+r.top[0].n+' — '+r.top[0].p+'\n⏱️ '+r.tempo+'\n\nMe manda o endereço! (prometo que é uma IA eficiente 😉🤖)',delay:2000}
+      ];
+    }
+
+    // 16 - Handoff para Humano
+    function hdGenHandoff(r) {
+      return [
+        {de:'cli',txt:'quero falar com o dono / gerente por favor',delay:800},
+        {brain:'Solicitação de handoff humano. Respeitar IMEDIATAMENTE. Nunca insistir em resolver sozinho quando o cliente pede humano.',delay:600},
+        {de:'bot',txt:'Claro! Vou transferir agora para o responsável! 😊\n\nSó um momento enquanto conecto...\n\n🔄 Transferindo para atendente humano...',delay:1800},
+        {brain:'Handoff iniciado. Enviei notificação ao dono via WhatsApp + painel. Resumo da conversa anexado para o humano ter contexto.',delay:800},
+        {de:'bot',txt:'✅ Pronto! O(a) responsável já foi notificado(a) e vai te responder aqui mesmo neste chat em instantes.\n\nResumi a conversa pra ele(a), então não precisa repetir nada! 👨‍🍳\n\nFoi um prazer te atender! 😊',delay:2200},
+        {de:'cli',txt:'ok obrigado!',delay:1200},
+        {de:'bot',txt:'Imagina! Qualquer coisa futura, pode falar comigo 24h. Até mais! 🙏'+r.emoji,delay:1800}
+      ];
+    }
+
+    // 17 - Fora da Área de Entrega
+    function hdGenForaArea(r) {
+      return [
+        {de:'cli',txt:'oi quero pedir pra entrega, moro na vila nova, bairro distante',delay:800},
+        {brain:'Verificar endereço contra área de entrega ('+r.area+'). Se fora → informar com empatia + sugerir retirada no local.',delay:600},
+        {de:'bot',txt:'Oi! 😊 Deixa eu verificar... 🔍\n\nPoxa, a Vila Nova fica fora da nossa área de entrega (cobrimos até '+r.area+' do restaurante) 😅\n\nMas tenho opções pra você:\n\n1️⃣ 🏪 Retirada no local (fica pronto em '+r.tempo+')\n2️⃣ 🗓️ Posso avisar quando expandirmos a área!',delay:2400},
+        {de:'cli',txt:'ah que pena :( vou de retirada então',delay:1500},
+        {brain:'Optou por retirada. Registrar interesse na área para futura expansão. Fechar pedido normalmente.',delay:500},
+        {de:'bot',txt:'Boa! Na retirada você não paga taxa de entrega! 🎉\n\nO que vai querer? '+r.emoji+'\n\n'+r.top.map(t=>'• '+t.n+' — '+t.p).join('\n'),delay:2000},
+        {de:'cli',txt:'quero o '+r.top[0].n,delay:1200},
+        {de:'bot',txt:'Anotado! '+r.emoji+' Pedido '+r.pedidoEx+'\n\n'+r.top[0].n+' — '+r.top[0].p+'\n🏪 Retirada no local\n⏱️ Fica pronto em '+r.tempo+'\n\nNosso endereço: Rua Central, 50. Te avisamos quando estiver pronto! 😊',delay:2200}
+      ];
+    }
+
+    // 18 - Dúvida sobre Ingredientes
+    function hdGenDuvidaIngredientes(r) {
+      return [
+        {de:'cli',txt:'quais os ingredientes do(a) '+r.ingItem+'?',delay:800},
+        {brain:'Pergunta sobre ingredientes. Consultar ficha técnica do item. Responder com detalhes completos — importante para alergias e preferências.',delay:600},
+        {de:'bot',txt:'Ótima pergunta! 😊 O(a) '+r.ingItem+' leva:\n\n📋 '+r.ings+'\n\nTem alguma restrição alimentar? Posso verificar se é seguro pra você! 💚',delay:2200},
+        {de:'cli',txt:'tem leite? sou intolerante a lactose',delay:1500},
+        {brain:'Alerta: intolerância à lactose. Verificar presença de laticínios no item solicitado. Se contém → sugerir alternativa sem lactose.',delay:500},
+        {de:'bot',txt:'Boa pergunta! ⚠️ Esse item pode conter traços de laticínios.\n\nMas temos opção segura pra você:\n\n💚 '+r.rest.n+' — '+r.rest.p+'\n'+r.rest.d+'\n\nQuer esse? É delicioso e seguro! 😊',delay:2200},
+        {de:'cli',txt:'perfeito, manda esse!',delay:1200},
+        {de:'bot',txt:'Feito! '+r.emoji+' Comanda marcada com ⚠️ SEM LACTOSE\n\n'+r.rest.n+' — '+r.rest.p+'\n⏱️ '+r.tempo+'\n\nMe passa o endereço! 📍',delay:2000}
+      ];
+    }
+
+    // 19 - Rastreio do Pedido
+    function hdGenRastreio(r) {
+      return [
+        {de:'cli',txt:'meu pedido '+r.pedidoEx+' já saiu? to com fome 😅',delay:800},
+        {brain:'Rastreio de pedido. Consultar status em tempo real no sistema. Dar posição exata + tempo estimado.',delay:600},
+        {de:'bot',txt:'Deixa eu ver aqui! 🔍\n\nPedido '+r.pedidoEx+':\n\n✅ Recebido\n✅ Em preparo\n✅ Pronto!\n🏍️ EM ROTA — Motoboy João\n\n📍 Distância: ~2,3km do seu endereço\n⏱️ Estimativa: 8-12 minutos!\n\nJá tá pertinho! 😊',delay:2400},
+        {de:'cli',txt:'oba! obrigado',delay:1200},
+        {brain:'Cliente informado. Programar notificação automática quando motoboy estiver chegando.',delay:400},
+        {de:'bot',txt:'Imagina! 😊 Te aviso quando ele estiver na porta!\n\nDica: acompanhe em tempo real pelo link:\n🔗 rastreio.'+r.nome.toLowerCase().replace(/\s/g,'')+'.com/'+r.pedidoEx.replace('#','')+'\n\nBom apetite! '+r.emoji+'🔥',delay:2200},
+        {de:'bot',txt:'🔔 ATUALIZAÇÃO: Motoboy João chegou no seu endereço! Bom apetite! 🎉'+r.emoji,delay:5000}
+      ];
+    }
+
+    // ===================== ESTADO E CONTROLE =====================
+    let hdAudioCtx = null;
+    let hdTimers = [];
+    let hdIsOpen = false;
+    let hdCurrentTipo = null;
+    let hdCurrentCenario = null;
+    let hdCurrentMsgs = null;
+    let hdShowBrain = false;
+
+    function hdPlaySound(type) {
+      try {
+        if (!hdAudioCtx) hdAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = hdAudioCtx;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        if (type === 'in') {
+          osc.frequency.setValueAtTime(800, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.12);
+        } else {
+          osc.frequency.setValueAtTime(600, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(900, ctx.currentTime + 0.06);
+          gain.gain.setValueAtTime(0.1, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.1);
+        }
+      } catch(e) {}
+    }
+
+    function hdGetTime() {
+      const now = new Date();
+      return now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    }
+
+    function hdClearTimers() {
+      hdTimers.forEach(t => clearTimeout(t));
+      hdTimers = [];
+    }
+
+    // ===================== RENDERIZAÇÃO =====================
+    function hdRenderGrid() {
+      document.getElementById('hdGrid').innerHTML = HD_TIPOS.map((t,i) => `
+        <button class="hd-opt" onclick="hdSelectTipo('${t.id}')" style="animation:hdFadeUp 0.35s ${0.04*i}s both">
+          <div class="hd-opt-emoji">${t.emoji}</div>
+          <div class="hd-opt-name">${t.nome}</div>
+          <div class="hd-opt-desc">${t.desc}</div>
+        </button>
+      `).join('');
+    }
+
+    function hdRenderCenarios() {
+      document.getElementById('hdScnList').innerHTML = HD_CENARIOS.map((c,i) => `
+        <button class="hd-scn-item" onclick="hdSelectCenario(${i})" style="animation:hdFadeUp 0.25s ${0.03*i}s both">
+          <div class="hd-scn-emoji">${c.emoji}</div>
+          <div class="hd-scn-txt">
+            <div class="hd-scn-name">${c.nome}</div>
+            <div class="hd-scn-desc">${c.desc}</div>
+          </div>
+          <span style="color:#8696a0;font-size:16px">›</span>
+        </button>
+      `).join('');
+    }
+
+    // ===================== NAVEGAÇÃO =====================
+    function abrirHumanoideDemo() {
+      hdIsOpen = true;
+      const overlay = document.getElementById('humanoideOverlay');
+      overlay.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+      // Reset to Screen 1
+      document.getElementById('hdScreen1').style.display = '';
+      document.getElementById('hdScreen2').style.display = 'none';
+      document.getElementById('hdScreen3').style.display = 'none';
+      document.getElementById('hdScreen3').classList.remove('active');
+      document.getElementById('hdClock').textContent = hdGetTime();
+      hdRenderGrid();
+      hdClearTimers();
+    }
+
+    function fecharHumanoideDemo() {
+      hdIsOpen = false;
+      document.getElementById('humanoideOverlay').style.display = 'none';
+      document.body.style.overflow = '';
+      hdClearTimers();
+    }
+
+    function hdSelectTipo(tipoId) {
+      hdCurrentTipo = tipoId;
+      const r = HD_REST[tipoId];
+      if (!r) return;
+      // Show Screen 2 (scenario list)
+      document.getElementById('hdScreen1').style.display = 'none';
+      document.getElementById('hdScreen2').style.display = '';
+      document.getElementById('hdScreen3').style.display = 'none';
+      document.getElementById('hdScreen3').classList.remove('active');
+      const tipo = HD_TIPOS.find(t => t.id === tipoId);
+      document.getElementById('hdScnTitle').textContent = tipo ? tipo.emoji + ' ' + tipo.nome : r.nome;
+      hdRenderCenarios();
+    }
+
+    function hdVoltarTipos() {
+      hdClearTimers();
+      document.getElementById('hdScreen1').style.display = '';
+      document.getElementById('hdScreen2').style.display = 'none';
+      document.getElementById('hdScreen3').style.display = 'none';
+      document.getElementById('hdScreen3').classList.remove('active');
+      hdRenderGrid();
+    }
+
+    function hdSelectCenario(cenIdx) {
+      hdCurrentCenario = cenIdx;
+      hdShowBrain = false;
+      hdCurrentMsgs = hdGenMsgs(hdCurrentTipo, cenIdx);
+      if (!hdCurrentMsgs || !hdCurrentMsgs.length) return;
+      // Show Screen 3 (chat)
+      document.getElementById('hdScreen1').style.display = 'none';
+      document.getElementById('hdScreen2').style.display = 'none';
+      document.getElementById('hdScreen3').style.display = '';
+      document.getElementById('hdScreen3').classList.add('active');
+      const r = HD_REST[hdCurrentTipo];
+      document.getElementById('hdRestName').textContent = r.nome;
+      document.getElementById('hdMsgs').innerHTML = '';
+      document.getElementById('hdEndState').style.display = 'none';
+      document.getElementById('hdWaBottom').style.display = '';
+      document.getElementById('hdWaStatus').textContent = 'online';
+      hdClearTimers();
+      hdRunScript(hdCurrentMsgs, 0);
+    }
+
+    function hdVoltarCenarios() {
+      hdClearTimers();
+      document.getElementById('hdScreen3').style.display = 'none';
+      document.getElementById('hdScreen3').classList.remove('active');
+      document.getElementById('hdScreen2').style.display = '';
+      document.getElementById('hdMsgs').innerHTML = '';
+      document.getElementById('hdEndState').style.display = 'none';
+    }
+
+    function hdRestart() {
+      // Replay same scenario without brain
+      hdSelectCenario(hdCurrentCenario);
+    }
+
+    function hdReplayBrain() {
+      // Replay with brain blocks visible
+      hdShowBrain = true;
+      hdCurrentMsgs = hdGenMsgs(hdCurrentTipo, hdCurrentCenario);
+      document.getElementById('hdMsgs').innerHTML = '';
+      document.getElementById('hdEndState').style.display = 'none';
+      document.getElementById('hdWaBottom').style.display = '';
+      document.getElementById('hdWaStatus').textContent = 'online';
+      hdClearTimers();
+      hdRunScript(hdCurrentMsgs, 0);
+    }
+
+    // ===================== PLAYBACK ENGINE =====================
+    function hdShowEndState() {
+      document.getElementById('hdEndState').style.display = '';
+      document.getElementById('hdWaBottom').style.display = 'none';
+      document.getElementById('hdWaStatus').textContent = 'offline';
+    }
+
+    function hdRunScript(msgs, idx) {
+      if (idx >= msgs.length || !hdIsOpen) {
+        if (idx >= msgs.length && hdIsOpen) {
+          hdTimers.push(setTimeout(hdShowEndState, 800));
+        }
+        return;
+      }
+      const item = msgs[idx];
+      const msgsEl = document.getElementById('hdMsgs');
+      const statusEl = document.getElementById('hdWaStatus');
+      const baseDelay = item.delay || 1500;
+
+      // Brain thought block
+      if (item.brain) {
+        if (hdShowBrain) {
+          hdTimers.push(setTimeout(() => {
+            if (!hdIsOpen) return;
+            const block = document.createElement('div');
+            block.className = 'hd-brain-block';
+            block.innerHTML = '<div class="hd-brain-label">🧠 Pensamento da IA</div><div class="hd-brain-txt">' + item.brain + '</div>';
+            msgsEl.appendChild(block);
+            msgsEl.scrollTop = msgsEl.scrollHeight;
+            hdRunScript(msgs, idx + 1);
+          }, baseDelay));
+        } else {
+          // Skip brain blocks in normal mode
+          hdRunScript(msgs, idx + 1);
+        }
+        return;
+      }
+
+      if (item.de === 'cli') {
+        // Client message
+        hdTimers.push(setTimeout(() => {
+          if (!hdIsOpen) return;
+          statusEl.textContent = 'online';
+          const typing = document.createElement('div');
+          typing.className = 'hd-typing';
+          typing.innerHTML = '<span></span><span></span><span></span>';
+          typing.style.background = '#005c4b';
+          typing.style.alignSelf = 'flex-end';
+          typing.style.borderTopRightRadius = '2px';
+          typing.style.borderTopLeftRadius = '8px';
+          msgsEl.appendChild(typing);
+          msgsEl.scrollTop = msgsEl.scrollHeight;
+          hdTimers.push(setTimeout(() => {
+            if (!hdIsOpen) return;
+            typing.remove();
+            const msgEl = document.createElement('div');
+            msgEl.className = 'hd-msg hd-msg-out';
+            msgEl.innerHTML = item.txt.replace(/\n/g,'<br>') + '<div class="hd-msg-time">' + hdGetTime() + '</div>';
+            msgsEl.appendChild(msgEl);
+            msgsEl.scrollTop = msgsEl.scrollHeight;
+            hdPlaySound('out');
+            hdRunScript(msgs, idx + 1);
+          }, 500 + Math.random() * 400));
+        }, baseDelay));
+      } else {
+        // Bot message
+        hdTimers.push(setTimeout(() => {
+          if (!hdIsOpen) return;
+          statusEl.textContent = 'digitando...';
+          const typing = document.createElement('div');
+          typing.className = 'hd-typing';
+          typing.innerHTML = '<span></span><span></span><span></span>';
+          msgsEl.appendChild(typing);
+          msgsEl.scrollTop = msgsEl.scrollHeight;
+          const typingDuration = Math.min(700 + item.txt.length * 15, 2800);
+          hdTimers.push(setTimeout(() => {
+            if (!hdIsOpen) return;
+            typing.remove();
+            statusEl.textContent = 'online';
+            const msgEl = document.createElement('div');
+            msgEl.className = 'hd-msg hd-msg-in';
+            msgEl.innerHTML = item.txt.replace(/\n/g,'<br>') + '<div class="hd-msg-time">' + hdGetTime() + '</div>';
+            msgsEl.appendChild(msgEl);
+            msgsEl.scrollTop = msgsEl.scrollHeight;
+            hdPlaySound('in');
+            hdRunScript(msgs, idx + 1);
+          }, typingDuration));
+        }, baseDelay));
+      }
+    }
+
+    // Update clock
+    setInterval(() => {
+      const el = document.getElementById('hdClock');
+      if (el) el.textContent = hdGetTime();
+    }, 30000);
+
 
     // ===================================================================
     // QUIZ DIAGNÓSTICO

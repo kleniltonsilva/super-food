@@ -12,6 +12,7 @@ from crm.database import (
     buscar_email_por_tracking, atualizar_tier_lead,
     obter_email_template, listar_email_templates,
     listar_outreach_regras, leads_novos_sem_outreach,
+    reagendar_retry, contar_acoes_lead_sem_resposta,
 )
 from crm.scoring import calcular_tier, calcular_score
 from crm.email_service import enviar_email
@@ -212,12 +213,14 @@ def _lead_ja_abriu_email(lead_id: int) -> bool:
 
 def executar_acoes_pendentes() -> dict:
     """Executa ações de outreach pendentes (agendado_para <= NOW).
-    Respeita guardrails: max emails/dia, opt_out.
+    Respeita guardrails: max emails/dia, opt_out, cooling period.
+    Retry automático com backoff exponencial em falhas.
     Retorna stats da execução."""
     stats = {
-        "executadas": 0, "erros": 0,
+        "executadas": 0, "erros": 0, "retries": 0,
         "pular_opt_out": 0, "pular_limite": 0,
         "pular_sem_email": 0, "pular_invalido": 0,
+        "pular_cooling": 0,
     }
 
     # Guardrail: max emails por dia
@@ -229,6 +232,15 @@ def executar_acoes_pendentes() -> dict:
     if not outreach_ativo:
         log.info("Outreach desativado. Ative em configuracoes: outreach_ativo=true")
         return stats
+
+    # Configurações de cooling period
+    cooling_ativo = (obter_configuracao("cooling_ativo") or "true").lower() == "true"
+    cooling_dias = int(obter_configuracao("cooling_dias") or "7")
+    cooling_max = int(obter_configuracao("cooling_max_sem_resposta") or "3")
+
+    # Configurações de retry
+    retry_ativo = (obter_configuracao("retry_ativo") or "true").lower() == "true"
+    retry_max_global = int(obter_configuracao("retry_max") or "3")
 
     pendentes = listar_outreach_pendentes(50)
     if not pendentes:
@@ -258,7 +270,6 @@ def executar_acoes_pendentes() -> dict:
         if acao_tipo in ("enviar_email", "reenviar_email", "followup"):
             canal_prim = acao.get("canal_primario")
             if canal_prim and canal_prim != "email" and canal_prim != "telefone":
-                # Canal primário é whatsapp e ação é email — pular se lead tem wa
                 pass  # Ainda envia email como secundário
 
         # Guardrail: email invalido
@@ -266,6 +277,16 @@ def executar_acoes_pendentes() -> dict:
             marcar_outreach_executado(acao_id, "erro", "Email invalido")
             stats["pular_invalido"] += 1
             continue
+
+        # Guardrail: COOLING PERIOD — anti-fadiga
+        if cooling_ativo:
+            acoes_sem_resp = contar_acoes_lead_sem_resposta(lead_id, cooling_dias)
+            if acoes_sem_resp >= cooling_max:
+                marcar_outreach_executado(acao_id, "pular_cooling",
+                                          f"{acoes_sem_resp} ações sem resposta em {cooling_dias} dias")
+                stats["pular_cooling"] += 1
+                log.info(f"Cooling: lead {lead_id} pausado ({acoes_sem_resp} sem resposta)")
+                continue
 
         # Guardrail: limite diário
         if acao_tipo in ("enviar_email", "reenviar_email", "followup") and enviados_hoje >= max_email_dia:
@@ -275,68 +296,82 @@ def executar_acoes_pendentes() -> dict:
 
         # Executar ação
         try:
-            if acao_tipo in ("enviar_email", "followup"):
-                resultado = _executar_enviar_email(acao)
-                if resultado.get("sucesso"):
-                    marcar_outreach_executado(acao_id, "enviado")
+            resultado = _executar_acao(acao)
+
+            if resultado.get("sucesso"):
+                marcar_outreach_executado(acao_id, "enviado")
+                if acao_tipo in ("enviar_email", "reenviar_email", "followup"):
                     enviados_hoje += 1
-                    stats["executadas"] += 1
-                else:
-                    marcar_outreach_executado(acao_id, "erro", resultado.get("erro", "Erro desconhecido"))
-                    stats["erros"] += 1
+                stats["executadas"] += 1
 
-            elif acao_tipo == "reenviar_email":
-                resultado = _executar_reenviar_email(acao)
-                if resultado.get("sucesso"):
-                    marcar_outreach_executado(acao_id, "enviado")
-                    enviados_hoje += 1
-                    stats["executadas"] += 1
-                elif resultado.get("pular"):
-                    marcar_outreach_executado(acao_id, resultado["pular"])
-                    stats["executadas"] += 1
-                else:
-                    marcar_outreach_executado(acao_id, "erro", resultado.get("erro", "Erro desconhecido"))
-                    stats["erros"] += 1
-
-            elif acao_tipo == "enviar_wa":
-                # Verificar se lead já abriu email (condição "nao_abriu")
-                if _lead_ja_abriu_email(lead_id):
-                    marcar_outreach_executado(acao_id, "pular_ja_abriu")
-                    stats["executadas"] += 1
-                    continue
-                # Verificar opt_out WA
-                if acao.get("opt_out_wa"):
-                    marcar_outreach_executado(acao_id, "pular_opt_out_wa")
-                    stats["pular_opt_out"] += 1
-                    continue
-                resultado = _executar_enviar_wa(acao)
-                if resultado.get("sucesso"):
-                    marcar_outreach_executado(acao_id, "enviado")
-                    stats["executadas"] += 1
-                else:
-                    marcar_outreach_executado(acao_id, "erro", resultado.get("erro", "Erro WA"))
-                    stats["erros"] += 1
-
-            elif acao_tipo == "enviar_audio":
-                resultado = _executar_enviar_audio(acao)
-                if resultado.get("sucesso"):
-                    marcar_outreach_executado(acao_id, "enviado")
-                    stats["executadas"] += 1
-                else:
-                    marcar_outreach_executado(acao_id, "erro", resultado.get("erro", "Erro áudio"))
-                    stats["erros"] += 1
+            elif resultado.get("pular"):
+                marcar_outreach_executado(acao_id, resultado["pular"])
+                stats["executadas"] += 1
 
             else:
-                marcar_outreach_executado(acao_id, "erro", f"Ação desconhecida: {acao_tipo}")
-                stats["erros"] += 1
+                # ERRO — tentar retry com backoff
+                erro_msg = resultado.get("erro", "Erro desconhecido")
+                retry_count = acao.get("retry_count", 0) or 0
+                max_retries = acao.get("max_retries", retry_max_global) or retry_max_global
+
+                if retry_ativo and retry_count < max_retries:
+                    # Backoff exponencial: 5min, 30min, 2h
+                    delays = [300, 1800, 7200]
+                    delay_s = delays[min(retry_count, len(delays) - 1)]
+                    proximo = datetime.now(timezone.utc) + timedelta(seconds=delay_s)
+                    reagendar_retry(acao_id, retry_count + 1, proximo)
+                    stats["retries"] += 1
+                    log.info(f"Retry #{retry_count + 1} agendado para ação {acao_id} "
+                             f"(+{delay_s}s): {erro_msg}")
+                else:
+                    marcar_outreach_executado(acao_id, "erro_permanente" if retry_count > 0 else "erro",
+                                              erro_msg)
+                    stats["erros"] += 1
 
         except Exception as e:
             log.error(f"Erro ao executar ação {acao_id}: {e}")
-            marcar_outreach_executado(acao_id, "erro", str(e)[:200])
-            stats["erros"] += 1
+            # Retry em exceções também
+            retry_count = acao.get("retry_count", 0) or 0
+            max_retries = acao.get("max_retries", retry_max_global) or retry_max_global
+            if retry_ativo and retry_count < max_retries:
+                delays = [300, 1800, 7200]
+                delay_s = delays[min(retry_count, len(delays) - 1)]
+                proximo = datetime.now(timezone.utc) + timedelta(seconds=delay_s)
+                reagendar_retry(acao_id, retry_count + 1, proximo)
+                stats["retries"] += 1
+            else:
+                marcar_outreach_executado(acao_id, "erro_permanente", str(e)[:200])
+                stats["erros"] += 1
 
     log.info(f"Execução concluída: {stats}")
     return stats
+
+
+def _executar_acao(acao: dict) -> dict:
+    """Executa uma ação individual. Retorna {sucesso} ou {erro} ou {pular}."""
+    acao_tipo = acao["acao"]
+    lead_id = acao["lead_id"]
+
+    if acao_tipo in ("enviar_email", "followup"):
+        return _executar_enviar_email(acao)
+
+    elif acao_tipo == "reenviar_email":
+        return _executar_reenviar_email(acao)
+
+    elif acao_tipo == "enviar_wa":
+        # Verificar se lead já abriu email (condição "nao_abriu")
+        if _lead_ja_abriu_email(lead_id):
+            return {"pular": "pular_ja_abriu"}
+        # Verificar opt_out WA
+        if acao.get("opt_out_wa"):
+            return {"pular": "pular_opt_out_wa"}
+        return _executar_enviar_wa(acao)
+
+    elif acao_tipo == "enviar_audio":
+        return _executar_enviar_audio(acao)
+
+    else:
+        return {"erro": f"Ação desconhecida: {acao_tipo}"}
 
 
 def _executar_enviar_email(acao: dict) -> dict:

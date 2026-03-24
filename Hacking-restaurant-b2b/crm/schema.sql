@@ -226,6 +226,9 @@ CREATE TABLE IF NOT EXISTS outreach_sequencia (
     cancelado BOOLEAN DEFAULT FALSE,
     resultado TEXT,
     erro_detalhe TEXT,
+    retry_count INTEGER DEFAULT 0,
+    max_retries INTEGER DEFAULT 3,
+    proximo_retry TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -535,5 +538,25 @@ INSERT INTO configuracoes (chave, valor) VALUES
     ('wa_evolution_key', ''),
     ('wa_evolution_instance', 'derekh_sales'),
     ('xai_api_key', ''),
-    ('wa_sales_ativo', 'false')
+    ('wa_sales_ativo', 'false'),
+    -- Toggles Áudio STT/TTS
+    ('audio_stt_ativo', 'true'),
+    ('audio_tts_autonomo', 'true'),
+    ('audio_voz', 'rex'),
+    -- Toggles Retry
+    ('retry_ativo', 'true'),
+    ('retry_max', '3'),
+    -- Toggles Cooling Period
+    ('cooling_ativo', 'true'),
+    ('cooling_dias', '7'),
+    ('cooling_max_sem_resposta', '3'),
+    -- Descoberta automática de regras
+    ('regras_auto_ativo', 'true')
 ON CONFLICT (chave) DO NOTHING;
+
+-- ============================================================
+-- MIGRATION: Campos retry em outreach_sequencia (idempotente)
+-- ============================================================
+ALTER TABLE outreach_sequencia ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;
+ALTER TABLE outreach_sequencia ADD COLUMN IF NOT EXISTS max_retries INTEGER DEFAULT 3;
+ALTER TABLE outreach_sequencia ADD COLUMN IF NOT EXISTS proximo_retry TIMESTAMPTZ;

@@ -1167,7 +1167,7 @@ async def wa_sales_enviar(lead_id: int, request: Request):
 
 
 @app.post("/wa-sales/audio/{lead_id}")
-async def wa_sales_audio(lead_id: int, voz: str = "ara"):
+async def wa_sales_audio(lead_id: int, voz: str = "rex"):
     """Envia áudio TTS personalizado para um lead."""
     from crm.wa_sales_bot import enviar_audio_wa
     result = enviar_audio_wa(lead_id, voz)
@@ -1268,6 +1268,47 @@ async def wa_sales_webhook(request: Request):
             or msg.get("extendedTextMessage", {}).get("text")
             or ""
         )
+
+        # Detectar áudio
+        audio_msg = msg.get("audioMessage", {})
+        msg_key_id = key.get("id", "")
+
+        if numero and audio_msg and msg_key_id:
+            # Verificar toggle STT
+            from crm.database import obter_configuracao
+            stt_ativo = (obter_configuracao("audio_stt_ativo") or "true").lower() == "true"
+
+            if stt_ativo:
+                print(f"[WA-WEBHOOK] [{instance}] {numero} -> [ÁUDIO] (transcrever)")
+                from crm.wa_sales_bot import baixar_audio_evolution, transcrever_audio
+                import time as _t
+
+                # Baixar áudio via Evolution
+                audio_data = baixar_audio_evolution(msg_key_id, instance=instance)
+                if audio_data.get("base64"):
+                    # Transcrever com Groq Whisper
+                    duracao = audio_msg.get("seconds", 0)
+                    transcricao = transcrever_audio(audio_data["base64"], duracao)
+                    if transcricao.get("texto"):
+                        texto = transcricao["texto"]
+                        duracao_real = transcricao.get("duracao", duracao)
+                        print(f"[WA-WEBHOOK] [{instance}] {numero} -> [ÁUDIO→TEXTO] {texto[:80]}")
+                        # Delay proporcional (simular escuta do áudio)
+                        from crm.wa_sales_bot import _calcular_delay_audio
+                        delay = _calcular_delay_audio(duracao_real)
+                        print(f"[WA-WEBHOOK] Delay áudio: {delay:.1f}s (duração {duracao_real}s)")
+                        _t.sleep(delay)
+                        # Processar como texto transcrito (tipo=audio para reciprocidade)
+                        processar_resposta_wa(numero, texto, instance=instance, tipo_msg="audio")
+                        return JSONResponse({"status": "ok"})
+                    else:
+                        print(f"[WA-WEBHOOK] Transcrição falhou: {transcricao.get('erro')}")
+                else:
+                    print(f"[WA-WEBHOOK] Download áudio falhou: {audio_data.get('erro')}")
+            else:
+                print(f"[WA-WEBHOOK] [{instance}] {numero} -> [ÁUDIO] STT desativado, ignorando")
+
+            return JSONResponse({"status": "ok"})
 
         if numero and texto:
             print(f"[WA-WEBHOOK] [{instance}] {numero} -> {texto[:80]}")
@@ -1510,6 +1551,51 @@ async def api_deletar_outreach_regra(regra_id: int):
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/configuracao")
+async def api_configuracao_set(request: Request):
+    """Salva uma configuração individual (toggle on/off ou valor)."""
+    body = await request.json()
+    chave = body.get("chave", "").strip()
+    valor = str(body.get("valor", "")).strip()
+    if not chave:
+        return JSONResponse({"erro": "Chave obrigatória"}, status_code=400)
+
+    # Validar chaves permitidas (toggles + configs)
+    chaves_permitidas = {
+        "audio_stt_ativo", "audio_tts_autonomo", "audio_voz",
+        "retry_ativo", "retry_max",
+        "cooling_ativo", "cooling_dias", "cooling_max_sem_resposta",
+        "regras_auto_ativo",
+        "outreach_ativo", "outreach_max_email_dia",
+        "wa_sales_ativo",
+    }
+    if chave not in chaves_permitidas:
+        return JSONResponse({"erro": f"Chave não permitida: {chave}"}, status_code=400)
+
+    salvar_configuracao(chave, valor)
+    return JSONResponse({"ok": True, "chave": chave, "valor": valor})
+
+
+@app.get("/api/configuracao/toggles")
+async def api_configuracao_toggles():
+    """Retorna todos os toggles de controle do sistema."""
+    configs = obter_configuracoes_todas()
+    toggles = {
+        "audio_stt_ativo": configs.get("audio_stt_ativo", "true") == "true",
+        "audio_tts_autonomo": configs.get("audio_tts_autonomo", "true") == "true",
+        "audio_voz": configs.get("audio_voz", "rex"),
+        "retry_ativo": configs.get("retry_ativo", "true") == "true",
+        "retry_max": int(configs.get("retry_max", "3")),
+        "cooling_ativo": configs.get("cooling_ativo", "true") == "true",
+        "cooling_dias": int(configs.get("cooling_dias", "7")),
+        "cooling_max_sem_resposta": int(configs.get("cooling_max_sem_resposta", "3")),
+        "regras_auto_ativo": configs.get("regras_auto_ativo", "true") == "true",
+        "outreach_ativo": configs.get("outreach_ativo", "false") == "true",
+        "outreach_max_email_dia": int(configs.get("outreach_max_email_dia", "20")),
+    }
+    return JSONResponse(toggles)
+
+
 @app.post("/api/outreach/ativar")
 async def api_outreach_ativar():
     """Ativa outreach automático."""
@@ -1636,6 +1722,180 @@ async def api_autopilot_enviar_manual(request: Request, conversa_id: int):
             print(f"[AUTOPILOT] Erro ao enviar WA: {e}")
 
     return JSONResponse({"ok": True, "msg_id": msg_id})
+
+
+# ============================================================
+# MONITORAMENTO TOKENS xAI/GROK
+# ============================================================
+
+@app.get("/api/tokens/usage")
+async def api_tokens_usage():
+    """Retorna uso de tokens do xAI com estimativas de custo e conversas restantes."""
+    import httpx as _httpx
+
+    xai_key = os.environ.get("XAI_API_KEY", "")
+    if not xai_key:
+        return JSONResponse({"erro": "XAI_API_KEY não configurada"}, status_code=500)
+
+    # Pricing por modelo (por milhão de tokens)
+    PRICING = {
+        "grok-3-mini": {"input": 0.10, "output": 0.30},
+        "grok-3-fast": {"input": 5.00, "output": 25.00},
+        "grok-3": {"input": 2.00, "output": 10.00},
+        "grok-4-1-fast": {"input": 0.20, "output": 0.50},
+    }
+
+    # Buscar uso de tokens dos últimos 30 dias via contagem local de mensagens WA
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # Msgs geradas por Grok (flag grok=True) — estimativa de tokens
+        cur.execute("""
+            SELECT COUNT(*) as total_msgs,
+                   COALESCE(SUM(LENGTH(conteudo)), 0) as total_chars,
+                   COUNT(CASE WHEN created_at::date = CURRENT_DATE THEN 1 END) as msgs_hoje,
+                   COALESCE(SUM(CASE WHEN created_at::date = CURRENT_DATE THEN LENGTH(conteudo) ELSE 0 END), 0) as chars_hoje,
+                   COUNT(CASE WHEN created_at >= NOW() - INTERVAL '7 days' THEN 1 END) as msgs_7d,
+                   COALESCE(SUM(CASE WHEN created_at >= NOW() - INTERVAL '7 days' THEN LENGTH(conteudo) ELSE 0 END), 0) as chars_7d
+            FROM wa_mensagens
+            WHERE grok_resposta = TRUE
+        """)
+        grok_stats = dict(cur.fetchone() or {})
+
+        # Total de conversas ativas
+        cur.execute("SELECT COUNT(*) as total FROM wa_conversas WHERE status = 'ativo'")
+        conversas_ativas = (cur.fetchone() or {}).get("total", 0)
+
+        # Total de conversas nos últimos 7 dias
+        cur.execute("""
+            SELECT COUNT(DISTINCT lead_id) as total
+            FROM wa_conversas
+            WHERE created_at >= NOW() - INTERVAL '7 days'
+        """)
+        conversas_7d = (cur.fetchone() or {}).get("total", 0)
+
+    # Estimativa de tokens (1 char ≈ 0.3 tokens para português)
+    # Input: system prompt (~4000 tokens) + histórico (~2000 por turno) + knowledge base (~3000)
+    # Output: ~200 tokens por resposta
+    total_msgs = grok_stats.get("total_msgs", 0)
+    total_chars_output = grok_stats.get("total_chars", 0)
+    msgs_hoje = grok_stats.get("msgs_hoje", 0)
+    msgs_7d = grok_stats.get("msgs_7d", 0)
+
+    est_tokens_output = int(total_chars_output * 0.3)
+    est_tokens_input = total_msgs * 7000  # ~7K tokens input por resposta (prompt + hist + kb)
+    est_tokens_output_hoje = int(grok_stats.get("chars_hoje", 0) * 0.3)
+    est_tokens_input_hoje = msgs_hoje * 7000
+
+    # Modelo atual
+    modelo_atual = "grok-3-mini"
+    pricing = PRICING.get(modelo_atual, PRICING["grok-3-mini"])
+
+    # Custo estimado
+    custo_input = (est_tokens_input / 1_000_000) * pricing["input"]
+    custo_output = (est_tokens_output / 1_000_000) * pricing["output"]
+    custo_total = custo_input + custo_output
+
+    custo_input_hoje = (est_tokens_input_hoje / 1_000_000) * pricing["input"]
+    custo_output_hoje = (est_tokens_output_hoje / 1_000_000) * pricing["output"]
+    custo_hoje = custo_input_hoje + custo_output_hoje
+
+    # Custo médio por conversa (10 turnos de média)
+    custo_por_conversa = 10 * ((7000 / 1_000_000 * pricing["input"]) + (200 / 1_000_000 * pricing["output"]))
+
+    # Saldo — tentar buscar na xAI Management API
+    saldo = None
+    saldo_erro = None
+    uso_real = None
+    mgmt_key = os.environ.get("XAI_MANAGEMENT_KEY", "")
+    xai_team_id = os.environ.get("XAI_TEAM_ID", "2af4fd37-244c-4101-9f32-1de3c2554208")
+    if mgmt_key:
+        mgmt_headers = {"Authorization": f"Bearer {mgmt_key}", "Content-Type": "application/json"}
+        # 1. Saldo (crédito pré-pago)
+        try:
+            resp = _httpx.get(
+                f"https://management-api.x.ai/v1/billing/teams/{xai_team_id}/prepaid/balance",
+                headers=mgmt_headers, timeout=10,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                total_val = data.get("total", {}).get("val", "0")
+                saldo = abs(int(total_val)) / 100
+        except Exception as e:
+            saldo_erro = str(e)
+
+        # 2. Uso real via Management API (este mês)
+        try:
+            from datetime import date as _date
+            primeiro_dia = _date.today().replace(day=1).strftime("%Y-%m-%d 00:00:00")
+            hoje = _date.today().strftime("%Y-%m-%d 23:59:59")
+            resp_uso = _httpx.post(
+                f"https://management-api.x.ai/v1/billing/teams/{xai_team_id}/usage",
+                headers=mgmt_headers, timeout=10,
+                json={"analyticsRequest": {
+                    "timeRange": {"startTime": primeiro_dia, "endTime": hoje, "timezone": "America/Sao_Paulo"},
+                    "timeUnit": "TIME_UNIT_NONE",
+                    "values": [{"name": "usd", "aggregation": "AGGREGATION_SUM"}],
+                    "groupBy": ["description"], "filters": [],
+                }},
+            )
+            if resp_uso.status_code == 200:
+                data_uso = resp_uso.json()
+                uso_total = 0.0
+                modelos_uso = {}
+                for ts in data_uso.get("timeSeries", []):
+                    modelo = (ts.get("groupLabels") or ["?"])[0]
+                    valor = sum(dp.get("values", [0])[0] for dp in ts.get("dataPoints", []))
+                    uso_total += valor
+                    modelos_uso[modelo] = round(valor, 6)
+                uso_real = {"total_usd": round(uso_total, 4), "por_modelo": modelos_uso}
+        except Exception:
+            pass
+
+    # Previsão de conversas restantes (usando saldo real da Management API)
+    conversas_restantes = None
+    saldo_para_previsao = saldo_disponivel if saldo_disponivel is not None else (saldo - custo_total if saldo else None)
+    if saldo_para_previsao is not None and custo_por_conversa > 0:
+        conversas_restantes = max(0, int(saldo_para_previsao / custo_por_conversa))
+
+    # Saldo disponível = crédito comprado - uso real
+    saldo_disponivel = None
+    if saldo is not None and uso_real:
+        saldo_disponivel = round(saldo - uso_real["total_usd"], 4)
+
+    return JSONResponse({
+        "modelo_atual": modelo_atual,
+        "pricing": pricing,
+        "saldo_usd": saldo,
+        "saldo_disponivel_usd": saldo_disponivel,
+        "uso_real_usd": uso_real,
+        "saldo_erro": saldo_erro,
+        "saldo_brl_estimado": round((saldo_disponivel or saldo or 0) * 5.5, 2),
+        "console_url": f"https://console.x.ai/team/{xai_team_id}/billing",
+        "uso": {
+            "total_respostas_grok": total_msgs,
+            "respostas_hoje": msgs_hoje,
+            "respostas_7d": msgs_7d,
+            "conversas_ativas": conversas_ativas,
+            "conversas_7d": conversas_7d,
+        },
+        "tokens_estimados": {
+            "input_total": est_tokens_input,
+            "output_total": est_tokens_output,
+            "input_hoje": est_tokens_input_hoje,
+            "output_hoje": est_tokens_output_hoje,
+        },
+        "custo_estimado_usd": {
+            "total": round(custo_total, 4),
+            "hoje": round(custo_hoje, 4),
+            "por_conversa_media": round(custo_por_conversa, 4),
+        },
+        "previsao": {
+            "conversas_restantes": conversas_restantes,
+            "dias_restantes": round(conversas_restantes / max(1, conversas_7d / 7), 1) if conversas_restantes else None,
+        },
+        "dica": "Para ver saldo real: configure XAI_MANAGEMENT_KEY nas secrets ou acesse " + "https://console.x.ai/team/default/billing",
+    })
 
 
 # ============================================================

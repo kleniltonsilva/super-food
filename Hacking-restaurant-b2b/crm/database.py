@@ -1029,7 +1029,7 @@ def criar_outreach_acao(lead_id: int, acao: str, tier: str,
 
 
 def listar_outreach_pendentes(limite: int = 50) -> list:
-    """Lista ações de outreach pendentes (agendado_para <= NOW)."""
+    """Lista ações de outreach pendentes (agendado_para <= NOW ou retry pronto)."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -1039,7 +1039,10 @@ def listar_outreach_pendentes(limite: int = 50) -> list:
             FROM outreach_sequencia o
             JOIN leads l ON o.lead_id = l.id
             WHERE o.executado = FALSE AND o.cancelado = FALSE
-            AND o.agendado_para <= NOW()
+            AND (
+                o.agendado_para <= NOW()
+                OR (o.retry_count > 0 AND o.proximo_retry IS NOT NULL AND o.proximo_retry <= NOW())
+            )
             ORDER BY o.agendado_para
             LIMIT %s
         """, (limite,))
@@ -1075,6 +1078,40 @@ def marcar_outreach_executado(acao_id: int, resultado: str, erro_detalhe: str = 
         found = cur.fetchone() is not None
         conn.commit()
         return found
+
+
+def reagendar_retry(acao_id: int, retry_count: int, proximo_retry) -> bool:
+    """Reagenda ação com backoff exponencial. NÃO marca como executado."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE outreach_sequencia
+            SET retry_count = %s, proximo_retry = %s, agendado_para = %s
+            WHERE id = %s AND executado = FALSE
+            RETURNING id
+        """, (retry_count, proximo_retry, proximo_retry, acao_id))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def contar_acoes_lead_sem_resposta(lead_id: int, dias: int = 7) -> int:
+    """Conta ações enviadas ao lead nos últimos N dias SEM resposta do lead.
+    Usado pelo cooling period para evitar fadiga."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) as c FROM outreach_sequencia
+            WHERE lead_id = %s AND resultado = 'enviado'
+            AND executado_at >= NOW() - INTERVAL '%s days'
+            AND lead_id NOT IN (
+                SELECT DISTINCT wc.lead_id FROM wa_mensagens wm
+                JOIN wa_conversas wc ON wm.conversa_id = wc.id
+                WHERE wc.lead_id = %s AND wm.direcao = 'recebida'
+                AND wm.created_at >= NOW() - INTERVAL '%s days'
+            )
+        """, (lead_id, dias, lead_id, dias))
+        return cur.fetchone()["c"]
 
 
 def cancelar_outreach_lead(lead_id: int) -> int:

@@ -2,6 +2,7 @@
 agente_autonomo.py - Cérebro auto-otimizador do Sales Autopilot
 Multi-Armed Bandit (epsilon-greedy), A/B testing, relatório diário.
 """
+import json
 import logging
 import random
 import math
@@ -15,7 +16,7 @@ from crm.database import (
     obter_experimento_ativo, listar_experimentos,
     declarar_vencedor, criar_decisao, listar_decisoes_pendentes,
     criar_relatorio, obter_ultimo_relatorio,
-    metricas_outreach_periodo,
+    metricas_outreach_periodo, criar_outreach_regra,
 )
 
 log = logging.getLogger("agente")
@@ -205,8 +206,17 @@ def ciclo_diario() -> dict:
                 "resultado": resultado,
             })
 
+    # 2.5. Descoberta automática de regras
+    regras_descobertas = []
+    try:
+        regras_descobertas = _descobrir_regras()
+        if regras_descobertas:
+            log.info(f"Regras auto-descobertas: {len(regras_descobertas)}")
+    except Exception as e:
+        log.warning(f"Erro descoberta de regras: {e}")
+
     # 3. Gerar descobertas
-    descobertas = []
+    descobertas = list(regras_descobertas)  # Incluir descobertas de regras
     env = metricas.get("emails_enviados", 0)
 
     if env > 0:
@@ -290,6 +300,120 @@ def ciclo_diario() -> dict:
         "avaliacoes": avaliacoes,
         "resumo": resumo,
     }
+
+
+def _descobrir_regras() -> list:
+    """Analisa padrões de sucesso nos últimos 30 dias e sugere novas regras de outreach.
+    Agrupa leads que ABRIRAM email por características (tem_ifood, sem_delivery, tier).
+    Se um grupo tem taxa de abertura > 40%, sugere criar regra automática.
+    Retorna lista de descobertas/sugestões."""
+    regras_auto = (obter_configuracao("regras_auto_ativo") or "true").lower() == "true"
+    if not regras_auto:
+        return []
+
+    descobertas = []
+
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+
+            # Emails enviados nos últimos 30 dias com info de abertura e dados do lead
+            cur.execute("""
+                SELECT
+                    l.tem_ifood,
+                    l.tem_rappi,
+                    l.tem_99food,
+                    l.tier,
+                    l.uf,
+                    ee.aberto,
+                    COUNT(*) as total
+                FROM emails_enviados ee
+                JOIN leads l ON ee.lead_id = l.id
+                WHERE ee.horario_enviado >= NOW() - INTERVAL '30 days'
+                GROUP BY l.tem_ifood, l.tem_rappi, l.tem_99food, l.tier, l.uf, ee.aberto
+                HAVING COUNT(*) >= 5
+                ORDER BY total DESC
+            """)
+            rows = [dict(r) for r in cur.fetchall()]
+
+        if not rows:
+            return []
+
+        # Agrupar por características do lead
+        grupos = {}
+        for r in rows:
+            key = (
+                bool(r.get("tem_ifood")),
+                bool(r.get("tem_rappi") or r.get("tem_99food")),
+                r.get("tier") or "unknown",
+            )
+            if key not in grupos:
+                grupos[key] = {"abertos": 0, "total": 0}
+            grupos[key]["total"] += r["total"]
+            if r.get("aberto"):
+                grupos[key]["abertos"] += r["total"]
+
+        # Verificar quais grupos têm boa taxa de abertura
+        for (tem_ifood, tem_outra, tier), stats in grupos.items():
+            if stats["total"] < 10:
+                continue
+            taxa = round(stats["abertos"] / stats["total"] * 100, 1)
+            if taxa < 40:
+                continue
+
+            # Construir descrição da condição
+            partes = []
+            condicao = {}
+            if tem_ifood:
+                partes.append("com iFood")
+                condicao["tem_ifood"] = True
+            elif not tem_ifood and not tem_outra:
+                partes.append("sem delivery")
+                condicao["sem_delivery"] = True
+            if tier not in ("unknown", "cold"):
+                partes.append(f"tier={tier}")
+                condicao["tier"] = tier
+
+            desc = f"Leads {' + '.join(partes) or 'geral'} têm {taxa}% de abertura ({stats['abertos']}/{stats['total']})"
+            log.info(f"Regra auto-descoberta: {desc}")
+
+            # Verificar se já existe regra similar
+            cur_check = None
+            with get_conn() as conn2:
+                cur2 = conn2.cursor()
+                cur2.execute("""
+                    SELECT id FROM outreach_regras WHERE condicao::text = %s AND ativo = TRUE
+                """, (json.dumps(condicao),))
+                cur_check = cur2.fetchone()
+
+            if cur_check:
+                continue  # Já existe regra similar
+
+            # Criar decisão pendente (admin aprova)
+            acoes_sugeridas = [
+                {"tipo": "enviar_email", "delay_dias": 0},
+                {"tipo": "reenviar_email", "delay_dias": 2, "condicao": "nao_abriu"},
+                {"tipo": "enviar_wa", "delay_dias": 4, "condicao": "nao_abriu"},
+            ]
+
+            criar_decisao(
+                tipo="nova_regra",
+                descricao=f"Auto-descoberta: {desc}. Criar regra automática?",
+                dados={
+                    "condicao": condicao,
+                    "acoes": acoes_sugeridas,
+                    "nome_sugerido": f"Auto: {' + '.join(partes) or 'geral'} ({taxa}% abertura)",
+                    "taxa_abertura": taxa,
+                    "amostra": stats["total"],
+                }
+            )
+
+            descobertas.append(desc)
+
+    except Exception as e:
+        log.warning(f"Erro ao descobrir regras: {e}")
+
+    return descobertas
 
 
 def gerar_relatorio_diario() -> dict:

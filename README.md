@@ -26,7 +26,7 @@ O Derekh Food e composto por **10 aplicacoes principais**:
 | **Sales Autopilot CRM** | FastAPI + Jinja2 | `derekh-crm.fly.dev` | CRM B2B prospeccao automatica (email + WA + IA) |
 | **Evolution API** | Self-hosted | `derekh-evolution.fly.dev` | WhatsApp gateway (Baileys) |
 
-**Versao atual: 4.0.0 (24/03/2026) — Em producao: https://superfood-api.fly.dev**
+**Versao atual: 4.0.1 (24/03/2026) — Em producao: https://superfood-api.fly.dev**
 
 ### Stack Tecnologica
 
@@ -792,6 +792,7 @@ services:
 - **Sprint 21** — Bridge Agent + Smart Client Lookup: interceptacao impressoes iFood/Rappi/14 plataformas, Groq IA (Llama 3.3 70B), ciclo auto-aprendizado de patterns, busca cliente por telefone (migration 033)
 - **Sprint 22** — Feature Flags por Plano: 22 features em 4 tiers (Basico/Essencial/Avancado/Premium), 38 endpoints protegidos, useFeatureFlag hook, UpgradePrompt UI, landing page dinamica (migration 034)
 - **Sales Autopilot CRM Automatico** — Email template branded (header Derekh + footer site/WA + unsub), regras de outreach configuráveis (CRUD + prioridade + match-all), auto-import leads a cada 30 min, WA inteligente as 09:30 (fora horario restaurante), deteccao trial + notificacao ao dono, UI regras no Autopilot dashboard
+- **Demo WhatsApp Humanoide** — Modal interativo na landing page: 8 tipos restaurante × 20 cenarios cotidianos = 160 conversas unicas, chat animado com sons Web Audio API, brain replay mostrando raciocinio da IA, UI WhatsApp dark mode autentica, smartphone frame em desktop / full-screen em mobile
 
 ### v4.0.0-rc (11/03/2026) — Mega Migracao React + Features Avancadas
 - **100% React** — Zero Streamlit. Todas 4 aplicacoes em React 19 + TypeScript
@@ -853,6 +854,7 @@ services:
 - [x] Fase 17: Bridge Agent + Smart Client Lookup (interceptacao impressoes, Groq IA, auto-aprendizado) ✅
 - [x] Fase 18: Feature Flags por Plano (22 features, 4 tiers, 38 endpoints protegidos) ✅
 - [x] Fase 19: Sales Autopilot CRM Automatico (email branded + regras outreach + WA inteligente + auto-import + trial detection) ✅
+- [x] Fase 19.1: Demo WhatsApp Humanoide na Landing Page (20 cenarios × 8 tipos = 160 conversas + brain replay) ✅
 - [ ] Fase 20: WhatsApp Humanoide (atendimento IA humanizado 24h, sem menus robotizados — Premium incluso, demais +R$99,45/mês)
 
 ---

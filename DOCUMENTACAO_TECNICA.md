@@ -816,6 +816,21 @@ Restaurante saca (manual ou automático)
 - FAQ com 8 perguntas incluindo explicação do WhatsApp Humanoide
 - Responsivo para mobile, tablet e desktop
 - SEO otimizado (meta tags, Open Graph)
+- **Quiz Diagnóstico:** formulário interativo que calcula quanto o restaurante perde sem sistema (por tipo)
+
+### 12.4 Demo WhatsApp Humanoide (Modal Interativo)
+- **Botões de ativação:** 2 locais — banner WhatsApp Humanoide (planos) e FAQ
+- **Modal smartphone:** em desktop simula frame de celular (380×720px, border-radius 40px); em mobile ocupa tela inteira (full-screen imersivo)
+- **3 telas navegáveis:**
+  1. **Seleção de restaurante** — grid 2×4 com 8 tipos (Pizzaria, Esfiharia, Hamburgueria, Sushi, Restaurante, Açaí, Bebidas, Salgados) + logo Derekh
+  2. **Seleção de cenário** — lista de 20 situações cotidianas com emoji, título e descrição
+  3. **Chat WhatsApp** — conversa animada com typing indicators, sons Web Audio API, horário real
+- **20 cenários do dia a dia:** Pedido por Áudio, Cliente Novo, Alterar Pedido, Atraso Proativo, Avaliação 5 Estrelas, Reclamação, Item Esgotado, Repescagem CRM, Fora do Horário, Restrição Alimentar, Cancelamento, Trocar Endereço, Pedido pra Festa, Recomendação, Pedido Errado, "É Robô?", Handoff Humano, Fora da Área, Dúvida Ingredientes, Rastreio
+- **160 conversas únicas:** cada cenário é adaptado ao tipo de restaurante (cardápio, preços, produtos específicos)
+- **Brain Replay:** ao final da conversa, botão "🧠 Veja como o humanoide pensa" repete o chat mostrando blocos roxos com o raciocínio da IA antes de cada resposta
+- **End state:** botões "Assistir novamente" (replay sem brain), "Outro cenário" (volta à lista)
+- **Sons:** Web Audio API (800→1200Hz para mensagem recebida, 600→900Hz para enviada)
+- **UI WhatsApp:** cores dark mode autênticas (#0b141a, #1f2c34, #005c4b, #2a3942), pattern SVG de fundo
 
 ### 12.2 Domínio e SSL
 - Domínio: `derekhfood.com.br`

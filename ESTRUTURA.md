@@ -68,13 +68,16 @@ super-food/
 │       │   ├── despacho.py             # Logica de despacho automatico
 │       │   └── menu_templates.py       # Templates de cardapio por tipo de restaurante
 │       │
-│       ├── templates/                  # Templates HTML (Jinja2) — site legado
+│       ├── templates/                  # Templates HTML (Jinja2)
+│       │   ├── landing.html            # Landing page vendas (Tailwind CDN, quiz, demo humanoide)
 │       │   ├── base.html
 │       │   └── site/
 │       │       ├── home.html
 │       │       └── cardapio.html
 │       │
-│       └── static/                     # Arquivos estaticos legado
+│       └── static/                     # Arquivos estaticos
+│           ├── chefe-robo-derekh.png   # Logo IA chef (1024x1024)
+│           ├── logo-derekh.png         # Logo principal
 │           └── css/
 │               └── site_base.css
 │

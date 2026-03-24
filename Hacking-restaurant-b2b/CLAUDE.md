@@ -327,4 +327,5 @@ requirements-crm.txt    # FastAPI, psycopg2-binary, resend, uvicorn, jinja2
 - (x) **Fase 4**: Email marketing (Resend + templates + campanhas + sequencias + webhook)
 - (x) **Fase 5**: WhatsApp (links wa.me + templates personalizados)
 - (x) **Fase 6**: Deploy (Dockerfile + fly.toml + sync_crm.py)
-- ( ) **Fase 7**: Agente de auditoria (revisao de codigo + performance + seguranca)
+- (x) **Fase 7**: WA Sales Bot v2.0 — prompts humanizados, intent scoring contextual (INTENT_PATTERNS: high +30, medium +15, competitor_pain +20, objection como oportunidade, opt_out/hard_no), handoff gradual (immediate/warm/strategic + notificacao dono), delay humano 3-15s, contexto lead no prompt (_build_lead_context), anti-loop cross-instance (_BOT_PHONE_NUMBERS em app.py), temperature 0.8/0.85
+- ( ) **Fase 8**: Agente de auditoria (revisao de codigo + performance + seguranca)
