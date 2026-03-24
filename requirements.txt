@@ -1,58 +1,87 @@
 # ============================================
 # DEREKH FOOD - Dependências do Sistema
-# Versão: 3.0 (Pinned — produção estável)
-# Última atualização: 24/03/2026
+# Versão: 4.0 (Full Lock — produção 24/03/2026)
 # ============================================
-# IMPORTANTE: Versões pinnadas para evitar breaking changes em deploy.
-# Para atualizar, testar localmente antes de mudar versões aqui.
+# TODAS as dependências (diretas + indiretas) pinnadas com ==.
+# Gerado a partir de `pip freeze` em produção.
+# Para atualizar: mudar versão → pip install → testar local → deploy.
 
 # ==================== CORE ====================
 
 # Banco de Dados - SQLAlchemy ORM
 sqlalchemy==2.0.48
+greenlet==3.3.2
 
-# Migrations (para produção)
+# Migrations
 alembic==1.18.4
+Mako==1.3.10
 
 # Variáveis de Ambiente
 python-dotenv==1.2.2
 
 # ==================== BACKEND API ====================
 
-# FastAPI + Starlette + Uvicorn (Starlette pinnado — dep indireta do FastAPI sem teto)
+# FastAPI + Starlette + Uvicorn
 fastapi==0.135.2
 starlette==1.0.0
 uvicorn[standard]==0.42.0
+httptools==0.7.1
+uvloop==0.22.1
+watchfiles==1.1.1
+click==8.3.1
+h11==0.16.0
+anyio==4.12.1
+
+# FastAPI internals
+annotated-doc==0.0.4
+typing-inspection==0.4.2
+typing_extensions==4.15.0
 
 # Autenticação JWT
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
+cryptography==46.0.5
+cffi==2.0.0
+pycparser==3.0
+ecdsa==0.19.1
+pyasn1==0.6.3
+rsa==4.9.1
 
 # Validação
 pydantic[email]==2.12.5
+pydantic_core==2.41.5
+annotated-types==0.7.0
+email-validator==2.3.0
+dnspython==2.8.0
 
 # Upload de arquivos
 python-multipart==0.0.22
 
-# Processamento de imagens (resize, crop, WebP)
+# Processamento de imagens
 Pillow==12.1.1
 
-# Templates (Jinja2 para Starlette)
+# Templates
 jinja2==3.1.6
+MarkupSafe==3.0.3
 
-# WebSockets (realtime)
+# WebSockets
 websockets==16.0
 
 # ==================== INTEGRAÇÕES ====================
 
-# HTTP Client (Mapbox, APIs externas)
+# HTTP Client (sync)
 requests==2.32.5
+urllib3==2.6.3
+charset-normalizer==3.4.6
+certifi==2026.2.25
+idna==3.11
 
-# Async HTTP Client (integrações marketplace: iFood, Open Delivery)
+# HTTP Client (async)
 httpx==0.28.1
+httpcore==1.0.9
 
-# Email transacional (Resend)
+# Email transacional
 resend==2.26.0
 
 # Cálculo de Distâncias
@@ -60,32 +89,34 @@ haversine==2.9.0
 
 # ==================== PRODUÇÃO ====================
 
-# PostgreSQL Driver
+# PostgreSQL
 psycopg2-binary==2.9.11
 
-# Redis (cache, rate limiting, WebSocket pub/sub)
+# Redis
 redis==7.3.0
 
-# Storage S3/R2 (Cloudflare R2)
+# Storage S3/R2
 boto3==1.42.74
+botocore==1.42.74
+s3transfer==0.16.0
+jmespath==1.1.0
 
-# Monitoramento de erros (Sentry)
+# Monitoramento
 sentry-sdk[fastapi]==2.55.0
 
-# Logging JSON (producao)
+# Logging JSON
 python-json-logger==4.0.0
 
-# Gunicorn (WSGI/ASGI server producao)
+# Gunicorn
 gunicorn==25.1.0
+packaging==26.0
 
-# ==================== SEED / TESTES ====================
+# ==================== UTILITÁRIOS ====================
 
-# Dados ficticios para seed de teste
+# Faker (seed de teste)
 Faker==40.11.1
+python-dateutil==2.9.0.post0
+six==1.17.0
 
-# ==================== DESENVOLVIMENTO (OPCIONAL) ====================
-
-# pytest>=8.3.4
-# black>=24.10.0
-# flake8>=7.1.1
-# mypy>=1.7.0
+# YAML (config uvicorn)
+PyYAML==6.0.3
