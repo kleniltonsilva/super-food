@@ -97,6 +97,14 @@ from database.models import (
     # Bridge Printer
     BridgePattern,
     BridgeInterceptedOrder,
+
+    # Bot WhatsApp
+    BotConfig,
+    BotConversa,
+    BotMensagem,
+    BotAvaliacao,
+    BotProblema,
+    BotRepescagem,
 )
 
 # Para compatibilidade com imports existentes
@@ -153,4 +161,10 @@ __all__ = [
     'ItemEsgotado',
     'BridgePattern',
     'BridgeInterceptedOrder',
+    'BotConfig',
+    'BotConversa',
+    'BotMensagem',
+    'BotAvaliacao',
+    'BotProblema',
+    'BotRepescagem',
 ]
