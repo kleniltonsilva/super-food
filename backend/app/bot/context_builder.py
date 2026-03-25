@@ -163,35 +163,45 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
 
     cardapio_texto = "\n".join(cardapio_linhas) if cardapio_linhas else "Cardápio vazio"
 
-    # Promoções ativas
-    promos = db.query(models.Promocao).filter(
-        models.Promocao.restaurante_id == restaurante_id,
-        models.Promocao.ativo == True,
-    ).all()
-
+    # Promoções ativas (tabela pode não existir em prod — usar savepoint)
     promos_texto = ""
-    if promos:
-        promos_linhas = []
-        for p in promos:
-            tipo = f"{p.valor_desconto:.0f}%" if p.tipo_desconto == "percentual" else f"R${p.valor_desconto:.2f}"
-            cupom = f" (cupom: {p.codigo_cupom})" if p.codigo_cupom else ""
-            minimo = f" (pedido mín R${p.valor_pedido_minimo:.2f})" if p.valor_pedido_minimo else ""
-            promos_linhas.append(f"  🎫 {p.nome}: {tipo} desconto{cupom}{minimo}")
-        promos_texto = "\nPROMOÇÕES ATIVAS:\n" + "\n".join(promos_linhas)
+    try:
+        nested = db.begin_nested()
+        promos = db.query(models.Promocao).filter(
+            models.Promocao.restaurante_id == restaurante_id,
+            models.Promocao.ativo == True,
+        ).all()
+        nested.commit()
+        if promos:
+            promos_linhas = []
+            for p in promos:
+                tipo = f"{p.valor_desconto:.0f}%" if p.tipo_desconto == "percentual" else f"R${p.valor_desconto:.2f}"
+                cupom = f" (cupom: {p.codigo_cupom})" if p.codigo_cupom else ""
+                minimo = f" (pedido mín R${p.valor_pedido_minimo:.2f})" if p.valor_pedido_minimo else ""
+                promos_linhas.append(f"  🎫 {p.nome}: {tipo} desconto{cupom}{minimo}")
+            promos_texto = "\nPROMOÇÕES ATIVAS:\n" + "\n".join(promos_linhas)
+    except Exception:
+        nested.rollback()
+        logger.debug("Tabela promocoes não encontrada, ignorando")
 
-    # Combos
-    combos = db.query(models.Combo).filter(
-        models.Combo.restaurante_id == restaurante_id,
-        models.Combo.ativo == True,
-    ).all()
-
+    # Combos (tabela pode não existir em prod — usar savepoint)
     combos_texto = ""
-    if combos:
-        combos_linhas = []
-        for c in combos:
-            economia = c.preco_original - c.preco_combo
-            combos_linhas.append(f"  🍽️ {c.nome} — R${c.preco_combo:.2f} (economia R${economia:.2f})")
-        combos_texto = "\nCOMBOS:\n" + "\n".join(combos_linhas)
+    try:
+        nested = db.begin_nested()
+        combos = db.query(models.Combo).filter(
+            models.Combo.restaurante_id == restaurante_id,
+            models.Combo.ativo == True,
+        ).all()
+        nested.commit()
+        if combos:
+            combos_linhas = []
+            for c in combos:
+                economia = c.preco_original - c.preco_combo
+                combos_linhas.append(f"  🍽️ {c.nome} — R${c.preco_combo:.2f} (economia R${economia:.2f})")
+            combos_texto = "\nCOMBOS:\n" + "\n".join(combos_linhas)
+    except Exception:
+        nested.rollback()
+        logger.debug("Tabela combos não encontrada, ignorando")
 
     # Formas de pagamento
     pagamentos = []

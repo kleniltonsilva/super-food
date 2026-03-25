@@ -214,32 +214,36 @@ async def _processar_mensagem(
         # 10. Decidir se envia áudio ou texto
         enviar_audio = _deve_enviar_audio(conversa, bot_config)
 
-        if enviar_audio and bot_config.tts_autonomo:
-            audio_b64 = await xai_tts.gerar_audio(resposta_final, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
-            if audio_b64:
-                await evolution_client.enviar_audio_ptt(
-                    numero, audio_b64,
-                    bot_config.evolution_instance,
-                    bot_config.evolution_api_url,
-                    bot_config.evolution_api_key,
-                )
+        envio_ok = False
+        try:
+            if enviar_audio and bot_config.tts_autonomo:
+                audio_b64 = await xai_tts.gerar_audio(resposta_final, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
+                if audio_b64:
+                    await evolution_client.enviar_audio_ptt(
+                        numero, audio_b64,
+                        bot_config.evolution_instance,
+                        bot_config.evolution_api_url,
+                        bot_config.evolution_api_key,
+                    )
+                else:
+                    await evolution_client.enviar_texto(
+                        numero, resposta_final,
+                        bot_config.evolution_instance,
+                        bot_config.evolution_api_url,
+                        bot_config.evolution_api_key,
+                    )
             else:
-                # Fallback para texto
                 await evolution_client.enviar_texto(
                     numero, resposta_final,
                     bot_config.evolution_instance,
                     bot_config.evolution_api_url,
                     bot_config.evolution_api_key,
                 )
-        else:
-            await evolution_client.enviar_texto(
-                numero, resposta_final,
-                bot_config.evolution_instance,
-                bot_config.evolution_api_url,
-                bot_config.evolution_api_key,
-            )
+            envio_ok = True
+        except Exception as e:
+            logger.error(f"Erro ao enviar mensagem para {numero[:8]}***: {e}")
 
-        # 11. Registrar mensagem enviada
+        # 11. Registrar mensagem enviada (salva mesmo se envio falhou)
         msg_enviada = models.BotMensagem(
             conversa_id=conversa.id,
             direcao="enviada",

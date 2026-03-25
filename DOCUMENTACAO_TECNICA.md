@@ -9,7 +9,7 @@
 
 - Derekh Food é um SaaS multi-tenant de delivery completo para restaurantes
 - Público-alvo: pizzarias, lanchonetes, hamburguerias, açaiterias, padarias, restaurantes em geral
-- 8 aplicações integradas num único sistema:
+- 9 aplicações integradas num único sistema:
   1. API Backend (FastAPI)
   2. Super Admin (gestão da plataforma)
   3. Painel do Restaurante (gestão completa)
@@ -17,7 +17,8 @@
   5. Site do Cliente (cardápio online)
   6. Cozinha Digital KDS (PWA)
   7. App Garçom (PWA)
-  8. Bridge Printer Agent (Windows — intercepta impressões de plataformas externas)
+  8. Bot WhatsApp Humanoide (IA — atendimento + pedidos via WhatsApp)
+  9. Bridge Printer Agent (Windows — intercepta impressões de plataformas externas)
 
 ### Diferenciais
 - Sistema 100% brasileiro, desenvolvido em português
@@ -1198,7 +1199,227 @@ Detectar intenção (scoring contextual)
 
 ---
 
+## 17. Bot WhatsApp Humanoide — Sprint 16
+
+### 17.1 Visão Geral
+
+Atendente IA humanizado que conversa com clientes no WhatsApp como se fosse uma pessoa real. Sem menus robotizados, sem "aperte 1 ou 2". O cliente manda mensagem e é atendido naturalmente: faz pedido, tira dúvidas, recebe acompanhamento. Funciona 24h/7d.
+
+**Precificação:** Incluso grátis no plano Premium (R$527/mês). Demais planos: add-on R$99,45/mês.
+
+### 17.2 Arquitetura
+
+O bot roda **integrado ao backend principal** (`superfood-api.fly.dev`), não como microserviço separado.
+
+```
+backend/app/bot/
+├── atendente.py          — Lógica principal (webhook → LLM → resposta)
+├── context_builder.py    — Prompt em 3 camadas (sistema + restaurante + cliente)
+├── function_calls.py     — 15 funções que o LLM pode chamar
+├── evolution_client.py   — Client Evolution API (enviar texto/áudio, baixar áudio)
+├── xai_llm.py            — Client xAI Grok (chat completion + function calling)
+├── xai_tts.py            — Client xAI TTS (gerar áudio com voz)
+├── groq_stt.py           — Client Groq Whisper STT (transcrever áudio)
+└── workers.py            — Workers periódicos (avaliação, repescagem, reset tokens)
+```
+
+### 17.3 Fluxo de Processamento
+
+```
+Mensagem WhatsApp → Evolution API webhook
+    |
+    v
+POST /webhooks/evolution (resposta 200 imediata)
+    |
+    v
+Background: processar_webhook()
+    |-- Dedup por msg_id
+    |-- Anti-spam lock por número (30s)
+    |
+    v
+Identificar restaurante (por evolution_instance)
+    |
+    v
+Se áudio: baixar via Evolution → transcrever via Groq Whisper STT
+    |
+    v
+Buscar/criar conversa (sessão 2h)
+    |
+    v
+Montar contexto 3 camadas:
+    L1: Sistema (identidade, regras, capacidades)
+    L2: Restaurante (cardápio, horário, promoções, combos)
+    L3: Cliente (nome, endereço, pedidos, carrinho)
+    |
+    v
+Loop LLM (até 5 iterações):
+    xAI Grok-3-fast → function calling → executar → resultado → Grok responde
+    |
+    v
+Delay humanizado (1-3 seg simulando digitação)
+    |
+    v
+Decidir texto ou áudio TTS (reciprocidade: cliente mandou áudio → bot responde áudio)
+    |
+    v
+Enviar via Evolution API (texto ou PTT nativo)
+    |
+    v
+Salvar mensagem no BD + notificar painel via WebSocket
+```
+
+### 17.4 Tabelas de Banco (Migration 035)
+
+| Tabela | Campos principais | Descrição |
+|--------|-------------------|-----------|
+| `bot_config` | restaurante_id, bot_ativo, nome_atendente, tom_personalidade, voz_tts, evolution_instance, evolution_api_url, evolution_api_key, whatsapp_numero, pode_criar/alterar/cancelar_pedido, pode_dar_desconto, pode_reembolsar, stt_ativo, tts_autonomo, max_tokens_dia | Configuração do bot por restaurante |
+| `bot_conversas` | restaurante_id, telefone, cliente_id, nome_cliente, status, intencao_atual, msgs_enviadas, msgs_recebidas, usou_audio, pedido_ativo_id, itens_carrinho (JSON) | Sessões de conversa |
+| `bot_mensagens` | conversa_id, direcao (recebida/enviada), tipo (texto/audio), conteudo, tokens_input, tokens_output, modelo_usado, function_calls (JSON), tempo_resposta_ms | Histórico de mensagens |
+| `bot_avaliacoes` | restaurante_id, conversa_id, pedido_id, cliente_id, nota (1-5), comentario | Avaliações pós-entrega |
+| `bot_problemas` | restaurante_id, conversa_id, pedido_id, tipo, descricao, resolvido | Reclamações detectadas |
+| `bot_repescagem` | restaurante_id, cliente_id, tipo, mensagem, cupom_codigo, desconto_pct, enviado_em, respondido | Campanhas de reativação |
+
+### 17.5 Function Calls (15 funções)
+
+| Função | Descrição |
+|--------|-----------|
+| `buscar_cliente` | Busca cliente pelo telefone |
+| `cadastrar_cliente` | Cadastra novo cliente (nome, telefone, endereço) |
+| `buscar_cardapio` | Busca itens por nome/categoria |
+| `buscar_categorias` | Lista categorias disponíveis |
+| `criar_pedido` | Cria pedido CONFIRMADO (vai direto para cozinha) |
+| `alterar_pedido` | Adiciona/remove itens de pedido ativo |
+| `cancelar_pedido` | Cancela pedido (respeita status máximo) |
+| `consultar_pedido` | Status do pedido ativo |
+| `buscar_endereco` | Endereço salvo do cliente |
+| `calcular_entrega` | Busca taxa de entrega por bairro |
+| `verificar_horario` | Status aberto/fechado + horário |
+| `registrar_avaliacao` | Registra nota 1-5 + comentário |
+| `registrar_problema` | Registra reclamação com tipo |
+| `gerar_pix` | Gera cobrança Pix (futuro — Módulo 1) |
+| `verificar_pagamento` | Verifica status pagamento Pix (futuro) |
+
+Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_bot"` e vão direto para a cozinha (quando KDS ativo).
+
+### 17.6 LLM — xAI Grok
+
+- **Modelo:** `grok-3-fast` (rápido, bom em português)
+- **API:** `POST https://api.x.ai/v1/chat/completions`
+- **Temperature:** 0.6 (precisão com naturalidade)
+- **Max tokens:** 400 (mensagens curtas como WhatsApp real)
+- **Function calling:** `tool_choice: "auto"`
+- **Loop:** Até 5 iterações (para chains de function calls)
+- **Fallback:** Se LLM falhar, responde "me dá um segundo..."
+
+### 17.7 STT — Groq Whisper
+
+- **Serviço:** `groq_stt.py`
+- **Modelo:** Whisper Large V3 via Groq API (inference ultra-rápido)
+- **API:** `POST https://api.groq.com/openai/v1/audio/transcriptions`
+- **Idioma:** Auto-detectado (pt por padrão)
+- **Formato:** Áudio base64 baixado via Evolution API → transcrito → texto processado
+
+### 17.8 TTS — xAI
+
+- **Serviço:** `xai_tts.py`
+- **Endpoint:** `POST https://api.x.ai/v1/tts` (NÃO `/v1/audio/speech`)
+- **Body:** `{text, voice_id, language, output_format: "wav"}`
+- **Vozes disponíveis:** ara, eve, leo, rex, sal, una
+- **Envio:** Via Evolution API como PTT nativo (bolinha verde) usando `sendWhatsAppAudio`
+- **Critérios para enviar áudio:** cliente mandou áudio (reciprocidade) OU conversa longa (>=8 msgs)
+
+### 17.9 Context Builder — 3 Camadas
+
+**Layer 1 — Sistema (cacheable, ~1500 tokens):**
+- Identidade do atendente (nome, tom)
+- Regras absolutas (nunca inventar preço, nunca revelar ser IA)
+- Capacidades habilitadas (criar pedido, dar desconto, etc.)
+- Comportamento quando fechado, item esgotado
+- Fluxo de pedido, upsell natural
+
+**Layer 2 — Restaurante (semi-fixo, ~2000 tokens):**
+- Nome, endereço, horário (aberto/fechado com hora atual)
+- Cardápio completo (categorias, produtos, variações, preços, promoções)
+- Combos e promoções ativas
+- Formas de pagamento, tempo de entrega, pedido mínimo
+- Usa savepoints para queries de promoções/combos (tabelas podem não existir)
+
+**Layer 3 — Cliente (dinâmico, ~500-1000 tokens):**
+- Nome, telefone, CPF, endereço salvo
+- Últimos 3 pedidos (comanda, itens, valor, status)
+- Pedido ativo (se houver)
+- Carrinho em construção (JSON na conversa)
+
+### 17.10 Endpoints
+
+**Webhook (público):**
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| POST | `/webhooks/evolution` | Webhook Evolution API — resposta 200 imediata, processamento em background |
+
+**Painel Restaurante (requer JWT + feature flag `bot_whatsapp`):**
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/painel/bot/config` | Configuração do bot |
+| PUT | `/painel/bot/config` | Atualizar configuração (permissões, comportamento, voz) |
+| POST | `/painel/bot/ativar` | Ativar bot (requer config prévia pelo Super Admin) |
+| POST | `/painel/bot/desativar` | Desativar bot |
+| GET | `/painel/bot/conversas` | Listar conversas (filtro por status) |
+| GET | `/painel/bot/conversas/{id}/mensagens` | Mensagens de uma conversa |
+| GET | `/painel/bot/dashboard` | Dashboard — estatísticas (conversas, pedidos, faturamento, avaliação) |
+
+**Super Admin (requer JWT admin):**
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/api/admin/bot/instancias` | Listar todos os bots configurados |
+| POST | `/api/admin/bot/criar-instancia/{restaurante_id}` | Criar/atualizar instância bot |
+| PUT | `/api/admin/bot/instancia/{config_id}` | Atualizar instância (Evolution, número, etc.) |
+| DELETE | `/api/admin/bot/instancia/{config_id}` | Deletar instância |
+
+### 17.11 Workers Periódicos
+
+- **Reset tokens diário:** Zera `tokens_usados_hoje` à meia-noite
+- **Avaliação pós-entrega:** Após `delay_avaliacao_min` minutos de entrega, envia mensagem pedindo nota
+- **Repescagem:** Clientes inativos há N dias recebem mensagem com cupom de desconto
+- Executados via `asyncio.create_task` no lifespan do FastAPI
+
+### 17.12 Frontend Admin — BotWhatsApp.tsx
+
+Página "Bot WhatsApp" no painel do restaurante com:
+- Dashboard: conversas hoje/semana, pedidos via bot, faturamento, avaliação média, tokens usados
+- Lista de conversas com filtro por status (ativa, encerrada, escalada)
+- Detalhe da conversa (chat view com mensagens recebidas/enviadas)
+- Configuração: toggle on/off, nome do atendente, permissões, comportamento
+- Feature flag: `bot_whatsapp` (Premium ou add-on)
+
+### 17.13 Frontend Super Admin — Modal Bot
+
+Na página "Gerenciar Restaurantes" do Super Admin:
+- Modal para criar/editar instância bot por restaurante
+- Campos: Evolution instance, API URL, API key, número WhatsApp, nome atendente
+- Toggle ativar/desativar
+- Lista de todas as instâncias bot configuradas
+
+### 17.14 Secrets Fly.io
+
+| Secret | Descrição |
+|--------|-----------|
+| `XAI_API_KEY` | API key xAI para Grok LLM + TTS |
+| `GROQ_API_KEY` | API key Groq para Whisper STT |
+
+### 17.15 Bugs Corrigidos no Deploy
+
+1. **`relation "promocoes" does not exist`** — Tabelas promoções/combos podem não existir em prod. Fix: `db.begin_nested()` savepoints no context_builder
+2. **`tool_call` → `tool_choice`** — Parâmetro errado no xai_llm.py
+3. **ForeignKeyViolation bot_mensagens** — `db.rollback()` em catch desfazia criação da conversa. Fix: savepoints isolam falha
+4. **Evolution send 500** — Wrapped em try/except para salvar mensagem no BD mesmo se envio falhar
+
+---
+
 *Documento gerado automaticamente pelo sistema Derekh Food v4.0.0*
-*Última atualização: 24/03/2026*
+*Última atualização: 25/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
 *WhatsApp comercial: +1 555-900-4563*

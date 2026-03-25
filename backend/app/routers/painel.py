@@ -555,28 +555,61 @@ async def despachar_pedido(
                 (lat_entrega, lon_entrega)
             ), 2)
 
-    # Aplicar TSP se modo automático e há coordenadas
-    tempo_estimado_min = None
-    if modo != 'manual' and distancia_km is not None:
-        try:
-            from utils.tsp_optimizer import calcular_metricas_rota
-            metricas = calcular_metricas_rota(
-                (rest.latitude, rest.longitude),
-                [{'lat': pedido.latitude_entrega, 'lon': pedido.longitude_entrega, 'pedido_id': pedido.id}]
-            )
-            tempo_estimado_min = metricas.get('tempo_total_min')
-        except Exception:
-            pass
-
+    # Criar Entrega primeiro (para incluir no TSP)
     entrega = models.Entrega(
         pedido_id=pedido.id,
         motoboy_id=motoboy.id,
         status='pendente',
         atribuido_em=datetime.utcnow(),
         distancia_km=distancia_km,
-        tempo_entrega=tempo_estimado_min
     )
     db.add(entrega)
+    db.flush()  # Obter entrega.id para TSP
+
+    # Aplicar TSP com TODOS os destinos pendentes do motoboy (multi-drop)
+    tempo_estimado_min = None
+    if modo != 'manual' and rest.latitude and rest.longitude:
+        try:
+            from utils.tsp_optimizer import otimizar_rota_por_modo, calcular_metricas_rota
+
+            # Coletar TODOS os destinos pendentes do motoboy (incluindo o atual)
+            destinos_rota = []
+            todas_entregas = db.query(models.Entrega).filter(
+                models.Entrega.motoboy_id == motoboy.id,
+                models.Entrega.status.in_(['pendente', 'em_rota'])
+            ).all()
+
+            for ent in todas_entregas:
+                ped = db.query(models.Pedido).filter(models.Pedido.id == ent.pedido_id).first()
+                if ped and ped.latitude_entrega and ped.longitude_entrega:
+                    destinos_rota.append({
+                        'lat': ped.latitude_entrega,
+                        'lon': ped.longitude_entrega,
+                        'pedido_id': ped.id,
+                        'data_criacao': ped.data_criacao,
+                        'entrega_id': ent.id,
+                    })
+
+            if destinos_rota:
+                rota = otimizar_rota_por_modo(
+                    (rest.latitude, rest.longitude), destinos_rota, modo
+                )
+                metricas = calcular_metricas_rota(
+                    (rest.latitude, rest.longitude), rota
+                )
+                tempo_estimado_min = metricas.get('tempo_total_min')
+
+                # Atualizar posição na rota otimizada para CADA entrega
+                for i, dest in enumerate(rota):
+                    ent_upd = db.query(models.Entrega).filter(
+                        models.Entrega.id == dest.get('entrega_id')
+                    ).first()
+                    if ent_upd:
+                        ent_upd.posicao_rota_otimizada = i + 1
+        except Exception:
+            pass
+
+    entrega.tempo_entrega = tempo_estimado_min
     pedido.despachado = True
     pedido.status = 'em_preparo'
     motoboy.entregas_pendentes = (motoboy.entregas_pendentes or 0) + 1

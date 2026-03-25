@@ -6,11 +6,12 @@ entre motoboys de forma equilibrada.
 
 Critérios de Seleção (filtro rígido, sem fallback):
 1. Motoboy deve estar ATIVO e DISPONÍVEL
-2. Motoboy NÃO pode estar em rota (em_rota == False E entregas_pendentes == 0)
-3. GPS atualizado obrigatório
-4. Distância até restaurante ≤ 50 metros (haversine)
-5. Score: entregas_hoje × 1000 + ordem_hierarquia + distância × 10
-   Quem fez menos no dia = selecionado. Desempate: hierarquia.
+2. Motoboy NÃO pode estar em rota (em_rota == False)
+3. entregas_pendentes < capacidade_entregas (multi-drop: até 5 pedidos por rota)
+4. GPS atualizado obrigatório
+5. Distância até restaurante ≤ 50 metros (haversine)
+6. Score: entregas_hoje × 1000 + pendentes × 500 + hierarquia + distância × 10
+   Distribui carga uniforme entre motoboys, preenchendo rotas gradualmente.
 
 Autor: Super Food Team
 Versão: 2.0 — Seleção inteligente com GPS e distribuição diária
@@ -62,13 +63,14 @@ def selecionar_motoboy_para_rota(
 
     Filtro rígido (sem fallback):
     1. status == 'ativo', disponivel == True
-    2. em_rota == False E entregas_pendentes == 0 (finalizou tudo)
-    3. GPS atualizado obrigatório (latitude_atual e longitude_atual)
-    4. Distância até restaurante ≤ 50 metros
+    2. em_rota == False (não iniciou rota ainda)
+    3. entregas_pendentes < capacidade_entregas (multi-drop)
+    4. GPS atualizado obrigatório (latitude_atual e longitude_atual)
+    5. Distância até restaurante ≤ 50 metros
 
     Score (menor é melhor):
-    - entregas_hoje × 1000 + ordem_hierarquia + distância × 10
-    - Quem fez menos no dia = selecionado. Desempate: hierarquia.
+    - entregas_hoje × 1000 + pendentes × 500 + hierarquia + distância × 10
+    - Distribui carga uniforme (round-robin por pendentes).
 
     Args:
         restaurante_id: ID do restaurante
@@ -95,14 +97,19 @@ def selecionar_motoboy_para_rota(
         if not restaurante.latitude or not restaurante.longitude:
             return None
 
-        # Filtro rígido: ativo, disponível, NÃO em rota, sem pendências
+        # Filtro: ativo, disponível, NÃO em rota, com capacidade livre
         motoboys = session.query(Motoboy).filter(
             Motoboy.restaurante_id == restaurante_id,
             Motoboy.status == 'ativo',
             Motoboy.disponivel == True,
             Motoboy.em_rota == False,
-            Motoboy.entregas_pendentes <= 0
         ).all()
+
+        # Filtrar por capacidade (suporta multi-drop: vários pedidos por rota)
+        motoboys = [
+            m for m in motoboys
+            if (m.entregas_pendentes or 0) < (m.capacidade_entregas or 5)
+        ]
 
         if not motoboys:
             return None
@@ -129,8 +136,10 @@ def selecionar_motoboy_para_rota(
             entregas_hoje = contar_entregas_dia(motoboy.id, session)
 
             # Score: menor é melhor
+            pendentes = motoboy.entregas_pendentes or 0
             score = (
                 (entregas_hoje * 1000) +         # Prioridade máxima: menos entregas no dia
+                (pendentes * 500) +              # Distribuir carga pendente (multi-drop)
                 (motoboy.ordem_hierarquia or 0) + # Rotação justa
                 (distancia_km * 10)               # Proximidade como desempate
             )

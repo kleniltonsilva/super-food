@@ -53,7 +53,7 @@ async def chat_completion(
     }
     if tools:
         payload["tools"] = tools
-        payload["tool_call"] = "auto"
+        payload["tool_choice"] = "auto"
 
     headers = {
         "Authorization": f"Bearer {xai_key}",
