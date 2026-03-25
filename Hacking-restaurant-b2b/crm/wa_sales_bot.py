@@ -582,8 +582,34 @@ def gerar_script_audio(lead: dict) -> str:
     return script
 
 
+# ============================================================
+# PRONÚNCIA TTS — substitui marcas/nomes para pronúncia correta
+# REGRA CRÍTICA: só altera texto para áudio, NUNCA para texto escrito
+# ============================================================
+_TTS_PRONUNCIA = [
+    # (escrita correta, pronúncia TTS)
+    ("Derekh Food", "Dérikh Food"),
+    ("derekh food", "dérikh food"),
+    ("Derekh food", "Dérikh food"),
+    ("derekh Food", "dérikh Food"),
+    ("DEREKH FOOD", "DÉRIKH FOOD"),
+    ("Derekh", "Dérikh"),
+    ("derekh", "dérikh"),
+    ("DEREKH", "DÉRIKH"),
+]
+
+
+def _preparar_texto_tts(texto: str) -> str:
+    """Substitui nomes de marcas pela pronúncia correta para TTS.
+    NUNCA usar em texto escrito — apenas antes de enviar ao TTS."""
+    for escrita, pronuncia in _TTS_PRONUNCIA:
+        texto = texto.replace(escrita, pronuncia)
+    return texto
+
+
 def gerar_audio_tts(texto: str, voz: str = "rex") -> Optional[str]:
     """Gera áudio via Grok TTS. Retorna path do arquivo .mp3 ou None."""
+    texto = _preparar_texto_tts(texto)
     xai_key = _get_xai_key()
     if not xai_key:
         log.error("XAI_API_KEY não configurada")
