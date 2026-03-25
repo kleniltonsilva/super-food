@@ -10,7 +10,7 @@ from typing import Optional
 import logging
 
 from .. import models, database
-from ..auth import get_restaurante_logado, get_admin_logado
+from ..auth import get_current_restaurante, get_current_admin
 from ..feature_guard import verificar_feature
 
 logger = logging.getLogger("superfood.bot.router")
@@ -38,7 +38,7 @@ async def webhook_evolution(request: Request):
 
 @router.get("/painel/bot/config")
 def get_bot_config(
-    restaurante: models.Restaurante = Depends(get_restaurante_logado),
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
@@ -96,7 +96,7 @@ def get_bot_config(
 @router.put("/painel/bot/config")
 async def update_bot_config(
     request: Request,
-    restaurante: models.Restaurante = Depends(get_restaurante_logado),
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
@@ -138,7 +138,7 @@ async def update_bot_config(
 
 @router.post("/painel/bot/ativar")
 def ativar_bot(
-    restaurante: models.Restaurante = Depends(get_restaurante_logado),
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
@@ -162,7 +162,7 @@ def ativar_bot(
 
 @router.post("/painel/bot/desativar")
 def desativar_bot(
-    restaurante: models.Restaurante = Depends(get_restaurante_logado),
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
@@ -183,7 +183,7 @@ def desativar_bot(
 def listar_conversas(
     status: Optional[str] = None,
     limit: int = 50,
-    restaurante: models.Restaurante = Depends(get_restaurante_logado),
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
@@ -216,7 +216,7 @@ def listar_conversas(
 @router.get("/painel/bot/conversas/{conversa_id}/mensagens")
 def listar_mensagens(
     conversa_id: int,
-    restaurante: models.Restaurante = Depends(get_restaurante_logado),
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
@@ -259,7 +259,7 @@ def listar_mensagens(
 
 @router.get("/painel/bot/dashboard")
 def bot_dashboard(
-    restaurante: models.Restaurante = Depends(get_restaurante_logado),
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
@@ -356,7 +356,7 @@ def bot_dashboard(
 
 @router.get("/api/admin/bot/instancias")
 def listar_instancias_bot(
-    admin: models.SuperAdmin = Depends(get_admin_logado),
+    admin: models.SuperAdmin = Depends(get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Lista todos os bots configurados (Super Admin)."""
@@ -384,7 +384,7 @@ def listar_instancias_bot(
 async def criar_instancia_bot(
     restaurante_id: int,
     request: Request,
-    admin: models.SuperAdmin = Depends(get_admin_logado),
+    admin: models.SuperAdmin = Depends(get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Cria instância do bot WhatsApp para um restaurante (Super Admin)."""
@@ -431,7 +431,7 @@ async def criar_instancia_bot(
 async def atualizar_instancia_bot(
     config_id: int,
     request: Request,
-    admin: models.SuperAdmin = Depends(get_admin_logado),
+    admin: models.SuperAdmin = Depends(get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Atualiza instância do bot (Super Admin pode alterar tudo)."""
@@ -454,7 +454,7 @@ async def atualizar_instancia_bot(
 @router.delete("/api/admin/bot/instancia/{config_id}")
 def deletar_instancia_bot(
     config_id: int,
-    admin: models.SuperAdmin = Depends(get_admin_logado),
+    admin: models.SuperAdmin = Depends(get_current_admin),
     db: Session = Depends(database.get_db),
 ):
     """Deleta instância do bot (Super Admin)."""
