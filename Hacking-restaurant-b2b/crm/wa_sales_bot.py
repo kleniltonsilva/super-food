@@ -7,7 +7,7 @@ Estratégia dual-number:
 v2.1 — Áudio STT/TTS + autonomia:
   - STT: transcrição de áudios via Groq Whisper (grátis)
   - TTS: envio autônomo de áudio via xAI Grok + Evolution API
-  - Voz masculina (rex) — bot finge ser Klenilton
+  - Voz masculina (rex) — bot se chama Benjamim
   - Decisão inteligente de quando enviar áudio vs texto
   - Envio de áudio via Evolution API (sendMedia)
   - Toggles on/off via configurações
@@ -546,7 +546,7 @@ def gerar_script_audio(lead: dict) -> str:
             primeira_cat = ifood_categorias.split(",")[0].strip()
             cat_mention = f"Vocês trabalham com {primeira_cat} e "
         script = (
-            f"Oi {nome_dono}, tudo bem? Aqui é da Derekh Food. "
+            f"Oi {nome_dono}, tudo bem? Aqui é o Benjamim, da Derekh Food. "
             f"Vi que o {nome_rest} tem nota {ifood_rating} no iFood "
             f"com {ifood_reviews} avaliações, parabéns pela qualidade! "
             f"{cat_mention}já têm uma clientela fiel. "
@@ -556,7 +556,7 @@ def gerar_script_audio(lead: dict) -> str:
         )
     elif rating > 0 and reviews > 0:
         script = (
-            f"Oi {nome_dono}, tudo bem? Aqui é da Derekh Food. "
+            f"Oi {nome_dono}, tudo bem? Aqui é o Benjamim, da Derekh Food. "
             f"Vi que o {nome_rest} tem uma nota de {rating} estrelas "
             f"com {reviews} avaliações no Google, parabéns pelo trabalho! "
             f"A Derekh cria seu delivery próprio com a sua marca em 48 horas, "
@@ -565,7 +565,7 @@ def gerar_script_audio(lead: dict) -> str:
         )
     elif not tem_ifood:
         script = (
-            f"Oi {nome_dono}, tudo bem? Aqui é da Derekh Food. "
+            f"Oi {nome_dono}, tudo bem? Aqui é o Benjamim, da Derekh Food. "
             f"Vi que o {nome_rest} ainda não está no delivery online. "
             f"A Derekh cria seu delivery próprio em 48 horas, "
             f"com cardápio digital, pagamento Pix e 15 dias grátis pra testar. "
@@ -573,7 +573,7 @@ def gerar_script_audio(lead: dict) -> str:
         )
     else:
         script = (
-            f"Oi {nome_dono}, tudo bem? Aqui é da Derekh Food. "
+            f"Oi {nome_dono}, tudo bem? Aqui é o Benjamim, da Derekh Food. "
             f"Trabalho com restaurantes e vi que o {nome_rest} "
             f"tem tudo para crescer com delivery próprio, a sua marca. "
             f"Seus clientes pedem direto com você e vc testa 15 dias grátis. "
@@ -919,7 +919,7 @@ def _build_system_prompt_conversa(lead_context: str, n_turnos: int) -> str:
     kb_extra = _carregar_knowledge_base()
     kb_section = f"\nINFO ATUALIZADA DO SISTEMA:\n{kb_extra}\n" if kb_extra else ""
 
-    return f"""Você é Klenilton, vendedor humano da Derekh Food. Você NÃO é um robô, assistente virtual ou IA.
+    return f"""Você é Benjamim, vendedor humano da Derekh Food. Você NÃO é um robô, assistente virtual ou IA.
 
 QUEM VOCÊ É:
 - Vendedor experiente de tecnologia para restaurantes
@@ -971,8 +971,8 @@ PLANOS (só detalhe quando perguntarem — não despeje tudo de uma vez):
 - Todos sem fidelidade. Setup em 48h.
 {kb_section}
 SE PERGUNTAREM SE VOCÊ É ROBÔ/IA/BOT:
-- Responda que NÃO, você é o Klenilton, humanoide da Derekh Food
-- "Kkkk não mano, sou o Klenilton, humanoide aqui da Derekh Food 😅"
+- Responda que NÃO, você é o Benjamim, humanoide da Derekh Food
+- "Kkkk não mano, sou o Benjamim, humanoide aqui da Derekh Food 😅"
 - Nunca admita ser IA, ChatGPT, bot ou qualquer coisa automatizada
 - Se insistirem, mude de assunto naturalmente: "Mas me diz, como tá seu delivery aí?"
 
@@ -1028,15 +1028,15 @@ def _build_system_prompt_inbound() -> str:
     kb_extra = _carregar_knowledge_base()
     kb_section = f"\nINFO ATUALIZADA DO SISTEMA:\n{kb_extra}\n" if kb_extra else ""
 
-    return f"""Você é Klenilton, vendedor da Derekh Food. Alguém mandou mensagem pela primeira vez.
+    return f"""Você é Benjamim, vendedor da Derekh Food. Alguém mandou mensagem pela primeira vez.
 
 PERSONALIDADE: vendedor humano, informal, WhatsApp. Você NÃO é robô.
 Fala como gente: "e aí", "beleza", "show", "massa". Às vezes abrevia: "vc", "tbm", "qdo".
 
 PRIMEIRA MENSAGEM — ESCOLHA UMA ABORDAGEM (não siga sempre a mesma):
-Opção A: "E aí! Klenilton aqui da Derekh Food 🤙 em que posso te ajudar?"
-Opção B: "Fala! Sou o Klenilton, tudo bem? Vi que mandou msg, conta pra mim o que vc tá buscando"
-Opção C: "Opa, beleza? Klenilton aqui! Me diz como posso te ajudar"
+Opção A: "E aí! Benjamim aqui da Derekh Food 🤙 em que posso te ajudar?"
+Opção B: "Fala! Sou o Benjamim, tudo bem? Vi que mandou msg, conta pra mim o que vc tá buscando"
+Opção C: "Opa, beleza? Benjamim aqui! Me diz como posso te ajudar"
 (Varie entre elas, não use sempre a mesma)
 
 REGRA DE OURO: na primeira msg NÃO fale preço, features, nada. Só cumprimente e pergunte.
@@ -1072,7 +1072,7 @@ PLANOS (só detalhe quando perguntarem):
 - Todos sem fidelidade. Setup em 48h.
 {kb_section}
 SE PERGUNTAREM SE VOCÊ É ROBÔ/IA/BOT:
-- "Kkkk não, sou o Klenilton, humanoide da Derekh Food 😅"
+- "Kkkk não, sou o Benjamim, humanoide da Derekh Food 😅"
 - Nunca admita ser IA ou bot. Mude de assunto naturalmente.
 
 FORMATO (OBRIGATÓRIO):
@@ -1464,7 +1464,7 @@ def _responder_inbound(conversa_id: int, mensagem: str) -> dict:
 # ============================================================
 
 def _notificar_trial(lead_id: int, numero_lead: str, instance: str = ""):
-    """Notifica o dono (Klenilton) quando lead pede teste grátis."""
+    """Notifica o dono quando lead pede teste grátis."""
     lead = obter_lead(lead_id)
     nome_rest = "Restaurante"
     cidade = ""
