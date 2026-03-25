@@ -424,7 +424,7 @@ def _enviar_audio_evolution(numero: str, audio_base64: str, instance: str = "",
             json={
                 "number": numero,
                 "mediatype": "audio",
-                "media": f"data:{mimetype};base64,{audio_base64}",
+                "media": audio_base64,
                 "mimetype": mimetype,
             },
             timeout=30,
@@ -596,9 +596,14 @@ def gerar_audio_tts(texto: str, voz: str = "rex") -> Optional[str]:
 
     try:
         resp = httpx.post(
-            "https://api.x.ai/v1/audio/speech",
-            headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
-            json={"model": "grok-3-fast-tts", "input": texto, "voice": voz},
+            "https://api.x.ai/v1/tts",
+            headers={"Authorization": f"Bearer {xai_key}"},
+            json={
+                "text": texto,
+                "voice_id": voz,
+                "language": "pt-BR",
+                "output_format": {"codec": "mp3", "sample_rate": 24000, "bit_rate": 128000},
+            },
             timeout=30,
         )
         resp.raise_for_status()
