@@ -797,6 +797,42 @@ export async function criarBridgePattern(payload: {
   return data;
 }
 
+// ─── Bot WhatsApp Humanoide ──────────────────────────────
+export async function getBotConfig() {
+  const { data } = await adminApi.get("/painel/bot/config");
+  return data;
+}
+
+export async function atualizarBotConfig(payload: Record<string, unknown>) {
+  const { data } = await adminApi.put("/painel/bot/config", payload);
+  return data;
+}
+
+export async function ativarBot() {
+  const { data } = await adminApi.post("/painel/bot/ativar");
+  return data;
+}
+
+export async function desativarBot() {
+  const { data } = await adminApi.post("/painel/bot/desativar");
+  return data;
+}
+
+export async function getBotDashboard() {
+  const { data } = await adminApi.get("/painel/bot/dashboard");
+  return data;
+}
+
+export async function getBotConversas(params?: { status?: string; limit?: number }) {
+  const { data } = await adminApi.get("/painel/bot/conversas", { params });
+  return data;
+}
+
+export async function getBotMensagens(conversaId: number) {
+  const { data } = await adminApi.get(`/painel/bot/conversas/${conversaId}/mensagens`);
+  return data;
+}
+
 export async function uploadImagem(file: File, tipo: string = "produto") {
   // Obter restaurante_id do localStorage
   const restauranteStr = localStorage.getItem("sf_admin_restaurante");

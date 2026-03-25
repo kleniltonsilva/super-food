@@ -8,6 +8,9 @@ import {
   useCriarDominio,
   useVerificarDominioDNS,
   useDeletarDominio,
+  useBotInstancias,
+  useCriarBotInstancia,
+  useDeletarBotInstancia,
 } from "@/superadmin/hooks/useSuperAdminQueries";
 import { Spinner } from "@/components/ui/spinner";
 import { Button } from "@/components/ui/button";
@@ -51,6 +54,7 @@ import {
   Clock,
   Shield,
   Plus,
+  Bot,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -145,6 +149,16 @@ export default function GerenciarRestaurantes() {
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [dominioModal, setDominioModal] = useState<Restaurante | null>(null);
   const [novoDominio, setNovoDominio] = useState("");
+  const [botModal, setBotModal] = useState<Restaurante | null>(null);
+  const [botForm, setBotForm] = useState({
+    evolution_instance: "",
+    evolution_api_url: "https://derekh-evolution.fly.dev",
+    evolution_api_key: "",
+    whatsapp_numero: "",
+    nome_atendente: "Bia",
+    voz_tts: "ara",
+    bot_ativo: false,
+  });
   const [, navigate] = useLocation();
 
   const params: Record<string, string> = {};
@@ -161,6 +175,63 @@ export default function GerenciarRestaurantes() {
   const criarDom = useCriarDominio();
   const verificarDNS = useVerificarDominioDNS();
   const deletarDom = useDeletarDominio();
+  const { data: botInstancias } = useBotInstancias();
+  const criarBot = useCriarBotInstancia();
+  const deletarBot = useDeletarBotInstancia();
+
+  function getBotForRestaurante(restId: number) {
+    if (!botInstancias || !Array.isArray(botInstancias)) return null;
+    return botInstancias.find((b: any) => b.restaurante_id === restId) || null;
+  }
+
+  function openBotModal(r: Restaurante) {
+    const existing = getBotForRestaurante(r.id);
+    if (existing) {
+      setBotForm({
+        evolution_instance: existing.evolution_instance || "",
+        evolution_api_url: existing.evolution_api_url || "https://derekh-evolution.fly.dev",
+        evolution_api_key: existing.evolution_api_key || "",
+        whatsapp_numero: existing.whatsapp_numero || "",
+        nome_atendente: existing.nome_atendente || "Bia",
+        voz_tts: existing.voz_tts || "ara",
+        bot_ativo: existing.bot_ativo || false,
+      });
+    } else {
+      setBotForm({
+        evolution_instance: "",
+        evolution_api_url: "https://derekh-evolution.fly.dev",
+        evolution_api_key: "",
+        whatsapp_numero: "",
+        nome_atendente: "Bia",
+        voz_tts: "ara",
+        bot_ativo: false,
+      });
+    }
+    setBotModal(r);
+  }
+
+  function handleSaveBot() {
+    if (!botModal) return;
+    criarBot.mutate(
+      { restauranteId: botModal.id, payload: botForm },
+      {
+        onSuccess: (data) => {
+          toast.success(data.mensagem || "Bot configurado!");
+          setBotModal(null);
+        },
+        onError: (err: any) => {
+          toast.error(err?.response?.data?.detail || "Erro ao configurar bot");
+        },
+      }
+    );
+  }
+
+  function handleDeleteBot(configId: number) {
+    deletarBot.mutate(configId, {
+      onSuccess: () => toast.success("Bot removido"),
+      onError: () => toast.error("Erro ao remover bot"),
+    });
+  }
 
   function handleStatusChange(id: number, novoStatus: string) {
     atualizarStatus.mutate(
@@ -362,6 +433,18 @@ export default function GerenciarRestaurantes() {
                       <TableCell className="text-[var(--sa-text-secondary)]">{r.total_motoboys}</TableCell>
                       <TableCell>
                         <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn(
+                              "hover:text-green-300",
+                              getBotForRestaurante(r.id) ? "text-green-400" : "text-[var(--sa-text-muted)]"
+                            )}
+                            onClick={() => openBotModal(r)}
+                            title={getBotForRestaurante(r.id) ? "Bot ativo — editar" : "Criar Humanoide"}
+                          >
+                            <Bot className="h-4 w-4" />
+                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -714,6 +797,125 @@ export default function GerenciarRestaurantes() {
               <p className="text-xs text-[var(--sa-text-dimmed)] mt-1">Aguardar até 48h para propagação do DNS.</p>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+      {/* Modal Bot WhatsApp */}
+      <Dialog open={!!botModal} onOpenChange={(open) => !open && setBotModal(null)}>
+        <DialogContent className="border-[var(--sa-border)] bg-[var(--sa-bg-surface)] text-white sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-green-400" />
+              WhatsApp Humanoide — {botModal?.nome_fantasia}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {getBotForRestaurante(botModal?.id ?? 0) && (
+              <div className="flex items-center gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+                <Bot className="h-5 w-5 text-green-400" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-green-400">Bot já configurado</p>
+                  <p className="text-xs text-[var(--sa-text-muted)]">
+                    Editando configuração existente
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                  onClick={() => {
+                    const bot = getBotForRestaurante(botModal?.id ?? 0);
+                    if (bot) {
+                      handleDeleteBot(bot.id);
+                      setBotModal(null);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4 mr-1" /> Remover
+                </Button>
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Instância Evolution</label>
+              <Input
+                value={botForm.evolution_instance}
+                onChange={(e) => setBotForm({ ...botForm, evolution_instance: e.target.value })}
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                placeholder="nome-da-instancia"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">URL Evolution API</label>
+              <Input
+                value={botForm.evolution_api_url}
+                onChange={(e) => setBotForm({ ...botForm, evolution_api_url: e.target.value })}
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                placeholder="https://derekh-evolution.fly.dev"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">API Key Evolution</label>
+              <Input
+                type="password"
+                value={botForm.evolution_api_key}
+                onChange={(e) => setBotForm({ ...botForm, evolution_api_key: e.target.value })}
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                placeholder="API key"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Número WhatsApp</label>
+              <Input
+                value={botForm.whatsapp_numero}
+                onChange={(e) => setBotForm({ ...botForm, whatsapp_numero: e.target.value })}
+                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                placeholder="5511999999999"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Nome do atendente</label>
+                <Input
+                  value={botForm.nome_atendente}
+                  onChange={(e) => setBotForm({ ...botForm, nome_atendente: e.target.value })}
+                  className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Voz TTS</label>
+                <Select value={botForm.voz_tts} onValueChange={(v) => setBotForm({ ...botForm, voz_tts: v })}>
+                  <SelectTrigger className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="rex">Rex (masculino)</SelectItem>
+                    <SelectItem value="leo">Leo (masculino)</SelectItem>
+                    <SelectItem value="sal">Sal (masculino)</SelectItem>
+                    <SelectItem value="eve">Eve (feminino)</SelectItem>
+                    <SelectItem value="ara">Ara (feminino)</SelectItem>
+                    <SelectItem value="una">Una (feminino)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setBotModal(null)} className="text-[var(--sa-text-muted)]">
+              Cancelar
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white"
+              onClick={handleSaveBot}
+              disabled={criarBot.isPending || !botForm.evolution_instance}
+            >
+              {criarBot.isPending ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</>
+              ) : getBotForRestaurante(botModal?.id ?? 0) ? (
+                "Atualizar Bot"
+              ) : (
+                "Criar Humanoide"
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </SuperAdminLayout>

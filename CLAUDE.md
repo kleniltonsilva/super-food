@@ -83,7 +83,7 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
 - **Última sessão:** 24/03/2026 (noite)
 - **Migrations em produção:** 001-034 (última: 034_feature_flags)
-- **Migrations planejadas:** 035 (Bot)
+- **Migrations implementadas (aguardando deploy):** 035 (Bot WhatsApp — 6 tabelas)
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
 - **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
@@ -241,7 +241,7 @@ super-food/
 | 5 | Site Cliente | React | /cliente/{codigo} | Produção |
 | 6 | App KDS (Cozinha) | React PWA | /cozinha | Implementado |
 | 7 | App Garçom | React PWA | /garcom | Implementado |
-| 8 | WhatsApp Humanoide (Bot IA) | FastAPI (micro) | derekh-bot.fly.dev | Planejado |
+| 8 | WhatsApp Humanoide (Bot IA) | Integrado backend | /webhooks/evolution | Implementado |
 | 9 | Sales Autopilot | FastAPI | derekh-crm.fly.dev | Em deploy |
 | 10 | Printer Agent | Windows Service | localhost:8765 | Planejado |
 
@@ -268,7 +268,7 @@ super-food/
 | 14 | Refatoração integrações (credenciais plataforma) | ✅ 16/03 |
 | 15 | Billing/Assinatura Asaas (PIX+Boleto) | ✅ 16/03 |
 | 15.1 | Operadores de Caixa (autenticação abrir/fechar) | ✅ 18/03 |
-| 16 | WhatsApp Humanoide — Bot IA (Premium incluso, demais +R$99,45/mês) | ⏳ Planejado |
+| 16 | WhatsApp Humanoide — Bot IA (Premium incluso, demais +R$99,45/mês) | ✅ 25/03 (migration 035, 15 function calls, frontend admin+super) |
 | 17 | Pix Online Woovi/OpenPix | ⏳ Planejado |
 | 18 | KDS / Comanda Digital | ✅ 21/03 (deploy 24/03) |
 | 19 | App Garçom (Atendimento Mesa) | ✅ 22/03 (deploy 24/03) |
@@ -500,45 +500,49 @@ super-food/
 
 ---
 
-### MÓDULO 4 — WhatsApp Humanoide (Bot IA) — Sprint 16 — Migration 031
+### MÓDULO 4 — WhatsApp Humanoide (Bot IA) — Sprint 16 — Migration 035
 
 > **Nome comercial:** WhatsApp Humanoide (atendimento IA humanizado, sem menus robotizados)
 > **Precificação:** Incluso grátis no plano Premium (R$527/mês). Demais planos: add-on R$99,45/mês.
-> Plano detalhado: `PLANO_BOT_WHATSAPP.md` (10 etapas, 67 tarefas)
-> Docs: `atualização geral do sistema/DEREKH Bot Technical Documentation.html`
+> **Decisão arquitetural:** Integrado no backend principal (NÃO microserviço separado) — acesso direto BD, auth, WebSocket, feature flags, billing guard.
 
-**Etapa 1: Infra**
-- [ ] Criar `derekh-bot/` (FastAPI + Dockerfile + fly.toml)
-- [ ] Webhook: resposta 200 imediata + fila Redis async + idempotência
+**Etapa 1: Infra + Migration**
+- [x] Migration 035: 6 tabelas (bot_config, bot_conversas, bot_mensagens, bot_avaliacoes, bot_problemas, bot_repescagens)
+- [x] Models ORM: BotConfig, BotConversa, BotMensagem, BotAvaliacao, BotProblema, BotRepescagem
+- [x] Webhook Evolution: `POST /webhooks/evolution` — resposta 200 imediata
 
-**Etapa 2: Migration + Guard**
-- [ ] Migration 031: campos bot em `config_restaurante` (bot_ativo, nome_atendente, whatsapp_phone_id, etc.)
-- [ ] Billing guard: Premium (incluso grátis) OU qualquer plano com add-on WA Humanoide (R$99,45/mês) + billing_status active/trial + bot_ativo=True
+**Etapa 2: Feature Guard**
+- [x] Feature flag `bot_whatsapp` Tier 4 (Premium) — `Depends(verificar_feature("bot_whatsapp"))`
 
 **Etapa 3: LLM + Context**
-- [ ] `context_builder.py` (3 camadas prompt), `atendente.txt`
-- [ ] LLM Router: Grok 3 Mini → fallback, sessão Redis TTL 2h
+- [x] `context_builder.py` (3 camadas prompt: system, restaurant, client)
+- [x] `xai_llm.py`: grok-3-fast, temp 0.6, max 400 tokens, function calling
+- [x] `xai_tts.py`: `/v1/tts`, pronúncia Derekh→Dérikh
+- [x] `groq_stt.py`: Groq Whisper whisper-large-v3-turbo
 
-**Etapa 4: Function Calls MVP**
-- [ ] buscar_cliente, cadastrar_cliente, buscar_item, buscar_categorias, criar_pedido, consultar_pedido, verificar_horario
+**Etapa 4: Function Calls (15 ferramentas)**
+- [x] buscar_cliente, cadastrar_cliente, buscar_cardapio, buscar_categorias, criar_pedido, alterar_pedido, cancelar_pedido, repetir_ultimo_pedido, consultar_status_pedido, verificar_horario, buscar_promocoes, registrar_avaliacao, registrar_problema, aplicar_cupom, escalar_humano
 
-**Etapa 5: Áudio**
-- [ ] `audio_handler.py`: Groq Whisper STT → texto → processar
+**Etapa 5: Atendente + Workers**
+- [x] `atendente.py`: main loop, anti-spam 30s, dedup cache, humanized delay, function calling loop (max 5 iterations)
+- [x] `evolution_client.py`: enviar_texto, enviar_audio_ptt, baixar_audio, rejeitar_chamada
+- [x] `workers.py`: avaliações pós-entrega, detecção atraso, reset tokens diários
 
-**Etapa 6: Pedido Completo**
-- [ ] alterar/cancelar/repetir pedido + guardrails validação dupla
+**Etapa 6: Endpoints**
+- [x] Painel: GET/PUT config, POST ativar/desativar, GET conversas, GET mensagens, GET dashboard
+- [x] Super Admin: GET instancias, POST criar-instancia, PUT instancia, DELETE instancia
 
-**Etapa 7: Pagamento**
-- [ ] Integração Pix Woovi (reusa Módulo 1) + gerar_pix + verificar_pagamento
+**Etapa 7: Frontend Admin**
+- [x] Página `BotWhatsApp.tsx` (3 abas: Dashboard, Configurações, Conversas)
+- [x] Rota `/whatsapp-bot`, sidebar "WhatsApp Humanoide" (ícone Bot), feature map
+- [x] 7 hooks: useBotConfig, useAtualizarBotConfig, useAtivarBot, useDesativarBot, useBotDashboard, useBotConversas, useBotMensagens
 
-**Etapa 8: Pós-entrega**
-- [ ] Avaliação, detecção atraso, repescagem, workers periódicos
+**Etapa 8: Frontend Super Admin**
+- [x] Botão Bot (ícone verde) na tabela restaurantes + modal "Criar Humanoide"
+- [x] 4 hooks: useBotInstancias, useCriarBotInstancia, useAtualizarBotInstancia, useDeletarBotInstancia
 
-**Etapa 9: Fallback Humano**
-- [ ] 3 tentativas → escalar com msg + telefone + WebSocket ao dono
-
-**Etapa 10: Deploy**
-- [ ] Deploy `derekh-bot` no Fly.io (GRU) + secrets + teste E2E
+**Etapa 9: Deploy**
+- [ ] Deploy migration 035 + testar E2E: criar instância → ativar → enviar mensagem → pedido via bot → cozinha
 
 ---
 

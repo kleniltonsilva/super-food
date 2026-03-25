@@ -307,3 +307,24 @@ export async function resetDemo(id: number) {
   const { data } = await superAdminApi.post(`/api/admin/demos/${id}/reset`);
   return data;
 }
+
+// ─── Bot WhatsApp Humanoide ────────────────────────────────
+export async function getBotInstancias() {
+  const { data } = await superAdminApi.get("/api/admin/bot/instancias");
+  return data;
+}
+
+export async function criarBotInstancia(restauranteId: number, payload: Record<string, unknown>) {
+  const { data } = await superAdminApi.post(`/api/admin/bot/criar-instancia/${restauranteId}`, payload);
+  return data;
+}
+
+export async function atualizarBotInstancia(configId: number, payload: Record<string, unknown>) {
+  const { data } = await superAdminApi.put(`/api/admin/bot/instancia/${configId}`, payload);
+  return data;
+}
+
+export async function deletarBotInstancia(configId: number) {
+  const { data } = await superAdminApi.delete(`/api/admin/bot/instancia/${configId}`);
+  return data;
+}

@@ -23,6 +23,7 @@ import {
   ChefHat,
   Users,
   Printer,
+  Bot,
   Lock,
   X,
 } from "lucide-react";
@@ -45,6 +46,7 @@ const menuItems = [
   { path: "/cozinha", label: "Cozinha Digital", icon: ChefHat },
   { path: "/garcons", label: "Garçons", icon: Users },
   { path: "/bridge", label: "Bridge Impressora", icon: Printer },
+  { path: "/whatsapp-bot", label: "WhatsApp Humanoide", icon: Bot },
   { path: "/caixa", label: "Caixa", icon: DollarSign },
   { path: "/promocoes", label: "Promoções", icon: Percent },
   { path: "/fidelidade", label: "Fidelidade", icon: Star },

@@ -1536,6 +1536,203 @@ class BridgeInterceptedOrder(Base):
     )
 
 
+# ==================== BOT WHATSAPP HUMANOIDE ====================
+class BotConfig(Base):
+    """Configuração do bot WhatsApp humanoide por restaurante"""
+    __tablename__ = "bot_config"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), unique=True, nullable=False)
+    bot_ativo = Column(Boolean, default=False)
+    # Identidade
+    nome_atendente = Column(String(100), default='Bia')
+    tom_personalidade = Column(String(200), default='informal amigável')
+    voz_tts = Column(String(20), default='ara')  # ara, eve, leo, rex, sal, una
+    idioma = Column(String(10), default='pt-BR')
+    # Evolution API
+    evolution_instance = Column(String(100))
+    evolution_api_url = Column(String(500))
+    evolution_api_key = Column(String(500))
+    whatsapp_numero = Column(String(20))
+    # Capacidades (permissões do dono)
+    pode_criar_pedido = Column(Boolean, default=True)
+    pode_alterar_pedido = Column(Boolean, default=True)
+    pode_cancelar_pedido = Column(Boolean, default=False)
+    pode_dar_desconto = Column(Boolean, default=False)
+    desconto_maximo_pct = Column(Float, default=0)
+    pode_reembolsar = Column(Boolean, default=False)
+    reembolso_maximo_valor = Column(Float, default=0)
+    pode_receber_pix = Column(Boolean, default=False)
+    pode_agendar = Column(Boolean, default=False)
+    # Comportamento
+    comportamento_fechado = Column(String(30), default='so_informa')  # so_informa | aceita_agendamento | mostra_cardapio
+    estoque_esgotado_acao = Column(String(30), default='sugere_mais_vendido')  # sugere_mais_vendido | sugere_mais_barato | so_informa
+    cancelamento_ate_status = Column(String(30), default='em_preparo')
+    taxa_cancelamento = Column(Float, default=0)
+    # Pós-entrega
+    avaliacao_ativa = Column(Boolean, default=True)
+    delay_avaliacao_min = Column(Integer, default=10)
+    avaliacao_lembrete_24h = Column(Boolean, default=True)
+    reclamacao_acao = Column(String(20), default='manual')  # auto | manual
+    reclamacao_credito_pct = Column(Float, default=0)
+    desconto_por_review = Column(Boolean, default=False)
+    desconto_review_pct = Column(Float, default=10)
+    # Repescagem
+    repescagem_ativa = Column(Boolean, default=False)
+    repescagem_dias_inativo = Column(Integer, default=15)
+    repescagem_desconto_pct = Column(Float, default=10)
+    # Impressão automática
+    impressao_automatica_bot = Column(Boolean, default=True)
+    # Audio
+    stt_ativo = Column(Boolean, default=True)
+    tts_autonomo = Column(Boolean, default=True)
+    # Limites
+    max_tokens_dia = Column(Integer, default=50000)
+    tokens_usados_hoje = Column(Integer, default=0)
+    tokens_reset_em = Column(DateTime)
+    # Timestamps
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_bot_config_restaurante', 'restaurante_id'),
+        Index('idx_bot_config_numero', 'whatsapp_numero'),
+    )
+
+
+class BotConversa(Base):
+    """Conversa WhatsApp ativa entre bot e cliente"""
+    __tablename__ = "bot_conversas"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="SET NULL"))
+    telefone = Column(String(20), nullable=False)
+    nome_cliente = Column(String(200))
+    status = Column(String(20), default='ativa')  # ativa | encerrada | handoff
+    # Contexto
+    pedido_ativo_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
+    intencao_atual = Column(String(50))
+    itens_carrinho = Column(JSON)
+    endereco_confirmado = Column(Text)
+    forma_pagamento = Column(String(30))
+    # Métricas
+    msgs_enviadas = Column(Integer, default=0)
+    msgs_recebidas = Column(Integer, default=0)
+    usou_audio = Column(Boolean, default=False)
+    # Handoff
+    handoff_em = Column(DateTime)
+    handoff_motivo = Column(Text)
+    # Sessão
+    session_data = Column(JSON)
+    # Timestamps
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    encerrado_em = Column(DateTime)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    cliente = relationship("Cliente")
+    pedido_ativo = relationship("Pedido", foreign_keys=[pedido_ativo_id])
+    mensagens = relationship("BotMensagem", back_populates="conversa", cascade="all, delete-orphan")
+    __table_args__ = (
+        Index('idx_bot_conversas_restaurante', 'restaurante_id', 'status'),
+        Index('idx_bot_conversas_telefone', 'restaurante_id', 'telefone'),
+        Index('idx_bot_conversas_cliente', 'cliente_id'),
+    )
+
+
+class BotMensagem(Base):
+    """Mensagem individual na conversa bot"""
+    __tablename__ = "bot_mensagens"
+    id = Column(Integer, primary_key=True, index=True)
+    conversa_id = Column(Integer, ForeignKey("bot_conversas.id", ondelete="CASCADE"), nullable=False)
+    direcao = Column(String(10), nullable=False)  # enviada | recebida
+    tipo = Column(String(20), default='texto')  # texto | audio | imagem
+    conteudo = Column(Text)
+    audio_url = Column(Text)
+    duracao_audio_seg = Column(Integer)
+    # IA
+    tokens_input = Column(Integer, default=0)
+    tokens_output = Column(Integer, default=0)
+    modelo_usado = Column(String(50))
+    function_calls = Column(JSON)
+    tempo_resposta_ms = Column(Integer)
+    # Timestamps
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamentos
+    conversa = relationship("BotConversa", back_populates="mensagens")
+    __table_args__ = (
+        Index('idx_bot_mensagens_conversa', 'conversa_id', 'criado_em'),
+    )
+
+
+class BotAvaliacao(Base):
+    """Avaliação pós-entrega coletada pelo bot"""
+    __tablename__ = "bot_avaliacoes"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="SET NULL"))
+    conversa_id = Column(Integer, ForeignKey("bot_conversas.id", ondelete="SET NULL"))
+    nota = Column(Integer)  # 1-5
+    categoria = Column(String(30))  # entrega | comida | atendimento
+    detalhe = Column(Text)
+    avaliou_maps = Column(Boolean, default=False)
+    credito_aplicado = Column(Float, default=0)
+    status = Column(String(20), default='pendente')  # pendente | respondida | sem_resposta
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    respondido_em = Column(DateTime)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    pedido = relationship("Pedido")
+    __table_args__ = (
+        Index('idx_bot_avaliacoes_restaurante', 'restaurante_id'),
+        Index('idx_bot_avaliacoes_pedido', 'pedido_id'),
+    )
+
+
+class BotProblema(Base):
+    """Problema reportado pelo cliente ao bot"""
+    __tablename__ = "bot_problemas"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    pedido_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="SET NULL"))
+    conversa_id = Column(Integer, ForeignKey("bot_conversas.id", ondelete="SET NULL"))
+    tipo = Column(String(30), nullable=False)  # atraso | item_errado | item_faltando | qualidade | outro
+    descricao = Column(Text)
+    resolucao = Column(Text)
+    resolvido = Column(Boolean, default=False)
+    notificou_dono = Column(Boolean, default=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    resolvido_em = Column(DateTime)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_bot_problemas_restaurante', 'restaurante_id'),
+    )
+
+
+class BotRepescagem(Base):
+    """Tentativa de reengajamento de cliente inativo"""
+    __tablename__ = "bot_repescagens"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="CASCADE"), nullable=False)
+    cupom_codigo = Column(String(50))
+    cupom_desconto_pct = Column(Float)
+    mensagem_enviada = Column(Text)
+    retornou = Column(Boolean, default=False)
+    pedido_retorno_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    retornou_em = Column(DateTime)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    cliente = relationship("Cliente")
+    __table_args__ = (
+        Index('idx_bot_repescagens_restaurante', 'restaurante_id'),
+    )
+
+
 class PixEventLog(Base):
     """Log de eventos webhook Woovi (idempotência)"""
     __tablename__ = "pix_event_log"

@@ -31,6 +31,7 @@ from .routers import kds as kds_router
 from .routers import auth_garcom as auth_garcom_router
 from .routers import garcom as garcom_router
 from .routers import bridge as bridge_router
+from .routers import bot_whatsapp as bot_whatsapp_router
 from .billing.billing_tasks import verificar_billing_periodico
 from .pix.pix_tasks import verificar_pix_periodico
 from .integrations.manager import integration_manager
@@ -52,6 +53,7 @@ manager = create_manager(channel_prefix="ws:restaurante")
 printer_manager = create_manager(channel_prefix="ws:printer")
 kds_manager = create_manager(channel_prefix="ws:kds")
 garcom_manager = create_manager(channel_prefix="ws:garcom")
+bot_manager = create_manager(channel_prefix="ws:bot")
 
 
 async def verificar_entregas_atrasadas(ws_manager):
@@ -116,12 +118,13 @@ _entrega_task = None
 _billing_task = None
 _pix_task = None
 _demo_task = None
+_bot_task = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown da aplicacao"""
-    global _entrega_task, _billing_task, _pix_task, _demo_task
+    global _entrega_task, _billing_task, _pix_task, _demo_task, _bot_task
     # Startup
     environment = os.getenv("ENVIRONMENT", "development")
     if environment == "production":
@@ -148,6 +151,8 @@ async def lifespan(app: FastAPI):
         await kds_manager.start()
     if hasattr(garcom_manager, 'start'):
         await garcom_manager.start()
+    if hasattr(bot_manager, 'start'):
+        await bot_manager.start()
 
     # Inicia verificação periódica de entregas atrasadas
     _entrega_task = asyncio.create_task(verificar_entregas_atrasadas(manager))
@@ -160,6 +165,10 @@ async def lifespan(app: FastAPI):
 
     # Inicia demo autopilot (progride pedidos demo automaticamente)
     _demo_task = asyncio.create_task(demo_autopilot_loop(manager))
+
+    # Inicia workers do bot WhatsApp
+    from .bot.workers import bot_workers_loop
+    _bot_task = asyncio.create_task(bot_workers_loop(manager))
 
     # Inicia integration manager (polling marketplaces)
     integration_manager.set_app(app)
@@ -198,8 +207,16 @@ async def lifespan(app: FastAPI):
         await printer_manager.stop()
     if hasattr(kds_manager, 'stop'):
         await kds_manager.stop()
+    if _bot_task:
+        _bot_task.cancel()
+        try:
+            await _bot_task
+        except asyncio.CancelledError:
+            pass
     if hasattr(garcom_manager, 'stop'):
         await garcom_manager.stop()
+    if hasattr(bot_manager, 'stop'):
+        await bot_manager.stop()
     await integration_manager.stop()
     logger.info("Derekh Food API encerrada")
 
@@ -215,6 +232,7 @@ app.state.ws_manager = manager
 app.state.printer_manager = printer_manager
 app.state.kds_manager = kds_manager
 app.state.garcom_manager = garcom_manager
+app.state.bot_manager = bot_manager
 app.state.integration_manager = integration_manager
 
 # ==================== Middlewares ====================
@@ -327,6 +345,7 @@ app.include_router(kds_router.router)
 app.include_router(auth_garcom_router.router)
 app.include_router(garcom_router.router)
 app.include_router(bridge_router.router)
+app.include_router(bot_whatsapp_router.router)
 
 # ==================== Endpoint público — Planos (landing page) ====================
 @app.get("/api/public/planos")

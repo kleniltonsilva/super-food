@@ -68,6 +68,7 @@ export const ROUTE_FEATURE_MAP: Record<string, string> = {
   "/fidelidade": "fidelidade",
   "/integracoes": "integracoes_marketplace",
   "/pix": "pix_online",
+  "/whatsapp-bot": "bot_whatsapp",
 };
 
 export function useFeatureFlag(feature: string) {

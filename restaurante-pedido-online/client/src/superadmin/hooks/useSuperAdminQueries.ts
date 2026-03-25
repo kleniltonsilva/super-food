@@ -37,6 +37,10 @@ import {
   atualizarSiteConfigDemo,
   resetDemo,
   consultarCnpj,
+  getBotInstancias,
+  criarBotInstancia,
+  atualizarBotInstancia,
+  deletarBotInstancia,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -413,6 +417,47 @@ export function useResetDemo() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["superadmin", "demos"] });
       qc.invalidateQueries({ queryKey: ["superadmin", "demo"] });
+    },
+  });
+}
+
+// ─── Bot WhatsApp Humanoide ─────────────────────────────
+export function useBotInstancias() {
+  return useQuery({
+    queryKey: ["superadmin", "bot", "instancias"] as const,
+    queryFn: getBotInstancias,
+    staleTime: 30_000,
+  });
+}
+
+export function useCriarBotInstancia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ restauranteId, payload }: { restauranteId: number; payload: Record<string, unknown> }) =>
+      criarBotInstancia(restauranteId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "bot", "instancias"] });
+    },
+  });
+}
+
+export function useAtualizarBotInstancia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ configId, payload }: { configId: number; payload: Record<string, unknown> }) =>
+      atualizarBotInstancia(configId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "bot", "instancias"] });
+    },
+  });
+}
+
+export function useDeletarBotInstancia() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: deletarBotInstancia,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "bot", "instancias"] });
     },
   });
 }

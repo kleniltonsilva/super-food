@@ -25,6 +25,7 @@ import PagamentoPix from "@/admin/pages/PagamentoPix";
 import CozinhaDigital from "@/admin/pages/CozinhaDigital";
 import Garcons from "@/admin/pages/Garcons";
 import BridgePrinter from "@/admin/pages/BridgePrinter";
+import BotWhatsApp from "@/admin/pages/BotWhatsApp";
 import SelecionarPlano from "@/admin/pages/SelecionarPlano";
 import Onboarding from "@/admin/pages/Onboarding";
 import { Toaster } from "@/components/ui/sonner";
@@ -197,6 +198,10 @@ function AdminRouter() {
 
       <Route path="/bridge">
         <PrivateRoute><BridgePrinter /></PrivateRoute>
+      </Route>
+
+      <Route path="/whatsapp-bot">
+        <PrivateRoute><BotWhatsApp /></PrivateRoute>
       </Route>
 
       <Route path="/caixa">

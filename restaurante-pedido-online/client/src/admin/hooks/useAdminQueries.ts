@@ -50,6 +50,9 @@ export const ADMIN_QUERY_KEYS = {
   buscarCliente: (q: string) => ["admin", "clientes", "buscar", q] as const,
   bridgePatterns: ["admin", "bridge", "patterns"] as const,
   bridgeOrders: ["admin", "bridge", "orders"] as const,
+  botConfig: ["admin", "bot", "config"] as const,
+  botDashboard: ["admin", "bot", "dashboard"] as const,
+  botConversas: ["admin", "bot", "conversas"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -1180,5 +1183,65 @@ export function useBridgeStatus() {
     queryKey: ["admin", "bridge", "status"] as const,
     queryFn: api.getBridgeStatus,
     staleTime: 30_000,
+  });
+}
+
+// ─── Bot WhatsApp Humanoide ─────────────────────────────
+export function useBotConfig() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.botConfig,
+    queryFn: api.getBotConfig,
+    staleTime: 30_000,
+  });
+}
+
+export function useAtualizarBotConfig() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.atualizarBotConfig,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConfig }),
+  });
+}
+
+export function useAtivarBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.ativarBot,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConfig }),
+  });
+}
+
+export function useDesativarBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.desativarBot,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConfig }),
+  });
+}
+
+export function useBotDashboard() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.botDashboard,
+    queryFn: api.getBotDashboard,
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useBotConversas(params?: { status?: string; limit?: number }) {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.botConversas, params],
+    queryFn: () => api.getBotConversas(params),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useBotMensagens(conversaId: number) {
+  return useQuery({
+    queryKey: ["admin", "bot", "mensagens", conversaId] as const,
+    queryFn: () => api.getBotMensagens(conversaId),
+    enabled: !!conversaId,
+    staleTime: 10_000,
   });
 }
