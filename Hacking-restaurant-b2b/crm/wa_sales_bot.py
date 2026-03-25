@@ -410,7 +410,7 @@ def _calcular_delay_audio(duracao_seg: int) -> float:
 
 def _enviar_audio_evolution(numero: str, audio_base64: str, instance: str = "",
                             mimetype: str = "audio/mpeg") -> dict:
-    """Envia áudio via Evolution API (sendMedia). Retorna sucesso/erro."""
+    """Envia áudio como PTT nativo (bolinha verde) via Evolution API sendWhatsAppAudio."""
     url, inst, key = _get_evolution_config()
     if instance:
         inst = instance
@@ -419,20 +419,19 @@ def _enviar_audio_evolution(numero: str, audio_base64: str, instance: str = "",
 
     try:
         resp = httpx.post(
-            f"{url}/message/sendMedia/{inst}",
+            f"{url}/message/sendWhatsAppAudio/{inst}",
             headers={"apikey": key, "Content-Type": "application/json"},
             json={
                 "number": numero,
-                "mediatype": "audio",
-                "media": audio_base64,
-                "mimetype": mimetype,
+                "audio": audio_base64,
+                "encoding": True,
             },
             timeout=30,
         )
         resp.raise_for_status()
         result = resp.json()
         msg_id = result.get("key", {}).get("id", "")
-        log.info(f"Áudio enviado via Evolution: {msg_id}")
+        log.info(f"Áudio PTT enviado via Evolution: {msg_id}")
         return {"sucesso": True, "wa_msg_id": msg_id, "via": "evolution"}
     except Exception as e:
         log.error(f"Erro envio áudio Evolution: {e}")
