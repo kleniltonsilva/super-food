@@ -299,7 +299,7 @@ super-food/
 ### MÓDULO 1 — Pix Online (Woovi/OpenPix) — Sprint 17 — Migration 028
 
 > **Modelo de negócio:**
-> - Woovi cobra **R$0,85 por transação Pix** — Derekh Food **NÃO cobra nada** do restaurante
+> - Taxa de **0,80% sobre o valor** de cada transação Pix — Derekh Food **NÃO cobra nada** do restaurante
 > - Restaurante **NÃO precisa ter conta Woovi** — subconta é 100% virtual, sem login, sem dashboard
 > - Restaurante só precisa informar **chave Pix válida** (já registrada no banco dele)
 > - Saque: **R$1,00 por transferência** | **Isento para saques ≥ R$500** (confirmar valor exato com Woovi)
@@ -363,7 +363,7 @@ super-food/
       > **Receba pagamentos Pix online dos seus clientes!**
       > - A Derekh Food oferece este serviço **100% gratuito** para seu negócio crescer sem barreiras
       > - Utilizamos o sistema de split de pagamentos da Woovi (instituição regulada pelo Banco Central)
-      > - A Woovi cobra **R$0,85 por pagamento Pix** recebido — a Derekh Food não cobra nada
+      > - Taxa de **0,80% sobre o valor** de cada pagamento Pix recebido — a Derekh Food não cobra nada
       > - Saques para sua conta: **R$1,00 por saque** (grátis para saques ≥ R$500)
       > - Você pode configurar saque automático para nunca pagar taxa
       > - Não é necessário criar conta na Woovi — tudo é gerenciado pelo seu painel Derekh
