@@ -811,13 +811,27 @@ Restaurante saca (manual ou automático)
 - Página de vendas com design moderno (Tailwind CSS)
 - Seções: hero, funcionalidades, tipos de restaurante, planos, depoimentos, FAQ, CTA
 - Botão WhatsApp flutuante (SVG) para contato comercial
-- Banner "WhatsApp Humanoide" na seção de planos (add-on R$99,45/mês, grátis no Premium)
+- **Banner "WhatsApp Humanoide"** na seção de planos — redesenhado (26/03/2026):
+  - Visual dark premium (slate-900/emerald-950) com efeitos glow animados
+  - Badge "Exclusivo Derekh Food" com ponto pulsante
+  - Stats rápidos: 22 ações autônomas, 24/7, voz humana, GPS integrado
+  - Botão "Saiba tudo que o Humanoide faz" — expande seção com 4 blocos detalhados:
+    1. Como funciona na prática (3 passos visuais)
+    2. 22 ações autônomas (grid com 12 principais: criar/alterar/cancelar pedido, GPS, rastreio, cupom, etc.)
+    3. Diferenciais exclusivos (6 cards: áudio bidirecional, GPS Mapbox, direto na cozinha, proativo, humanização, perfil cliente)
+    4. Controle total do dono (8 permissões configuráveis)
+  - CTA final: "Nenhum outro sistema de delivery no Brasil oferece isso."
+- **Card "Bridge Printer IA"** (funcionalidades) — redesenhado (26/03/2026):
+  - Título acessível: "Todos os pedidos em um só lugar"
+  - Texto focado no benefício para o restaurante, sem termos técnicos
+  - Botão "Saiba mais" expansível com: problema, solução, IA que aprende, box "Em homologação" (iFood, Diddi Food)
 - **Planos dinâmicos:** features carregadas via `GET /api/public/planos` (com fallback hardcoded)
 - Cada plano exibe features cumulativas do tier, com destaque (bold) para features novas
 - FAQ com 8 perguntas incluindo explicação do WhatsApp Humanoide
 - Responsivo para mobile, tablet e desktop
 - SEO otimizado (meta tags, Open Graph)
 - **Quiz Diagnóstico:** formulário interativo que calcula quanto o restaurante perde sem sistema (por tipo)
+- **Correção ortográfica (26/03/2026):** 23+ correções de acentuação (mês, grátis, período, dúvidas, é, já, número, opção, Relatórios, Promoções, Garçom, Integrações, Domínio, Avançado, Básico)
 
 ### 12.4 Demo WhatsApp Humanoide (Modal Interativo)
 - **Botões de ativação:** 2 locais — banner WhatsApp Humanoide (planos) e FAQ

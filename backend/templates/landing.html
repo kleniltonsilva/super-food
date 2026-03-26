@@ -602,10 +602,46 @@
           <!-- Feature 9 -->
           <div class="card-hover scroll-reveal bg-white rounded-2xl p-8 border border-slate-100 shadow-sm">
             <div class="w-14 h-14 bg-rose-100 rounded-2xl flex items-center justify-center text-2xl mb-5">🖨️</div>
-            <h3 class="text-xl font-bold text-slate-900 mb-3">Bridge Printer IA</h3>
-            <p class="text-slate-500 leading-relaxed">
-              Intercepta cupons do iFood, Rappi e outras plataformas e converte em pedidos automaticamente. Inteligência artificial que aprende seus padrões.
+            <h3 class="text-xl font-bold text-slate-900 mb-3">Todos os pedidos em um só lugar</h3>
+            <p class="text-slate-500 leading-relaxed mb-3">
+              Não importa quantas plataformas você usa para vender — iFood, Diddi Food ou qualquer outra. Com o Bridge Printer IA, todos os seus pedidos aparecem automaticamente no Derekh Food.
             </p>
+            <button onclick="toggleBridgeDetalhes()" class="inline-flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 transition-colors cursor-pointer bg-transparent border-0 p-0">
+              <span id="btnBridgeTexto">Saiba mais</span>
+              <svg id="btnBridgeArrow" class="w-3.5 h-3.5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div id="bridgeDetalhes" class="max-h-0 overflow-hidden transition-all duration-500 ease-in-out">
+              <div class="pt-4 mt-3 border-t border-slate-100 space-y-3">
+                <p class="text-slate-500 text-sm leading-relaxed">
+                  <strong class="text-slate-700">O problema:</strong> muitos restaurantes vendem pelo iFood, Diddi Food e outras plataformas ao mesmo tempo. Cada uma tem seu próprio painel, suas notificações, seus relatórios. O resultado? Confusão, pedidos perdidos e muito trabalho manual.
+                </p>
+                <p class="text-slate-500 text-sm leading-relaxed">
+                  <strong class="text-slate-700">A solução:</strong> o Bridge Printer IA lê automaticamente os pedidos que chegam de qualquer plataforma e os registra no seu painel Derekh Food. Você gerencia tudo — iFood, delivery próprio, WhatsApp — em uma tela só.
+                </p>
+                <p class="text-slate-500 text-sm leading-relaxed">
+                  <strong class="text-slate-700">Inteligência que aprende:</strong> a cada pedido processado, o sistema fica mais inteligente. Ele aprende os padrões de cada plataforma e passa a reconhecer os itens, valores e dados do cliente automaticamente — sem que você precise configurar nada.
+                </p>
+                <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  <p class="text-amber-800 text-xs leading-relaxed">
+                    <strong>Em homologação:</strong> estamos em processo de integração oficial com as principais plataformas do mercado, como iFood e Diddi Food (antiga 99Food). Mas o Bridge Printer IA já funciona hoje — ele consegue capturar pedidos de qualquer sistema que seu restaurante utiliza.
+                  </p>
+                </div>
+                <div class="flex flex-wrap gap-2 pt-1">
+                  <span class="inline-flex items-center gap-1 text-[10px] font-semibold bg-slate-100 text-slate-600 rounded-full px-2.5 py-1">
+                    <svg class="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    Um painel para tudo
+                  </span>
+                  <span class="inline-flex items-center gap-1 text-[10px] font-semibold bg-slate-100 text-slate-600 rounded-full px-2.5 py-1">
+                    <svg class="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    Sem trabalho manual
+                  </span>
+                  <span class="inline-flex items-center gap-1 text-[10px] font-semibold bg-slate-100 text-slate-600 rounded-full px-2.5 py-1">
+                    <svg class="w-3 h-3 text-emerald-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
+                    IA que aprende sozinha
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -806,64 +842,328 @@
 
         <!-- WhatsApp Humanoide Add-on Banner -->
         <div class="mt-12 scroll-reveal">
-          <div class="relative bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500 rounded-3xl p-8 lg:p-10 overflow-hidden shadow-xl shadow-emerald-500/15">
-            <div class="absolute inset-0 opacity-10">
-              <div class="absolute -top-10 -right-10 w-40 h-40 bg-white rounded-full blur-3xl"></div>
-              <div class="absolute -bottom-10 -left-10 w-60 h-60 bg-white rounded-full blur-3xl"></div>
+          <div class="relative bg-gradient-to-br from-slate-900 via-emerald-950 to-slate-900 rounded-3xl overflow-hidden shadow-2xl shadow-emerald-500/20 border border-emerald-500/20">
+            <!-- Efeitos de fundo -->
+            <div class="absolute inset-0">
+              <div class="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-emerald-500/10 rounded-full blur-[100px]"></div>
+              <div class="absolute bottom-0 right-0 w-[400px] h-[200px] bg-teal-500/8 rounded-full blur-[80px]"></div>
+              <div class="absolute top-1/2 left-0 w-2 h-32 bg-gradient-to-b from-transparent via-emerald-400/40 to-transparent"></div>
+              <div class="absolute top-1/2 right-0 w-2 h-32 bg-gradient-to-b from-transparent via-emerald-400/40 to-transparent"></div>
             </div>
-            <div class="relative z-10 flex flex-col lg:flex-row items-center gap-8">
-              <!-- Ícone -->
-              <div class="shrink-0">
-                <div class="w-20 h-20 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center">
-                  <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                </div>
-              </div>
-              <!-- Texto -->
-              <div class="flex-grow text-center lg:text-left">
-                <div class="inline-flex items-center gap-2 bg-white/20 backdrop-blur rounded-full px-4 py-1 mb-3">
-                  <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
-                  <span class="text-xs font-semibold text-white uppercase tracking-wider">Novo — Atendimento inteligente</span>
-                </div>
-                <h3 class="text-2xl lg:text-3xl font-display font-extrabold text-white mb-3">
-                  WhatsApp Humanoide
-                </h3>
-                <p class="text-emerald-100 text-base lg:text-lg leading-relaxed max-w-2xl mb-2">
-                  Atendimento por inteligência artificial que conversa como gente de verdade. Sem menus, sem "aperte 1 ou 2", sem "digite o numero da opcao". <strong class="text-white">Isso ficou no passado.</strong>
-                </p>
-                <p class="text-emerald-100 text-sm leading-relaxed max-w-2xl">
-                  Seu cliente manda uma mensagem no WhatsApp e e atendido de forma natural e humanizada — faz pedido, tira duvidas, recebe acompanhamento. Funciona 24 horas, 7 dias por semana.
-                </p>
-              </div>
-              <!-- Preco + CTA -->
-              <div class="shrink-0 text-center">
-                <div class="bg-white rounded-2xl p-6 shadow-lg min-w-[220px]">
-                  <p class="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Adicione ao seu plano</p>
-                  <div class="mb-1">
-                    <span class="text-3xl font-extrabold text-slate-900">R$99</span>
-                    <span class="text-lg font-bold text-slate-400">,45</span>
-                    <span class="text-sm text-slate-400">/mes</span>
-                  </div>
-                  <p class="text-xs text-emerald-600 font-semibold mb-4">Gratis no plano Premium</p>
-                  <div class="space-y-2">
-                    <div class="flex items-center gap-2 text-xs text-slate-600">
-                      <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                      Atendimento humanizado 24h
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-slate-600">
-                      <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                      Pedidos via conversa natural
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-slate-600">
-                      <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                      Zero menus robotizados
+
+            <div class="relative z-10 p-8 lg:p-12">
+              <!-- Header -->
+              <div class="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
+                <!-- Ícone animado -->
+                <div class="shrink-0">
+                  <div class="relative">
+                    <div class="absolute inset-0 bg-emerald-500/30 rounded-3xl blur-xl animate-pulse"></div>
+                    <div class="relative w-24 h-24 bg-gradient-to-br from-emerald-500 to-teal-400 rounded-3xl flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                      <svg class="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
                     </div>
                   </div>
-                  <button onclick="abrirHumanoideDemo()" class="block w-full mt-4 py-2.5 bg-emerald-500 text-white text-sm font-semibold rounded-xl hover:bg-emerald-600 transition-all cursor-pointer border-0">
-                    Ver Humanoide em Ação
-                  </button>
-                  <a href="#contato" class="block mt-2 py-2 text-emerald-600 text-xs font-semibold rounded-xl hover:text-emerald-800 transition-all text-center">
-                    Quero ativar
-                  </a>
+                </div>
+
+                <!-- Texto principal -->
+                <div class="flex-grow text-center lg:text-left">
+                  <div class="inline-flex items-center gap-2 bg-emerald-500/15 border border-emerald-500/30 rounded-full px-4 py-1.5 mb-4">
+                    <span class="relative flex h-2.5 w-2.5"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400"></span></span>
+                    <span class="text-xs font-bold text-emerald-400 uppercase tracking-widest">Exclusivo Derekh Food</span>
+                  </div>
+                  <h3 class="text-3xl lg:text-4xl font-display font-extrabold text-white mb-4 leading-tight">
+                    WhatsApp Humanoide
+                  </h3>
+                  <p class="text-emerald-100/90 text-lg lg:text-xl leading-relaxed max-w-2xl mb-3">
+                    O primeiro atendente de WhatsApp que <strong class="text-white">conversa de verdade</strong>. Sem menus, sem "aperte 1 ou 2", sem "digite o número da opção". <strong class="text-emerald-300">Isso ficou no passado.</strong>
+                  </p>
+                  <p class="text-slate-400 text-base leading-relaxed max-w-2xl mb-5">
+                    Seu cliente manda uma mensagem e é atendido como se fosse por uma pessoa real — faz pedido, tira dúvidas, rastreia entrega, envia áudio e recebe áudio de volta. <strong class="text-slate-300">24 horas, 7 dias por semana. Sem folga, sem atraso, sem erro.</strong>
+                  </p>
+                  <!-- Stats rápidos -->
+                  <div class="flex flex-wrap gap-4 justify-center lg:justify-start">
+                    <div class="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+                      <span class="text-2xl font-extrabold text-emerald-400">22</span>
+                      <span class="text-xs text-slate-400 leading-tight">ações<br>autônomas</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+                      <span class="text-2xl font-extrabold text-emerald-400">24/7</span>
+                      <span class="text-xs text-slate-400 leading-tight">sem<br>pausas</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+                      <svg class="w-5 h-5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd"/></svg>
+                      <span class="text-xs text-slate-400 leading-tight">voz<br>humana</span>
+                    </div>
+                    <div class="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-4 py-2">
+                      <svg class="w-5 h-5 text-emerald-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+                      <span class="text-xs text-slate-400 leading-tight">GPS<br>integrado</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Preço + CTA -->
+                <div class="shrink-0 text-center">
+                  <div class="bg-white rounded-2xl p-6 shadow-2xl min-w-[230px] border border-slate-100">
+                    <p class="text-xs text-slate-500 uppercase tracking-wider font-semibold mb-1">Adicione ao seu plano</p>
+                    <div class="mb-1">
+                      <span class="text-3xl font-extrabold text-slate-900">R$99</span>
+                      <span class="text-lg font-bold text-slate-400">,45</span>
+                      <span class="text-sm text-slate-400">/mês</span>
+                    </div>
+                    <p class="text-xs text-emerald-600 font-semibold mb-4">Grátis no plano Premium</p>
+                    <div class="space-y-2 mb-4">
+                      <div class="flex items-center gap-2 text-xs text-slate-600">
+                        <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                        Pedidos direto na cozinha
+                      </div>
+                      <div class="flex items-center gap-2 text-xs text-slate-600">
+                        <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                        Entende e envia áudio
+                      </div>
+                      <div class="flex items-center gap-2 text-xs text-slate-600">
+                        <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
+                        Zero menus robotizados
+                      </div>
+                    </div>
+                    <button onclick="abrirHumanoideDemo()" class="block w-full py-2.5 bg-emerald-500 text-white text-sm font-semibold rounded-xl hover:bg-emerald-600 transition-all cursor-pointer border-0 shadow-lg shadow-emerald-500/25">
+                      Ver Humanoide em Ação
+                    </button>
+                    <a href="#contato" class="block mt-2 py-2 text-emerald-600 text-xs font-semibold rounded-xl hover:text-emerald-800 transition-all text-center">
+                      Quero ativar
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Botão Saiba Mais -->
+              <div class="mt-8 text-center">
+                <button onclick="toggleHumanoideDetalhes()" id="btnSaibaMaisHumanoide" class="inline-flex items-center gap-2 px-6 py-3 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm font-semibold rounded-xl hover:bg-emerald-500/20 hover:border-emerald-400/50 transition-all cursor-pointer">
+                  <span id="btnSaibaMaisTexto">Saiba tudo que o Humanoide faz</span>
+                  <svg id="btnSaibaMaisArrow" class="w-4 h-4 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </button>
+              </div>
+
+              <!-- Conteúdo expandido (hidden by default) -->
+              <div id="humanoideDetalhes" class="max-h-0 overflow-hidden transition-all duration-700 ease-in-out">
+                <div class="pt-8 mt-8 border-t border-white/10">
+
+                  <!-- Bloco 1: Como funciona -->
+                  <div class="mb-10">
+                    <h4 class="text-xl font-bold text-white mb-2 text-center">Como funciona na prática</h4>
+                    <p class="text-slate-400 text-sm text-center mb-6 max-w-xl mx-auto">O cliente manda mensagem no WhatsApp do restaurante. A IA entende o que ele quer e executa ações reais no sistema — sem intervenção humana.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div class="bg-white/5 border border-white/10 rounded-2xl p-5 text-center">
+                        <div class="w-12 h-12 bg-emerald-500/15 rounded-xl flex items-center justify-center mx-auto mb-3">
+                          <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                        </div>
+                        <h5 class="text-white font-semibold text-sm mb-1">Cliente manda mensagem</h5>
+                        <p class="text-slate-400 text-xs leading-relaxed">"Quero uma pizza calabresa grande e uma Coca 2L"</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/10 rounded-2xl p-5 text-center">
+                        <div class="w-12 h-12 bg-emerald-500/15 rounded-xl flex items-center justify-center mx-auto mb-3">
+                          <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                        </div>
+                        <h5 class="text-white font-semibold text-sm mb-1">IA entende e age</h5>
+                        <p class="text-slate-400 text-xs leading-relaxed">Busca o cardápio, monta o pedido, calcula taxa de entrega, valida endereço por GPS</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/10 rounded-2xl p-5 text-center">
+                        <div class="w-12 h-12 bg-emerald-500/15 rounded-xl flex items-center justify-center mx-auto mb-3">
+                          <svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                        </div>
+                        <h5 class="text-white font-semibold text-sm mb-1">Pedido vai pra cozinha</h5>
+                        <p class="text-slate-400 text-xs leading-relaxed">Sem aprovação manual. O pedido aparece no KDS da cozinha instantaneamente.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Bloco 2: O que ele faz (grid de capacidades) -->
+                  <div class="mb-10">
+                    <h4 class="text-xl font-bold text-white mb-2 text-center">22 ações que ele executa sozinho</h4>
+                    <p class="text-slate-400 text-sm text-center mb-6 max-w-xl mx-auto">Cada ação é executada em tempo real no sistema. Não é uma resposta enlatada — é uma ação real com resultado imediato.</p>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">🛒</span>
+                        <div><p class="text-white text-xs font-semibold">Criar pedido</p><p class="text-slate-500 text-[10px]">Direto pro KDS da cozinha</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">✏️</span>
+                        <div><p class="text-white text-xs font-semibold">Alterar pedido</p><p class="text-slate-500 text-[10px]">Adicionar, remover ou trocar itens</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">❌</span>
+                        <div><p class="text-white text-xs font-semibold">Cancelar pedido</p><p class="text-slate-500 text-[10px]">Com regras configuráveis</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">🔄</span>
+                        <div><p class="text-white text-xs font-semibold">Repetir pedido</p><p class="text-slate-500 text-[10px]">Repete o último com preço atual</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">📍</span>
+                        <div><p class="text-white text-xs font-semibold">Validar endereço</p><p class="text-slate-500 text-[10px]">GPS Mapbox com cálculo de taxa</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">📦</span>
+                        <div><p class="text-white text-xs font-semibold">Rastrear pedido</p><p class="text-slate-500 text-[10px]">Status + GPS do motoboy</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">🕐</span>
+                        <div><p class="text-white text-xs font-semibold">Tempo de entrega</p><p class="text-slate-500 text-[10px]">Baseado na fila real da cozinha</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">📋</span>
+                        <div><p class="text-white text-xs font-semibold">Consultar cardápio</p><p class="text-slate-500 text-[10px]">Preços, variações e promoções</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">🎟️</span>
+                        <div><p class="text-white text-xs font-semibold">Aplicar cupom</p><p class="text-slate-500 text-[10px]">Valida regras e calcula desconto</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">👤</span>
+                        <div><p class="text-white text-xs font-semibold">Cadastrar cliente</p><p class="text-slate-500 text-[10px]">Nome, telefone e endereço</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">⭐</span>
+                        <div><p class="text-white text-xs font-semibold">Coletar avaliação</p><p class="text-slate-500 text-[10px]">Nota 1-5 pós-entrega automática</p></div>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 flex items-start gap-3">
+                        <span class="text-lg mt-0.5">🚨</span>
+                        <div><p class="text-white text-xs font-semibold">Registrar problema</p><p class="text-slate-500 text-[10px]">Atraso, item errado, qualidade</p></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Bloco 3: Diferenciais técnicos -->
+                  <div class="mb-10">
+                    <h4 class="text-xl font-bold text-white mb-6 text-center">O que nenhum outro sistema faz</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <!-- Voz -->
+                      <div class="bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 rounded-2xl p-6">
+                        <div class="flex items-center gap-3 mb-3">
+                          <div class="w-10 h-10 bg-violet-500/15 rounded-xl flex items-center justify-center">
+                            <svg class="w-5 h-5 text-violet-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clip-rule="evenodd"/></svg>
+                          </div>
+                          <h5 class="text-white font-bold text-sm">Entende e envia áudio</h5>
+                        </div>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                          O cliente manda um áudio de voz e o Humanoide <strong class="text-slate-300">transcreve, entende e responde com outro áudio</strong> — uma voz humana real, não robótica. Se o cliente mandou texto, responde com texto. Se mandou áudio, responde com áudio. <strong class="text-slate-300">Natural como uma conversa entre pessoas.</strong>
+                        </p>
+                      </div>
+                      <!-- GPS -->
+                      <div class="bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 rounded-2xl p-6">
+                        <div class="flex items-center gap-3 mb-3">
+                          <div class="w-10 h-10 bg-blue-500/15 rounded-xl flex items-center justify-center">
+                            <svg class="w-5 h-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"/></svg>
+                          </div>
+                          <h5 class="text-white font-bold text-sm">Validação de endereço por GPS</h5>
+                        </div>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                          Quando o cliente diz o endereço, o Humanoide <strong class="text-slate-300">consulta o GPS via Mapbox em tempo real</strong>. Calcula a distância exata do restaurante, determina a taxa de entrega automaticamente e confirma se o bairro está na área de cobertura. <strong class="text-slate-300">Sem erro humano, sem taxa errada.</strong>
+                        </p>
+                      </div>
+                      <!-- Direto pra cozinha -->
+                      <div class="bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 rounded-2xl p-6">
+                        <div class="flex items-center gap-3 mb-3">
+                          <div class="w-10 h-10 bg-orange-500/15 rounded-xl flex items-center justify-center">
+                            <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                          </div>
+                          <h5 class="text-white font-bold text-sm">Pedido direto na cozinha</h5>
+                        </div>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                          O pedido feito pelo WhatsApp <strong class="text-slate-300">vai direto para o KDS da cozinha</strong> sem nenhuma aprovação manual. O cozinheiro vê a comanda no display no mesmo instante. <strong class="text-slate-300">Zero gargalos. Zero atrasos. Igual a um atendente humano de verdade.</strong>
+                        </p>
+                      </div>
+                      <!-- Proativo -->
+                      <div class="bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 rounded-2xl p-6">
+                        <div class="flex items-center gap-3 mb-3">
+                          <div class="w-10 h-10 bg-amber-500/15 rounded-xl flex items-center justify-center">
+                            <svg class="w-5 h-5 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"/></svg>
+                          </div>
+                          <h5 class="text-white font-bold text-sm">Proativo — avisa antes de reclamar</h5>
+                        </div>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                          Se o pedido está demorando mais que o previsto, o Humanoide <strong class="text-slate-300">detecta automaticamente e envia uma mensagem de desculpas antes do cliente reclamar</strong>. Depois da entrega, pede avaliação. Nota baixa? Registra o problema para o dono resolver.
+                        </p>
+                      </div>
+                      <!-- Humanização -->
+                      <div class="bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 rounded-2xl p-6">
+                        <div class="flex items-center gap-3 mb-3">
+                          <div class="w-10 h-10 bg-pink-500/15 rounded-xl flex items-center justify-center">
+                            <svg class="w-5 h-5 text-pink-400" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"/></svg>
+                          </div>
+                          <h5 class="text-white font-bold text-sm">Indistinguível de um humano</h5>
+                        </div>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                          O Humanoide <strong class="text-slate-300">demora pra digitar como uma pessoa real</strong> — respostas curtas vêm rápido, respostas longas demoram mais. Usa gírias naturais do WhatsApp ("blz", "show", "top"). Máximo 3 linhas por mensagem. <strong class="text-slate-300">Seu cliente não sabe que é uma IA.</strong>
+                        </p>
+                      </div>
+                      <!-- Contexto -->
+                      <div class="bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 rounded-2xl p-6">
+                        <div class="flex items-center gap-3 mb-3">
+                          <div class="w-10 h-10 bg-cyan-500/15 rounded-xl flex items-center justify-center">
+                            <svg class="w-5 h-5 text-cyan-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z"/></svg>
+                          </div>
+                          <h5 class="text-white font-bold text-sm">Conhece cada cliente</h5>
+                        </div>
+                        <p class="text-slate-400 text-sm leading-relaxed">
+                          Sabe o nome, endereço, últimos pedidos, valor total gasto e frequência de cada cliente. Pode dizer <strong class="text-slate-300">"Quer o mesmo de terça? Pizza calabresa grande e Coca 2L, pro mesmo endereço?"</strong> — atendimento personalizado de verdade.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Bloco 4: Controle total do dono -->
+                  <div class="mb-8">
+                    <h4 class="text-xl font-bold text-white mb-2 text-center">Você tem controle total</h4>
+                    <p class="text-slate-400 text-sm text-center mb-6 max-w-xl mx-auto">Configure exatamente o que o Humanoide pode e não pode fazer. Cada restaurante tem suas próprias regras.</p>
+                    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-center">
+                        <p class="text-emerald-400 text-xs font-semibold mb-0.5">Criar pedidos</p>
+                        <p class="text-slate-500 text-[10px]">Ligar/desligar</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-center">
+                        <p class="text-emerald-400 text-xs font-semibold mb-0.5">Cancelar pedidos</p>
+                        <p class="text-slate-500 text-[10px]">Até qual status</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-center">
+                        <p class="text-emerald-400 text-xs font-semibold mb-0.5">Dar desconto</p>
+                        <p class="text-slate-500 text-[10px]">% máximo definido</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-center">
+                        <p class="text-emerald-400 text-xs font-semibold mb-0.5">Voz e tom</p>
+                        <p class="text-slate-500 text-[10px]">6 vozes + personalidade</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-center">
+                        <p class="text-emerald-400 text-xs font-semibold mb-0.5">Nome do atendente</p>
+                        <p class="text-slate-500 text-[10px]">Personalizável</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-center">
+                        <p class="text-emerald-400 text-xs font-semibold mb-0.5">Fora de horário</p>
+                        <p class="text-slate-500 text-[10px]">Informa ou aceita agendamento</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-center">
+                        <p class="text-emerald-400 text-xs font-semibold mb-0.5">Escalar humano</p>
+                        <p class="text-slate-500 text-[10px]">Passa pra você quando precisa</p>
+                      </div>
+                      <div class="bg-white/5 border border-white/8 rounded-xl px-4 py-3 text-center">
+                        <p class="text-emerald-400 text-xs font-semibold mb-0.5">Dashboard</p>
+                        <p class="text-slate-500 text-[10px]">Conversas + métricas em tempo real</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- CTA final dentro do expandido -->
+                  <div class="text-center pt-4 border-t border-white/10">
+                    <p class="text-slate-400 text-sm mb-4">Nenhum outro sistema de delivery no Brasil oferece isso. <strong class="text-white">Nenhum.</strong></p>
+                    <div class="flex flex-col sm:flex-row gap-3 justify-center">
+                      <button onclick="abrirHumanoideDemo()" class="inline-flex items-center justify-center gap-2 px-6 py-3 bg-emerald-500 text-white text-sm font-semibold rounded-xl hover:bg-emerald-600 transition-all cursor-pointer border-0 shadow-lg shadow-emerald-500/25">
+                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
+                        Testar o Humanoide agora
+                      </button>
+                      <a href="#contato" class="inline-flex items-center justify-center gap-2 px-6 py-3 bg-white/10 border border-white/20 text-white text-sm font-semibold rounded-xl hover:bg-white/15 transition-all">
+                        Falar com a equipe
+                      </a>
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </div>
@@ -872,7 +1172,7 @@
 
         <!-- Notes -->
         <div class="mt-10 text-center space-y-2">
-          <p class="text-sm text-slate-500">Todos os planos incluem <strong>periodo de teste gratis</strong>. Cancele quando quiser.</p>
+          <p class="text-sm text-slate-500">Todos os planos incluem <strong>período de teste grátis</strong>. Cancele quando quiser.</p>
           <p class="text-sm text-slate-400">Pagamento via Pix ou Boleto. Desconto especial no plano anual.</p>
         </div>
       </div>
@@ -992,12 +1292,12 @@
           <!-- FAQ 7 - WhatsApp Humanoide -->
           <div class="faq-item border border-slate-200 rounded-2xl overflow-hidden">
             <button class="faq-toggle w-full flex items-center justify-between px-6 py-5 text-left hover:bg-slate-50 transition-colors">
-              <span class="font-semibold text-slate-900">O que e o WhatsApp Humanoide?</span>
+              <span class="font-semibold text-slate-900">O que é o WhatsApp Humanoide?</span>
               <svg class="faq-arrow w-5 h-5 text-slate-400 shrink-0 ml-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
             </button>
             <div class="faq-content">
               <div class="px-6 pb-5 text-slate-500 leading-relaxed">
-                O WhatsApp Humanoide e um atendente inteligente que conversa com seus clientes de forma natural, como se fosse uma pessoa real. Nada de "aperte 1 para pedidos" ou "digite um numero do menu" — isso ficou no passado. O cliente simplesmente manda uma mensagem e e atendido: faz pedido, tira duvidas, recebe acompanhamento da entrega. Funciona 24h, 7 dias por semana. No plano <strong>Premium</strong> ele ja vem incluso gratuitamente. Nos demais planos, pode ser adicionado por <strong>R$99,45/mes</strong>.
+                O WhatsApp Humanoide é um atendente inteligente que conversa com seus clientes de forma natural, como se fosse uma pessoa real. Nada de "aperte 1 para pedidos" ou "digite um número do menu" — isso ficou no passado. O cliente simplesmente manda uma mensagem e é atendido: faz pedido, tira dúvidas, recebe acompanhamento da entrega. Funciona 24h, 7 dias por semana. No plano <strong>Premium</strong> ele já vem incluso gratuitamente. Nos demais planos, pode ser adicionado por <strong>R$99,45/mês</strong>.
                 <button onclick="abrirHumanoideDemo()" class="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white text-xs font-semibold rounded-lg hover:bg-emerald-600 transition-all cursor-pointer border-0">
                   <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"/></svg>
                   Teste agora — veja o humanoide em ação 24/7
@@ -1518,35 +1818,35 @@
           'Dashboard de vendas',
           'Controle de Caixa',
           'Bairros e Taxas de entrega',
-          'Relatorios basicos',
-          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mes</span>',
+          'Relatórios básicos',
+          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mês</span>',
         ],
         'Essencial': [
           '{motoboys}',
-          'Tudo do Basico',
-          '<strong>Cupons e Promocoes</strong>',
+          'Tudo do Básico',
+          '<strong>Cupons e Promoções</strong>',
           '<strong>Programa de Fidelidade</strong>',
           '<strong>Combos</strong>',
-          '<strong>Relatorios avancados</strong>',
+          '<strong>Relatórios avançados</strong>',
           '<strong>Operadores de Caixa</strong>',
           '<strong>KDS Cozinha Digital</strong>',
-          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mes</span>',
+          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mês</span>',
         ],
         'Avançado': [
           '{motoboys}',
           'Tudo do Essencial',
-          '<strong>App Garcom</strong> (mesas)',
-          '<strong>Integracoes iFood</strong>',
+          '<strong>App Garçom</strong> (mesas)',
+          '<strong>Integrações iFood</strong>',
           '<strong>Pix Online</strong> integrado',
-          '<strong>Dominio personalizado</strong>',
-          '<strong>Analytics avancado</strong>',
-          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mes</span>',
+          '<strong>Domínio personalizado</strong>',
+          '<strong>Analytics avançado</strong>',
+          'WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mês</span>',
         ],
         'Premium': [
           'Motoboys <strong>ilimitados</strong>',
-          'Tudo do Avancado',
+          'Tudo do Avançado',
           '<strong>Bridge Printer IA</strong>',
-          '<strong>WhatsApp Humanoide incluso</strong> <span class="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full ml-1">Gratis</span>',
+          '<strong>WhatsApp Humanoide incluso</strong> <span class="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full ml-1">Grátis</span>',
           '<strong>Suporte dedicado</strong>',
         ],
       };
@@ -1574,9 +1874,9 @@
             features.push(label);
           });
           if (plano.nome !== 'Premium') {
-            features.push('WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mes</span>');
+            features.push('WA Humanoide <span class="text-xs text-orange-500 font-semibold">+R$99,45/mês</span>');
           } else {
-            features.push('<strong>WhatsApp Humanoide incluso</strong> <span class="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full ml-1">Gratis</span>');
+            features.push('<strong>WhatsApp Humanoide incluso</strong> <span class="text-xs bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full ml-1">Grátis</span>');
           }
         } else {
           features = (featuresPorPlano[plano.nome] || featuresPorPlano['Básico'])
@@ -2210,6 +2510,38 @@
           <span style="color:#8696a0;font-size:16px">›</span>
         </button>
       `).join('');
+    }
+
+    // ===================== BRIDGE DETALHES TOGGLE =====================
+    function toggleBridgeDetalhes() {
+      const el = document.getElementById('bridgeDetalhes');
+      const btn = document.getElementById('btnBridgeTexto');
+      const arrow = document.getElementById('btnBridgeArrow');
+      if (el.style.maxHeight && el.style.maxHeight !== '0px') {
+        el.style.maxHeight = '0px';
+        btn.textContent = 'Saiba mais';
+        arrow.style.transform = 'rotate(0deg)';
+      } else {
+        el.style.maxHeight = el.scrollHeight + 'px';
+        btn.textContent = 'Fechar';
+        arrow.style.transform = 'rotate(180deg)';
+      }
+    }
+
+    // ===================== HUMANOIDE DETALHES TOGGLE =====================
+    function toggleHumanoideDetalhes() {
+      const el = document.getElementById('humanoideDetalhes');
+      const btn = document.getElementById('btnSaibaMaisTexto');
+      const arrow = document.getElementById('btnSaibaMaisArrow');
+      if (el.style.maxHeight && el.style.maxHeight !== '0px') {
+        el.style.maxHeight = '0px';
+        btn.textContent = 'Saiba tudo que o Humanoide faz';
+        arrow.style.transform = 'rotate(0deg)';
+      } else {
+        el.style.maxHeight = el.scrollHeight + 'px';
+        btn.textContent = 'Fechar detalhes';
+        arrow.style.transform = 'rotate(180deg)';
+      }
     }
 
     // ===================== NAVEGAÇÃO =====================
