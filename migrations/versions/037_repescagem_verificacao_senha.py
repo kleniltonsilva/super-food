@@ -29,57 +29,77 @@ def upgrade() -> None:
     op.execute("ALTER TABLE clientes ADD COLUMN IF NOT EXISTS codigo_reset_expira TIMESTAMP")
     op.execute("ALTER TABLE clientes ADD COLUMN IF NOT EXISTS reset_enviado_em TIMESTAMP")
 
-    # === PROMOCOES: cupom exclusivo por cliente ===
-    op.execute("ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS cliente_id INTEGER")
-    op.execute("ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS tipo_cupom VARCHAR(20) DEFAULT 'global'")
-
-    # FK promocoes.cliente_id -> clientes.id
+    # === PROMOCOES: cupom exclusivo por cliente (só se tabela existe) ===
     op.execute("""
         DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_promocao_cliente') THEN
-                ALTER TABLE promocoes ADD CONSTRAINT fk_promocao_cliente
-                    FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'promocoes') THEN
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS cliente_id INTEGER;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS tipo_cupom VARCHAR(20) DEFAULT 'global';
+
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_promocao_cliente') THEN
+                    ALTER TABLE promocoes ADD CONSTRAINT fk_promocao_cliente
+                        FOREIGN KEY (cliente_id) REFERENCES clientes(id) ON DELETE SET NULL;
+                END IF;
+            END IF;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'promocoes') THEN
+                EXECUTE 'CREATE INDEX IF NOT EXISTS idx_promocao_cliente ON promocoes (cliente_id) WHERE cliente_id IS NOT NULL';
             END IF;
         END $$;
     """)
 
-    # Index parcial para cupons exclusivos
-    op.execute("CREATE INDEX IF NOT EXISTS idx_promocao_cliente ON promocoes (cliente_id) WHERE cliente_id IS NOT NULL")
-
-    # === BOT_REPESCAGENS: campos avançados ===
-    op.execute("ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS cupom_validade_dias INTEGER DEFAULT 7")
-    op.execute("ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS lembrete_enviado BOOLEAN DEFAULT FALSE")
-    op.execute("ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS lembrete_enviado_em TIMESTAMP")
-    op.execute("ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS canal VARCHAR(20) DEFAULT 'whatsapp'")
-    op.execute("ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS email_enviado BOOLEAN DEFAULT FALSE")
-    op.execute("ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS promocao_id INTEGER")
-
-    # FK bot_repescagens.promocao_id -> promocoes.id
+    # === BOT_REPESCAGENS: campos avançados (só se tabela existe) ===
     op.execute("""
         DO $$ BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_repescagem_promocao') THEN
-                ALTER TABLE bot_repescagens ADD CONSTRAINT fk_repescagem_promocao
-                    FOREIGN KEY (promocao_id) REFERENCES promocoes(id) ON DELETE SET NULL;
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'bot_repescagens') THEN
+                ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS cupom_validade_dias INTEGER DEFAULT 7;
+                ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS lembrete_enviado BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS lembrete_enviado_em TIMESTAMP;
+                ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS canal VARCHAR(20) DEFAULT 'whatsapp';
+                ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS email_enviado BOOLEAN DEFAULT FALSE;
+                ALTER TABLE bot_repescagens ADD COLUMN IF NOT EXISTS promocao_id INTEGER;
+
+                IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'promocoes') THEN
+                    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_repescagem_promocao') THEN
+                        ALTER TABLE bot_repescagens ADD CONSTRAINT fk_repescagem_promocao
+                            FOREIGN KEY (promocao_id) REFERENCES promocoes(id) ON DELETE SET NULL;
+                    END IF;
+                END IF;
             END IF;
         END $$;
     """)
 
 
 def downgrade() -> None:
-    # bot_repescagens
-    op.execute("ALTER TABLE bot_repescagens DROP CONSTRAINT IF EXISTS fk_repescagem_promocao")
-    op.execute("ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS promocao_id")
-    op.execute("ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS email_enviado")
-    op.execute("ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS canal")
-    op.execute("ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS lembrete_enviado_em")
-    op.execute("ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS lembrete_enviado")
-    op.execute("ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS cupom_validade_dias")
+    # bot_repescagens (condicional)
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'bot_repescagens') THEN
+                ALTER TABLE bot_repescagens DROP CONSTRAINT IF EXISTS fk_repescagem_promocao;
+                ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS promocao_id;
+                ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS email_enviado;
+                ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS canal;
+                ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS lembrete_enviado_em;
+                ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS lembrete_enviado;
+                ALTER TABLE bot_repescagens DROP COLUMN IF EXISTS cupom_validade_dias;
+            END IF;
+        END $$;
+    """)
 
-    # promocoes
+    # promocoes (condicional)
     op.execute("DROP INDEX IF EXISTS idx_promocao_cliente")
-    op.execute("ALTER TABLE promocoes DROP CONSTRAINT IF EXISTS fk_promocao_cliente")
-    op.execute("ALTER TABLE promocoes DROP COLUMN IF EXISTS tipo_cupom")
-    op.execute("ALTER TABLE promocoes DROP COLUMN IF EXISTS cliente_id")
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'promocoes') THEN
+                ALTER TABLE promocoes DROP CONSTRAINT IF EXISTS fk_promocao_cliente;
+                ALTER TABLE promocoes DROP COLUMN IF EXISTS tipo_cupom;
+                ALTER TABLE promocoes DROP COLUMN IF EXISTS cliente_id;
+            END IF;
+        END $$;
+    """)
 
     # clientes
     op.execute("ALTER TABLE clientes DROP COLUMN IF EXISTS reset_enviado_em")
