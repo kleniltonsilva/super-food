@@ -21,7 +21,7 @@ export const FEATURE_MIN_TIER: Record<string, number> = {
   pix_online: 3,
   dominio_personalizado: 3,
   analytics_avancado: 3,
-  bridge_printer: 4,
+  bridge_printer: 1,
   bot_whatsapp: 4,
   suporte_dedicado: 4,
 };

@@ -197,12 +197,20 @@ class RestauranteDetalhe(BaseModel):
         from_attributes = True
 
 
+class PlanoFeatureInfo(BaseModel):
+    key: str
+    label: str
+    new: bool = False
+
+
 class PlanoInfo(BaseModel):
     nome: str
     valor: float
     motoboys: int
     descricao: str
     total_assinantes: int = 0
+    tier: int = 1
+    features: list[PlanoFeatureInfo] = []
 
 
 class PlanoUpdateRequest(BaseModel):
@@ -695,7 +703,9 @@ def listar_planos(
     current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
     db: Session = Depends(database.get_db)
 ):
-    """Lista planos disponíveis com contagem de assinantes."""
+    """Lista planos disponíveis com contagem de assinantes e features."""
+    from ..feature_flags import get_tier, get_features_list_for_plano, get_new_features_for_plano, FEATURE_LABELS
+
     planos = _get_planos_db(db)
     resultado = []
     for nome, info in planos.items():
@@ -704,12 +714,21 @@ def listar_planos(
             models.Restaurante.ativo == True
         ).scalar() or 0
 
+        tier = get_tier(nome)
+        all_features = get_features_list_for_plano(nome)
+        new_features = get_new_features_for_plano(nome)
+
         resultado.append(PlanoInfo(
             nome=nome,
             valor=info["valor"],
             motoboys=info["motoboys"],
             descricao=info["descricao"],
             total_assinantes=total,
+            tier=tier,
+            features=[
+                PlanoFeatureInfo(key=f, label=FEATURE_LABELS.get(f, f), new=f in new_features)
+                for f in all_features
+            ],
         ))
 
     return resultado

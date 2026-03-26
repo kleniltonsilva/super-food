@@ -81,15 +81,17 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 26/03/2026 (tarde)
+- **Última sessão:** 26/03/2026 (noite)
 - **Migrations em produção:** 001-034 (última: 034_feature_flags)
 - **Migrations implementadas (aguardando deploy):** 035 (Bot WhatsApp), 036 (Bot WhatsApp V2), 037 (Repescagem + Verificação Email + Reset Senha)
+- **Security Hardening:** ✅ 8 vulnerabilidades corrigidas, 36 testes, aguardando deploy
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
 - **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
 - **Repescagem + Verificação Email + Reset Senha:** Migration 037, 25 arquivos, cupons exclusivos VOLTA-{NOME}-{código}
+- **Auditoria Bot WhatsApp:** ✅ 5 fases (cadeado, segurança, WebSocket, UX handoff com senha, cache)
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** Módulos 1,5 (Pix → Sales), domínio próprio, configurar Resend prod, deploy migrations 035-037
+- **Pendente:** Módulos 1,5 (Pix → Sales), domínio próprio, configurar Resend prod, deploy migrations 035-037, deploy security hardening + EVOLUTION_WEBHOOK_SECRET
 
 ---
 
@@ -269,7 +271,7 @@ super-food/
 | 14 | Refatoração integrações (credenciais plataforma) | ✅ 16/03 |
 | 15 | Billing/Assinatura Asaas (PIX+Boleto) | ✅ 16/03 |
 | 15.1 | Operadores de Caixa (autenticação abrir/fechar) | ✅ 18/03 |
-| 16 | WhatsApp Humanoide — Bot IA (Premium incluso, demais +R$99,45/mês) | ✅ 25/03 (migration 035, 15 function calls, frontend admin+super) |
+| 16 | WhatsApp Humanoide — Bot IA (Premium incluso, demais +R$99,45/mês) | ✅ 25/03 (migration 035, 22 function calls, frontend admin+super, auditoria 26/03: handoff senha, WebSocket 5 workers, segurança whitelist) |
 | 17 | Pix Online Woovi/OpenPix | ⏳ Planejado |
 | 18 | KDS / Comanda Digital | ✅ 21/03 (deploy 24/03) |
 | 19 | App Garçom (Atendimento Mesa) | ✅ 22/03 (deploy 24/03) |
@@ -278,6 +280,7 @@ super-food/
 | 22 | Feature Flags por Plano | ✅ 24/03 (22 features, 38 endpoints, 4 tiers) |
 | 23 | Overhaul Criação Restaurante | ✅ 24/03 (CNPJ lookup, validação DDD, email Resend, onboarding) |
 | 24 | Repescagem Avançada + Verificação Email + Reset Senha | ✅ 26/03 (migration 037, 25 arquivos, cupons exclusivos, OTP email) |
+| 25 | Security Hardening | ✅ 26/03 (8 vulnerabilidades, security headers, CORS, webhook auth, 36 testes) |
 
 ---
 

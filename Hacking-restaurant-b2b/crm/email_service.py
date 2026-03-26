@@ -463,6 +463,141 @@ def processar_webhook_resend(payload: dict) -> dict:
     return {"processado": event_type, "lead_id": lead_id}
 
 
+def processar_email_inbound(payload: dict) -> dict:
+    """Processa email recebido (Resend inbound webhook).
+    Categoriza, cria/atualiza thread, salva na inbox."""
+    from crm.database import (
+        auto_categorizar_email, buscar_thread_por_email_e_assunto,
+        criar_email_thread, criar_email_inbox, categorizar_thread,
+    )
+
+    data = payload.get("data", {})
+    de_email = ""
+    de_nome = ""
+
+    # Resend inbound: data.from pode ser string "Nome <email>" ou objeto
+    from_field = data.get("from", "")
+    if isinstance(from_field, str):
+        # Parsear "Nome <email@x.com>"
+        import re
+        match = re.match(r'^(.+?)\s*<(.+?)>$', from_field)
+        if match:
+            de_nome = match.group(1).strip().strip('"')
+            de_email = match.group(2).strip()
+        else:
+            de_email = from_field.strip()
+    elif isinstance(from_field, dict):
+        de_email = from_field.get("email", "")
+        de_nome = from_field.get("name", "")
+
+    if not de_email:
+        return {"ignorado": "sem remetente"}
+
+    # Dados do email
+    para_email = ""
+    to_field = data.get("to", [])
+    if isinstance(to_field, list) and to_field:
+        para_email = to_field[0] if isinstance(to_field[0], str) else to_field[0].get("email", "")
+    elif isinstance(to_field, str):
+        para_email = to_field
+
+    assunto = data.get("subject", "(sem assunto)")
+    corpo_html = data.get("html", "")
+    corpo_texto = data.get("text", "")
+    resend_email_id = data.get("email_id", "") or data.get("id", "")
+    anexos = data.get("attachments", [])
+
+    # Auto-categorizar
+    categoria, lead_id = auto_categorizar_email(de_email)
+
+    # Buscar thread existente (agrupar por email + assunto)
+    thread = buscar_thread_por_email_e_assunto(de_email, assunto)
+
+    if thread:
+        thread_id = thread["id"]
+        # Se thread existente tinha resposta, upgrade para urgente
+        if categoria == "urgente" and thread["categoria"] != "urgente":
+            categorizar_thread(thread_id, "urgente")
+    else:
+        # Criar nova thread
+        thread_id = criar_email_thread(
+            assunto=assunto,
+            email_remetente=de_email,
+            nome_remetente=de_nome,
+            categoria=categoria,
+            lead_id=lead_id,
+        )
+
+    # Salvar email na inbox
+    msg_id = criar_email_inbox(
+        thread_id=thread_id,
+        direcao="recebido",
+        de_email=de_email,
+        de_nome=de_nome,
+        para_email=para_email,
+        assunto=assunto,
+        corpo_html=corpo_html,
+        corpo_texto=corpo_texto,
+        resend_email_id=resend_email_id,
+        anexos_json=anexos if anexos else None,
+    )
+
+    return {
+        "processado": True,
+        "thread_id": thread_id,
+        "msg_id": msg_id,
+        "categoria": categoria,
+        "lead_id": lead_id,
+        "de": de_email,
+    }
+
+
+def responder_email(thread_id: int, corpo_html: str, corpo_texto: str = None) -> dict:
+    """Responde a um email numa thread existente via Resend."""
+    from crm.database import obter_email_thread, criar_email_inbox, categorizar_thread
+
+    thread = obter_email_thread(thread_id)
+    if not thread:
+        return {"erro": "Thread não encontrada"}
+
+    destinatario = thread["email_remetente"]
+    assunto_original = thread["assunto"]
+    assunto = f"Re: {assunto_original}" if not assunto_original.lower().startswith("re:") else assunto_original
+
+    try:
+        resultado = resend.Emails.send({
+            "from": f"{FROM_NAME} <{FROM_EMAIL}>",
+            "to": [destinatario],
+            "subject": assunto,
+            "html": corpo_html,
+            "text": corpo_texto or "",
+        })
+
+        message_id = resultado.get("id", "")
+
+        # Salvar na inbox como enviado
+        criar_email_inbox(
+            thread_id=thread_id,
+            direcao="enviado",
+            de_email=FROM_EMAIL,
+            de_nome=FROM_NAME,
+            para_email=destinatario,
+            assunto=assunto,
+            corpo_html=corpo_html,
+            corpo_texto=corpo_texto,
+            resend_email_id=message_id,
+        )
+
+        # Upgrade categoria para urgente (já tem conversa bidirecional)
+        if thread.get("categoria") != "urgente":
+            categorizar_thread(thread_id, "urgente")
+
+        return {"sucesso": True, "message_id": message_id}
+
+    except Exception as e:
+        return {"erro": str(e)}
+
+
 def preview_template(template_id: int, lead_id: int) -> dict:
     """Preview de template com variáveis de um lead real."""
     lead = obter_lead(lead_id)

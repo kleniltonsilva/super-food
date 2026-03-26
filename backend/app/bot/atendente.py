@@ -117,6 +117,7 @@ async def processar_webhook(payload: dict) -> dict:
         return {"status": "dedup"}
     _processed_msg_ids[msg_id] = time.time()
     _limpar_cache_dedup()
+    _limpar_cache_locks()
 
     # Extrair número — WhatsApp pode usar @lid (Linked ID) em vez de @s.whatsapp.net
     if "@lid" in remote_jid:
@@ -189,6 +190,22 @@ async def _processar_mensagem(
 
         # 3. Buscar ou criar conversa
         conversa = _get_or_create_conversa(db, restaurante_id, numero)
+
+        # 3.5 Se conversa em handoff (admin controlando), NÃO responder — apenas registrar msg
+        if conversa.status == "handoff":
+            msg_recebida = models.BotMensagem(
+                conversa_id=conversa.id,
+                direcao="recebida",
+                tipo="audio" if audio_msg else "texto",
+                conteudo=texto,
+                duracao_audio_seg=audio_msg.get("seconds") if audio_msg else None,
+            )
+            db.add(msg_recebida)
+            conversa.msgs_recebidas = (conversa.msgs_recebidas or 0) + 1
+            conversa.atualizado_em = datetime.utcnow()
+            db.commit()
+            logger.info(f"Conversa {conversa.id} em handoff — msg registrada, bot não responde")
+            return
 
         # 4. Registrar mensagem recebida
         msg_recebida = models.BotMensagem(
@@ -454,3 +471,11 @@ def _limpar_cache_dedup():
     if len(_processed_msg_ids) > _DEDUP_MAX:
         agora = time.time()
         _processed_msg_ids = {k: v for k, v in _processed_msg_ids.items() if agora - v < 300}
+
+
+def _limpar_cache_locks():
+    """Limpa locks expirados do anti-spam (evita crescimento indefinido)."""
+    global _processing_locks
+    if len(_processing_locks) > 100:
+        agora = time.time()
+        _processing_locks = {k: v for k, v in _processing_locks.items() if agora - v < _LOCK_TIMEOUT}

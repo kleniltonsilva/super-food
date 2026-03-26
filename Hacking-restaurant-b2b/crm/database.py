@@ -2038,6 +2038,273 @@ def concorrentes_do_lead(lead_id: int, limite: int = 5) -> list:
         return [dict(r) for r in cur.fetchall()]
 
 
+# ============================================================
+# EMAIL INBOX — Threads + Mensagens recebidas/enviadas
+# ============================================================
+
+def auto_categorizar_email(email_remetente: str) -> tuple:
+    """Categoriza email automaticamente.
+    Retorna (categoria, lead_id).
+    - urgente: já tem thread com resposta enviada
+    - cliente: email existe na tabela leads
+    - desconhecido: sem referência
+    """
+    email_lower = email_remetente.lower().strip()
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        # 1. Verificar se já tem thread com resposta nossa (urgente)
+        cur.execute("""
+            SELECT t.id, t.lead_id FROM email_threads t
+            WHERE LOWER(t.email_remetente) = %s
+            AND EXISTS (
+                SELECT 1 FROM emails_inbox ei
+                WHERE ei.thread_id = t.id AND ei.direcao = 'enviado'
+            )
+            ORDER BY t.ultima_mensagem_at DESC LIMIT 1
+        """, (email_lower,))
+        row = cur.fetchone()
+        if row:
+            return ("urgente", row.get("lead_id"))
+
+        # 2. Verificar se é um lead conhecido (cliente)
+        cur.execute("""
+            SELECT id FROM leads
+            WHERE LOWER(email) = %s
+               OR LOWER(email_proprietario) = %s
+            LIMIT 1
+        """, (email_lower, email_lower))
+        lead = cur.fetchone()
+        if lead:
+            return ("cliente", lead["id"])
+
+        # 3. Desconhecido
+        return ("desconhecido", None)
+
+
+def buscar_thread_por_email_e_assunto(email_remetente: str, assunto: str) -> Optional[dict]:
+    """Busca thread existente pelo remetente + assunto similar (para agrupar)."""
+    email_lower = email_remetente.lower().strip()
+    # Normalizar assunto (remover Re:, Fwd:, etc.)
+    assunto_limpo = assunto or ""
+    for prefix in ["re:", "fwd:", "fw:", "enc:", "res:"]:
+        while assunto_limpo.lower().startswith(prefix):
+            assunto_limpo = assunto_limpo[len(prefix):].strip()
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT * FROM email_threads
+            WHERE LOWER(email_remetente) = %s
+            AND (
+                assunto = %s
+                OR assunto = %s
+                OR assunto ILIKE %s
+            )
+            AND arquivado = FALSE
+            ORDER BY ultima_mensagem_at DESC LIMIT 1
+        """, (email_lower, assunto, assunto_limpo, f"%{assunto_limpo}%"))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def criar_email_thread(assunto: str, email_remetente: str,
+                       nome_remetente: str = None,
+                       categoria: str = "desconhecido",
+                       lead_id: int = None) -> int:
+    """Cria nova thread de email. Retorna ID."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO email_threads
+                (assunto, email_remetente, nome_remetente, categoria, lead_id)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        """, (assunto, email_remetente.lower().strip(),
+              nome_remetente, categoria, lead_id))
+        new_id = cur.fetchone()["id"]
+        conn.commit()
+        return new_id
+
+
+def criar_email_inbox(thread_id: int, direcao: str,
+                      de_email: str, de_nome: str,
+                      para_email: str, assunto: str,
+                      corpo_html: str = None, corpo_texto: str = None,
+                      resend_email_id: str = None,
+                      anexos_json: list = None) -> int:
+    """Insere email na inbox (recebido ou enviado). Atualiza thread."""
+    tem_anexos = bool(anexos_json)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO emails_inbox
+                (thread_id, direcao, de_email, de_nome, para_email,
+                 assunto, corpo_html, corpo_texto, resend_email_id,
+                 tem_anexos, anexos_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (thread_id, direcao, de_email, de_nome, para_email,
+              assunto, corpo_html, corpo_texto, resend_email_id,
+              tem_anexos, json.dumps(anexos_json) if anexos_json else None))
+        msg_id = cur.fetchone()["id"]
+
+        # Atualizar thread
+        cur.execute("""
+            UPDATE email_threads
+            SET ultima_mensagem_at = NOW(),
+                total_mensagens = total_mensagens + 1,
+                lido = CASE WHEN %s = 'recebido' THEN FALSE ELSE lido END
+            WHERE id = %s
+        """, (direcao, thread_id))
+        conn.commit()
+        return msg_id
+
+
+def listar_email_threads(categoria: str = None, lido: bool = None,
+                         arquivado: bool = False, busca: str = None,
+                         limite: int = 50, offset: int = 0) -> list:
+    """Lista threads de email com filtros."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        where = ["t.arquivado = %s"]
+        params = [arquivado]
+
+        if categoria:
+            where.append("t.categoria = %s")
+            params.append(categoria)
+        if lido is not None:
+            where.append("t.lido = %s")
+            params.append(lido)
+        if busca:
+            where.append("""
+                (t.assunto ILIKE %s
+                 OR t.email_remetente ILIKE %s
+                 OR t.nome_remetente ILIKE %s)
+            """)
+            termo = f"%{busca}%"
+            params.extend([termo, termo, termo])
+
+        where_clause = " AND ".join(where)
+        params.extend([limite, offset])
+
+        cur.execute(f"""
+            SELECT t.*,
+                   l.nome_fantasia as lead_nome,
+                   l.razao_social as lead_razao,
+                   (SELECT corpo_texto FROM emails_inbox
+                    WHERE thread_id = t.id
+                    ORDER BY created_at DESC LIMIT 1) as preview
+            FROM email_threads t
+            LEFT JOIN leads l ON t.lead_id = l.id
+            WHERE {where_clause}
+            ORDER BY t.starred DESC, t.ultima_mensagem_at DESC
+            LIMIT %s OFFSET %s
+        """, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
+def obter_email_thread(thread_id: int) -> Optional[dict]:
+    """Retorna thread com todas as mensagens."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT t.*,
+                   l.nome_fantasia as lead_nome,
+                   l.razao_social as lead_razao,
+                   l.cidade as lead_cidade,
+                   l.uf as lead_uf,
+                   l.lead_score,
+                   l.telefone1 as lead_telefone
+            FROM email_threads t
+            LEFT JOIN leads l ON t.lead_id = l.id
+            WHERE t.id = %s
+        """, (thread_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        thread = dict(row)
+
+        cur.execute("""
+            SELECT * FROM emails_inbox
+            WHERE thread_id = %s
+            ORDER BY created_at ASC
+        """, (thread_id,))
+        thread["mensagens"] = [dict(r) for r in cur.fetchall()]
+        return thread
+
+
+def marcar_thread_lida(thread_id: int) -> bool:
+    """Marca thread como lida."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE email_threads SET lido = TRUE WHERE id = %s RETURNING id
+        """, (thread_id,))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def marcar_thread_starred(thread_id: int, starred: bool = True) -> bool:
+    """Marca/desmarca thread como favorita."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE email_threads SET starred = %s WHERE id = %s RETURNING id
+        """, (starred, thread_id))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def arquivar_thread(thread_id: int) -> bool:
+    """Arquiva thread."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE email_threads SET arquivado = TRUE WHERE id = %s RETURNING id
+        """, (thread_id,))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def categorizar_thread(thread_id: int, categoria: str) -> bool:
+    """Altera categoria de uma thread."""
+    if categoria not in ("urgente", "cliente", "desconhecido"):
+        return False
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE email_threads SET categoria = %s WHERE id = %s RETURNING id
+        """, (categoria, thread_id))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def contar_threads_por_categoria() -> dict:
+    """Conta threads não-lidas por categoria."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT categoria,
+                   COUNT(*) as total,
+                   COUNT(*) FILTER (WHERE lido = FALSE) as nao_lidas
+            FROM email_threads
+            WHERE arquivado = FALSE
+            GROUP BY categoria
+        """)
+        result = {"urgente": {"total": 0, "nao_lidas": 0},
+                  "cliente": {"total": 0, "nao_lidas": 0},
+                  "desconhecido": {"total": 0, "nao_lidas": 0}}
+        for row in cur.fetchall():
+            cat = row["categoria"]
+            if cat in result:
+                result[cat] = {"total": row["total"], "nao_lidas": row["nao_lidas"]}
+        return result
+
 
 # ============================================================
 # QUIZ DIAGNÓSTICO — INBOUND LANDING PAGE

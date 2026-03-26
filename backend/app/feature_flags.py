@@ -51,8 +51,10 @@ FEATURE_TIERS: dict[str, int] = {
     "dominio_personalizado": 3,
     "analytics_avancado": 3,
 
+    # Tier 1 — Básico (operacional — incluso em todos os planos conforme termos de uso)
+    "bridge_printer": 1,
+
     # Tier 4 — Premium
-    "bridge_printer": 4,
     "bot_whatsapp": 4,
     "suporte_dedicado": 4,
 }

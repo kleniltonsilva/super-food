@@ -170,6 +170,7 @@ SOBRE A DEREKH FOOD:
 - Sistema completo de delivery próprio para restaurantes (sem comissão, sem iFood)
 - 7 apps integrados: Painel Admin, App Motoboy, KDS Cozinha, App Garçom, Site Cliente, Pix Online, WhatsApp Humanoide
 - Planos: Básico R$169,90/mês · Essencial R$279,90/mês · Avançado R$329,90/mês · Premium R$527/mês
+- Bridge Printer IA: inclusa em todos os planos (intercepta pedidos iFood/Rappi direto da impressora)
 - WhatsApp Humanoide: incluso no Premium, nos demais planos +R$99,45/mês (atendimento IA 24h, conversa natural sem menus robotizados)
 - Setup em 48h, sem taxa de adesão, PWA (sem app store)
 - Diferencial: 0% comissão vs 27% do iFood

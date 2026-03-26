@@ -54,6 +54,11 @@ from crm.database import (
     listar_outreach_regras_todas, criar_outreach_regra,
     atualizar_outreach_regra, deletar_outreach_regra,
     leads_novos_sem_outreach,
+    # Email Inbox
+    listar_email_threads, obter_email_thread,
+    marcar_thread_lida, marcar_thread_starred,
+    arquivar_thread, categorizar_thread,
+    contar_threads_por_categoria,
 )
 from crm.models import (
     PIPELINE_STATUS, PIPELINE_LABELS, PIPELINE_CORES,
@@ -82,10 +87,11 @@ _active_sessions: dict[str, bool] = {}
 # Rotas públicas (sem autenticação)
 PUBLIC_PATHS = {
     "/login",
-    "/tracking/",      # Pixel/clique/unsub (prefixo)
-    "/webhooks/",      # Webhooks Resend (prefixo)
+    "/tracking/",         # Pixel/clique/unsub (prefixo)
+    "/webhooks/",         # Webhooks Resend outbound + inbound (prefixo)
     "/wa-sales/webhook",  # Webhook WhatsApp (prefixo)
     "/api/leads/quiz",    # Quiz diagnóstico landing page (público)
+    "/api/health/",       # Health checks (público)
 }
 
 
@@ -194,7 +200,13 @@ templates.env.globals["SEGMENTO_CORES"] = SEGMENTO_CORES
 async def startup():
     init_pool()
     init_schema()
-    init_pg()  # Pool PG para scanner
+    # Pool PG para scanner — com tratamento de erro
+    try:
+        init_pg()
+        print("[STARTUP] Pool PostgreSQL (scanner) inicializado")
+    except Exception as e:
+        print(f"[STARTUP] AVISO: Pool PostgreSQL (scanner) falhou: {e}")
+        print("[STARTUP] Scanner ficará indisponível até corrigir DATABASE_URL")
     # Workers em background
     import asyncio
     asyncio.create_task(_outreach_loop())
@@ -755,10 +767,141 @@ async def whatsapp_enviar(lead_id: int, template: str = "primeiro_contato", tel:
 
 @app.post("/webhooks/resend")
 async def webhook_resend(request: Request):
-    from crm.email_service import processar_webhook_resend
+    """Webhook Resend — outbound (opened/clicked/bounced) + inbound (email.received)."""
+    from crm.email_service import processar_webhook_resend, processar_email_inbound
     payload = await request.json()
+    event_type = payload.get("type", "")
+
+    # Inbound email
+    if event_type == "email.received":
+        resultado = processar_email_inbound(payload)
+        return JSONResponse(resultado)
+
+    # Outbound tracking (opened, clicked, bounced, complained)
     resultado = processar_webhook_resend(payload)
     return JSONResponse(resultado)
+
+
+# ============================================================
+# EMAIL INBOX — Caixa de Entrada
+# ============================================================
+
+@app.get("/emails", response_class=HTMLResponse)
+async def emails_inbox_page(request: Request,
+                            categoria: str = "",
+                            busca: str = "",
+                            pagina: int = 1):
+    """Página da caixa de entrada de emails."""
+    limite = 30
+    offset = (pagina - 1) * limite
+
+    threads = listar_email_threads(
+        categoria=categoria or None,
+        busca=busca or None,
+        limite=limite,
+        offset=offset,
+    )
+    contadores = contar_threads_por_categoria()
+
+    return templates.TemplateResponse("emails_inbox.html", {
+        "request": request,
+        "pagina_ativa": "emails",
+        "threads": threads,
+        "contadores": contadores,
+        "categoria_ativa": categoria,
+        "busca": busca,
+        "pagina": pagina,
+    })
+
+
+@app.get("/api/emails/threads")
+async def api_listar_threads(categoria: str = "", lido: str = "",
+                              busca: str = "",
+                              limite: int = 50, offset: int = 0):
+    """API: listar threads de email."""
+    threads = listar_email_threads(
+        categoria=categoria or None,
+        lido=True if lido == "true" else (False if lido == "false" else None),
+        busca=busca or None,
+        limite=limite,
+        offset=offset,
+    )
+    contadores = contar_threads_por_categoria()
+    return JSONResponse(json.loads(json.dumps({
+        "threads": threads,
+        "contadores": contadores,
+    }, default=str)))
+
+
+@app.get("/api/emails/thread/{thread_id}")
+async def api_obter_thread(thread_id: int):
+    """API: obter thread com mensagens."""
+    thread = obter_email_thread(thread_id)
+    if not thread:
+        return JSONResponse({"erro": "Thread não encontrada"}, status_code=404)
+    # Marcar como lida
+    marcar_thread_lida(thread_id)
+    return JSONResponse(json.loads(json.dumps(thread, default=str)))
+
+
+@app.post("/api/emails/thread/{thread_id}/responder")
+async def api_responder_email(thread_id: int, request: Request):
+    """Responder email de uma thread."""
+    from crm.email_service import responder_email
+    body = await request.json()
+    corpo_html = body.get("corpo_html", "").strip()
+    corpo_texto = body.get("corpo_texto", "").strip()
+
+    if not corpo_html and not corpo_texto:
+        return JSONResponse({"erro": "Corpo da resposta vazio"}, status_code=400)
+
+    # Se só tem texto, converter para HTML básico
+    if not corpo_html and corpo_texto:
+        corpo_html = corpo_texto.replace("\n", "<br>")
+
+    resultado = responder_email(thread_id, corpo_html, corpo_texto)
+    if resultado.get("erro"):
+        return JSONResponse(resultado, status_code=400)
+    return JSONResponse(resultado)
+
+
+@app.post("/api/emails/thread/{thread_id}/lido")
+async def api_marcar_lido(thread_id: int):
+    """Marcar thread como lida."""
+    marcar_thread_lida(thread_id)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/emails/thread/{thread_id}/starred")
+async def api_toggle_starred(thread_id: int, request: Request):
+    """Toggle favorito da thread."""
+    body = await request.json()
+    starred = body.get("starred", True)
+    marcar_thread_starred(thread_id, starred)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/emails/thread/{thread_id}/arquivar")
+async def api_arquivar_thread(thread_id: int):
+    """Arquivar thread."""
+    arquivar_thread(thread_id)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/emails/thread/{thread_id}/categorizar")
+async def api_categorizar_thread(thread_id: int, request: Request):
+    """Alterar categoria de uma thread."""
+    body = await request.json()
+    categoria = body.get("categoria", "")
+    if categorizar_thread(thread_id, categoria):
+        return JSONResponse({"ok": True})
+    return JSONResponse({"erro": "Categoria inválida"}, status_code=400)
+
+
+@app.get("/api/emails/contadores")
+async def api_contadores_email():
+    """Contadores por categoria (para badges no sidebar)."""
+    return JSONResponse(contar_threads_por_categoria())
 
 
 # ============================================================
@@ -847,13 +990,47 @@ async def api_salvar_configuracoes(
 # SCANNER - VARREDURA DE LEADS
 # ============================================================
 
+@app.get("/api/health/db")
+async def health_db():
+    """Health check do PostgreSQL (scanner)."""
+    from db_pg import _pool, get_conn
+    if _pool is None:
+        return JSONResponse({"status": "error", "msg": "Pool PostgreSQL não inicializado"}, status_code=503)
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT 1 as ok")
+            row = cur.fetchone()
+            return JSONResponse({"status": "ok", "pool_size": _pool.minconn})
+    except Exception as e:
+        return JSONResponse({"status": "error", "msg": str(e)}, status_code=503)
+
+
 @app.get("/scanner", response_class=HTMLResponse)
 async def scanner_page(request: Request):
     """Pagina principal do scanner de leads."""
-    init_pg()
-    cidades = stats_cidades_scanner()
-    jobs = listar_scan_jobs(20)
-    scan_ativo = existe_scan_ativo()
+    try:
+        init_pg()
+    except Exception as e:
+        print(f"[SCANNER] init_pg falhou: {e}")
+
+    try:
+        cidades = stats_cidades_scanner()
+    except Exception as e:
+        print(f"[SCANNER] stats_cidades_scanner falhou: {e}")
+        cidades = []
+
+    try:
+        jobs = listar_scan_jobs(20)
+    except Exception as e:
+        print(f"[SCANNER] listar_scan_jobs falhou: {e}")
+        jobs = []
+
+    try:
+        scan_ativo = existe_scan_ativo()
+    except Exception as e:
+        print(f"[SCANNER] existe_scan_ativo falhou: {e}")
+        scan_ativo = None
 
     return templates.TemplateResponse("scanner.html", {
         "request": request,
@@ -872,7 +1049,21 @@ async def api_start_scan(
     headless: str = Form("on"),
 ):
     """Inicia um novo scan."""
-    init_pg()
+    try:
+        init_pg()
+    except Exception as e:
+        return JSONResponse(
+            {"erro": f"PostgreSQL não disponível: {e}. Verifique DATABASE_URL."},
+            status_code=503
+        )
+
+    # Verificar pool
+    from db_pg import _pool
+    if _pool is None:
+        return JSONResponse(
+            {"erro": "Pool PostgreSQL não inicializado. Verifique DATABASE_URL e conectividade."},
+            status_code=503
+        )
 
     # Parse cidades: "SAO PAULO|SP,RIO DE JANEIRO|RJ"
     cidades_list = []
@@ -902,6 +1093,7 @@ async def api_start_scan(
 
     # Criar job
     job_id = criar_scan_job(cidades_list, etapas_list, is_headless)
+    print(f"[SCANNER] Job #{job_id} criado: {len(cidades_list)} cidades, etapas={etapas_list}")
 
     # Iniciar em background
     from crm.scanner import iniciar_scan_background
@@ -1231,6 +1423,13 @@ async def wa_sales_webhook(request: Request):
 
         # Extrair nome da instância (para responder pelo mesmo número)
         instance = body.get("instance", "")
+
+        # Ignorar eventos de instâncias que NÃO pertencem ao CRM
+        # (ex: derekh-whatsapp é do bot restaurante, não do CRM)
+        _CRM_INSTANCES = os.environ.get("EVOLUTION_CRM_INSTANCES", "derekh-inbound").split(",")
+        if instance and instance not in _CRM_INSTANCES:
+            print(f"[WA-WEBHOOK] IGNORANDO evento de instância {instance} (não é do CRM)")
+            return JSONResponse({"status": "ok"})
 
         # Ignorar mensagens enviadas por nós (fromMe=true)
         if key.get("fromMe"):
@@ -1852,16 +2051,16 @@ async def api_tokens_usage():
         except Exception:
             pass
 
+    # Saldo disponível = crédito comprado - uso real
+    saldo_disponivel = None
+    if saldo is not None and uso_real:
+        saldo_disponivel = round(saldo - uso_real["total_usd"], 4)
+
     # Previsão de conversas restantes (usando saldo real da Management API)
     conversas_restantes = None
     saldo_para_previsao = saldo_disponivel if saldo_disponivel is not None else (saldo - custo_total if saldo else None)
     if saldo_para_previsao is not None and custo_por_conversa > 0:
         conversas_restantes = max(0, int(saldo_para_previsao / custo_por_conversa))
-
-    # Saldo disponível = crédito comprado - uso real
-    saldo_disponivel = None
-    if saldo is not None and uso_real:
-        saldo_disponivel = round(saldo - uso_real["total_usd"], 4)
 
     return JSONResponse({
         "modelo_atual": modelo_atual,

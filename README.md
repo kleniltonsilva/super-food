@@ -26,7 +26,7 @@ O Derekh Food e composto por **10 aplicacoes principais**:
 | **Sales Autopilot CRM** | FastAPI + Jinja2 | `derekh-crm.fly.dev` | CRM B2B prospeccao automatica (email + WA + IA) |
 | **Evolution API** | Self-hosted | `derekh-evolution.fly.dev` | WhatsApp gateway (Baileys) |
 
-**Versao atual: 4.0.1 (24/03/2026) — Em producao: https://superfood-api.fly.dev**
+**Versao atual: 4.0.1 (26/03/2026) — Em producao: https://superfood-api.fly.dev**
 
 ### Stack Tecnologica
 
@@ -777,6 +777,15 @@ services:
 
 ## Changelog
 
+### v4.0.1 (26/03/2026) — Security Hardening
+
+- **8 vulnerabilidades corrigidas** — Evolution API expose, /metrics sem auth, webhook sem validacao, SECRET_KEY fallback, CORS wildcard, security headers, Woovi webhook, OpenDelivery webhook
+- **Security headers middleware** — HSTS, X-Frame-Options, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy em todas respostas
+- **CORS restrito** — dominios de producao explícitos, metodos/headers restritos, subdomínios *.derekhfood.com.br via regex
+- **Webhook Evolution protegido** — validacao apikey via hmac.compare_digest
+- **SECRET_KEY centralizada** — auth_cliente.py importa do auth.py, warning em dev sem SECRET_KEY
+- **36 testes automatizados** — pytest suite validando todas as correcoes
+
 ### v4.0.0 (21/03/2026) — Mega Migracao React + Deploy Fly.io
 
 - **Deploy em producao** — Fly.io GRU (Sao Paulo), PostgreSQL + Upstash Redis
@@ -855,7 +864,8 @@ services:
 - [x] Fase 18: Feature Flags por Plano (22 features, 4 tiers, 38 endpoints protegidos) ✅
 - [x] Fase 19: Sales Autopilot CRM Automatico (email branded + regras outreach + WA inteligente + auto-import + trial detection) ✅
 - [x] Fase 19.1: Demo WhatsApp Humanoide na Landing Page (20 cenarios × 8 tipos = 160 conversas + brain replay) ✅
-- [ ] Fase 20: WhatsApp Humanoide (atendimento IA humanizado 24h, sem menus robotizados — Premium incluso, demais +R$99,45/mês)
+- [x] Fase 20: Security Hardening (8 vulnerabilidades, security headers, CORS, webhook auth, 36 testes) ✅
+- [ ] Fase 21: WhatsApp Humanoide (atendimento IA humanizado 24h, sem menus robotizados — Premium incluso, demais +R$99,45/mês)
 
 ---
 

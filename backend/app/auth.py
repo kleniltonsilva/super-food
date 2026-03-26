@@ -12,6 +12,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    import warnings
+    warnings.warn("SECRET_KEY nao configurada! Usando chave dev insegura.", stacklevel=2)
+    SECRET_KEY = "dev-only-insecure-key-DO-NOT-USE-IN-PRODUCTION"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24h para facilitar onboarding
 

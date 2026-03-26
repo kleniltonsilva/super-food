@@ -33,16 +33,19 @@ super-food/
 │   └── app/
 │       ├── __init__.py
 │       ├── main.py                     # App FastAPI principal
-│       │                               #   - CORS (localhost:5173, 8504, 3000)
-│       │                               #   - Inclui 7 routers
+│       │                               #   - CORS (localhost, derekhfood.com.br, fly.dev)
+│       │                               #   - Security headers middleware (HSTS, X-Frame-Options, nosniff)
+│       │                               #   - Inclui 15+ routers
 │       │                               #   - WebSocket /ws/{restaurante_id}
 │       │                               #   - Serve React SPA em /cliente/{codigo}
+│       │                               #   - /metrics protegido (Super Admin JWT)
 │       │                               #   - Static files (uploads/)
 │       │
-│       ├── auth.py                     # Auth JWT para restaurantes
+│       ├── auth.py                     # Auth JWT centralizado (source of truth)
+│       │                               #   - SECRET_KEY com validacao + warning em dev
 │       │                               #   - verify_password(), get_password_hash() — bcrypt + strip()
 │       │                               #   - create_access_token() — JWT HS256, 24h
-│       │                               #   - get_current_restaurante() — Dependency
+│       │                               #   - 5 dependencies: restaurante, motoboy, admin, cozinheiro, garcom
 │       │
 │       ├── database.py                 # get_db() — Generator para FastAPI Depends()
 │       ├── middleware.py               # Middleware customizado (se necessario)

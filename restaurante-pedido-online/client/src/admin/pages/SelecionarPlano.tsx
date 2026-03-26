@@ -1,5 +1,6 @@
 import AdminLayout from "@/admin/components/AdminLayout";
 import { usePlanosDisponiveis, useSelecionarPlano, useBillingStatus } from "@/admin/hooks/useAdminQueries";
+import { useAdminAuth } from "@/admin/contexts/AdminAuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { toast } from "sonner";
 
 export default function SelecionarPlano() {
   const [, navigate] = useLocation();
+  const { refreshRestaurante } = useAdminAuth();
   const { data: planos, isLoading } = usePlanosDisponiveis();
   const { data: billing } = useBillingStatus();
   const selecionarPlano = useSelecionarPlano();
@@ -25,9 +27,10 @@ export default function SelecionarPlano() {
     selecionarPlano.mutate(
       { plano: confirmDialog.plano, ciclo, billing_type: billingType },
       {
-        onSuccess: () => {
+        onSuccess: async () => {
           toast.success("Plano selecionado com sucesso!");
           setConfirmDialog(null);
+          await refreshRestaurante();
           navigate("/billing");
         },
         onError: (err: any) => {

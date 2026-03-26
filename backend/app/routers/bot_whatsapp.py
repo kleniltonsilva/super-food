@@ -9,12 +9,37 @@ from sqlalchemy import func, case, cast, Date
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
+import hmac
+import os
 
 from .. import models, database
 from ..auth import get_current_restaurante, get_current_admin
 from ..feature_guard import verificar_feature
 
 logger = logging.getLogger("superfood.bot.router")
+
+EVOLUTION_WEBHOOK_SECRET = os.getenv("EVOLUTION_WEBHOOK_SECRET", "")
+if not EVOLUTION_WEBHOOK_SECRET:
+    logger.warning("EVOLUTION_WEBHOOK_SECRET não configurado — webhook sem validação em dev")
+
+# Campos que o Super Admin pode alterar via PUT /api/admin/bot/instancia/{id}
+ADMIN_BOT_CAMPOS_PERMITIDOS = {
+    "bot_ativo", "nome_atendente", "tom_personalidade", "voz_tts", "idioma",
+    "whatsapp_numero", "evolution_instance", "evolution_api_url", "evolution_api_key",
+    "pode_criar_pedido", "pode_alterar_pedido", "pode_cancelar_pedido",
+    "pode_dar_desconto", "desconto_maximo_pct",
+    "pode_reembolsar", "reembolso_maximo_valor",
+    "pode_receber_pix", "pode_agendar",
+    "comportamento_fechado", "estoque_esgotado_acao",
+    "cancelamento_ate_status", "taxa_cancelamento",
+    "avaliacao_ativa", "delay_avaliacao_min", "reclamacao_acao", "reclamacao_credito_pct",
+    "repescagem_ativa", "repescagem_dias_inativo", "repescagem_desconto_pct", "repescagem_usar_frequencia",
+    "impressao_automatica_bot", "stt_ativo", "tts_autonomo", "tts_provider",
+    "max_tokens_dia",
+    "politica_atraso", "politica_pedido_errado", "politica_item_faltando", "politica_qualidade",
+    "google_maps_url", "avaliacao_perguntar_problemas", "avaliacao_pedir_google_review",
+    "avaliacao_lembrete_24h", "desconto_por_review", "desconto_review_pct",
+}
 
 router = APIRouter(tags=["Bot WhatsApp"])
 
@@ -24,6 +49,12 @@ router = APIRouter(tags=["Bot WhatsApp"])
 @router.post("/webhooks/evolution")
 async def webhook_evolution(request: Request):
     """Webhook público da Evolution API. Responde 200 imediatamente e processa em background."""
+    # Validar apikey header (Evolution envia em cada webhook)
+    if EVOLUTION_WEBHOOK_SECRET:
+        apikey = request.headers.get("apikey", "")
+        if not hmac.compare_digest(apikey, EVOLUTION_WEBHOOK_SECRET):
+            return JSONResponse(status_code=401, content={"error": "unauthorized"})
+
     try:
         payload = await request.json()
     except Exception:
@@ -135,9 +166,10 @@ async def update_bot_config(
         "repescagem_ativa", "repescagem_dias_inativo", "repescagem_desconto_pct",
         "repescagem_usar_frequencia",
         "impressao_automatica_bot",
-        "stt_ativo", "tts_autonomo",
+        "stt_ativo", "tts_autonomo", "tts_provider",
         "politica_atraso", "politica_pedido_errado", "politica_item_faltando", "politica_qualidade",
         "google_maps_url", "avaliacao_perguntar_problemas", "avaliacao_pedir_google_review",
+        "avaliacao_lembrete_24h", "desconto_por_review", "desconto_review_pct",
     ]
 
     for campo in campos_permitidos:
@@ -197,44 +229,53 @@ def desativar_bot(
 def listar_conversas(
     status: Optional[str] = None,
     limit: int = 50,
+    offset: int = 0,
     restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
-    """Lista conversas do bot."""
+    """Lista conversas do bot com paginação."""
     query = db.query(models.BotConversa).filter(
         models.BotConversa.restaurante_id == restaurante.id
     )
     if status:
         query = query.filter(models.BotConversa.status == status)
 
-    conversas = query.order_by(models.BotConversa.atualizado_em.desc()).limit(limit).all()
+    total = query.count()
+    conversas = query.order_by(models.BotConversa.atualizado_em.desc()).offset(offset).limit(limit).all()
 
-    return [
-        {
-            "id": c.id,
-            "telefone": c.telefone,
-            "nome_cliente": c.nome_cliente,
-            "status": c.status,
-            "msgs_enviadas": c.msgs_enviadas,
-            "msgs_recebidas": c.msgs_recebidas,
-            "pedido_ativo_id": c.pedido_ativo_id,
-            "intencao_atual": c.intencao_atual,
-            "criado_em": c.criado_em.isoformat() if c.criado_em else None,
-            "atualizado_em": c.atualizado_em.isoformat() if c.atualizado_em else None,
-        }
-        for c in conversas
-    ]
+    return {
+        "total": total,
+        "conversas": [
+            {
+                "id": c.id,
+                "telefone": c.telefone,
+                "nome_cliente": c.nome_cliente,
+                "status": c.status,
+                "msgs_enviadas": c.msgs_enviadas,
+                "msgs_recebidas": c.msgs_recebidas,
+                "pedido_ativo_id": c.pedido_ativo_id,
+                "intencao_atual": c.intencao_atual,
+                "handoff_motivo": c.handoff_motivo,
+                "handoff_em": c.handoff_em.isoformat() if c.handoff_em else None,
+                "criado_em": c.criado_em.isoformat() if c.criado_em else None,
+                "atualizado_em": c.atualizado_em.isoformat() if c.atualizado_em else None,
+            }
+            for c in conversas
+        ],
+    }
 
 
 @router.get("/painel/bot/conversas/{conversa_id}/mensagens")
 def listar_mensagens(
     conversa_id: int,
+    pagina: int = 1,
+    limite: int = 50,
     restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
-    """Lista mensagens de uma conversa."""
+    """Lista mensagens de uma conversa com paginação."""
     conversa = db.query(models.BotConversa).filter(
         models.BotConversa.id == conversa_id,
         models.BotConversa.restaurante_id == restaurante.id,
@@ -243,9 +284,12 @@ def listar_mensagens(
     if not conversa:
         raise HTTPException(status_code=404, detail="Conversa não encontrada")
 
-    mensagens = db.query(models.BotMensagem).filter(
+    query = db.query(models.BotMensagem).filter(
         models.BotMensagem.conversa_id == conversa_id,
-    ).order_by(models.BotMensagem.criado_em).all()
+    )
+    total = query.count()
+    offset = (pagina - 1) * limite
+    mensagens = query.order_by(models.BotMensagem.criado_em).offset(offset).limit(limite).all()
 
     return {
         "conversa": {
@@ -268,7 +312,176 @@ def listar_mensagens(
             }
             for m in mensagens
         ],
+        "total": total,
+        "paginas": (total + limite - 1) // limite,
     }
+
+
+@router.post("/painel/bot/conversas/{conversa_id}/enviar-mensagem")
+async def enviar_mensagem_manual(
+    conversa_id: int,
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Envia mensagem manual do admin para o cliente via Evolution."""
+    body = await request.json()
+    texto = (body.get("texto") or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="Texto é obrigatório")
+
+    conversa = db.query(models.BotConversa).filter(
+        models.BotConversa.id == conversa_id,
+        models.BotConversa.restaurante_id == restaurante.id,
+    ).first()
+    if not conversa:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id,
+    ).first()
+    if not config or not config.evolution_instance:
+        raise HTTPException(status_code=400, detail="Bot não configurado com Evolution API")
+
+    # Enviar via Evolution
+    from ..bot.evolution_client import enviar_texto
+    try:
+        await enviar_texto(
+            conversa.telefone, texto,
+            config.evolution_instance,
+            config.evolution_api_url,
+            config.evolution_api_key,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar: {e}")
+
+    # Registrar mensagem
+    msg = models.BotMensagem(
+        conversa_id=conversa.id,
+        direcao="enviada",
+        tipo="texto",
+        conteudo=f"[ADMIN] {texto}",
+    )
+    db.add(msg)
+    conversa.msgs_enviadas = (conversa.msgs_enviadas or 0) + 1
+    conversa.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {"sucesso": True, "mensagem": "Mensagem enviada"}
+
+
+@router.post("/painel/bot/conversas/{conversa_id}/escalar")
+async def escalar_conversa(
+    conversa_id: int,
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Admin assume controle da conversa — requer senha do admin."""
+    body = await request.json()
+    senha = (body.get("senha") or "").strip()
+    if not senha:
+        raise HTTPException(status_code=400, detail="Senha é obrigatória para assumir controle")
+
+    if not restaurante.verificar_senha(senha):
+        raise HTTPException(status_code=403, detail="Senha incorreta")
+
+    conversa = db.query(models.BotConversa).filter(
+        models.BotConversa.id == conversa_id,
+        models.BotConversa.restaurante_id == restaurante.id,
+    ).first()
+    if not conversa:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+
+    conversa.status = "handoff"
+    conversa.handoff_em = datetime.utcnow()
+    conversa.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {"sucesso": True, "mensagem": "Controle assumido — bot parou de responder nesta conversa"}
+
+
+@router.post("/painel/bot/conversas/{conversa_id}/recusar-handoff")
+async def recusar_handoff(
+    conversa_id: int,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Admin recusa handoff — bot sugere que cliente ligue para o restaurante."""
+    conversa = db.query(models.BotConversa).filter(
+        models.BotConversa.id == conversa_id,
+        models.BotConversa.restaurante_id == restaurante.id,
+    ).first()
+    if not conversa:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+
+    conversa.status = "ativa"
+    conversa.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    # Enviar mensagem ao cliente sugerindo ligar para o restaurante
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id,
+    ).first()
+
+    if config and config.evolution_instance:
+        telefone_rest = restaurante.telefone or ""
+        nome_atendente = config.nome_atendente or "assistente"
+        mensagem = (
+            f"O responsável não está disponível no momento para atendimento direto. "
+            f"Para falar com um atendente humano, ligue para o restaurante"
+        )
+        if telefone_rest:
+            mensagem += f": {telefone_rest}"
+        mensagem += ". Enquanto isso, posso continuar te ajudando por aqui!"
+
+        from ..bot.evolution_client import enviar_texto
+        try:
+            await enviar_texto(
+                conversa.telefone, mensagem,
+                config.evolution_instance,
+                config.evolution_api_url,
+                config.evolution_api_key,
+            )
+            # Registrar mensagem
+            msg = models.BotMensagem(
+                conversa_id=conversa.id,
+                direcao="enviada",
+                tipo="texto",
+                conteudo=mensagem,
+            )
+            db.add(msg)
+            conversa.msgs_enviadas = (conversa.msgs_enviadas or 0) + 1
+            db.commit()
+        except Exception as e:
+            logger.error(f"Erro ao enviar msg recusa handoff: {e}")
+
+    return {"sucesso": True, "mensagem": "Handoff recusado — bot sugeriu ligar para o restaurante"}
+
+
+@router.post("/painel/bot/conversas/{conversa_id}/devolver-bot")
+def devolver_para_bot(
+    conversa_id: int,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Devolve conversa para o bot — bot volta a responder."""
+    conversa = db.query(models.BotConversa).filter(
+        models.BotConversa.id == conversa_id,
+        models.BotConversa.restaurante_id == restaurante.id,
+    ).first()
+    if not conversa:
+        raise HTTPException(status_code=404, detail="Conversa não encontrada")
+
+    conversa.status = "ativa"
+    conversa.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {"sucesso": True, "mensagem": "Conversa devolvida para o bot"}
 
 
 @router.get("/painel/bot/dashboard")
@@ -724,7 +937,7 @@ async def criar_repescagem_em_massa(
         status_envio = "cupom_criado"
 
         # Enviar via WhatsApp
-        if canal in ("whatsapp", "ambos") and config and config.ativo and cliente.telefone:
+        if canal in ("whatsapp", "ambos") and config and config.bot_ativo and cliente.telefone:
             try:
                 from ..bot.evolution_client import enviar_texto
                 await enviar_texto(
@@ -986,9 +1199,9 @@ async def atualizar_instancia_bot(
     if not config:
         raise HTTPException(status_code=404, detail="Instância não encontrada")
 
-    for campo, valor in body.items():
-        if hasattr(config, campo):
-            setattr(config, campo, valor)
+    for campo in ADMIN_BOT_CAMPOS_PERMITIDOS:
+        if campo in body and hasattr(config, campo):
+            setattr(config, campo, body[campo])
 
     config.atualizado_em = datetime.utcnow()
     db.commit()

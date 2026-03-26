@@ -167,7 +167,9 @@ class WooviClient:
     def validar_webhook(self, payload: bytes, signature: str) -> bool:
         """Valida HMAC-SHA256 do webhook Woovi."""
         if not self.webhook_secret:
-            return True  # Sem secret configurado, aceita tudo (dev)
+            if os.getenv("FLY_APP_NAME"):  # Producao Fly.io
+                return False  # Rejeitar em producao sem secret
+            return True  # Aceitar apenas em dev local
         expected = hmac.new(
             self.webhook_secret.encode(), payload, hashlib.sha256
         ).hexdigest()

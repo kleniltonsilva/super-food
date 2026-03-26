@@ -632,10 +632,12 @@ async def webhook_opendelivery(
     ).first()
 
     signature = request.headers.get("X-App-Signature", "")
-    if signature and cred_plat and cred_plat.client_secret:
+    if cred_plat and cred_plat.client_secret:
+        if not signature:
+            raise HTTPException(401, "Assinatura do webhook obrigatoria")
         from ..integrations.opendelivery.client import OpenDeliveryClient
         if not OpenDeliveryClient.verify_webhook_signature(body, signature, cred_plat.client_secret):
-            raise HTTPException(401, "Assinatura do webhook inválida")
+            raise HTTPException(401, "Assinatura do webhook invalida")
 
     # Evento de autorização — confirmar conexão do restaurante
     event_type = payload.get("type") or payload.get("event_type") or payload.get("code", "")

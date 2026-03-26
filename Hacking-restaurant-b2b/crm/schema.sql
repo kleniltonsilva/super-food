@@ -560,3 +560,45 @@ ON CONFLICT (chave) DO NOTHING;
 ALTER TABLE outreach_sequencia ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0;
 ALTER TABLE outreach_sequencia ADD COLUMN IF NOT EXISTS max_retries INTEGER DEFAULT 3;
 ALTER TABLE outreach_sequencia ADD COLUMN IF NOT EXISTS proximo_retry TIMESTAMPTZ;
+
+-- ============================================================
+-- EMAIL INBOX — Threads + Mensagens recebidas/enviadas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS email_threads (
+    id SERIAL PRIMARY KEY,
+    assunto TEXT NOT NULL,
+    categoria VARCHAR(20) DEFAULT 'desconhecido',  -- urgente, cliente, desconhecido
+    lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+    email_remetente VARCHAR(255) NOT NULL,
+    nome_remetente VARCHAR(255),
+    ultima_mensagem_at TIMESTAMPTZ DEFAULT NOW(),
+    total_mensagens INTEGER DEFAULT 1,
+    lido BOOLEAN DEFAULT FALSE,
+    arquivado BOOLEAN DEFAULT FALSE,
+    starred BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS emails_inbox (
+    id SERIAL PRIMARY KEY,
+    thread_id INTEGER NOT NULL REFERENCES email_threads(id) ON DELETE CASCADE,
+    resend_email_id VARCHAR(255),
+    direcao VARCHAR(10) DEFAULT 'recebido',  -- recebido, enviado
+    de_email VARCHAR(255) NOT NULL,
+    de_nome VARCHAR(255),
+    para_email VARCHAR(255) NOT NULL,
+    assunto TEXT,
+    corpo_html TEXT,
+    corpo_texto TEXT,
+    tem_anexos BOOLEAN DEFAULT FALSE,
+    anexos_json JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Índices inbox
+CREATE INDEX IF NOT EXISTS idx_email_threads_categoria ON email_threads(categoria) WHERE arquivado = FALSE;
+CREATE INDEX IF NOT EXISTS idx_email_threads_lido ON email_threads(lido, ultima_mensagem_at DESC) WHERE arquivado = FALSE;
+CREATE INDEX IF NOT EXISTS idx_email_threads_remetente ON email_threads(email_remetente);
+CREATE INDEX IF NOT EXISTS idx_email_threads_lead ON email_threads(lead_id) WHERE lead_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_emails_inbox_thread ON emails_inbox(thread_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_emails_inbox_resend ON emails_inbox(resend_email_id) WHERE resend_email_id IS NOT NULL;

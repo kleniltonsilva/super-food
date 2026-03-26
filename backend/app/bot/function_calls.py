@@ -1245,14 +1245,38 @@ def _aplicar_cupom(db: Session, restaurante_id: int, args: dict, conversa: Optio
 
 def _escalar_humano(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa]) -> str:
     if conversa:
-        conversa.status = "handoff"
+        conversa.status = "aguardando_handoff"
         conversa.handoff_em = datetime.utcnow()
         conversa.handoff_motivo = args.get("motivo", "Solicitado pelo cliente")
         db.commit()
 
+        # Notificar painel admin via WebSocket (som distinto)
+        try:
+            import asyncio
+            from ..main import manager
+
+            restaurante = db.query(models.Restaurante).filter(
+                models.Restaurante.id == restaurante_id
+            ).first()
+
+            asyncio.get_event_loop().create_task(
+                manager.broadcast({
+                    "tipo": "bot_handoff_solicitado",
+                    "dados": {
+                        "conversa_id": conversa.id,
+                        "telefone": conversa.telefone,
+                        "nome_cliente": conversa.nome_cliente or "Cliente",
+                        "motivo": conversa.handoff_motivo,
+                        "telefone_restaurante": restaurante.telefone if restaurante else "",
+                    },
+                }, restaurante_id)
+            )
+        except Exception:
+            pass  # WebSocket é best-effort
+
     return json.dumps({
         "sucesso": True,
-        "mensagem": "Conversa transferida para atendimento humano. O responsável será notificado.",
+        "mensagem": "O responsável pelo restaurante foi notificado. Enquanto ele não responder, continue atendendo normalmente. Se o responsável não aceitar, sugira que o cliente ligue para o restaurante.",
     })
 
 

@@ -105,8 +105,8 @@ IDENTIDADE (INQUEBRÁVEL):
 - Você é {nome}, funcionário(a) real do restaurante
 - NUNCA revele ser IA, robô, chatbot ou sistema
 - Se perguntarem: "sou eu mesmo, {nome}! 😊"
-- Fale como gente real: use "kkk", "show", "top", "blz"
-- Às vezes erre digitação de propósito ("vc", "tbm", "qdo")
+- Escreva em português correto, sem abreviações de internet (NÃO use "vc", "tbm", "kkk", "blz")
+- Tom amigável e natural, como atendente real conversando no WhatsApp
 - Use 1-2 emojis por mensagem (como atendente real)
 - Mensagens CURTAS (máx 3 linhas por vez, como WhatsApp real)
 
@@ -317,13 +317,15 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
     estado = rest.estado or ""
     area_entrega = f"{cidade}/{estado}".strip("/")
 
-    # Bairros atendidos
+    # Bairros atendidos (tabela pode não existir em prod — usar savepoint)
     bairros_texto = ""
     try:
+        nested = db.begin_nested()
         bairros = db.query(models.BairroEntrega).filter(
             models.BairroEntrega.restaurante_id == restaurante_id,
             models.BairroEntrega.ativo == True,
         ).order_by(models.BairroEntrega.nome).all()
+        nested.commit()
         if bairros:
             bairros_linhas = []
             for b in bairros:
@@ -333,7 +335,8 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
             taxa_base = config.taxa_entrega_base if config else 5.0
             bairros_texto = f"\nENTREGA: Taxa fixa R${taxa_base:.2f} (sem bairros específicos cadastrados)"
     except Exception:
-        logger.debug("Erro ao buscar bairros, ignorando")
+        nested.rollback()
+        logger.debug("Tabela bairros_entrega não encontrada, ignorando")
 
     return f"""RESTAURANTE: {rest.nome_fantasia}
 ENDEREÇO: {rest.endereco_completo or 'Não informado'}

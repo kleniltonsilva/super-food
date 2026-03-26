@@ -127,6 +127,74 @@ function AdminWebSocket() {
         });
         break;
       }
+
+      case "bot_mensagem": {
+        const nomeCliente = dados.nome_cliente as string || "Cliente";
+        const resposta = dados.resposta as string || "";
+        const pedidoCriado = dados.pedido_criado as boolean || false;
+        addNotification({
+          tipo: "bot_mensagem",
+          titulo: pedidoCriado ? `Bot: Pedido criado via WhatsApp` : `Bot: ${nomeCliente}`,
+          mensagem: resposta.length > 80 ? resposta.slice(0, 80) + "..." : resposta,
+          acao: "/whatsapp-bot",
+        });
+        if (pedidoCriado) {
+          toast.success(`Pedido criado via WhatsApp — ${nomeCliente}`, {
+            duration: 5000,
+            action: {
+              label: "Ver pedidos",
+              onClick: () => navigate("/pedidos"),
+            },
+          });
+        }
+        break;
+      }
+
+      case "bot_atraso_detectado": {
+        const comandaAtraso = dados.comanda as string || "";
+        const minAtraso = dados.minutos_atraso as number || 0;
+        addNotification({
+          tipo: "bot_atraso_detectado",
+          titulo: `Bot: Atraso detectado #${comandaAtraso}`,
+          mensagem: `Pedido atrasado ${minAtraso}min. Bot já notificou o cliente.`,
+          acao: "/pedidos",
+          dados,
+        });
+        toast.warning(
+          `Atraso detectado — pedido #${comandaAtraso} (+${minAtraso}min)`,
+          {
+            duration: 6000,
+            action: {
+              label: "Ver pedidos",
+              onClick: () => navigate("/pedidos"),
+            },
+          }
+        );
+        break;
+      }
+
+      case "bot_handoff_solicitado": {
+        const nomeHandoff = dados.nome_cliente as string || "Cliente";
+        const motivoHandoff = dados.motivo as string || "";
+        addNotification({
+          tipo: "bot_handoff_solicitado",
+          titulo: `Handoff: ${nomeHandoff} quer falar com humano`,
+          mensagem: motivoHandoff || "Cliente solicitou atendimento humano",
+          acao: "/whatsapp-bot",
+          dados,
+        });
+        toast.error(
+          `${nomeHandoff} quer falar com um humano!`,
+          {
+            duration: 15000,
+            action: {
+              label: "Atender",
+              onClick: () => navigate("/whatsapp-bot"),
+            },
+          }
+        );
+        break;
+      }
     }
   }, [addNotification, navigate]);
 

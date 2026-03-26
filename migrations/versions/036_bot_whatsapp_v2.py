@@ -44,6 +44,11 @@ def upgrade() -> None:
         ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS repescagem_usar_frequencia BOOLEAN DEFAULT TRUE;
     """)
 
+    # tts_provider — qual engine TTS usar (grok | fish)
+    op.execute("""
+        ALTER TABLE bot_config ADD COLUMN IF NOT EXISTS tts_provider VARCHAR(20) DEFAULT 'grok';
+    """)
+
     # Alterar default de delay_avaliacao_min de 10 para 20
     op.execute("""
         ALTER TABLE bot_config ALTER COLUMN delay_avaliacao_min SET DEFAULT 20;

@@ -1259,7 +1259,7 @@ O bot roda **integrado ao backend principal** (`superfood-api.fly.dev`), não co
 backend/app/bot/
 ├── atendente.py          — Lógica principal (webhook → LLM → resposta)
 ├── context_builder.py    — Prompt em 3 camadas (sistema + restaurante + cliente)
-├── function_calls.py     — 15 funções que o LLM pode chamar
+├── function_calls.py     — 22 funções que o LLM pode chamar
 ├── evolution_client.py   — Client Evolution API (enviar texto/áudio, baixar áudio)
 ├── xai_llm.py            — Client xAI Grok (chat completion + function calling)
 ├── xai_tts.py            — Client xAI TTS (gerar áudio com voz)
@@ -1323,7 +1323,7 @@ Salvar mensagem no BD + notificar painel via WebSocket
 | `bot_problemas` | restaurante_id, conversa_id, pedido_id, tipo, descricao, resolvido | Reclamações detectadas |
 | `bot_repescagem` | restaurante_id, cliente_id, tipo, mensagem, cupom_codigo, desconto_pct, enviado_em, respondido, cupom_validade_dias, lembrete_enviado, lembrete_enviado_em, canal, email_enviado, promocao_id | Campanhas de reativação |
 
-### 17.5 Function Calls (15 funções)
+### 17.5 Function Calls (22 funções)
 
 | Função | Descrição |
 |--------|-----------|
@@ -1334,14 +1334,21 @@ Salvar mensagem no BD + notificar painel via WebSocket
 | `criar_pedido` | Cria pedido CONFIRMADO (vai direto para cozinha) |
 | `alterar_pedido` | Adiciona/remove itens de pedido ativo |
 | `cancelar_pedido` | Cancela pedido (respeita status máximo) |
-| `consultar_pedido` | Status do pedido ativo |
-| `buscar_endereco` | Endereço salvo do cliente |
-| `calcular_entrega` | Busca taxa de entrega por bairro |
+| `repetir_ultimo_pedido` | Repete último pedido do cliente |
+| `consultar_status_pedido` | Status do pedido ativo |
+| `rastrear_pedido` | Rastreamento completo: fila cozinha, motoboy GPS, ETA |
 | `verificar_horario` | Status aberto/fechado + horário |
+| `buscar_promocoes` | Promoções ativas + cupons exclusivos do cliente |
 | `registrar_avaliacao` | Registra nota 1-5 + comentário |
 | `registrar_problema` | Registra reclamação com tipo |
+| `aplicar_cupom` | Aplica cupom de desconto (valida propriedade) |
+| `escalar_humano` | Notifica admin para handoff (status aguardando_handoff) |
+| `trocar_item_pedido` | Troca item específico do pedido |
+| `buscar_endereco` | Endereço salvo do cliente |
+| `calcular_entrega` | Busca taxa de entrega por bairro |
 | `gerar_pix` | Gera cobrança Pix (futuro — Módulo 1) |
 | `verificar_pagamento` | Verifica status pagamento Pix (futuro) |
+| `consultar_pedido` | Consulta pedido por ID ou telefone |
 
 Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_bot"` e vão direto para a cozinha (quando KDS ativo).
 
@@ -1473,8 +1480,12 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 | PUT | `/painel/bot/config` | Atualizar configuração (permissões, comportamento, voz) |
 | POST | `/painel/bot/ativar` | Ativar bot (requer config prévia pelo Super Admin) |
 | POST | `/painel/bot/desativar` | Desativar bot |
-| GET | `/painel/bot/conversas` | Listar conversas (filtro por status) |
-| GET | `/painel/bot/conversas/{id}/mensagens` | Mensagens de uma conversa |
+| GET | `/painel/bot/conversas` | Listar conversas com paginação (filtro por status, offset, limit) |
+| GET | `/painel/bot/conversas/{id}/mensagens` | Mensagens de uma conversa com paginação (pagina, limite) |
+| POST | `/painel/bot/conversas/{id}/enviar-mensagem` | Enviar mensagem manual do admin ao cliente (requer handoff) |
+| POST | `/painel/bot/conversas/{id}/escalar` | Assumir controle da conversa (requer senha admin) |
+| POST | `/painel/bot/conversas/{id}/recusar-handoff` | Recusar handoff — bot sugere ligar para restaurante |
+| POST | `/painel/bot/conversas/{id}/devolver-bot` | Devolver conversa ao bot |
 | GET | `/painel/bot/dashboard` | Dashboard — estatísticas (conversas, pedidos, faturamento, avaliação) |
 
 **Super Admin (requer JWT admin):**
@@ -1489,13 +1500,16 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 ### 17.11 Workers Periódicos
 
 - **Reset tokens diário:** Zera `tokens_usados_hoje` à meia-noite
-- **Avaliação pós-entrega:** Após `delay_avaliacao_min` minutos de entrega, envia mensagem pedindo nota
+- **Avaliação pós-entrega:** Após `delay_avaliacao_min` minutos de entrega, envia mensagem pedindo nota + broadcast `bot_mensagem` ao painel
+- **Detecção de atraso:** Monitora pedidos atrasados, notifica cliente via WA e painel via `bot_atraso_detectado`
 - **Repescagem avançada:** Clientes inativos há N dias recebem mensagem com cupom exclusivo (formato `VOLTA-{NOME}-{código}`)
   - Cupom personalizado por cliente, nunca repete
   - Vinculado a Promoção com `tipo_cupom='repescagem'` e `cliente_id`
   - Validade configurável (padrão 7 dias)
-  - Envio via WA, email ou ambos
-- **Lembrete de cupom:** A cada ~1h, verifica cupons exclusivos/repescagem que expiram nas próximas 24h → envia lembrete via WA + email
+  - Envio via WA, email ou ambos + broadcast `bot_mensagem` ao painel
+- **Lembrete de cupom:** A cada ~1h, verifica cupons exclusivos/repescagem que expiram nas próximas 24h → envia lembrete via WA + email + broadcast ao painel
+- **Notificações proativas de status:** Atualiza clientes sobre mudanças de status do pedido + broadcast ao painel
+- Todos os 5 workers fazem broadcast `bot_mensagem` via WebSocket ao painel admin
 - Executados via `asyncio.create_task` no lifespan do FastAPI
 
 ### 17.12 Frontend Admin — BotWhatsApp.tsx
@@ -1503,10 +1517,23 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 Página "Bot WhatsApp" no painel do restaurante com 5 abas:
 - **Dashboard:** conversas hoje/semana, pedidos via bot, faturamento, avaliação média, tokens usados
 - **Configurações:** toggle on/off, nome do atendente, permissões, comportamento
-- **Conversas:** lista com filtro por status (ativa, encerrada, escalada), detalhe chat view
+- **Conversas:** lista com paginação, badges de status (ATIVA/ADMIN/QUER HUMANO), detalhe chat view com:
+  - **Handoff com senha:** quando cliente pede humano, bot notifica painel com som sirene. Admin pode aceitar (com senha) ou recusar. Se aceitar, bot para de responder. Se recusar, bot sugere ligar para restaurante.
+  - **Mensagem manual:** quando em handoff, admin pode enviar mensagens diretamente ao cliente (com tag [ADMIN])
+  - **Devolver ao bot:** admin pode devolver controle para o bot a qualquer momento
 - **Relatórios:** estatísticas detalhadas
 - **Repescagem:** lista de clientes inativos com checkboxes, envio em massa (desconto%, validade, canal WA/email/ambos), cards resumo (total inativos, enviadas, taxa retorno), histórico paginado
 - Feature flag: `bot_whatsapp` (Premium ou add-on)
+
+#### Fluxo de Handoff (Escalação para Humano)
+
+1. Cliente pede para falar com humano → bot chama `escalar_humano` → status = `aguardando_handoff`
+2. WebSocket broadcast `bot_handoff_solicitado` → **som sirene distinto** (6 bips alternados 880↔660Hz) no painel
+3. Toast vermelho com botão "Atender" + notificação persistente no sino
+4. Admin pode:
+   - **Aceitar** (requer senha do restaurante) → status = `handoff` → bot para, admin digita mensagens
+   - **Recusar** → status = `ativa` → bot envia ao cliente: "O responsável não está disponível. Ligue para {telefone}"
+5. Quando admin termina → clica "Devolver ao Bot" → status = `ativa` → bot volta a responder
 
 ### 17.13 Frontend Super Admin — Modal Bot
 
@@ -1529,6 +1556,26 @@ Na página "Gerenciar Restaurantes" do Super Admin:
 2. **`tool_call` → `tool_choice`** — Parâmetro errado no xai_llm.py
 3. **ForeignKeyViolation bot_mensagens** — `db.rollback()` em catch desfazia criação da conversa. Fix: savepoints isolam falha
 4. **Evolution send 500** — Wrapped em try/except para salvar mensagem no BD mesmo se envio falhar
+
+### 17.16 Auditoria Pós-Deploy (26/03)
+
+**Segurança:**
+- Whitelist campos admin PUT bot — `ADMIN_BOT_CAMPOS_PERMITIDOS` (antes aceitava qualquer campo via setattr)
+- Whitelist restaurante: adicionados `tts_provider`, `avaliacao_lembrete_24h`, `desconto_por_review`, `desconto_review_pct`
+- Warning `EVOLUTION_WEBHOOK_SECRET` não configurado em dev
+
+**Bug do Cadeado:**
+- `SelecionarPlano.tsx`: adicionado `refreshRestaurante()` no onSuccess para atualizar features no contexto
+- `useFeatureFlag.ts`: corrigido `bridge_printer: 4` → `bridge_printer: 1` (espelhando backend)
+- `useAdminQueries.ts`: invalidação de `planosDisponiveis` ao selecionar plano
+
+**WebSocket/Notificações:**
+- 5 workers agora broadcast `bot_mensagem` via WebSocket (antes só 1)
+- Novo evento `bot_atraso_detectado` tratado no frontend (som alarme + toast + notificação)
+- Novo evento `bot_handoff_solicitado` com som sirene distinto (6 bips 880↔660Hz)
+
+**Cache Anti-spam:**
+- `_limpar_cache_locks()` em atendente.py — limpa `_processing_locks` quando >100 entradas
 
 ---
 

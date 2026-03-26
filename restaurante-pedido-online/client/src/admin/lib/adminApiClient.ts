@@ -823,13 +823,33 @@ export async function getBotDashboard() {
   return data;
 }
 
-export async function getBotConversas(params?: { status?: string; limit?: number }) {
+export async function getBotConversas(params?: { status?: string; limit?: number; offset?: number }) {
   const { data } = await adminApi.get("/painel/bot/conversas", { params });
   return data;
 }
 
-export async function getBotMensagens(conversaId: number) {
-  const { data } = await adminApi.get(`/painel/bot/conversas/${conversaId}/mensagens`);
+export async function getBotMensagens(conversaId: number, params?: { pagina?: number; limite?: number }) {
+  const { data } = await adminApi.get(`/painel/bot/conversas/${conversaId}/mensagens`, { params });
+  return data;
+}
+
+export async function enviarMensagemBot(conversaId: number, texto: string) {
+  const { data } = await adminApi.post(`/painel/bot/conversas/${conversaId}/enviar-mensagem`, { texto });
+  return data;
+}
+
+export async function escalarConversaBot(conversaId: number, senha: string) {
+  const { data } = await adminApi.post(`/painel/bot/conversas/${conversaId}/escalar`, { senha });
+  return data;
+}
+
+export async function recusarHandoffBot(conversaId: number) {
+  const { data } = await adminApi.post(`/painel/bot/conversas/${conversaId}/recusar-handoff`);
+  return data;
+}
+
+export async function devolverBotConversa(conversaId: number) {
+  const { data } = await adminApi.post(`/painel/bot/conversas/${conversaId}/devolver-bot`);
   return data;
 }
 

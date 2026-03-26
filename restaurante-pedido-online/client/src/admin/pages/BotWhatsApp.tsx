@@ -70,6 +70,10 @@ import {
   useBotDashboard,
   useBotConversas,
   useBotMensagens,
+  useEnviarMensagemBot,
+  useEscalarConversaBot,
+  useRecusarHandoffBot,
+  useDevolverBotConversa,
   useBotRelatorioEficiencia,
   useBotRelatorioSatisfacao,
   useBotRelatorioClientesInativos,
@@ -141,16 +145,24 @@ export default function BotWhatsApp() {
   const [showDesativarDialog, setShowDesativarDialog] = useState(false);
   const [configLocal, setConfigLocal] = useState<Record<string, unknown>>({});
   const [configDirty, setConfigDirty] = useState(false);
+  const [msgTexto, setMsgTexto] = useState("");
+  const [senhaHandoff, setSenhaHandoff] = useState("");
+  const [showHandoffDialog, setShowHandoffDialog] = useState<number | null>(null);
 
   const { hasFeature, requiredPlano } = useFeatureFlag("bot_whatsapp");
   const { data: botConfig, isLoading: loadingConfig, refetch: refetchConfig } = useBotConfig();
   const { data: dashboard, isLoading: loadingDash } = useBotDashboard();
-  const { data: conversas, isLoading: loadingConversas } = useBotConversas({ limit: 50 });
+  const { data: conversasData, isLoading: loadingConversas } = useBotConversas({ limit: 50 });
+  const conversasList = conversasData?.conversas || [];
   const { data: mensagensData } = useBotMensagens(conversaSelecionada || 0);
 
   const ativarBot = useAtivarBot();
   const desativarBot = useDesativarBot();
   const atualizarConfig = useAtualizarBotConfig();
+  const enviarMensagem = useEnviarMensagemBot();
+  const escalarConversa = useEscalarConversaBot();
+  const recusarHandoff = useRecusarHandoffBot();
+  const devolverBot = useDevolverBotConversa();
 
   // Merge config do servidor com alterações locais
   const cfg = { ...(botConfig || {}), ...configLocal };
@@ -926,7 +938,7 @@ export default function BotWhatsApp() {
               {loadingConversas && (
                 <p className="text-sm text-[var(--text-muted)]">Carregando...</p>
               )}
-              {!loadingConversas && (!conversas || conversas.length === 0) && (
+              {!loadingConversas && conversasList.length === 0 && (
                 <div className="flex flex-col items-center py-8 text-center">
                   <MessageSquare className="h-10 w-10 text-[var(--text-muted)] mb-2" />
                   <p className="text-sm text-[var(--text-muted)]">
@@ -934,8 +946,7 @@ export default function BotWhatsApp() {
                   </p>
                 </div>
               )}
-              {Array.isArray(conversas) &&
-                conversas.map((c: any) => (
+              {conversasList.map((c: any) => (
                   <button
                     key={c.id}
                     onClick={() => setConversaSelecionada(c.id)}
@@ -943,7 +954,8 @@ export default function BotWhatsApp() {
                       "w-full text-left p-3 rounded-lg border transition-colors",
                       conversaSelecionada === c.id
                         ? "border-[var(--cor-primaria)] bg-[var(--cor-primaria)]/10"
-                        : "border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-card-hover)]"
+                        : "border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-card-hover)]",
+                      (c.status === "aguardando_handoff") && "ring-2 ring-red-500/50 animate-pulse"
                     )}
                   >
                     <div className="flex items-center justify-between">
@@ -960,10 +972,14 @@ export default function BotWhatsApp() {
                             ? "bg-green-500/20 text-green-400"
                             : c.status === "finalizada"
                             ? "bg-gray-500/20 text-gray-400"
+                            : c.status === "handoff"
+                            ? "bg-blue-500/20 text-blue-400"
+                            : c.status === "aguardando_handoff"
+                            ? "bg-red-500/20 text-red-400"
                             : "bg-amber-500/20 text-amber-400"
                         )}
                       >
-                        {c.status}
+                        {c.status === "aguardando_handoff" ? "QUER HUMANO" : c.status === "handoff" ? "ADMIN" : c.status}
                       </Badge>
                     </div>
                     <div className="flex items-center gap-3 mt-1">
@@ -971,6 +987,11 @@ export default function BotWhatsApp() {
                         {c.msgs_recebidas} msg recebidas • {c.msgs_enviadas} enviadas
                       </span>
                     </div>
+                    {c.handoff_motivo && (c.status === "aguardando_handoff" || c.status === "handoff") && (
+                      <span className="text-xs text-red-400 italic block mt-0.5">
+                        {c.handoff_motivo}
+                      </span>
+                    )}
                     {c.intencao_atual && (
                       <span className="text-xs text-[var(--text-muted)] italic">
                         Intenção: {c.intencao_atual}
@@ -1002,17 +1023,94 @@ export default function BotWhatsApp() {
                 </div>
               ) : (
                 <Card className="p-4 bg-[var(--bg-card)] border-[var(--border-subtle)] h-[60vh] flex flex-col">
-                  {/* Header conversa */}
+                  {/* Header conversa + controles handoff */}
                   {mensagensData?.conversa && (
-                    <div className="flex items-center gap-2 pb-3 border-b border-[var(--border-subtle)]">
-                      <User className="h-5 w-5 text-[var(--text-muted)]" />
-                      <div>
-                        <p className="text-sm font-medium text-[var(--text-primary)]">
-                          {mensagensData.conversa.nome_cliente || "Cliente"}
-                        </p>
-                        <p className="text-xs text-[var(--text-muted)]">
-                          {mensagensData.conversa.telefone}
-                        </p>
+                    <div className="flex items-center justify-between pb-3 border-b border-[var(--border-subtle)]">
+                      <div className="flex items-center gap-2">
+                        <User className="h-5 w-5 text-[var(--text-muted)]" />
+                        <div>
+                          <p className="text-sm font-medium text-[var(--text-primary)]">
+                            {mensagensData.conversa.nome_cliente || "Cliente"}
+                          </p>
+                          <p className="text-xs text-[var(--text-muted)]">
+                            {mensagensData.conversa.telefone}
+                          </p>
+                        </div>
+                        <Badge
+                          className={cn(
+                            "text-[10px] ml-2",
+                            mensagensData.conversa.status === "handoff"
+                              ? "bg-blue-500/20 text-blue-400"
+                              : mensagensData.conversa.status === "aguardando_handoff"
+                              ? "bg-red-500/20 text-red-400 animate-pulse"
+                              : "bg-green-500/20 text-green-400"
+                          )}
+                        >
+                          {mensagensData.conversa.status === "handoff" ? "ADMIN" : mensagensData.conversa.status === "aguardando_handoff" ? "QUER HUMANO" : mensagensData.conversa.status}
+                        </Badge>
+                      </div>
+                      <div className="flex gap-1.5">
+                        {/* Botões handoff */}
+                        {mensagensData.conversa.status === "aguardando_handoff" && (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+                              onClick={() => {
+                                setSenhaHandoff("");
+                                setShowHandoffDialog(conversaSelecionada);
+                              }}
+                            >
+                              Aceitar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-red-500/50 text-red-400 hover:bg-red-500/10"
+                              disabled={recusarHandoff.isPending}
+                              onClick={() => {
+                                recusarHandoff.mutate(conversaSelecionada!, {
+                                  onSuccess: () => toast.info("Handoff recusado — bot sugeriu ligar"),
+                                  onError: () => toast.error("Erro ao recusar handoff"),
+                                });
+                              }}
+                            >
+                              Recusar
+                            </Button>
+                          </>
+                        )}
+                        {mensagensData.conversa.status === "ativa" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => {
+                              setSenhaHandoff("");
+                              setShowHandoffDialog(conversaSelecionada);
+                            }}
+                          >
+                            <Shield className="h-3 w-3 mr-1" />
+                            Assumir
+                          </Button>
+                        )}
+                        {mensagensData.conversa.status === "handoff" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-green-500/50 text-green-400 hover:bg-green-500/10"
+                            disabled={devolverBot.isPending}
+                            onClick={() => {
+                              devolverBot.mutate(conversaSelecionada!, {
+                                onSuccess: () => toast.success("Conversa devolvida ao bot"),
+                                onError: () => toast.error("Erro ao devolver conversa"),
+                              });
+                            }}
+                          >
+                            <Bot className="h-3 w-3 mr-1" />
+                            Devolver ao Bot
+                          </Button>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1031,11 +1129,18 @@ export default function BotWhatsApp() {
                           className={cn(
                             "max-w-[75%] rounded-lg px-3 py-2 text-sm",
                             m.direcao === "enviada"
-                              ? "bg-green-600/20 text-[var(--text-primary)]"
+                              ? m.conteudo?.startsWith("[ADMIN]")
+                                ? "bg-blue-600/20 text-[var(--text-primary)] border border-blue-500/30"
+                                : "bg-green-600/20 text-[var(--text-primary)]"
                               : "bg-[var(--bg-surface)] text-[var(--text-primary)]"
                           )}
                         >
-                          <p className="whitespace-pre-wrap">{m.conteudo}</p>
+                          {m.conteudo?.startsWith("[ADMIN]") && (
+                            <span className="text-[10px] text-blue-400 font-semibold block mb-0.5">ADMIN</span>
+                          )}
+                          <p className="whitespace-pre-wrap">
+                            {m.conteudo?.startsWith("[ADMIN] ") ? m.conteudo.slice(8) : m.conteudo}
+                          </p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] text-[var(--text-muted)]">
                               {m.criado_em &&
@@ -1055,7 +1160,9 @@ export default function BotWhatsApp() {
                           </div>
                           {m.function_calls && (
                             <p className="text-[10px] text-blue-400 mt-1">
-                              {m.function_calls}
+                              {Array.isArray(m.function_calls)
+                                ? m.function_calls.map((fc: any) => fc.nome || fc).join(", ")
+                                : m.function_calls}
                             </p>
                           )}
                         </div>
@@ -1067,8 +1174,100 @@ export default function BotWhatsApp() {
                       </p>
                     )}
                   </div>
+
+                  {/* Input enviar mensagem manual (só quando em handoff) */}
+                  {mensagensData?.conversa?.status === "handoff" && (
+                    <div className="pt-3 border-t border-[var(--border-subtle)] flex gap-2">
+                      <Input
+                        value={msgTexto}
+                        onChange={(e) => setMsgTexto(e.target.value)}
+                        placeholder="Digitar mensagem como admin..."
+                        className="flex-1 h-9 text-sm"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey && msgTexto.trim()) {
+                            e.preventDefault();
+                            enviarMensagem.mutate(
+                              { conversaId: conversaSelecionada!, texto: msgTexto.trim() },
+                              {
+                                onSuccess: () => { setMsgTexto(""); toast.success("Mensagem enviada"); },
+                                onError: () => toast.error("Erro ao enviar mensagem"),
+                              }
+                            );
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        className="h-9 text-white"
+                        style={{ backgroundColor: "var(--cor-primaria)" }}
+                        disabled={!msgTexto.trim() || enviarMensagem.isPending}
+                        onClick={() => {
+                          if (msgTexto.trim()) {
+                            enviarMensagem.mutate(
+                              { conversaId: conversaSelecionada!, texto: msgTexto.trim() },
+                              {
+                                onSuccess: () => { setMsgTexto(""); toast.success("Mensagem enviada"); },
+                                onError: () => toast.error("Erro ao enviar mensagem"),
+                              }
+                            );
+                          }
+                        }}
+                      >
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                 </Card>
               )}
+
+              {/* Dialog senha para handoff */}
+              <AlertDialog open={showHandoffDialog !== null} onOpenChange={(open) => { if (!open) setShowHandoffDialog(null); }}>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Assumir controle da conversa</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      O bot irá parar de responder nesta conversa. Você poderá enviar mensagens manualmente.
+                      Digite sua senha de admin para confirmar.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <Input
+                    type="password"
+                    placeholder="Senha do admin"
+                    value={senhaHandoff}
+                    onChange={(e) => setSenhaHandoff(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && senhaHandoff.trim() && showHandoffDialog) {
+                        escalarConversa.mutate(
+                          { conversaId: showHandoffDialog, senha: senhaHandoff.trim() },
+                          {
+                            onSuccess: () => { setShowHandoffDialog(null); setSenhaHandoff(""); toast.success("Controle assumido!"); },
+                            onError: (err: any) => toast.error(err.response?.data?.detail || "Senha incorreta"),
+                          }
+                        );
+                      }
+                    }}
+                  />
+                  <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => { setShowHandoffDialog(null); setSenhaHandoff(""); }}>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      disabled={!senhaHandoff.trim() || escalarConversa.isPending}
+                      onClick={() => {
+                        if (showHandoffDialog && senhaHandoff.trim()) {
+                          escalarConversa.mutate(
+                            { conversaId: showHandoffDialog, senha: senhaHandoff.trim() },
+                            {
+                              onSuccess: () => { setShowHandoffDialog(null); setSenhaHandoff(""); toast.success("Controle assumido!"); },
+                              onError: (err: any) => toast.error(err.response?.data?.detail || "Senha incorreta"),
+                            }
+                          );
+                        }
+                      }}
+                    >
+                      {escalarConversa.isPending ? "Verificando..." : "Confirmar"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         )}

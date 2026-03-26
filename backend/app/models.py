@@ -72,6 +72,12 @@ from database.models import (
     AlertaAtraso,
     SugestaoTempo,
 
+    # Operadores de Caixa
+    OperadorCaixa,
+
+    # Planos
+    Plano,
+
     # Billing / Asaas
     ConfigBilling,
     AsaasCliente,
@@ -93,6 +99,12 @@ from database.models import (
     SessaoMesa,
     SessaoPedido,
     ItemEsgotado,
+
+    # Pix Online
+    PixConfig,
+    PixCobranca,
+    PixSaque,
+    PixEventLog,
 
     # Bridge Printer
     BridgePattern,
@@ -143,6 +155,8 @@ __all__ = [
     'MarketplaceEventLog',
     'AlertaAtraso',
     'SugestaoTempo',
+    'OperadorCaixa',
+    'Plano',
     'ConfigBilling',
     'AsaasCliente',
     'AsaasAssinatura',
@@ -159,6 +173,10 @@ __all__ = [
     'SessaoMesa',
     'SessaoPedido',
     'ItemEsgotado',
+    'PixConfig',
+    'PixCobranca',
+    'PixSaque',
+    'PixEventLog',
     'BridgePattern',
     'BridgeInterceptedOrder',
     'BotConfig',

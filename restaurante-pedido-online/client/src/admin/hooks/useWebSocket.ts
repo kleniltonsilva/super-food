@@ -19,6 +19,9 @@ export type WsEventTipo =
   | "printer_status"
   | "print_ack"
   | "reimprimir_pedido"
+  | "bot_mensagem"
+  | "bot_atraso_detectado"
+  | "bot_handoff_solicitado"
   | "ping";
 
 export interface WsEvent {
@@ -89,6 +92,50 @@ function tocarSomCancelamento() {
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + 0.6);
+  } catch {
+    // AudioContext não disponível
+  }
+}
+
+/** Bot WhatsApp: tom suave duplo (sine 698→880Hz) — "mensagem recebida" */
+function tocarSomBot() {
+  try {
+    const ctx = new AudioContext();
+    [698, 880].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t = i * 0.15;
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.12);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.12);
+    });
+  } catch {
+    // AudioContext não disponível
+  }
+}
+
+/** Handoff solicitado: sirene urgente 3 tons alternados (square 660↔880Hz) — atenção imediata */
+function tocarSomHandoff() {
+  try {
+    const ctx = new AudioContext();
+    const tempos = [0, 0.3, 0.6, 0.9, 1.2, 1.5];
+    tempos.forEach((t, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "square";
+      osc.frequency.value = i % 2 === 0 ? 880 : 660;
+      gain.gain.setValueAtTime(0.35, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.25);
+    });
   } catch {
     // AudioContext não disponível
   }
@@ -229,6 +276,37 @@ export function useWebSocket({
         case "print_ack":
           // Apenas repassa via onEvento, sem invalidar queries
           break;
+        case "bot_mensagem":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConversas });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botDashboard });
+          // Invalidar mensagens da conversa específica se estiver aberta
+          if (dados?.conversa_id) {
+            qc.invalidateQueries({ queryKey: ["admin", "bot", "mensagens", dados.conversa_id] });
+          }
+          if (habilitarSom) tocarSomBot();
+          if (habilitarNotificacaoSistema) {
+            const nome = dados?.nome_cliente as string || "Cliente";
+            notificarSistema("WhatsApp Humanoide", `${nome} enviou uma mensagem`);
+          }
+          break;
+        case "bot_atraso_detectado":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botDashboard });
+          if (habilitarSom) tocarSomAlerta();
+          if (habilitarNotificacaoSistema) {
+            const comanda = dados?.comanda as string || "";
+            notificarSistema("Bot: Atraso Detectado", `Pedido #${comanda} está atrasado`);
+          }
+          break;
+        case "bot_handoff_solicitado":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConversas });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botDashboard });
+          if (habilitarSom) tocarSomHandoff();
+          if (habilitarNotificacaoSistema) {
+            const nomeHandoff = dados?.nome_cliente as string || "Cliente";
+            notificarSistema("Handoff Solicitado!", `${nomeHandoff} quer falar com um humano`);
+          }
+          break;
       }
     },
     [qc, habilitarSom, habilitarNotificacaoSistema]
@@ -299,5 +377,5 @@ export function useWebSocket({
     return false;
   }, []);
 
-  return { tocarSomNotificacao, tocarSomAlerta, tocarSomCancelamento, tocarSomDespacho, enviarMensagem };
+  return { tocarSomNotificacao, tocarSomAlerta, tocarSomCancelamento, tocarSomDespacho, tocarSomBot, tocarSomHandoff, enviarMensagem };
 }

@@ -898,6 +898,7 @@ export function useSelecionarPlano() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.billingStatus });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.faturas });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.planosDisponiveis });
     },
   });
 }
@@ -1242,12 +1243,55 @@ export function useBotConversas(params?: { status?: string; limit?: number }) {
   });
 }
 
-export function useBotMensagens(conversaId: number) {
+export function useBotMensagens(conversaId: number, pagina: number = 1) {
   return useQuery({
-    queryKey: ["admin", "bot", "mensagens", conversaId] as const,
-    queryFn: () => api.getBotMensagens(conversaId),
+    queryKey: ["admin", "bot", "mensagens", conversaId, pagina] as const,
+    queryFn: () => api.getBotMensagens(conversaId, { pagina }),
     enabled: !!conversaId,
     staleTime: 10_000,
+  });
+}
+
+export function useEnviarMensagemBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversaId, texto }: { conversaId: number; texto: string }) =>
+      api.enviarMensagemBot(conversaId, texto),
+    onSuccess: (_data, variables) => {
+      qc.invalidateQueries({ queryKey: ["admin", "bot", "mensagens", variables.conversaId] });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConversas });
+    },
+  });
+}
+
+export function useEscalarConversaBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ conversaId, senha }: { conversaId: number; senha: string }) =>
+      api.escalarConversaBot(conversaId, senha),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConversas });
+    },
+  });
+}
+
+export function useRecusarHandoffBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (conversaId: number) => api.recusarHandoffBot(conversaId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConversas });
+    },
+  });
+}
+
+export function useDevolverBotConversa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (conversaId: number) => api.devolverBotConversa(conversaId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConversas });
+    },
   });
 }
 

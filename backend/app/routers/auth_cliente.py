@@ -11,18 +11,16 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-import os
 import random
 import string
 
 from .. import models, database
 from ..schemas import cliente_schemas
 from ..email_service import enviar_email_verificacao, enviar_email_reset_senha
+from ..auth import SECRET_KEY, ALGORITHM
 
 # ==================== CONFIG ====================
 
-SECRET_KEY = os.getenv("SECRET_KEY", "superfood-dev-secret-key-change-in-production")
-ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 72  # 3 dias
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

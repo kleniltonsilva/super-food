@@ -31,18 +31,18 @@ async def bot_workers_loop(ws_manager):
             db = SessionLocal()
             try:
                 # Notificação proativa a cada 60s
-                await _notificar_mudancas_status(db)
+                await _notificar_mudancas_status(db, ws_manager)
 
                 # Avaliações e atrasos a cada 2 min (ciclo par)
                 if ciclo % 2 == 0:
-                    await _verificar_avaliacoes_pendentes(db)
+                    await _verificar_avaliacoes_pendentes(db, ws_manager)
                     await _verificar_atrasos(db, ws_manager)
                     _reset_tokens_diarios(db)
 
                 # Repescagem + lembretes a cada 60 ciclos (1h)
                 if ciclo % 60 == 0:
-                    await _verificar_clientes_inativos(db)
-                    await _verificar_cupons_expirando(db)
+                    await _verificar_clientes_inativos(db, ws_manager)
+                    await _verificar_cupons_expirando(db, ws_manager)
             finally:
                 db.close()
 
@@ -58,7 +58,7 @@ async def bot_workers_loop(ws_manager):
 # WORKER 1: Avaliação pós-entrega — Fluxo 2 etapas
 # ═══════════════════════════════════════════════════════════════
 
-async def _verificar_avaliacoes_pendentes(db: Session):
+async def _verificar_avaliacoes_pendentes(db: Session, ws_manager=None):
     """Envia mensagem de avaliação 2 etapas: primeiro pergunta se houve problema."""
     bot_configs = db.query(models.BotConfig).filter(
         models.BotConfig.bot_ativo == True,
@@ -145,6 +145,23 @@ async def _verificar_avaliacoes_pendentes(db: Session):
                         msg_bot.conversa_id = conversa.id
                         db.add(msg_bot)
                         conversa.msgs_enviadas = (conversa.msgs_enviadas or 0) + 1
+
+                    # Notificar painel
+                    if ws_manager and conversa:
+                        try:
+                            await ws_manager.broadcast({
+                                "tipo": "bot_mensagem",
+                                "dados": {
+                                    "conversa_id": conversa.id,
+                                    "telefone": telefone,
+                                    "nome_cliente": nome,
+                                    "resposta": texto[:200],
+                                    "function_calls": [],
+                                    "pedido_criado": False,
+                                },
+                            }, config.restaurante_id)
+                        except Exception:
+                            pass
 
                 except Exception as e:
                     logger.error(f"Erro enviando avaliação: {e}")
@@ -299,7 +316,7 @@ def _reset_tokens_diarios(db: Session):
 # WORKER 4: Repescagem inteligente de clientes inativos
 # ═══════════════════════════════════════════════════════════════
 
-async def _verificar_clientes_inativos(db: Session):
+async def _verificar_clientes_inativos(db: Session, ws_manager=None):
     """Detecta clientes inativos e envia repescagem com cupom."""
     bot_configs = db.query(models.BotConfig).filter(
         models.BotConfig.bot_ativo == True,
@@ -413,6 +430,22 @@ async def _verificar_clientes_inativos(db: Session):
             )
             db.add(repescagem)
 
+            # Notificar painel
+            if ws_manager:
+                try:
+                    await ws_manager.broadcast({
+                        "tipo": "bot_mensagem",
+                        "dados": {
+                            "telefone": telefone,
+                            "nome_cliente": nome,
+                            "resposta": texto[:200],
+                            "function_calls": [],
+                            "pedido_criado": False,
+                        },
+                    }, config.restaurante_id)
+                except Exception:
+                    pass
+
         # Atualizar última execução
         config.repescagem_ultima_execucao = agora
         from sqlalchemy.orm.attributes import flag_modified
@@ -508,7 +541,7 @@ def _query_clientes_inativos_simples(db: Session, restaurante_id: int, limite: d
 # WORKER 4.5: Lembrete de cupons expirando (24h antes)
 # ═══════════════════════════════════════════════════════════════
 
-async def _verificar_cupons_expirando(db: Session):
+async def _verificar_cupons_expirando(db: Session, ws_manager=None):
     """Envia lembrete WA + email para cupons exclusivos/repescagem que expiram em 24h."""
     agora = datetime.utcnow()
     amanha = agora + timedelta(hours=24)
@@ -590,6 +623,22 @@ async def _verificar_cupons_expirando(db: Session):
         rep.lembrete_enviado = True
         rep.lembrete_enviado_em = agora
 
+        # Notificar painel
+        if ws_manager and config:
+            try:
+                await ws_manager.broadcast({
+                    "tipo": "bot_mensagem",
+                    "dados": {
+                        "telefone": cliente.telefone,
+                        "nome_cliente": nome,
+                        "resposta": f"Lembrete cupom {rep.cupom_codigo} enviado",
+                        "function_calls": [],
+                        "pedido_criado": False,
+                    },
+                }, rep.restaurante_id)
+            except Exception:
+                pass
+
     db.commit()
 
 
@@ -597,7 +646,7 @@ async def _verificar_cupons_expirando(db: Session):
 # WORKER 5: Notificação proativa de mudança de status
 # ═══════════════════════════════════════════════════════════════
 
-async def _notificar_mudancas_status(db: Session):
+async def _notificar_mudancas_status(db: Session, ws_manager=None):
     """Notifica clientes proativamente quando status do pedido muda.
     Pedidos WhatsApp: entrega → motoboy chegou, retirada/balcão → pronto.
     Anti-spam: usa session_data da conversa para rastrear status já notificados.
@@ -708,6 +757,23 @@ async def _notificar_mudancas_status(db: Session):
                     # Forçar update do JSON (SQLAlchemy precisa detectar mudança)
                     from sqlalchemy.orm.attributes import flag_modified
                     flag_modified(conversa, "session_data")
+
+                    # Notificar painel
+                    if ws_manager:
+                        try:
+                            await ws_manager.broadcast({
+                                "tipo": "bot_mensagem",
+                                "dados": {
+                                    "conversa_id": conversa.id,
+                                    "telefone": telefone,
+                                    "nome_cliente": conversa.nome_cliente,
+                                    "resposta": mensagem[:200],
+                                    "function_calls": [],
+                                    "pedido_criado": False,
+                                },
+                            }, config.restaurante_id)
+                        except Exception:
+                            pass
 
                 except Exception as e:
                     logger.error(f"Erro notificação proativa: {e}")
