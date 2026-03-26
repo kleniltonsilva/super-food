@@ -847,7 +847,7 @@ Restaurante saca (manual ou automático)
 - **Quiz Diagnóstico:** formulário interativo que calcula quanto o restaurante perde sem sistema (por tipo)
 - **Correção ortográfica (26/03/2026):** 23+ correções de acentuação (mês, grátis, período, dúvidas, é, já, número, opção, Relatórios, Promoções, Garçom, Integrações, Domínio, Avançado, Básico)
 
-### 12.4 Demo WhatsApp Humanoide (Modal Interativo)
+### 12.3 Demo WhatsApp Humanoide (Modal Interativo)
 - **Botões de ativação:** 2 locais — banner WhatsApp Humanoide (planos) e FAQ
 - **Modal smartphone:** em desktop simula frame de celular (380×720px, border-radius 40px); em mobile ocupa tela inteira (full-screen imersivo)
 - **3 telas navegáveis:**
@@ -861,13 +861,28 @@ Restaurante saca (manual ou automático)
 - **Sons:** Web Audio API (800→1200Hz para mensagem recebida, 600→900Hz para enviada)
 - **UI WhatsApp:** cores dark mode autênticas (#0b141a, #1f2c34, #005c4b, #2a3942), pattern SVG de fundo
 
-### 12.2 Domínio e SSL
+### 12.2 Páginas Legais (Compliance)
+
+Três páginas standalone servidas por Jinja2 (mesmo padrão visual da landing — Tailwind CDN, Inter, dark theme):
+
+| Rota | Template | Conteúdo |
+|------|----------|----------|
+| `GET /privacidade` | `backend/templates/privacidade.html` | Política de Privacidade (LGPD) — 11 seções, 2 públicos (B2B + consumidor final) |
+| `GET /termos` | `backend/templates/termos.html` | Termos de Uso — 16 seções, contrato SaaS com tabela de planos e add-ons |
+| `GET /cancelamento` | `backend/templates/cancelamento.html` | Política de Cancelamento — 7 seções, direito de arrependimento (Art. 49 CDC) |
+
+- **Links:** footer da landing page (coluna "Legal" + bottom bar inline)
+- **Empresa:** D ALVES FREITAS DOS SANTOS DESENVOLVIMENTO DE SOFTWARE LTDA — CNPJ 65.642.226/0001-31
+- **DPO:** contato@derekhfood.com.br
+- **Requerido por:** Transfeera (split Pix) para aprovação de conta
+
+### 12.4 Domínio e SSL
 - Domínio: `derekhfood.com.br`
 - DNS: A e AAAA apontando para Fly.io
 - SSL: certificados Let's Encrypt (RSA + ECDSA) para domínio raiz e www
 - Renovação automática pelo Fly.io
 
-### 12.3 WhatsApp Comercial
+### 12.5 WhatsApp Comercial
 - Número: +1 555-900-4563 (Facebook Business)
 - Integrado à landing page (botão flutuante)
 - Integrado ao site dos restaurantes (botão flutuante SVG — oculto em demos)

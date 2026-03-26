@@ -825,6 +825,21 @@ async def serve_root(request: Request):
     return templates.TemplateResponse(request, "landing.html")
 
 
+@app.get("/privacidade", response_class=HTMLResponse)
+async def pagina_privacidade(request: Request):
+    return templates.TemplateResponse(request, "privacidade.html")
+
+
+@app.get("/termos", response_class=HTMLResponse)
+async def pagina_termos(request: Request):
+    return templates.TemplateResponse(request, "termos.html")
+
+
+@app.get("/cancelamento", response_class=HTMLResponse)
+async def pagina_cancelamento(request: Request):
+    return templates.TemplateResponse(request, "cancelamento.html")
+
+
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def serve_catchall(request: Request, path: str):
     """Catch-all — se domínio personalizado, serve SPA do restaurante"""
