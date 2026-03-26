@@ -607,8 +607,39 @@ def _preparar_texto_tts(texto: str) -> str:
     return texto
 
 
-def gerar_audio_tts(texto: str, voz: str = "rex") -> Optional[str]:
-    """Gera áudio via Grok TTS. Retorna path do arquivo .mp3 ou None."""
+def gerar_audio_tts(texto: str, voz: str = "rex", emocao: str = "") -> Optional[str]:
+    """Gera áudio TTS. Dual-mode: Fish Audio (se configurado) ou Grok (padrão).
+
+    Provider controlado por config 'tts_provider':
+      - "fish": usa Fish Audio S2-Pro (requer FISH_API_KEY)
+      - "grok" ou vazio: usa xAI Grok TTS (padrão, sem breaking changes)
+
+    Args:
+        texto: Texto para converter em áudio
+        voz: Voice ID (Grok: rex/ara/etc, Fish: reference_id)
+        emocao: Tag de emoção Fish Audio (ex: "abertura", "objecao")
+
+    Returns:
+        Path do arquivo .mp3 temporário ou None em caso de erro.
+    """
+    # Verificar provider configurado
+    tts_provider = (obter_configuracao("tts_provider") or "grok").lower().strip()
+
+    # --- Fish Audio (se ativo) ---
+    if tts_provider == "fish":
+        try:
+            from crm.fish_tts import gerar_audio_fish
+            resultado = gerar_audio_fish(texto, emocao=emocao)
+            if resultado:
+                return resultado
+            # Fish falhou — fallback para Grok
+            log.warning("Fish Audio falhou, fallback para Grok TTS")
+        except ImportError:
+            log.warning("fish_tts.py não encontrado, fallback para Grok TTS")
+        except Exception as e:
+            log.warning(f"Fish Audio erro ({e}), fallback para Grok TTS")
+
+    # --- Grok TTS (padrão) ---
     texto = _preparar_texto_tts(texto)
     xai_key = _get_xai_key()
     if not xai_key:
@@ -963,11 +994,12 @@ TESTE GRÁTIS (IMPORTANTÍSSIMO — sempre oferecer):
 - O trial NÃO inclui o WhatsApp Humanoide (esse é um add-on separado de R$99,45/mês)
 
 PLANOS (só detalhe quando perguntarem — não despeje tudo de uma vez):
-- Básico: R$169,90/mês — site delivery próprio, cardápio digital, pedidos WhatsApp, dashboard, até 2 motoboys
-- Essencial: R$279,90/mês — tudo do Básico + relatórios avançados, cupons, KDS cozinha, até 5 motoboys
-- Avançado: R$329,90/mês — tudo do Essencial + app garçom, bridge impressora, integrações marketplace, Pix online, até 10 motoboys
-- Premium: R$527/mês — tudo liberado + WhatsApp Humanoide incluso + suporte prioritário + motoboys ilimitados
+- Básico: R$169,90/mês — site delivery próprio, cardápio digital, pedidos WhatsApp, dashboard, Bridge Printer IA, até 2 motoboys
+- Essencial: R$279,90/mês — tudo do Básico + relatórios avançados, cupons, programa fidelidade, combos, operadores caixa, KDS cozinha, até 5 motoboys
+- Avançado: R$329,90/mês — tudo do Essencial + app garçom, integrações iFood/marketplace, Pix online, domínio personalizado, analytics avançado, até 10 motoboys
+- Premium: R$527/mês — tudo liberado + WhatsApp Humanoide incluso + suporte dedicado + motoboys ilimitados
 - Add-on WhatsApp Humanoide: R$99,45/mês (para quem não é Premium)
+- Bridge Printer IA: inclusa em TODOS os planos (intercepta pedidos iFood/Rappi direto da impressora)
 - Todos sem fidelidade. Setup em 48h.
 {kb_section}
 SE PERGUNTAREM SE VOCÊ É ROBÔ/IA/BOT:
@@ -1065,10 +1097,11 @@ TESTE GRÁTIS (SEMPRE ofereça quando o lead hesitar ou perguntar sobre preço):
 - O trial NÃO inclui WhatsApp Humanoide (add-on separado R$99,45/mês)
 
 PLANOS (só detalhe quando perguntarem):
-- Básico: R$169,90/mês — site delivery, cardápio digital, pedidos WhatsApp, até 2 motoboys
-- Essencial: R$279,90/mês — + relatórios, cupons, KDS cozinha, até 5 motoboys
-- Avançado: R$329,90/mês — + garçom, bridge impressora, integrações, Pix online, até 10 motoboys
-- Premium: R$527/mês — tudo + WhatsApp Humanoide incluso + suporte prioritário + motoboys ilimitados
+- Básico: R$169,90/mês — site delivery, cardápio digital, pedidos WhatsApp, Bridge Printer IA, até 2 motoboys
+- Essencial: R$279,90/mês — + relatórios avançados, cupons, fidelidade, combos, operadores caixa, KDS cozinha, até 5 motoboys
+- Avançado: R$329,90/mês — + app garçom, integrações iFood, Pix online, domínio personalizado, analytics, até 10 motoboys
+- Premium: R$527/mês — tudo + WhatsApp Humanoide incluso + suporte dedicado + motoboys ilimitados
+- Bridge Printer IA: inclusa em TODOS os planos
 - Todos sem fidelidade. Setup em 48h.
 {kb_section}
 SE PERGUNTAREM SE VOCÊ É ROBÔ/IA/BOT:

@@ -14,6 +14,10 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import SessionLocal
 from . import evolution_client, groq_stt, xai_tts, xai_llm
+try:
+    from . import fish_tts as _fish_tts
+except ImportError:
+    _fish_tts = None
 from .context_builder import build_system_prompt, build_restaurant_context, build_client_context, build_conversation_history
 from .function_calls import TOOLS, executar_funcao
 
@@ -217,7 +221,19 @@ async def _processar_mensagem(
         envio_ok = False
         try:
             if enviar_audio and bot_config.tts_autonomo:
-                audio_b64 = await xai_tts.gerar_audio(resposta_final, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
+                # Dual-mode TTS: Fish Audio (se configurado) → fallback xAI Grok
+                audio_b64 = None
+                tts_provider = getattr(bot_config, "tts_provider", "") or ""
+                if tts_provider.lower() == "fish" and _fish_tts:
+                    audio_b64 = await _fish_tts.gerar_audio(
+                        resposta_final,
+                        voz=bot_config.voz_tts or "",
+                        idioma=bot_config.idioma or "pt-BR",
+                    )
+                    if audio_b64:
+                        logger.info("TTS via Fish Audio S2-Pro")
+                if not audio_b64:
+                    audio_b64 = await xai_tts.gerar_audio(resposta_final, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
                 if audio_b64:
                     try:
                         await evolution_client.enviar_audio_ptt(

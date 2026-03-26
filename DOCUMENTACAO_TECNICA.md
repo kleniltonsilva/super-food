@@ -214,8 +214,8 @@
 - **Fluxo:** cliente paga Pix → webhook confirma → saldo acumula → restaurante saca
 
 ### 2.18 Assinatura/Billing (Asaas)
-- **Trial:** 20 dias grátis com plano Premium completo
-- **Planos:** Básico, Profissional, Premium (valores configuráveis pelo Super Admin)
+- **Trial:** 15 dias grátis com plano Premium completo (WhatsApp Humanoide não incluso no trial)
+- **Planos:** Básico (R$169,90), Essencial (R$279,90), Avançado (R$329,90), Premium (R$527,00) — valores configuráveis pelo Super Admin
 - **Pagamento:** Pix ou Boleto via Asaas
 - **Ciclo:** mensal ou anual (20% desconto)
 - **Fluxo:** trial → ativo → inadimplente → suspenso → cancelado
@@ -933,7 +933,7 @@ O sistema usa **comparação por tier inteiro** (1-4) com hierarquia cumulativa.
 | Pix Online | `pix_online` | — | — | ✅ | ✅ |
 | Domínio Personalizado | `dominio_personalizado` | — | — | ✅ | ✅ |
 | Analytics Avançado | `analytics_avancado` | — | — | ✅ | ✅ |
-| Bridge Printer IA | `bridge_printer` | — | — | — | ✅ |
+| Bridge Printer IA | `bridge_printer` | ✅ | ✅ | ✅ | ✅ |
 | Bot WhatsApp IA | `bot_whatsapp` | — | — | — | ✅ |
 | Suporte Dedicado | `suporte_dedicado` | — | — | — | ✅ |
 
@@ -1371,6 +1371,69 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 - **Vozes disponíveis:** ara, eve, leo, rex, sal, una
 - **Envio:** Via Evolution API como PTT nativo (bolinha verde) usando `sendWhatsAppAudio`
 - **Critérios para enviar áudio:** cliente mandou áudio (reciprocidade) OU conversa longa (>=8 msgs)
+
+### 17.8.1 TTS Dual-Mode (Fish Audio + xAI Grok)
+
+#### Visão Geral
+
+- Sistema TTS dual-mode: Fish Audio S2-Pro (quando configurado) com fallback automático para xAI Grok
+- Zero breaking changes: default = Grok (comportamento idêntico ao anterior)
+- Toggle via config `tts_provider`: "grok" (padrão) ou "fish"
+
+#### Arquivos
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `Hacking-restaurant-b2b/crm/fish_tts.py` | Módulo Fish Audio para Sales Bot (sync, retorna path .mp3) |
+| `backend/app/bot/fish_tts.py` | Módulo Fish Audio para Bot Restaurante (async, retorna base64 MP3) |
+| `crm/wa_sales_bot.py` | `gerar_audio_tts()` agora verifica tts_provider antes de gerar |
+| `backend/app/bot/atendente.py` | Dual-mode: Fish → fallback Grok |
+| `database/models.py` | Campo `tts_provider` em BotConfig (String, default 'grok') |
+
+#### API Fish Audio
+
+- **Endpoint:** `POST https://api.fish.audio/v1/tts`
+- **Auth:** Bearer token (header `Authorization`)
+- **Model:** `s2-pro` (header, NÃO body)
+- **Body:** `{text, reference_id, format, latency}`
+- **Response:** binary audio stream (chunked)
+- **Tags emoção S2-Pro:** livres em colchetes `[amigável]`, `[empolgado]`, etc.
+- **SDK:** `pip install fish-audio-sdk` (opcional, funciona via httpx raw)
+
+#### Variáveis de Ambiente
+
+| Variável | Descrição | Obrigatória |
+|----------|-----------|-------------|
+| `FISH_API_KEY` | API key Fish Audio | Sim (para ativar) |
+| `FISH_VOICE_ID` | Voice/reference_id clonada ou stock | Não |
+
+#### Como Ativar
+
+1. Obter API key em fish.audio (plano Plus $11/mês mínimo)
+2. Definir `FISH_API_KEY` no ambiente
+3. Sales Bot: `POST /api/configuracao` → `tts_provider = "fish"`
+4. Bot Restaurante: setar `tts_provider = "fish"` no BotConfig do restaurante
+5. Opcional: `pip install fish-audio-sdk` para usar SDK em vez de API raw
+
+#### Tags de Emoção (Sales Bot)
+
+| Contexto | Tag |
+|----------|-----|
+| abertura | `[amigável e caloroso]` |
+| apresentacao | `[profissional e confiante]` |
+| beneficio | `[empolgado]` |
+| objecao | `[compreensivo e paciente]` |
+| urgencia | `[entusiasmado]` |
+| fechamento | `[confiante e animado]` |
+| followup | `[simpático e casual]` |
+| suporte | `[prestativo e calmo]` |
+
+#### Fluxo de Fallback
+
+1. Verifica `tts_provider` config
+2. Se `"fish"`: tenta Fish Audio → se falha → Grok
+3. Se `"grok"` ou vazio: Grok direto (comportamento atual)
+4. Se Grok falha: retorna `None` → fallback para texto
 
 ### 17.9 Context Builder — 3 Camadas
 

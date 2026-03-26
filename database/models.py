@@ -1608,6 +1608,7 @@ class BotConfig(Base):
     # Audio
     stt_ativo = Column(Boolean, default=True)
     tts_autonomo = Column(Boolean, default=False)
+    tts_provider = Column(String(20), default='grok')  # grok | fish
     # Limites
     max_tokens_dia = Column(Integer, default=50000)
     tokens_usados_hoje = Column(Integer, default=0)
