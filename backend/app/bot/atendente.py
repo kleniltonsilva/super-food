@@ -118,8 +118,14 @@ async def processar_webhook(payload: dict) -> dict:
     _processed_msg_ids[msg_id] = time.time()
     _limpar_cache_dedup()
 
-    # Extrair número e conteúdo
-    numero = remote_jid.split("@")[0] if "@" in remote_jid else remote_jid
+    # Extrair número — WhatsApp pode usar @lid (Linked ID) em vez de @s.whatsapp.net
+    if "@lid" in remote_jid:
+        # @lid usa ID interno; número real está em remoteJidAlt
+        alt_jid = msg_key.get("remoteJidAlt", "")
+        numero = alt_jid.split("@")[0] if "@" in alt_jid else remote_jid.split("@")[0]
+        logger.info(f"LID detectado: {remote_jid} → número real: {numero}")
+    else:
+        numero = remote_jid.split("@")[0] if "@" in remote_jid else remote_jid
     instance = payload.get("instance", "")
 
     message = data.get("message", {})
