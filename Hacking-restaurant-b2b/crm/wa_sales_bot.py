@@ -607,6 +607,157 @@ def _preparar_texto_tts(texto: str) -> str:
     return texto
 
 
+# ============================================================
+# PÓS-PROCESSAMENTO: TEXTO ESCRITO vs ÁUDIO FALADO
+# O LLM gera texto informal ("vc", "tbm", "kkk").
+# - Texto escrito: limpar abreviações → escrita correta (profissional)
+# - Áudio falado: converter para dicção oral natural (como gente fala)
+# ============================================================
+
+# Abreviações WhatsApp → escrita correta (para TEXTO escrito)
+_ABREV_PARA_ESCRITA = [
+    # Ordem importa: mais específicos primeiro
+    (r'\bvc\b', 'você'),
+    (r'\bvcs\b', 'vocês'),
+    (r'\btbm\b', 'também'),
+    (r'\btb\b', 'também'),
+    (r'\bblz\b', 'beleza'),
+    (r'\btlgd\b', 'entende'),
+    (r'\bpô\b', 'poxa'),
+    (r'\bmano\b', 'amigo'),
+    (r'\bdahora\b', 'incrível'),
+    (r'\bmassa\b', 'ótimo'),
+    (r'\bshow\b', 'excelente'),
+    (r'\bqdo\b', 'quando'),
+    (r'\bqto\b', 'quanto'),
+    (r'\bpq\b', 'porque'),
+    (r'\bcmg\b', 'comigo'),
+    (r'\bctg\b', 'contigo'),
+    (r'\bmsm\b', 'mesmo'),
+    (r'\bvdd\b', 'verdade'),
+    (r'\btô\b', 'estou'),
+    (r'\btá\b', 'está'),
+    (r'\bné\b', 'não é'),
+    (r'\bpra\b', 'para'),
+    (r'\bpro\b', 'para o'),
+    (r'\bcê\b', 'você'),
+    (r'\bfmz\b', 'firmeza'),
+    (r'\bpdp\b', 'pode pá'),
+    (r'\bflw\b', 'falou'),
+    (r'\btmj\b', 'estamos juntos'),
+    (r'\bobg\b', 'obrigado'),
+    (r'\bslk\b', ''),
+    (r'\bmlk\b', ''),
+]
+
+# Risadas e interjeições → remover ou suavizar para texto
+_RISADAS_TEXTO = [
+    (r'\bk{3,}\b', ''),       # kkk, kkkk → remover
+    (r'\bha{3,}\b', ''),      # haha, hahaha → remover
+    (r'\brs{2,}\b', ''),      # rsrs → remover
+    (r'\bhehe\b', ''),        # hehe → remover
+]
+
+# Dicção oral natural (para ÁUDIO TTS)
+# Converte abreviações escritas → como a pessoa FALA de verdade
+_ABREV_PARA_FALA = [
+    (r'\bvc\b', 'cê'),
+    (r'\bvcs\b', 'cês'),
+    (r'\btbm\b', 'também'),
+    (r'\btb\b', 'também'),
+    (r'\bblz\b', 'beleza'),
+    (r'\btlgd\b', 'tá ligado'),
+    (r'\bqdo\b', 'quando'),
+    (r'\bqto\b', 'quanto'),
+    (r'\bpq\b', 'porque'),
+    (r'\bcmg\b', 'comigo'),
+    (r'\bctg\b', 'contigo'),
+    (r'\bmsm\b', 'mesmo'),
+    (r'\bvdd\b', 'verdade'),
+    (r'\bfmz\b', 'firmeza'),
+    (r'\bpdp\b', 'pode pá'),
+    (r'\bflw\b', 'falou'),
+    (r'\btmj\b', 'tamo junto'),
+    (r'\bobg\b', 'obrigado'),
+    (r'\bslk\b', ''),
+    (r'\bmlk\b', ''),
+]
+
+# Risadas → efeito oral ou remoção
+_RISADAS_FALA = [
+    (r'\bk{3,}\b', ''),       # kkk → remover (TTS não ri)
+    (r'\bha{3,}\b', ''),      # hahaha → remover
+    (r'\brs{2,}\b', ''),      # rsrs → remover
+    (r'\bhehe\b', ''),        # hehe → remover
+]
+
+# Contrações orais naturais do PT-BR (para ÁUDIO)
+_CONTRACOES_FALA = [
+    (r'\bvocê\b', 'cê'),
+    (r'\bestou\b', 'tô'),
+    (r'\bestá\b', 'tá'),
+    (r'\bestão\b', 'tão'),
+    (r'\bestamos\b', 'tamo'),
+    (r'\bpara o\b', 'pro'),
+    (r'\bpara a\b', 'pra'),
+    (r'\bpara\b', 'pra'),
+    (r'\bnão é\b', 'né'),
+    (r'\bvamos\b', 'vamo'),
+    (r'\bcom o\b', 'co'),
+    (r'\bcom a\b', 'coa'),
+    (r'\bquer dizer\b', 'quer dizer'),
+    (r'\bpode ser\b', 'pode ser'),
+]
+
+
+def _pos_processar_texto_escrito(texto: str) -> str:
+    """Converte resposta informal do LLM → escrita correta para mensagem de texto.
+    Remove risadas, expande abreviações, mantém tom profissional mas acolhedor."""
+    import re
+
+    # Remover risadas
+    for pattern, repl in _RISADAS_TEXTO:
+        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
+
+    # Expandir abreviações → escrita correta
+    for pattern, repl in _ABREV_PARA_ESCRITA:
+        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
+
+    # Limpar espaços duplos
+    texto = re.sub(r'  +', ' ', texto)
+    # Limpar espaço antes de pontuação
+    texto = re.sub(r'\s+([.,!?])', r'\1', texto)
+    # Limpar linhas vazias extras
+    texto = re.sub(r'\n{3,}', '\n\n', texto)
+
+    return texto.strip()
+
+
+def _pos_processar_texto_audio(texto: str) -> str:
+    """Converte resposta do LLM → dicção oral natural para TTS.
+    Expande abreviações escritas para como se FALA,
+    adiciona contrações orais naturais do PT-BR."""
+    import re
+
+    # Remover risadas (TTS não ri)
+    for pattern, repl in _RISADAS_FALA:
+        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
+
+    # Converter abreviações escritas → forma falada
+    for pattern, repl in _ABREV_PARA_FALA:
+        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
+
+    # Adicionar contrações orais naturais
+    for pattern, repl in _CONTRACOES_FALA:
+        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
+
+    # Limpar espaços duplos
+    texto = re.sub(r'  +', ' ', texto)
+    texto = re.sub(r'\s+([.,!?])', r'\1', texto)
+
+    return texto.strip()
+
+
 def gerar_audio_tts(texto: str, voz: str = "rex", emocao: str = "") -> Optional[str]:
     """Gera áudio TTS. Dual-mode: Fish Audio (se configurado) ou Grok (padrão).
 
@@ -1313,8 +1464,10 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         # Responder com IA (prompt de boas-vindas)
         resultado_ia = _responder_inbound(conversa_id, mensagem)
         if resultado_ia.get("sucesso"):
-            enviado = _enviar_direto(numero, resultado_ia["resposta"], instance=instance)
-            registrar_msg_wa(conversa_id, "enviada", resultado_ia["resposta"], grok=True)
+            # Inbound é sempre texto → escrita correta
+            resposta_texto = _pos_processar_texto_escrito(resultado_ia["resposta"])
+            enviado = _enviar_direto(numero, resposta_texto, instance=instance)
+            registrar_msg_wa(conversa_id, "enviada", resposta_texto, grok=True)
             if enviado.get("sucesso"):
                 log.info(f"Resposta inbound enviada para {numero} via {instance or 'default'}")
             else:
@@ -1377,19 +1530,24 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
     resultado_ia = responder_com_ia(conversa_id, mensagem)
 
     if resultado_ia.get("sucesso"):
+        resposta_crua = resultado_ia["resposta"]
+
         # Decisão: enviar áudio ou texto?
         if _deve_enviar_audio(conversa_full, mensagem):
-            # Gerar TTS + enviar áudio
+            # ÁUDIO: converter para dicção oral (como gente fala)
+            resposta_audio = _pos_processar_texto_audio(resposta_crua)
             audio_result = _gerar_e_enviar_audio_resposta(
-                numero_envio, resultado_ia["resposta"], conversa_id, instance=instance)
+                numero_envio, resposta_audio, conversa_id, instance=instance)
             if audio_result.get("erro"):
                 # Fallback para texto se áudio falhar
                 log.warning(f"Fallback texto (áudio falhou): {audio_result['erro']}")
-                _enviar_e_salvar(conversa_id, numero_envio, resultado_ia["resposta"],
+                resposta_texto = _pos_processar_texto_escrito(resposta_crua)
+                _enviar_e_salvar(conversa_id, numero_envio, resposta_texto,
                                  grok=True, instance=instance)
         else:
-            # Enviar texto normal + salvar (1x cada)
-            _enviar_e_salvar(conversa_id, numero_envio, resultado_ia["resposta"],
+            # TEXTO: converter para escrita correta (profissional)
+            resposta_texto = _pos_processar_texto_escrito(resposta_crua)
+            _enviar_e_salvar(conversa_id, numero_envio, resposta_texto,
                              grok=True, instance=instance)
 
         # Avaliar handoff gradual

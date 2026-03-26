@@ -32,6 +32,58 @@ _processed_msg_ids: dict[str, float] = {}
 _DEDUP_MAX = 500
 
 
+# ============================================================
+# PÓS-PROCESSAMENTO: TEXTO ESCRITO vs ÁUDIO FALADO
+# LLM gera texto informal. Texto escrito → limpar. Áudio → dicção oral.
+# ============================================================
+import re as _re
+
+_ABREV_PARA_ESCRITA = [
+    (r'\bvc\b', 'você'), (r'\bvcs\b', 'vocês'), (r'\btbm\b', 'também'),
+    (r'\btb\b', 'também'), (r'\bblz\b', 'beleza'), (r'\btlgd\b', 'entende'),
+    (r'\bqdo\b', 'quando'), (r'\bqto\b', 'quanto'), (r'\bpq\b', 'porque'),
+    (r'\bmsm\b', 'mesmo'), (r'\bvdd\b', 'verdade'), (r'\bobg\b', 'obrigado'),
+]
+_RISADAS = [(r'\bk{3,}\b', ''), (r'\bha{3,}\b', ''), (r'\brs{2,}\b', ''), (r'\bhehe\b', '')]
+
+_CONTRACOES_FALA = [
+    (r'\bvocê\b', 'cê'), (r'\bestou\b', 'tô'), (r'\bestá\b', 'tá'),
+    (r'\bestão\b', 'tão'), (r'\bestamos\b', 'tamo'), (r'\bpara o\b', 'pro'),
+    (r'\bpara a\b', 'pra'), (r'\bpara\b', 'pra'), (r'\bnão é\b', 'né'),
+    (r'\bvamos\b', 'vamo'),
+]
+_ABREV_PARA_FALA = [
+    (r'\bvc\b', 'cê'), (r'\bvcs\b', 'cês'), (r'\btbm\b', 'também'),
+    (r'\btb\b', 'também'), (r'\bblz\b', 'beleza'), (r'\btlgd\b', 'tá ligado'),
+    (r'\bqdo\b', 'quando'), (r'\bqto\b', 'quanto'), (r'\bpq\b', 'porque'),
+    (r'\bmsm\b', 'mesmo'), (r'\bvdd\b', 'verdade'), (r'\bobg\b', 'obrigado'),
+]
+
+
+def _pos_processar_texto_escrito(texto: str) -> str:
+    """LLM informal → escrita correta para mensagem de texto."""
+    for p, r in _RISADAS:
+        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
+    for p, r in _ABREV_PARA_ESCRITA:
+        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
+    texto = _re.sub(r'  +', ' ', texto)
+    texto = _re.sub(r'\s+([.,!?])', r'\1', texto)
+    return texto.strip()
+
+
+def _pos_processar_texto_audio(texto: str) -> str:
+    """LLM informal → dicção oral natural para TTS."""
+    for p, r in _RISADAS:
+        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
+    for p, r in _ABREV_PARA_FALA:
+        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
+    for p, r in _CONTRACOES_FALA:
+        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
+    texto = _re.sub(r'  +', ' ', texto)
+    texto = _re.sub(r'\s+([.,!?])', r'\1', texto)
+    return texto.strip()
+
+
 async def processar_webhook(payload: dict) -> dict:
     """Processa webhook da Evolution API. Ponto de entrada principal."""
     event = payload.get("event")
@@ -221,19 +273,22 @@ async def _processar_mensagem(
         envio_ok = False
         try:
             if enviar_audio and bot_config.tts_autonomo:
+                # ÁUDIO: converter para dicção oral (como gente fala)
+                resposta_audio = _pos_processar_texto_audio(resposta_final)
+
                 # Dual-mode TTS: Fish Audio (se configurado) → fallback xAI Grok
                 audio_b64 = None
                 tts_provider = getattr(bot_config, "tts_provider", "") or ""
                 if tts_provider.lower() == "fish" and _fish_tts:
                     audio_b64 = await _fish_tts.gerar_audio(
-                        resposta_final,
+                        resposta_audio,
                         voz=bot_config.voz_tts or "",
                         idioma=bot_config.idioma or "pt-BR",
                     )
                     if audio_b64:
                         logger.info("TTS via Fish Audio S2-Pro")
                 if not audio_b64:
-                    audio_b64 = await xai_tts.gerar_audio(resposta_final, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
+                    audio_b64 = await xai_tts.gerar_audio(resposta_audio, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
                 if audio_b64:
                     try:
                         await evolution_client.enviar_audio_ptt(
@@ -243,23 +298,29 @@ async def _processar_mensagem(
                             bot_config.evolution_api_key,
                         )
                     except Exception as audio_err:
+                        # Fallback: enviar como texto escrito
                         logger.warning(f"Áudio falhou, enviando texto: {audio_err}")
+                        resposta_texto = _pos_processar_texto_escrito(resposta_final)
                         await evolution_client.enviar_texto(
-                            numero, resposta_final,
+                            numero, resposta_texto,
                             bot_config.evolution_instance,
                             bot_config.evolution_api_url,
                             bot_config.evolution_api_key,
                         )
                 else:
+                    # TTS falhou: enviar como texto escrito
+                    resposta_texto = _pos_processar_texto_escrito(resposta_final)
                     await evolution_client.enviar_texto(
-                        numero, resposta_final,
+                        numero, resposta_texto,
                         bot_config.evolution_instance,
                         bot_config.evolution_api_url,
                         bot_config.evolution_api_key,
                     )
             else:
+                # TEXTO: converter para escrita correta (profissional)
+                resposta_texto = _pos_processar_texto_escrito(resposta_final)
                 await evolution_client.enviar_texto(
-                    numero, resposta_final,
+                    numero, resposta_texto,
                     bot_config.evolution_instance,
                     bot_config.evolution_api_url,
                     bot_config.evolution_api_key,
