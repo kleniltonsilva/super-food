@@ -33,52 +33,62 @@ _DEDUP_MAX = 500
 
 
 # ============================================================
-# PÓS-PROCESSAMENTO: TEXTO ESCRITO vs ÁUDIO FALADO
-# LLM gera texto informal. Texto escrito → limpar. Áudio → dicção oral.
+# PREPARAÇÃO DE TEXTO PARA ÁUDIO (DICÇÃO BRASILEIRA)
+# O LLM gera português correto. Para TEXTO, envia direto.
+# Para ÁUDIO, transforma em dicção falada brasileira natural.
 # ============================================================
 import re as _re
 
-_ABREV_PARA_ESCRITA = [
-    (r'\bvc\b', 'você'), (r'\bvcs\b', 'vocês'), (r'\btbm\b', 'também'),
-    (r'\btb\b', 'também'), (r'\bblz\b', 'beleza'), (r'\btlgd\b', 'entende'),
-    (r'\bqdo\b', 'quando'), (r'\bqto\b', 'quanto'), (r'\bpq\b', 'porque'),
-    (r'\bmsm\b', 'mesmo'), (r'\bvdd\b', 'verdade'), (r'\bobg\b', 'obrigado'),
-]
-_RISADAS = [(r'\bk{3,}\b', ''), (r'\bha{3,}\b', ''), (r'\brs{2,}\b', ''), (r'\bhehe\b', '')]
-
-_CONTRACOES_FALA = [
-    (r'\bvocê\b', 'cê'), (r'\bestou\b', 'tô'), (r'\bestá\b', 'tá'),
-    (r'\bestão\b', 'tão'), (r'\bestamos\b', 'tamo'), (r'\bpara o\b', 'pro'),
-    (r'\bpara a\b', 'pra'), (r'\bpara\b', 'pra'), (r'\bnão é\b', 'né'),
-    (r'\bvamos\b', 'vamo'),
-]
-_ABREV_PARA_FALA = [
-    (r'\bvc\b', 'cê'), (r'\bvcs\b', 'cês'), (r'\btbm\b', 'também'),
-    (r'\btb\b', 'também'), (r'\bblz\b', 'beleza'), (r'\btlgd\b', 'tá ligado'),
-    (r'\bqdo\b', 'quando'), (r'\bqto\b', 'quanto'), (r'\bpq\b', 'porque'),
-    (r'\bmsm\b', 'mesmo'), (r'\bvdd\b', 'verdade'), (r'\bobg\b', 'obrigado'),
+# Dicção brasileira — contrações naturais (expressões compostas primeiro!)
+_DICCAO_BR = [
+    (r'\bnão é\b', 'né'), (r'\bpara o\b', 'pro'), (r'\bpara a\b', 'pra'),
+    (r'\bvocê\b', 'cê'), (r'\bVocê\b', 'Cê'),
+    (r'\bestou\b', 'tô'), (r'\bEstou\b', 'Tô'),
+    (r'\bestá\b', 'tá'), (r'\bEstá\b', 'Tá'),
+    (r'\bestão\b', 'tão'), (r'\bestamos\b', 'tamo'),
+    (r'\bpara\b', 'pra'), (r'\bPara\b', 'Pra'),
+    (r'\bporque\b', 'purque'), (r'\bPorque\b', 'Purque'),
+    (r'\bnão\b', 'num'), (r'\bNão\b', 'Num'),
+    (r'\bobrigado\b', 'brigado'), (r'\bObrigado\b', 'Brigado'),
+    (r'\bobrigada\b', 'brigada'), (r'\bObrigada\b', 'Brigada'),
+    (r'\bvamos\b', 'vamo'), (r'\bVamos\b', 'Vamo'),
 ]
 
 
-def _pos_processar_texto_escrito(texto: str) -> str:
-    """LLM informal → escrita correta para mensagem de texto."""
-    for p, r in _RISADAS:
-        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
-    for p, r in _ABREV_PARA_ESCRITA:
-        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
-    texto = _re.sub(r'  +', ' ', texto)
-    texto = _re.sub(r'\s+([.,!?])', r'\1', texto)
-    return texto.strip()
+def _preparar_texto_para_audio(texto: str) -> str:
+    """Transforma português correto do LLM → dicção falada brasileira para TTS.
 
-
-def _pos_processar_texto_audio(texto: str) -> str:
-    """LLM informal → dicção oral natural para TTS."""
-    for p, r in _RISADAS:
-        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
-    for p, r in _ABREV_PARA_FALA:
-        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
-    for p, r in _CONTRACOES_FALA:
-        texto = _re.sub(p, r, texto, flags=_re.IGNORECASE)
+    6 etapas: dicção, R-drop, plurais, risadas, emojis, visual cleanup.
+    Pronúncia de marcas (Derekh→Dérikh) é feita pelo TTS module.
+    """
+    # 1. Dicção brasileira (contrações naturais)
+    for pattern, repl in _DICCAO_BR:
+        texto = _re.sub(pattern, repl, texto)
+    # 2+3. Plurais com R + R-drop infinitivos
+    texto = _re.sub(r'(\w{2,})ares\b', r'\1á', texto)
+    texto = _re.sub(r'(\w{2,})eres\b', r'\1ê', texto)
+    texto = _re.sub(r'(\w+)antes\b', r'\1ante', texto)
+    texto = _re.sub(r'(\w+)entes\b', r'\1ente', texto)
+    texto = _re.sub(r'(\w+)ões\b', r'\1ão', texto)
+    texto = _re.sub(r'(\w{2,})ar\b', r'\1á', texto)
+    texto = _re.sub(r'(\w{2,})er\b', r'\1ê', texto)
+    texto = _re.sub(r'(\w{2,})ir\b', r'\1i', texto)
+    # 4+5. Risadas e emojis → remover
+    texto = _re.sub(r'\bk{3,}\b', '', texto, flags=_re.IGNORECASE)
+    texto = _re.sub(r'\bha{3,}h?\b', '', texto, flags=_re.IGNORECASE)
+    texto = _re.sub(r'\brs{2,}\b', '', texto, flags=_re.IGNORECASE)
+    texto = _re.sub(r'\bhehe\b', '', texto, flags=_re.IGNORECASE)
+    # 6. Remover elementos visuais
+    texto = _re.sub(r'https?://\S+', '', texto)
+    texto = _re.sub(r'\*{1,2}(.+?)\*{1,2}', r'\1', texto)
+    texto = _re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', texto)
+    texto = _re.sub(
+        r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF'
+        r'\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U0001F900-\U0001F9FF'
+        r'\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002600-\U000026FF'
+        r'\U0000FE00-\U0000FE0F\U0000200D]', '', texto
+    )
+    # Limpeza final
     texto = _re.sub(r'  +', ' ', texto)
     texto = _re.sub(r'\s+([.,!?])', r'\1', texto)
     return texto.strip()
@@ -273,8 +283,8 @@ async def _processar_mensagem(
         envio_ok = False
         try:
             if enviar_audio and bot_config.tts_autonomo:
-                # ÁUDIO: converter para dicção oral (como gente fala)
-                resposta_audio = _pos_processar_texto_audio(resposta_final)
+                # ÁUDIO: transformar português correto → dicção falada brasileira
+                resposta_audio = _preparar_texto_para_audio(resposta_final)
 
                 # Dual-mode TTS: Fish Audio (se configurado) → fallback xAI Grok
                 audio_b64 = None
@@ -298,29 +308,26 @@ async def _processar_mensagem(
                             bot_config.evolution_api_key,
                         )
                     except Exception as audio_err:
-                        # Fallback: enviar como texto escrito
+                        # Fallback: enviar texto direto (LLM já escreve correto)
                         logger.warning(f"Áudio falhou, enviando texto: {audio_err}")
-                        resposta_texto = _pos_processar_texto_escrito(resposta_final)
                         await evolution_client.enviar_texto(
-                            numero, resposta_texto,
+                            numero, resposta_final,
                             bot_config.evolution_instance,
                             bot_config.evolution_api_url,
                             bot_config.evolution_api_key,
                         )
                 else:
-                    # TTS falhou: enviar como texto escrito
-                    resposta_texto = _pos_processar_texto_escrito(resposta_final)
+                    # TTS falhou: enviar texto direto (LLM já escreve correto)
                     await evolution_client.enviar_texto(
-                        numero, resposta_texto,
+                        numero, resposta_final,
                         bot_config.evolution_instance,
                         bot_config.evolution_api_url,
                         bot_config.evolution_api_key,
                     )
             else:
-                # TEXTO: converter para escrita correta (profissional)
-                resposta_texto = _pos_processar_texto_escrito(resposta_final)
+                # TEXTO: enviar direto — LLM já gera português correto
                 await evolution_client.enviar_texto(
-                    numero, resposta_texto,
+                    numero, resposta_final,
                     bot_config.evolution_instance,
                     bot_config.evolution_api_url,
                     bot_config.evolution_api_key,

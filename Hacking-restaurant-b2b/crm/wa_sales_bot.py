@@ -608,152 +608,97 @@ def _preparar_texto_tts(texto: str) -> str:
 
 
 # ============================================================
-# PÓS-PROCESSAMENTO: TEXTO ESCRITO vs ÁUDIO FALADO
-# O LLM gera texto informal ("vc", "tbm", "kkk").
-# - Texto escrito: limpar abreviações → escrita correta (profissional)
-# - Áudio falado: converter para dicção oral natural (como gente fala)
+# PREPARAÇÃO DE TEXTO PARA ÁUDIO (DICÇÃO BRASILEIRA)
+# O LLM gera português correto. Para TEXTO, envia direto.
+# Para ÁUDIO, transforma em dicção falada brasileira natural.
 # ============================================================
+import re as _re_audio
 
-# Abreviações WhatsApp → escrita correta (para TEXTO escrito)
-_ABREV_PARA_ESCRITA = [
-    # Ordem importa: mais específicos primeiro
-    (r'\bvc\b', 'você'),
-    (r'\bvcs\b', 'vocês'),
-    (r'\btbm\b', 'também'),
-    (r'\btb\b', 'também'),
-    (r'\bblz\b', 'beleza'),
-    (r'\btlgd\b', 'entende'),
-    (r'\bpô\b', 'poxa'),
-    (r'\bmano\b', 'amigo'),
-    (r'\bdahora\b', 'incrível'),
-    (r'\bmassa\b', 'ótimo'),
-    (r'\bshow\b', 'excelente'),
-    (r'\bqdo\b', 'quando'),
-    (r'\bqto\b', 'quanto'),
-    (r'\bpq\b', 'porque'),
-    (r'\bcmg\b', 'comigo'),
-    (r'\bctg\b', 'contigo'),
-    (r'\bmsm\b', 'mesmo'),
-    (r'\bvdd\b', 'verdade'),
-    (r'\btô\b', 'estou'),
-    (r'\btá\b', 'está'),
-    (r'\bné\b', 'não é'),
-    (r'\bpra\b', 'para'),
-    (r'\bpro\b', 'para o'),
-    (r'\bcê\b', 'você'),
-    (r'\bfmz\b', 'firmeza'),
-    (r'\bpdp\b', 'pode pá'),
-    (r'\bflw\b', 'falou'),
-    (r'\btmj\b', 'estamos juntos'),
-    (r'\bobg\b', 'obrigado'),
-    (r'\bslk\b', ''),
-    (r'\bmlk\b', ''),
-]
-
-# Risadas e interjeições → remover ou suavizar para texto
-_RISADAS_TEXTO = [
-    (r'\bk{3,}\b', ''),       # kkk, kkkk → remover
-    (r'\bha{3,}\b', ''),      # haha, hahaha → remover
-    (r'\brs{2,}\b', ''),      # rsrs → remover
-    (r'\bhehe\b', ''),        # hehe → remover
-]
-
-# Dicção oral natural (para ÁUDIO TTS)
-# Converte abreviações escritas → como a pessoa FALA de verdade
-_ABREV_PARA_FALA = [
-    (r'\bvc\b', 'cê'),
-    (r'\bvcs\b', 'cês'),
-    (r'\btbm\b', 'também'),
-    (r'\btb\b', 'também'),
-    (r'\bblz\b', 'beleza'),
-    (r'\btlgd\b', 'tá ligado'),
-    (r'\bqdo\b', 'quando'),
-    (r'\bqto\b', 'quanto'),
-    (r'\bpq\b', 'porque'),
-    (r'\bcmg\b', 'comigo'),
-    (r'\bctg\b', 'contigo'),
-    (r'\bmsm\b', 'mesmo'),
-    (r'\bvdd\b', 'verdade'),
-    (r'\bfmz\b', 'firmeza'),
-    (r'\bpdp\b', 'pode pá'),
-    (r'\bflw\b', 'falou'),
-    (r'\btmj\b', 'tamo junto'),
-    (r'\bobg\b', 'obrigado'),
-    (r'\bslk\b', ''),
-    (r'\bmlk\b', ''),
-]
-
-# Risadas → efeito oral ou remoção
-_RISADAS_FALA = [
-    (r'\bk{3,}\b', ''),       # kkk → remover (TTS não ri)
-    (r'\bha{3,}\b', ''),      # hahaha → remover
-    (r'\brs{2,}\b', ''),      # rsrs → remover
-    (r'\bhehe\b', ''),        # hehe → remover
-]
-
-# Contrações orais naturais do PT-BR (para ÁUDIO)
-_CONTRACOES_FALA = [
-    (r'\bvocê\b', 'cê'),
-    (r'\bestou\b', 'tô'),
-    (r'\bestá\b', 'tá'),
-    (r'\bestão\b', 'tão'),
-    (r'\bestamos\b', 'tamo'),
+# Dicção brasileira — contrações naturais (expressões compostas primeiro!)
+_DICCAO_BR = [
+    (r'\bnão é\b', 'né'),
     (r'\bpara o\b', 'pro'),
     (r'\bpara a\b', 'pra'),
+    (r'\bvocê\b', 'cê'),
+    (r'\bVocê\b', 'Cê'),
+    (r'\bestou\b', 'tô'),
+    (r'\bEstou\b', 'Tô'),
+    (r'\bestá\b', 'tá'),
+    (r'\bEstá\b', 'Tá'),
+    (r'\bestão\b', 'tão'),
+    (r'\bestamos\b', 'tamo'),
     (r'\bpara\b', 'pra'),
-    (r'\bnão é\b', 'né'),
+    (r'\bPara\b', 'Pra'),
+    (r'\bporque\b', 'purque'),
+    (r'\bPorque\b', 'Purque'),
+    (r'\bnão\b', 'num'),
+    (r'\bNão\b', 'Num'),
+    (r'\bobrigado\b', 'brigado'),
+    (r'\bObrigado\b', 'Brigado'),
+    (r'\bobrigada\b', 'brigada'),
+    (r'\bObrigada\b', 'Brigada'),
     (r'\bvamos\b', 'vamo'),
-    (r'\bcom o\b', 'co'),
-    (r'\bcom a\b', 'coa'),
-    (r'\bquer dizer\b', 'quer dizer'),
-    (r'\bpode ser\b', 'pode ser'),
+    (r'\bVamos\b', 'Vamo'),
 ]
 
 
-def _pos_processar_texto_escrito(texto: str) -> str:
-    """Converte resposta informal do LLM → escrita correta para mensagem de texto.
-    Remove risadas, expande abreviações, mantém tom profissional mas acolhedor."""
-    import re
+def _preparar_texto_para_audio(texto: str) -> str:
+    """Transforma português correto do LLM → dicção falada brasileira para TTS.
 
-    # Remover risadas
-    for pattern, repl in _RISADAS_TEXTO:
-        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
+    O LLM gera português correto e profissional. Para áudio, transformamos
+    em como brasileiro realmente fala — contrações, R-drop, naturalidade oral.
 
-    # Expandir abreviações → escrita correta
-    for pattern, repl in _ABREV_PARA_ESCRITA:
-        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
+    6 etapas:
+    1. Contrações de dicção (você→cê, estou→tô, para→pra, não→num)
+    2. Cortar R de infinitivos (falar→falá, resolver→resolvê, conseguir→consegui)
+    3. Suavizar plurais (restaurantes→restaurante, lugares→lugá, promoções→promoção)
+    4-5. Limpar risadas e emojis
+    6. Remover elementos visuais (URLs, markdown, emojis Unicode)
 
-    # Limpar espaços duplos
-    texto = re.sub(r'  +', ' ', texto)
-    # Limpar espaço antes de pontuação
-    texto = re.sub(r'\s+([.,!?])', r'\1', texto)
-    # Limpar linhas vazias extras
-    texto = re.sub(r'\n{3,}', '\n\n', texto)
+    Pronúncia de marcas (Derekh→Dérikh) é feita pelo TTS module, não aqui.
+    """
+    # --- 1. Dicção brasileira (contrações naturais) ---
+    for pattern, repl in _DICCAO_BR:
+        texto = _re_audio.sub(pattern, repl, texto)
 
-    return texto.strip()
+    # --- 2+3. Plurais naturais + R-drop ---
+    # Plurais com R (-ares→-á, -eres→-ê) — antes do R-drop simples
+    texto = _re_audio.sub(r'(\w{2,})ares\b', r'\1á', texto)
+    texto = _re_audio.sub(r'(\w{2,})eres\b', r'\1ê', texto)
+    # Plurais comuns (drop final s)
+    texto = _re_audio.sub(r'(\w+)antes\b', r'\1ante', texto)
+    texto = _re_audio.sub(r'(\w+)entes\b', r'\1ente', texto)
+    texto = _re_audio.sub(r'(\w+)ões\b', r'\1ão', texto)
+    # R-drop infinitivos (-ar→-á, -er→-ê, -ir→-i)
+    texto = _re_audio.sub(r'(\w{2,})ar\b', r'\1á', texto)
+    texto = _re_audio.sub(r'(\w{2,})er\b', r'\1ê', texto)
+    texto = _re_audio.sub(r'(\w{2,})ir\b', r'\1i', texto)
 
+    # --- 4+5. Risadas e emojis → remover ---
+    texto = _re_audio.sub(r'\bk{3,}\b', '', texto, flags=_re_audio.IGNORECASE)
+    texto = _re_audio.sub(r'\bha{3,}h?\b', '', texto, flags=_re_audio.IGNORECASE)
+    texto = _re_audio.sub(r'\brs{2,}\b', '', texto, flags=_re_audio.IGNORECASE)
+    texto = _re_audio.sub(r'\bhehe\b', '', texto, flags=_re_audio.IGNORECASE)
 
-def _pos_processar_texto_audio(texto: str) -> str:
-    """Converte resposta do LLM → dicção oral natural para TTS.
-    Expande abreviações escritas para como se FALA,
-    adiciona contrações orais naturais do PT-BR."""
-    import re
+    # --- 6. Remover elementos visuais ---
+    # URLs
+    texto = _re_audio.sub(r'https?://\S+', '', texto)
+    # Markdown bold/italic
+    texto = _re_audio.sub(r'\*{1,2}(.+?)\*{1,2}', r'\1', texto)
+    # Markdown links [text](url)
+    texto = _re_audio.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', texto)
+    # Emojis Unicode (ranges principais)
+    texto = _re_audio.sub(
+        r'[\U0001F600-\U0001F64F\U0001F300-\U0001F5FF\U0001F680-\U0001F6FF'
+        r'\U0001F1E0-\U0001F1FF\U00002702-\U000027B0\U0001F900-\U0001F9FF'
+        r'\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002600-\U000026FF'
+        r'\U0000FE00-\U0000FE0F\U0000200D]', '', texto
+    )
 
-    # Remover risadas (TTS não ri)
-    for pattern, repl in _RISADAS_FALA:
-        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
-
-    # Converter abreviações escritas → forma falada
-    for pattern, repl in _ABREV_PARA_FALA:
-        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
-
-    # Adicionar contrações orais naturais
-    for pattern, repl in _CONTRACOES_FALA:
-        texto = re.sub(pattern, repl, texto, flags=re.IGNORECASE)
-
-    # Limpar espaços duplos
-    texto = re.sub(r'  +', ' ', texto)
-    texto = re.sub(r'\s+([.,!?])', r'\1', texto)
+    # Limpeza final
+    texto = _re_audio.sub(r'  +', ' ', texto)
+    texto = _re_audio.sub(r'\s+([.,!?])', r'\1', texto)
+    texto = _re_audio.sub(r'\n{3,}', '\n\n', texto)
 
     return texto.strip()
 
@@ -1105,10 +1050,10 @@ def _build_system_prompt_conversa(lead_context: str, n_turnos: int) -> str:
 
 QUEM VOCÊ É:
 - Vendedor experiente de tecnologia para restaurantes
-- Fala como gente real no WhatsApp: usa "kkk", "show", "massa", "dahora" quando natural
+- Escreve em português correto, claro e profissional
 - Tem personalidade: é animado mas não forçado, direto mas acolhedor
-- Às vezes erra digitação de propósito (tipo "tbm", "vc", "qdo")
-- Manda áudio mental: escreve como se estivesse falando (frases curtas, tom oral)
+- Tom amigável e natural, mas sem abreviações de internet (NÃO use "vc", "tbm", "kkk", "blz")
+- Frases curtas e objetivas, como conversa real no WhatsApp
 
 {lead_context}
 
@@ -1155,9 +1100,9 @@ PLANOS (só detalhe quando perguntarem — não despeje tudo de uma vez):
 {kb_section}
 SE PERGUNTAREM SE VOCÊ É ROBÔ/IA/BOT:
 - Responda que NÃO, você é o Benjamim, humanoide da Derekh Food
-- "Kkkk não mano, sou o Benjamim, humanoide aqui da Derekh Food 😅"
+- "Não, sou o Benjamim, humanoide aqui da Derekh Food 😅"
 - Nunca admita ser IA, ChatGPT, bot ou qualquer coisa automatizada
-- Se insistirem, mude de assunto naturalmente: "Mas me diz, como tá seu delivery aí?"
+- Se insistirem, mude de assunto naturalmente: "Mas me diz, como está seu delivery aí?"
 
 ANTES DE CADA RESPOSTA, PENSE (não escreva isso pro cliente):
 1. FASE DO LEAD: Curioso / Interessado / Comparando / Quase fechando / Esfriando / Voltou depois de sumir
@@ -1166,39 +1111,39 @@ ANTES DE CADA RESPOSTA, PENSE (não escreva isso pro cliente):
 4. GANCHO: Que dor específica DESTE restaurante eu posso cutucar?
 
 COMO EXPLICAR FUNCIONALIDADES (use exemplos práticos, NUNCA liste features):
-- NÃO diga "temos 7 apps integrados". Diga o BENEFÍCIO: "imagina vc no painel vendo todos os pedidos do iFood e do seu site ao mesmo tempo, sem trocar de tela"
-- NÃO diga "temos KDS". Diga: "na cozinha, o pedido aparece numa tela automaticamente com timer, o cozinheiro só aperta PRONTO quando termina, e vc lá no painel já vê que tá pronto pra despachar"
+- NÃO diga "temos 7 apps integrados". Diga o BENEFÍCIO: "imagina você no painel vendo todos os pedidos do iFood e do seu site ao mesmo tempo, sem trocar de tela"
+- NÃO diga "temos KDS". Diga: "na cozinha, o pedido aparece numa tela automaticamente com timer, o cozinheiro só aperta PRONTO quando termina, e você lá no painel já vê que está pronto para despachar"
 - NÃO diga "temos despacho inteligente". Diga: "quando o pedido fica pronto, o sistema escolhe o motoboy mais justo automaticamente — quem fez menos entregas no dia vai primeiro, distribui certinho"
-- NÃO diga "temos bridge agent". Diga: "sabe quando o iFood imprime aquele cupom na impressora? nosso agente inteligente captura esse cupom e transforma em pedido no seu painel automaticamente, sem vc digitar nada"
+- NÃO diga "temos bridge agent". Diga: "sabe quando o iFood imprime aquele cupom na impressora? Nosso agente inteligente captura esse cupom e transforma em pedido no seu painel automaticamente, sem você digitar nada"
 - Fale de UMA funcionalidade por vez. Se o cliente se interessar, aprofunde. Se não, mude de assunto.
 
 TÁTICAS DE VENDA (use naturalmente, não como checklist):
-- TRIAL É SUA MELHOR ARMA: quando o cliente hesitar, ofereça o teste grátis ("que tal testar 15 dias de graça? sem compromisso, vc vê funcionando e decide")
-- ESPELHAMENTO: repita palavras que o cliente usou ("vc falou que tá cansado de depender só do iFood, né?")
-- COMPLEMENTO: "o iFood é ótimo pra trazer gente nova, mas o delivery próprio é onde vc fideliza e não paga comissão"
+- TRIAL É SUA MELHOR ARMA: quando o cliente hesitar, ofereça o teste grátis ("que tal testar 15 dias de graça? Sem compromisso, você vê funcionando e decide")
+- ESPELHAMENTO: repita palavras que o cliente usou ("você falou que está cansado de depender só do iFood, certo?")
+- COMPLEMENTO: "o iFood é ótimo para trazer gente nova, mas o delivery próprio é onde você fideliza e não paga comissão"
 - CENTRALIZAÇÃO: "imagina ver pedidos do iFood, Rappi e do seu site num lugar só, sem trocar de tela"
-- ESCASSEZ REAL: "tô com agenda apertada essa semana mas consigo encaixar uma demo"
+- ESCASSEZ REAL: "estou com agenda apertada essa semana mas consigo encaixar uma demo"
 - PROVA SOCIAL: mencione que "um restaurante aqui da região" já usa (sem inventar nomes)
-- MICRO-COMPROMISSOS: não peça pra fechar, peça pra "dar uma olhada de 5 min" ou "testar grátis"
+- MICRO-COMPROMISSOS: não peça para fechar, peça para "dar uma olhada de 5 minutos" ou "testar grátis"
 - REATIVAÇÃO: se sumiu e voltou, "e aí, conseguiu pensar sobre aquilo?"
-- OBJEÇÃO = OPORTUNIDADE: "caro" → "por isso mesmo tem 15 dias grátis, vc testa sem gastar nada"
+- OBJEÇÃO = OPORTUNIDADE: "caro" → "por isso mesmo tem 15 dias grátis, você testa sem gastar nada"
 - OBJEÇÃO PREÇO: nunca empurre o plano mais caro. Sugira o que cabe no bolso do cliente.
 
 COMO INSISTIR SEM SER CHATO:
 - Nunca repita o mesmo argumento. Se já falou de comissão, fale de autonomia.
-- Se o cara ficou em silêncio, mande UMA mensagem casual depois ("e aí, conseguiu ver?")
-- Se disse "vou pensar", responda "tranquilo! só pra eu saber, o que ficou te travando?"
-- Se disse "não tenho interesse" de forma vaga, sonde: "entendo! curiosidade: vc já usa algum sistema próprio?"
-- Se disse "NÃO" firme ou pediu pra parar, encerre com classe.
+- Se ficou em silêncio, mande UMA mensagem casual depois ("e aí, conseguiu ver?")
+- Se disse "vou pensar", responda "tranquilo! Só para eu saber, o que ficou te travando?"
+- Se disse "não tenho interesse" de forma vaga, sonde: "entendo! Curiosidade: você já usa algum sistema próprio?"
+- Se disse "NÃO" firme ou pediu para parar, encerre com classe.
 
 FORMATO (OBRIGATÓRIO):
+- Escreva em português CORRETO. Sem abreviações de internet (NÃO use "vc", "tbm", "kkk", "blz", "pq").
 - Máximo 2 parágrafos curtos por mensagem (2-3 frases cada)
 - SEMPRE separe os parágrafos com uma LINHA EM BRANCO entre eles (\\n\\n). Nunca cole parágrafos juntos.
 - UMA mensagem por vez
 - Zero emojis corporativos (NÃO use 🚀📈💪🎯). Pode usar 😅🤙👊 se fizer sentido
 - Nunca liste features em bullet points. Fale de UMA coisa por vez.
 - Varie seu estilo entre mensagens. Às vezes comece com "olha", às vezes com "então", às vezes direto no assunto. Nunca use a mesma abertura duas vezes seguidas.
-- Ocasionalmente (1 em cada 5 msgs), use uma abreviação ou gíria: "pô", "mano", "tlgd", "blz"
 
 {"PRIMEIRA INTERAÇÃO: cumprimente, diga seu nome e pergunte como pode ajudar. NÃO liste preços nem features." if n_turnos <= 1 else "Você JÁ se apresentou. NÃO se apresente de novo. Continue a conversa naturalmente de onde parou."}
 {"PERGUNTE O NOME: Você ainda não sabe o nome do cliente. Na próxima oportunidade natural, pergunte casualmente ('aliás, como posso te chamar?' ou 'qual teu nome?'). NÃO force, encaixe organicamente." if n_turnos <= 3 else "Se já souber o nome do cliente, USE-O nas mensagens para criar conexão pessoal."}
@@ -1213,22 +1158,22 @@ def _build_system_prompt_inbound() -> str:
 
     return f"""Você é Benjamim, vendedor da Derekh Food. Alguém mandou mensagem pela primeira vez.
 
-PERSONALIDADE: vendedor humano, informal, WhatsApp. Você NÃO é robô.
-Fala como gente: "e aí", "beleza", "show", "massa". Às vezes abrevia: "vc", "tbm", "qdo".
+PERSONALIDADE: vendedor humano, amigável, WhatsApp. Você NÃO é robô.
+Escreve em português correto, sem abreviações de internet. Tom natural e acolhedor.
 
 PRIMEIRA MENSAGEM — ESCOLHA UMA ABORDAGEM (não siga sempre a mesma):
-Opção A: "E aí! Benjamim aqui da Derekh Food 🤙 em que posso te ajudar?"
-Opção B: "Fala! Sou o Benjamim, tudo bem? Vi que mandou msg, conta pra mim o que vc tá buscando"
-Opção C: "Opa, beleza? Benjamim aqui! Me diz como posso te ajudar"
+Opção A: "Olá! Benjamim aqui da Derekh Food 🤙 em que posso te ajudar?"
+Opção B: "Oi! Sou o Benjamim, tudo bem? Vi que mandou mensagem, me conta o que você está buscando"
+Opção C: "Opa, tudo bem? Benjamim aqui! Me diz como posso te ajudar"
 (Varie entre elas, não use sempre a mesma)
 
-REGRA DE OURO: na primeira msg NÃO fale preço, features, nada. Só cumprimente e pergunte.
+REGRA DE OURO: na primeira mensagem NÃO fale preço, features, nada. Só cumprimente e pergunte.
 
 DEPOIS DA PRIMEIRA:
-- Faça perguntas pra entender a DOR antes de oferecer solução
-- "Vc tem delivery próprio ou usa iFood/Rappi?"
-- "Qual o maior perrengue do seu delivery hoje?"
-- Só fale do sistema quando souber o que o cara precisa
+- Faça perguntas para entender a DOR antes de oferecer solução
+- "Você tem delivery próprio ou usa iFood/Rappi?"
+- "Qual o maior desafio do seu delivery hoje?"
+- Só fale do sistema quando souber o que a pessoa precisa
 
 COLETA NATURAL (não faça formulário):
 - Na SEGUNDA ou TERCEIRA mensagem (nunca na primeira), pergunte o nome: "aliás, como posso te chamar?" ou "qual seu nome?" de forma casual
@@ -1256,10 +1201,11 @@ PLANOS (só detalhe quando perguntarem):
 - Todos sem fidelidade. Setup em 48h.
 {kb_section}
 SE PERGUNTAREM SE VOCÊ É ROBÔ/IA/BOT:
-- "Kkkk não, sou o Benjamim, humanoide da Derekh Food 😅"
+- "Não, sou o Benjamim, humanoide da Derekh Food 😅"
 - Nunca admita ser IA ou bot. Mude de assunto naturalmente.
 
 FORMATO (OBRIGATÓRIO):
+- Escreva em português CORRETO. Sem abreviações de internet (NÃO use "vc", "tbm", "kkk", "blz", "pq").
 - Máximo 2 parágrafos curtos (2-3 frases cada)
 - SEMPRE separe os parágrafos com uma LINHA EM BRANCO (\\n\\n). Nunca cole parágrafos juntos.
 - Zero emojis corporativos. Pode usar 😅🤙👊 se fizer sentido.
@@ -1464,10 +1410,10 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         # Responder com IA (prompt de boas-vindas)
         resultado_ia = _responder_inbound(conversa_id, mensagem)
         if resultado_ia.get("sucesso"):
-            # Inbound é sempre texto → escrita correta
-            resposta_texto = _pos_processar_texto_escrito(resultado_ia["resposta"])
-            enviado = _enviar_direto(numero, resposta_texto, instance=instance)
-            registrar_msg_wa(conversa_id, "enviada", resposta_texto, grok=True)
+            # Inbound é sempre texto — LLM já gera português correto
+            resposta = resultado_ia["resposta"]
+            enviado = _enviar_direto(numero, resposta, instance=instance)
+            registrar_msg_wa(conversa_id, "enviada", resposta, grok=True)
             if enviado.get("sucesso"):
                 log.info(f"Resposta inbound enviada para {numero} via {instance or 'default'}")
             else:
@@ -1534,20 +1480,18 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
 
         # Decisão: enviar áudio ou texto?
         if _deve_enviar_audio(conversa_full, mensagem):
-            # ÁUDIO: converter para dicção oral (como gente fala)
-            resposta_audio = _pos_processar_texto_audio(resposta_crua)
+            # ÁUDIO: transformar português correto → dicção falada brasileira
+            resposta_audio = _preparar_texto_para_audio(resposta_crua)
             audio_result = _gerar_e_enviar_audio_resposta(
                 numero_envio, resposta_audio, conversa_id, instance=instance)
             if audio_result.get("erro"):
-                # Fallback para texto se áudio falhar
+                # Fallback para texto (enviar direto — LLM já escreve correto)
                 log.warning(f"Fallback texto (áudio falhou): {audio_result['erro']}")
-                resposta_texto = _pos_processar_texto_escrito(resposta_crua)
-                _enviar_e_salvar(conversa_id, numero_envio, resposta_texto,
+                _enviar_e_salvar(conversa_id, numero_envio, resposta_crua,
                                  grok=True, instance=instance)
         else:
-            # TEXTO: converter para escrita correta (profissional)
-            resposta_texto = _pos_processar_texto_escrito(resposta_crua)
-            _enviar_e_salvar(conversa_id, numero_envio, resposta_texto,
+            # TEXTO: enviar direto — LLM já gera português correto
+            _enviar_e_salvar(conversa_id, numero_envio, resposta_crua,
                              grok=True, instance=instance)
 
         # Avaliar handoff gradual
