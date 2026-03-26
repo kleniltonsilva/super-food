@@ -81,14 +81,15 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 24/03/2026 (noite)
+- **Última sessão:** 26/03/2026 (tarde)
 - **Migrations em produção:** 001-034 (última: 034_feature_flags)
-- **Migrations implementadas (aguardando deploy):** 035 (Bot WhatsApp — 6 tabelas)
+- **Migrations implementadas (aguardando deploy):** 035 (Bot WhatsApp), 036 (Bot WhatsApp V2), 037 (Repescagem + Verificação Email + Reset Senha)
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
 - **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
+- **Repescagem + Verificação Email + Reset Senha:** Migration 037, 25 arquivos, cupons exclusivos VOLTA-{NOME}-{código}
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** Módulos 1,4,5 (Pix → Bot → Sales), domínio próprio, configurar Resend prod
+- **Pendente:** Módulos 1,5 (Pix → Sales), domínio próprio, configurar Resend prod, deploy migrations 035-037
 
 ---
 
@@ -208,14 +209,14 @@ super-food/
 │   │   ├── pages/
 │   │   ├── hooks/             # useMotoboyQueries.ts (14 hooks)
 │   │   └── lib/               # motoboyApiClient.ts
-│   ├── pages/                 # Site cliente (11 páginas)
+│   ├── pages/                 # Site cliente (13 páginas)
 │   ├── components/            # shadcn/ui compartilhados
 │   ├── hooks/                 # useQueries.ts (site cliente)
 │   └── lib/                   # apiClient.ts (30+ funções)
 ├── database/models.py         # SQLAlchemy ORM models (source of truth, 28+ modelos)
 ├── printer_agent/             # Agent impressão Windows (ESC/POS)
 ├── bridge_agent/              # Agent Bridge Windows (spooler + ESC/POS + REST)
-├── migrations/versions/       # Alembic 001-034
+├── migrations/versions/       # Alembic 001-037
 ├── requirements.txt           # Dependencies Python
 ├── Dockerfile                 # Multi-stage build (Node + Python)
 └── fly.toml                   # Config Fly.io
@@ -276,6 +277,7 @@ super-food/
 | 21 | Bridge Agent + Printer | ✅ 24/03 (deploy 24/03) |
 | 22 | Feature Flags por Plano | ✅ 24/03 (22 features, 38 endpoints, 4 tiers) |
 | 23 | Overhaul Criação Restaurante | ✅ 24/03 (CNPJ lookup, validação DDD, email Resend, onboarding) |
+| 24 | Repescagem Avançada + Verificação Email + Reset Senha | ✅ 26/03 (migration 037, 25 arquivos, cupons exclusivos, OTP email) |
 
 ---
 

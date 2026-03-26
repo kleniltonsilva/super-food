@@ -164,6 +164,9 @@
 - Período de validade (data início/fim)
 - Limite de usos total
 - Ativação/desativação
+- **Cupons exclusivos por cliente:** vinculados a `cliente_id`, tipos: `global`, `exclusivo`, `repescagem`
+  - Cupons de repescagem gerados automaticamente (formato `VOLTA-{NOME}-{código}`)
+  - Validação de propriedade: cupom exclusivo só pode ser usado pelo cliente vinculado
 
 ### 2.12 Fidelidade
 - Sistema de pontos por pedido (configurável por restaurante)
@@ -379,6 +382,8 @@ Admin escolhe:
 - **Pagamento:** dinheiro (com troco), cartão, Pix, vale-refeição
   - Pix Online: gera QR Code em tempo real (se restaurante ativou)
 - **Cupom:** campo para código de desconto
+  - **Cupons exclusivos auto-sugeridos:** banner amarelo acima do campo com cupons pessoais do cliente (repescagem, compensação), clicáveis para aplicar automaticamente
+  - Validação de propriedade: cupons com `cliente_id` só podem ser usados pelo dono
 - **Observações:** campo livre para instruções especiais
 - **Pedido mínimo:** validação antes de finalizar
 
@@ -391,10 +396,19 @@ Admin escolhe:
 
 ### 4.4 Conta do Cliente
 - Registro com nome, email, telefone, senha
+- **Verificação de email:** código OTP 6 dígitos enviado via Resend ao registrar
+  - Countdown 10 minutos visível, reenvio após 60 segundos
+  - Não-bloqueante: cliente pode usar o site sem verificar (botão "Pular")
+  - Badge "Verificado" (verde) ou "Não verificado" (amarelo) na página de conta
 - Login por email+senha
+- **Esqueci minha senha:** código OTP 6 dígitos por email, validade 10 minutos
+  - Sempre retorna sucesso (segurança — não revela se email existe)
+  - Nova senha + confirmação na mesma tela
+- **Alterar senha:** senha atual + nova senha (na página de conta)
 - Perfil editável
 - Múltiplos endereços salvos (com endereço padrão)
 - Histórico de pedidos
+- **Cupons exclusivos:** cupons pessoais (repescagem, compensação) visíveis na conta e auto-sugeridos no checkout
 
 ### 4.5 Fidelidade
 - Saldo de pontos visível
@@ -616,13 +630,13 @@ Admin escolhe:
 |--------|---------|-----------|-----------|
 | Painel Admin | `/painel/*` | ~30 | CRUD pedidos, produtos, categorias, motoboys, config |
 | Auth Restaurante | `/auth/restaurante/*` | 3 | Login, perfil (com features dict), alterar senha |
-| Auth Cliente | `/auth/cliente/*` | 4 | Registro, login, perfil, alterar senha |
+| Auth Cliente | `/auth/cliente/*` | 9 | Registro, login, perfil, alterar senha, verificar-email, reenviar-verificacao, esqueci-senha, redefinir-senha, alterar-senha |
 | Auth Motoboy | `/auth/motoboy/*` | 3 | Login, cadastro, perfil |
 | Auth Cozinheiro | `/auth/cozinheiro/*` | 2 | Login (gate kds_cozinha), perfil (me) |
 | Auth Garçom | `/garcom/auth/*` | 2 | Login (gate app_garcom), perfil (me) |
 | Auth Admin | `/auth/admin/*` | 2 | Login, perfil |
 | Carrinho | `/carrinho/*` | 6 | CRUD carrinho, finalizar (criar pedido) |
-| Site Cliente | `/cliente/{codigo}/*` | 8 | Cardápio, busca, rastreamento, endereços |
+| Site Cliente | `/cliente/{codigo}/*` | 9 | Cardápio, busca, rastreamento, endereços, meus-cupons |
 | Motoboy | `/motoboy/*` | 6 | Entregas, GPS, ganhos, finalizar |
 | KDS | `/kds/*` | 5 | Pedidos cozinha, status, assumir, refazer |
 | Super Admin | `/api/admin/*` | 15 | CRUD restaurantes, planos, billing, integrações, **features override**, **CNPJ lookup** |
@@ -1291,7 +1305,7 @@ Salvar mensagem no BD + notificar painel via WebSocket
 | `bot_mensagens` | conversa_id, direcao (recebida/enviada), tipo (texto/audio), conteudo, tokens_input, tokens_output, modelo_usado, function_calls (JSON), tempo_resposta_ms | Histórico de mensagens |
 | `bot_avaliacoes` | restaurante_id, conversa_id, pedido_id, cliente_id, nota (1-5), comentario | Avaliações pós-entrega |
 | `bot_problemas` | restaurante_id, conversa_id, pedido_id, tipo, descricao, resolvido | Reclamações detectadas |
-| `bot_repescagem` | restaurante_id, cliente_id, tipo, mensagem, cupom_codigo, desconto_pct, enviado_em, respondido | Campanhas de reativação |
+| `bot_repescagem` | restaurante_id, cliente_id, tipo, mensagem, cupom_codigo, desconto_pct, enviado_em, respondido, cupom_validade_dias, lembrete_enviado, lembrete_enviado_em, canal, email_enviado, promocao_id | Campanhas de reativação |
 
 ### 17.5 Function Calls (15 funções)
 
@@ -1397,16 +1411,22 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 
 - **Reset tokens diário:** Zera `tokens_usados_hoje` à meia-noite
 - **Avaliação pós-entrega:** Após `delay_avaliacao_min` minutos de entrega, envia mensagem pedindo nota
-- **Repescagem:** Clientes inativos há N dias recebem mensagem com cupom de desconto
+- **Repescagem avançada:** Clientes inativos há N dias recebem mensagem com cupom exclusivo (formato `VOLTA-{NOME}-{código}`)
+  - Cupom personalizado por cliente, nunca repete
+  - Vinculado a Promoção com `tipo_cupom='repescagem'` e `cliente_id`
+  - Validade configurável (padrão 7 dias)
+  - Envio via WA, email ou ambos
+- **Lembrete de cupom:** A cada ~1h, verifica cupons exclusivos/repescagem que expiram nas próximas 24h → envia lembrete via WA + email
 - Executados via `asyncio.create_task` no lifespan do FastAPI
 
 ### 17.12 Frontend Admin — BotWhatsApp.tsx
 
-Página "Bot WhatsApp" no painel do restaurante com:
-- Dashboard: conversas hoje/semana, pedidos via bot, faturamento, avaliação média, tokens usados
-- Lista de conversas com filtro por status (ativa, encerrada, escalada)
-- Detalhe da conversa (chat view com mensagens recebidas/enviadas)
-- Configuração: toggle on/off, nome do atendente, permissões, comportamento
+Página "Bot WhatsApp" no painel do restaurante com 5 abas:
+- **Dashboard:** conversas hoje/semana, pedidos via bot, faturamento, avaliação média, tokens usados
+- **Configurações:** toggle on/off, nome do atendente, permissões, comportamento
+- **Conversas:** lista com filtro por status (ativa, encerrada, escalada), detalhe chat view
+- **Relatórios:** estatísticas detalhadas
+- **Repescagem:** lista de clientes inativos com checkboxes, envio em massa (desconto%, validade, canal WA/email/ambos), cards resumo (total inativos, enviadas, taxa retorno), histórico paginado
 - Feature flag: `bot_whatsapp` (Premium ou add-on)
 
 ### 17.13 Frontend Super Admin — Modal Bot
@@ -1433,7 +1453,117 @@ Na página "Gerenciar Restaurantes" do Super Admin:
 
 ---
 
+## 18. Repescagem Avançada + Verificação Email + Reset Senha (Migration 037)
+
+### 18.1 Verificação de Email
+
+Ao registrar conta no site, cliente recebe código OTP 6 dígitos por email (Resend).
+
+**Fluxo:**
+1. Cliente se registra com email → backend gera código 6 dígitos + salva em `clientes.codigo_verificacao` (validade 10min)
+2. Email enviado em background via Resend com template visual (header gradient, código monoespaçado)
+3. Frontend redireciona para `/verificar-email` — 6 inputs OTP com auto-advance, paste, countdown 10min
+4. Reenvio disponível após 60s (rate limit via `verificacao_enviada_em` no BD)
+5. Botão "Pular por agora" — verificação não é bloqueante
+6. Sucesso → `email_verificado = True`, badge verde na conta
+
+**Endpoints:**
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/auth/cliente/verificar-email` | JWT cliente | Valida código OTP |
+| POST | `/auth/cliente/reenviar-verificacao` | JWT cliente | Reenvia código (cooldown 60s) |
+
+### 18.2 Reset de Senha (Esqueci Minha Senha)
+
+**Fluxo:**
+1. Cliente clica "Esqueci minha senha" no login → navega para `/esqueci-senha`
+2. Informa email → backend **sempre retorna 200** (segurança — não revela se email existe)
+3. Se email existe: gera código 6 dígitos, salva em `clientes.codigo_reset_senha` (validade 10min), envia email
+4. Frontend muda para estado 2: 6 inputs OTP + countdown 10min + nova senha + confirmar
+5. Sucesso → senha atualizada com bcrypt, campos de reset limpos, redirect para `/login`
+
+**Endpoints:**
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/auth/cliente/esqueci-senha` | Público | Envia código reset (sempre 200) |
+| POST | `/auth/cliente/redefinir-senha` | Público | Valida código + redefine senha |
+| POST | `/auth/cliente/alterar-senha` | JWT cliente | Altera senha (requer senha atual) |
+
+### 18.3 Repescagem Avançada
+
+Campanha de reativação de clientes inativos com cupons exclusivos personalizados.
+
+**Formato do cupom:** `VOLTA-{PRIMEIRO_NOME}-{5chars_alfanuméricos}` (ex: `VOLTA-MARIO-A3K9F`)
+- Código único por cliente, verificação de duplicidade no banco
+- Vinculado a `Promoção` com `cliente_id` e `tipo_cupom='repescagem'`
+
+**Envio em massa (Admin):**
+1. Admin acessa aba "Repescagem" no Bot WhatsApp
+2. Seleciona clientes inativos da lista (checkboxes)
+3. Configura: desconto%, validade (dias), canal (WhatsApp/email/ambos)
+4. Sistema cria Promoção exclusiva + BotRepescagem para cada cliente
+5. Envia mensagem com cupom via canal escolhido
+
+**Lembrete automático:**
+- Worker verifica a cada ~1h cupons que expiram nas próximas 24h
+- Envia lembrete via WA + email: "Seu cupom VOLTA-MARIO-A3K9F de 10% expira amanhã!"
+- Marca `lembrete_enviado = True` para não repetir
+
+**Cupons exclusivos no checkout:**
+- Banner amarelo auto-sugerido acima do campo de cupom
+- Clicável: preenche e valida automaticamente
+- Validação de propriedade: cupom com `cliente_id` só pode ser usado pelo dono
+
+**Cupons exclusivos no bot WA:**
+- `buscar_promocoes` inclui cupons exclusivos do cliente na resposta
+- `aplicar_cupom` verifica propriedade via `conversa.cliente_id`
+
+**Endpoints:**
+| Método | Rota | Auth | Descrição |
+|--------|------|------|-----------|
+| POST | `/painel/bot/repescagem/criar-em-massa` | JWT restaurante | Envia repescagem para N clientes |
+| GET | `/painel/bot/repescagem/historico` | JWT restaurante | Histórico paginado (20/página) |
+| GET | `/{codigo_acesso}/meus-cupons` | JWT cliente | Lista cupons exclusivos ativos |
+
+### 18.4 Migration 037
+
+**Revisão:** `037_repescagem_verificacao_senha` (revises `036_bot_whatsapp_v2`)
+
+**Alterações:**
+- `clientes`: +6 colunas (codigo_verificacao, codigo_verificacao_expira, verificacao_enviada_em, codigo_reset_senha, codigo_reset_expira, reset_enviado_em)
+- `promocoes`: +2 colunas (cliente_id FK → clientes, tipo_cupom) + índice parcial
+- `bot_repescagens`: +6 colunas (cupom_validade_dias, lembrete_enviado, lembrete_enviado_em, canal, email_enviado, promocao_id FK → promocoes)
+
+### 18.5 Arquivos do Módulo
+
+| Arquivo | Tipo | Descrição |
+|---------|------|-----------|
+| `migrations/versions/037_repescagem_verificacao_senha.py` | Novo | Migration com IF EXISTS/IF NOT EXISTS |
+| `database/models.py` | Modificado | +6 campos Cliente, +2 Promoção, +6 BotRepescagem |
+| `backend/app/email_templates.py` | Modificado | +3 templates (verificação, reset, lembrete cupom) |
+| `backend/app/email_service.py` | Modificado | +3 funções envio email |
+| `backend/app/schemas/cliente_schemas.py` | Modificado | +4 schemas (verificar, esqueci, redefinir, alterar) |
+| `backend/app/routers/auth_cliente.py` | Modificado | +5 endpoints auth + envio verificação no registro |
+| `backend/app/routers/bot_whatsapp.py` | Modificado | +2 endpoints repescagem (massa + histórico) |
+| `backend/app/routers/site_cliente.py` | Modificado | +1 endpoint meus-cupons, validação ownership |
+| `backend/app/bot/workers.py` | Modificado | Worker lembrete cupom + repescagem com Promoção |
+| `backend/app/bot/function_calls.py` | Modificado | Cupons exclusivos no bot (buscar + aplicar) |
+| `client/src/lib/apiClient.ts` | Modificado | +7 funções API |
+| `client/src/hooks/useQueries.ts` | Modificado | +7 hooks TanStack Query |
+| `client/src/pages/VerificarEmail.tsx` | Novo | Página OTP 6 dígitos + countdown |
+| `client/src/pages/EsqueciSenha.tsx` | Novo | Solicitar código + redefinir senha |
+| `client/src/pages/Login.tsx` | Modificado | Link "Esqueci senha" + redirect verificação |
+| `client/src/pages/Account.tsx` | Modificado | Badge verificado + alterar senha |
+| `client/src/pages/Checkout.tsx` | Modificado | Banner cupons exclusivos auto-sugeridos |
+| `client/src/App.tsx` | Modificado | +2 rotas (verificar-email, esqueci-senha) |
+| `client/src/contexts/AuthContext.tsx` | Modificado | +email_verificado na interface |
+| `client/src/admin/pages/BotWhatsApp.tsx` | Modificado | +aba Repescagem (lista + envio + histórico) |
+| `client/src/admin/lib/adminApiClient.ts` | Modificado | +2 funções admin API |
+| `client/src/admin/hooks/useAdminQueries.ts` | Modificado | +2 hooks |
+
+---
+
 *Documento gerado automaticamente pelo sistema Derekh Food v4.0.0*
-*Última atualização: 25/03/2026*
+*Última atualização: 26/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
 *WhatsApp comercial: +1 555-900-4563*
