@@ -37,6 +37,12 @@ import {
   getPremiosFidelidade,
   resgatarPremio,
   getPixStatusPedido,
+  verificarEmail,
+  reenviarVerificacao,
+  esqueciSenha,
+  redefinirSenha,
+  alterarSenha,
+  getMeusCupons,
 } from "@/lib/apiClient";
 
 // =============================================================================
@@ -58,6 +64,7 @@ export const QUERY_KEYS = {
   produtoDetalhe: (id: number) => ["produtoDetalhe", id] as const,
   saboresDisponiveis: (id: number) => ["saboresDisponiveis", id] as const,
   pixStatus: (pedidoId: number) => ["pixStatus", pedidoId] as const,
+  meusCupons: ["meusCupons"] as const,
 } as const;
 
 // =============================================================================
@@ -369,5 +376,54 @@ export function usePixStatusPedido(pedidoId: number | null) {
     enabled: !!pedidoId,
     refetchInterval: 3000,
     staleTime: 0,
+  });
+}
+
+// =============================================================================
+// CUPONS EXCLUSIVOS
+// =============================================================================
+
+export function useMeusCupons(enabled = true) {
+  return useQuery({
+    queryKey: QUERY_KEYS.meusCupons,
+    queryFn: getMeusCupons,
+    enabled,
+    staleTime: 2 * 60 * 1000,
+  });
+}
+
+// =============================================================================
+// VERIFICAÇÃO EMAIL + RESET SENHA (mutations)
+// =============================================================================
+
+export function useVerificarEmail() {
+  return useMutation({
+    mutationFn: (codigo: string) => verificarEmail(codigo),
+  });
+}
+
+export function useReenviarVerificacao() {
+  return useMutation({
+    mutationFn: () => reenviarVerificacao(),
+  });
+}
+
+export function useEsqueciSenha() {
+  return useMutation({
+    mutationFn: (email: string) => esqueciSenha(email),
+  });
+}
+
+export function useRedefinirSenha() {
+  return useMutation({
+    mutationFn: (dados: { email: string; codigo: string; nova_senha: string }) =>
+      redefinirSenha(dados.email, dados.codigo, dados.nova_senha),
+  });
+}
+
+export function useAlterarSenha() {
+  return useMutation({
+    mutationFn: (dados: { senha_atual: string; nova_senha: string }) =>
+      alterarSenha(dados.senha_atual, dados.nova_senha),
   });
 }

@@ -11,7 +11,7 @@ import { Card } from "@/components/ui/card";
 import { ArrowLeft, MapPin, CreditCard, User, Plus, Search, QrCode, Copy, Clock, CheckCircle2 } from "lucide-react";
 import { useLocation } from "wouter";
 import { autocompleteEndereco, validarEntrega, validarCupom } from "@/lib/apiClient";
-import { useCarrinho, useEnderecos, useFinalizarPedido, useCriarEndereco, usePixStatusPedido } from "@/hooks/useQueries";
+import { useCarrinho, useEnderecos, useFinalizarPedido, useCriarEndereco, usePixStatusPedido, useMeusCupons } from "@/hooks/useQueries";
 import { useRestaurante } from "@/contexts/RestauranteContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -69,6 +69,7 @@ export default function Checkout() {
   // React Query: carrinho (staleTime 30s) e endereços (staleTime 5min)
   const { data: carrinhoData, isLoading: loading } = useCarrinho();
   const { data: enderecosData = [] } = useEnderecos(isLoggedIn);
+  const { data: meusCupons = [] } = useMeusCupons(isLoggedIn);
   const finalizarMutation = useFinalizarPedido();
   const criarEnderecoMutation = useCriarEndereco();
   const isProcessing = finalizarMutation.isPending;
@@ -778,6 +779,33 @@ export default function Checkout() {
             <Card className="p-4 md:p-6">
               <div className="space-y-4">
                 <div>
+                  {/* Banner cupons exclusivos */}
+                  {meusCupons.length > 0 && !cupomValidado?.valido && (
+                    <div className="mb-3 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
+                      <p className="text-sm font-semibold text-yellow-400 mb-2">
+                        Você tem {meusCupons.length} cupom{meusCupons.length > 1 ? "s" : ""} exclusivo{meusCupons.length > 1 ? "s" : ""}!
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {meusCupons.map((c: any) => (
+                          <button
+                            key={c.id}
+                            onClick={() => {
+                              setCupom(c.codigo_cupom);
+                              setCupomValidado(null);
+                            }}
+                            className="text-xs px-3 py-1.5 rounded-full font-bold border border-yellow-500/50 bg-yellow-500/20 text-yellow-300 hover:bg-yellow-500/30 transition-colors"
+                          >
+                            {c.codigo_cupom} — {c.valor_desconto}% off
+                            {c.data_fim && (
+                              <span className="ml-1 font-normal opacity-75">
+                                (até {new Date(c.data_fim).toLocaleDateString("pt-BR")})
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <label className="text-sm font-bold mb-1 block">Cupom de desconto</label>
                   <div className="flex gap-2">
                     <input

@@ -30,6 +30,7 @@ class ClienteResponse(BaseModel):
     telefone: str
     cpf: Optional[str] = None
     data_nascimento: Optional[date] = None
+    email_verificado: bool = False
 
     class Config:
         from_attributes = True
@@ -55,6 +56,29 @@ class ClientePerfilUpdate(BaseModel):
     telefone: Optional[str] = Field(None, min_length=10, max_length=20)
     cpf: Optional[str] = None
     data_nascimento: Optional[date] = None
+
+
+# ==================== VERIFICAÇÃO + RESET ====================
+
+class VerificarEmailRequest(BaseModel):
+    codigo: str = Field(..., min_length=6, max_length=6)
+
+
+class EsqueciSenhaRequest(BaseModel):
+    email: EmailStr
+    codigo_acesso_restaurante: str
+
+
+class RedefinirSenhaRequest(BaseModel):
+    email: EmailStr
+    codigo: str = Field(..., min_length=6, max_length=6)
+    nova_senha: str = Field(..., min_length=6)
+    codigo_acesso_restaurante: str
+
+
+class AlterarSenhaRequest(BaseModel):
+    senha_atual: str
+    nova_senha: str = Field(..., min_length=6)
 
 
 # ==================== ENDERECOS ====================

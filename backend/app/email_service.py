@@ -84,3 +84,86 @@ async def enviar_email_generico(
     except Exception as e:
         logger.error(f"Erro ao enviar email genérico para {email_destino}: {e}")
         return {"erro": str(e), "enviado": False}
+
+
+async def enviar_email_verificacao(email_destino: str, nome: str, codigo: str) -> dict:
+    """Envia email com código OTP de verificação de email."""
+    if not _configurar_resend():
+        return {"erro": "RESEND_API_KEY não configurada", "enviado": False}
+
+    from .email_templates import gerar_email_verificacao
+    assunto, html = gerar_email_verificacao(nome=nome, codigo=codigo)
+
+    try:
+        params: resend.Emails.SendParams = {
+            "from": f"Derekh Food <{FROM_EMAIL}>",
+            "to": [email_destino],
+            "subject": assunto,
+            "html": html,
+        }
+        resultado = resend.Emails.send(params)
+        email_id = resultado.get("id", "n/a") if isinstance(resultado, dict) else getattr(resultado, "id", "n/a")
+        logger.info(f"Email verificação enviado para {email_destino} — id={email_id}")
+        return {"enviado": True, "id": email_id}
+    except Exception as e:
+        logger.error(f"Erro ao enviar email verificação para {email_destino}: {e}")
+        return {"erro": str(e), "enviado": False}
+
+
+async def enviar_email_reset_senha(email_destino: str, nome: str, codigo: str) -> dict:
+    """Envia email com código OTP de redefinição de senha."""
+    if not _configurar_resend():
+        return {"erro": "RESEND_API_KEY não configurada", "enviado": False}
+
+    from .email_templates import gerar_email_reset_senha
+    assunto, html = gerar_email_reset_senha(nome=nome, codigo=codigo)
+
+    try:
+        params: resend.Emails.SendParams = {
+            "from": f"Derekh Food <{FROM_EMAIL}>",
+            "to": [email_destino],
+            "subject": assunto,
+            "html": html,
+        }
+        resultado = resend.Emails.send(params)
+        email_id = resultado.get("id", "n/a") if isinstance(resultado, dict) else getattr(resultado, "id", "n/a")
+        logger.info(f"Email reset senha enviado para {email_destino} — id={email_id}")
+        return {"enviado": True, "id": email_id}
+    except Exception as e:
+        logger.error(f"Erro ao enviar email reset senha para {email_destino}: {e}")
+        return {"erro": str(e), "enviado": False}
+
+
+async def enviar_email_lembrete_cupom(
+    email_destino: str,
+    nome: str,
+    codigo_cupom: str,
+    desconto: str,
+    expira: str,
+    nome_restaurante: str,
+) -> dict:
+    """Envia email de lembrete de cupom expirando."""
+    if not _configurar_resend():
+        return {"erro": "RESEND_API_KEY não configurada", "enviado": False}
+
+    from .email_templates import gerar_email_lembrete_cupom
+    assunto, html = gerar_email_lembrete_cupom(
+        nome=nome, codigo_cupom=codigo_cupom,
+        desconto=desconto, expira=expira,
+        nome_restaurante=nome_restaurante,
+    )
+
+    try:
+        params: resend.Emails.SendParams = {
+            "from": f"Derekh Food <{FROM_EMAIL}>",
+            "to": [email_destino],
+            "subject": assunto,
+            "html": html,
+        }
+        resultado = resend.Emails.send(params)
+        email_id = resultado.get("id", "n/a") if isinstance(resultado, dict) else getattr(resultado, "id", "n/a")
+        logger.info(f"Email lembrete cupom enviado para {email_destino} — id={email_id}")
+        return {"enviado": True, "id": email_id}
+    except Exception as e:
+        logger.error(f"Erro ao enviar email lembrete cupom para {email_destino}: {e}")
+        return {"erro": str(e), "enviado": False}

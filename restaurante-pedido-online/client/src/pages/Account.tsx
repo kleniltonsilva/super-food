@@ -1,10 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, User, MapPin, Trash2, Star } from "lucide-react";
+import { ArrowLeft, User, MapPin, Trash2, Star, BadgeCheck, AlertCircle, Lock } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRestaurante } from "@/contexts/RestauranteContext";
-import { getEnderecos, removerEndereco, definirEnderecoPadrao, atualizarPerfil } from "@/lib/apiClient";
+import { getEnderecos, removerEndereco, definirEnderecoPadrao, atualizarPerfil, alterarSenha } from "@/lib/apiClient";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 
@@ -31,6 +31,13 @@ export default function Account() {
   const [nome, setNome] = useState("");
   const [telefone, setTelefone] = useState("");
   const [salvando, setSalvando] = useState(false);
+
+  // Alterar senha
+  const [alterandoSenha, setAlterandoSenha] = useState(false);
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmarSenha, setConfirmarSenha] = useState("");
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -84,6 +91,24 @@ export default function Account() {
       toast.error("Erro ao atualizar perfil");
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const handleAlterarSenha = async () => {
+    if (!senhaAtual) { toast.error("Digite a senha atual"); return; }
+    if (novaSenha.length < 6) { toast.error("Nova senha deve ter no mínimo 6 caracteres"); return; }
+    if (novaSenha !== confirmarSenha) { toast.error("As senhas não coincidem"); return; }
+    setSalvandoSenha(true);
+    try {
+      await alterarSenha(senhaAtual.trim(), novaSenha.trim());
+      toast.success("Senha alterada com sucesso!");
+      setAlterandoSenha(false);
+      setSenhaAtual(""); setNovaSenha(""); setConfirmarSenha("");
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Erro ao alterar senha");
+    } finally {
+      setSalvandoSenha(false);
     }
   };
 
@@ -154,12 +179,67 @@ export default function Account() {
               <div className="flex justify-between items-center">
                 <div>
                   <p className="font-semibold">{cliente?.nome}</p>
-                  <p className="text-sm text-muted-foreground">{cliente?.email}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-muted-foreground">{cliente?.email}</p>
+                    {cliente?.email_verificado ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-500">
+                        <BadgeCheck className="w-3.5 h-3.5" /> Verificado
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => navigate("/verificar-email")}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-yellow-500 hover:underline"
+                      >
+                        <AlertCircle className="w-3.5 h-3.5" /> Verificar
+                      </button>
+                    )}
+                  </div>
                   <p className="text-sm text-muted-foreground">{cliente?.telefone}</p>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => setEditando(true)}>Editar</Button>
               </div>
             </div>
+          )}
+        </Card>
+
+        {/* Alterar Senha */}
+        <Card className="p-4 md:p-6 mb-6">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Lock className="w-5 h-5" />
+            Senha
+          </h2>
+
+          {alterandoSenha ? (
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-bold mb-1 block">Senha atual</label>
+                <input type="password" value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)}
+                  className="dark-input" placeholder="Digite sua senha atual" />
+              </div>
+              <div>
+                <label className="text-sm font-bold mb-1 block">Nova senha</label>
+                <input type="password" value={novaSenha} onChange={e => setNovaSenha(e.target.value)}
+                  className="dark-input" placeholder="Mínimo 6 caracteres" minLength={6} />
+              </div>
+              <div>
+                <label className="text-sm font-bold mb-1 block">Confirmar nova senha</label>
+                <input type="password" value={confirmarSenha} onChange={e => setConfirmarSenha(e.target.value)}
+                  className="dark-input" placeholder="Repita a nova senha" />
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleAlterarSenha} disabled={salvandoSenha}
+                  style={{ background: `var(--cor-primaria, #E31A24)` }} className="text-white">
+                  {salvandoSenha ? "Salvando..." : "Alterar senha"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => {
+                  setAlterandoSenha(false); setSenhaAtual(""); setNovaSenha(""); setConfirmarSenha("");
+                }}>Cancelar</Button>
+              </div>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => setAlterandoSenha(true)}>
+              Alterar senha
+            </Button>
           )}
         </Card>
 

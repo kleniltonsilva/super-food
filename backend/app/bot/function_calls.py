@@ -257,6 +257,114 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "rastrear_pedido",
+            "description": "Rastreia pedido em tempo real: status detalhado, posição na fila da cozinha, motoboy atribuído com GPS, ETA e link de acompanhamento. Use quando cliente perguntar 'cadê meu pedido', 'onde tá', 'quanto falta'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pedido_id": {"type": "integer", "description": "ID do pedido (opcional se tiver telefone)"},
+                    "telefone": {"type": "string", "description": "Telefone do cliente para buscar pedido ativo"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "trocar_item_pedido",
+            "description": "Troca um item do pedido por outro do cardápio. Respeita status da cozinha — se já começou a preparar, rejeita.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pedido_id": {"type": "integer", "description": "ID do pedido"},
+                    "item_remover": {"type": "string", "description": "Nome do item a remover"},
+                    "item_novo": {"type": "string", "description": "Nome do novo item"},
+                    "quantidade": {"type": "integer", "description": "Quantidade do novo item", "default": 1},
+                },
+                "required": ["pedido_id", "item_remover", "item_novo"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_tempo_entrega",
+            "description": "Consulta tempo estimado de preparo + entrega com base na fila real da cozinha e bairro. Use para informar ao cliente quanto tempo vai demorar.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "bairro": {"type": "string", "description": "Bairro do cliente (opcional, para calcular taxa e tempo extra)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_bairros",
+            "description": "Lista bairros atendidos pelo restaurante com taxas de entrega e tempo estimado. Use quando cliente perguntar sobre entrega, taxa ou área atendida.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nome_bairro": {"type": "string", "description": "Filtro parcial por nome do bairro (opcional)"},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "atualizar_endereco_cliente",
+            "description": "Atualiza ou cadastra endereço de entrega do cliente. Valida se bairro está na área de entrega.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "telefone": {"type": "string", "description": "Telefone do cliente"},
+                    "endereco_completo": {"type": "string", "description": "Endereço completo (rua, número)"},
+                    "complemento": {"type": "string", "description": "Complemento (apto, bloco, referência)"},
+                    "bairro": {"type": "string", "description": "Bairro"},
+                    "referencia": {"type": "string", "description": "Ponto de referência"},
+                },
+                "required": ["telefone", "endereco_completo"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "validar_endereco",
+            "description": "SEMPRE chamar ANTES de criar pedido quando cliente informar endereço novo ou diferente do salvo. Valida endereço via GPS (Mapbox) e calcula taxa de entrega real por distância. Separe rua+número do complemento (apt, bloco, andar — complemento NÃO vai na busca).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "endereco_texto": {"type": "string", "description": "Rua + número (ex: 'Rua Augusta 123'). NÃO incluir complemento aqui."},
+                    "complemento": {"type": "string", "description": "Complemento separado: apt, bloco, andar, casa dos fundos, etc."},
+                    "referencia": {"type": "string", "description": "Ponto de referência (ex: 'perto do mercado')"},
+                },
+                "required": ["endereco_texto"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "confirmar_endereco_validado",
+            "description": "Chamar DEPOIS que cliente escolheu/confirmou uma das sugestões retornadas por validar_endereco. Salva endereço com coordenadas GPS no cadastro do cliente.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "telefone": {"type": "string", "description": "Telefone do cliente"},
+                    "opcao_index": {"type": "integer", "description": "Índice da opção escolhida (0=A, 1=B, 2=C)"},
+                    "complemento": {"type": "string", "description": "Complemento (apt, bloco, referência)"},
+                    "referencia": {"type": "string", "description": "Ponto de referência"},
+                },
+                "required": ["telefone", "opcao_index"],
+            },
+        },
+    },
 ]
 
 
@@ -293,15 +401,29 @@ def executar_funcao(
         elif nome == "verificar_horario":
             return _verificar_horario(db, restaurante_id)
         elif nome == "buscar_promocoes":
-            return _buscar_promocoes(db, restaurante_id)
+            return _buscar_promocoes(db, restaurante_id, conversa)
         elif nome == "registrar_avaliacao":
             return _registrar_avaliacao(db, restaurante_id, args, conversa)
         elif nome == "registrar_problema":
             return _registrar_problema(db, restaurante_id, args, conversa)
         elif nome == "aplicar_cupom":
-            return _aplicar_cupom(db, restaurante_id, args)
+            return _aplicar_cupom(db, restaurante_id, args, conversa)
         elif nome == "escalar_humano":
             return _escalar_humano(db, restaurante_id, args, conversa)
+        elif nome == "rastrear_pedido":
+            return _rastrear_pedido(db, restaurante_id, args)
+        elif nome == "trocar_item_pedido":
+            return _trocar_item_pedido(db, restaurante_id, bot_config, args)
+        elif nome == "consultar_tempo_entrega":
+            return _consultar_tempo_entrega(db, restaurante_id, args)
+        elif nome == "consultar_bairros":
+            return _consultar_bairros(db, restaurante_id, args)
+        elif nome == "atualizar_endereco_cliente":
+            return _atualizar_endereco_cliente(db, restaurante_id, args)
+        elif nome == "validar_endereco":
+            return _validar_endereco(db, restaurante_id, args, conversa)
+        elif nome == "confirmar_endereco_validado":
+            return _confirmar_endereco_validado(db, restaurante_id, args, conversa)
         else:
             return json.dumps({"erro": f"Função desconhecida: {nome}"})
     except Exception as e:
@@ -484,11 +606,56 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
     # Calcular taxa de entrega
     taxa_entrega = 0
     tipo_entrega = args.get("tipo_entrega", "entrega")
+    restaurante = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
     if tipo_entrega == "entrega":
-        config = db.query(models.ConfigRestaurante).filter(
-            models.ConfigRestaurante.restaurante_id == restaurante_id
-        ).first()
-        taxa_entrega = config.taxa_entrega_base if config else 5.0
+        # Prioridade 1: Usar taxa pré-calculada pelo Mapbox (validar_endereco)
+        endereco_validado = None
+        if conversa and conversa.session_data:
+            endereco_validado = conversa.session_data.get("endereco_validado")
+        if endereco_validado:
+            taxa_entrega = endereco_validado.get("taxa_entrega", 0)
+            if not args.get("endereco_entrega"):
+                args["endereco_entrega"] = endereco_validado.get("place_name", "")
+        else:
+            # Prioridade 2: Fallback — lógica por bairro (original)
+            endereco_entrega = args.get("endereco_entrega", "").lower()
+            cidade_rest = (restaurante.cidade or "").lower().strip()
+            if cidade_rest and endereco_entrega and cidade_rest not in endereco_entrega:
+                return json.dumps({
+                    "erro": True,
+                    "mensagem": f"Desculpe, só fazemos entregas em {restaurante.cidade.title()}. O endereço informado parece ser fora da nossa área de entrega.",
+                })
+
+            config = db.query(models.ConfigRestaurante).filter(
+                models.ConfigRestaurante.restaurante_id == restaurante_id
+            ).first()
+            taxa_entrega = config.taxa_entrega_base if config else 5.0
+
+            bairro_cliente = args.get("bairro", "").strip()
+            if not bairro_cliente and endereco_entrega:
+                if cliente:
+                    end_padrao = db.query(models.EnderecoCliente).filter(
+                        models.EnderecoCliente.cliente_id == cliente.id,
+                        models.EnderecoCliente.padrao == True,
+                    ).first()
+                    if end_padrao and end_padrao.bairro:
+                        bairro_cliente = end_padrao.bairro
+
+            if bairro_cliente:
+                bairro_db = db.query(models.BairroEntrega).filter(
+                    models.BairroEntrega.restaurante_id == restaurante_id,
+                    models.BairroEntrega.ativo == True,
+                    models.BairroEntrega.nome.ilike(f"%{bairro_cliente}%"),
+                ).first()
+                if bairro_db:
+                    taxa_entrega = bairro_db.taxa_entrega
+                else:
+                    tem_bairros = db.query(models.BairroEntrega).filter(
+                        models.BairroEntrega.restaurante_id == restaurante_id,
+                        models.BairroEntrega.ativo == True,
+                    ).count()
+                    if tem_bairros > 0:
+                        logger.info(f"Bairro '{bairro_cliente}' não cadastrado para restaurante {restaurante_id}, usando taxa padrão")
 
     valor_total_final = valor_total + taxa_entrega
 
@@ -569,6 +736,10 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
 
     logger.info(f"Pedido #{comanda} criado via WhatsApp Bot — restaurante={restaurante_id}, valor=R${valor_total_final:.2f}")
 
+    # Montar link de rastreamento
+    codigo_acesso = restaurante.codigo_acesso if restaurante else ""
+    link_rastreamento = f"https://superfood-api.fly.dev/cliente/{codigo_acesso}/pedido/{pedido.id}/tracking" if codigo_acesso else None
+
     return json.dumps({
         "sucesso": True,
         "pedido_id": pedido.id,
@@ -578,6 +749,7 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
         "valor_subtotal": valor_total,
         "taxa_entrega": taxa_entrega,
         "valor_total": valor_total_final,
+        "link_rastreamento": link_rastreamento,
         "mensagem": f"Pedido #{comanda} criado! Valor: R${valor_total_final:.2f}. Status: {status_inicial}",
     })
 
@@ -598,6 +770,16 @@ def _alterar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConf
     status_permitidos = ["pendente", "em_preparo"]
     if pedido.status not in status_permitidos:
         return json.dumps({"erro": f"Pedido #{pedido.comanda} não pode ser alterado (status: {pedido.status})"})
+
+    # Verificar se cozinha já começou a preparar (respeitar KDS)
+    pedido_cozinha = db.query(models.PedidoCozinha).filter(
+        models.PedidoCozinha.pedido_id == pedido.id,
+    ).first()
+    if pedido_cozinha and pedido_cozinha.status not in ("NOVO",):
+        return json.dumps({
+            "erro": f"A cozinha já começou a preparar o pedido #{pedido.comanda}! Não consigo alterar agora 😅",
+            "status_cozinha": pedido_cozinha.status,
+        })
 
     # Remover itens
     if args.get("remover_item_ids"):
@@ -745,7 +927,7 @@ def _consultar_status_pedido(db: Session, restaurante_id: int, args: dict) -> st
         "agendado": "Agendado para entrega futura 📅",
     }
 
-    return json.dumps({
+    resultado = {
         "pedido_id": pedido.id,
         "comanda": pedido.comanda,
         "status": pedido.status,
@@ -753,7 +935,43 @@ def _consultar_status_pedido(db: Session, restaurante_id: int, args: dict) -> st
         "valor_total": pedido.valor_total,
         "itens": pedido.itens,
         "criado_em": pedido.data_criacao.isoformat() if pedido.data_criacao else None,
-    })
+    }
+
+    # Tempo desde criação
+    if pedido.data_criacao:
+        minutos = int((datetime.utcnow() - pedido.data_criacao).total_seconds() / 60)
+        resultado["minutos_desde_criacao"] = minutos
+
+    # Histórico de status com timestamps
+    if pedido.historico_status:
+        resultado["historico_status"] = pedido.historico_status
+
+    # Posição na fila da cozinha (se em_preparo)
+    if pedido.status == "em_preparo":
+        pedido_cozinha = db.query(models.PedidoCozinha).filter(
+            models.PedidoCozinha.pedido_id == pedido.id,
+        ).first()
+        if pedido_cozinha:
+            posicao = db.query(models.PedidoCozinha).filter(
+                models.PedidoCozinha.restaurante_id == restaurante_id,
+                models.PedidoCozinha.status.in_(["NOVO", "FAZENDO"]),
+                models.PedidoCozinha.criado_em <= pedido_cozinha.criado_em,
+                models.PedidoCozinha.pausado == False,
+            ).count()
+            resultado["posicao_fila"] = posicao
+            resultado["status_cozinha"] = pedido_cozinha.status
+
+    # Motoboy atribuído (se despachado/em_rota)
+    if pedido.status in ("em_rota", "pronto"):
+        entrega = db.query(models.Entrega).filter(
+            models.Entrega.pedido_id == pedido.id,
+        ).first()
+        if entrega and entrega.motoboy_id:
+            motoboy = db.query(models.Motoboy).filter(models.Motoboy.id == entrega.motoboy_id).first()
+            if motoboy:
+                resultado["motoboy_nome"] = motoboy.nome
+
+    return json.dumps(resultado)
 
 
 def _verificar_horario(db: Session, restaurante_id: int) -> str:
@@ -783,10 +1001,16 @@ def _verificar_horario(db: Session, restaurante_id: int) -> str:
     })
 
 
-def _buscar_promocoes(db: Session, restaurante_id: int) -> str:
+def _buscar_promocoes(db: Session, restaurante_id: int, conversa: Optional[models.BotConversa] = None) -> str:
+    from datetime import datetime as dt
+    agora = dt.utcnow()
+
+    # Promoções globais ativas
     promos = db.query(models.Promocao).filter(
         models.Promocao.restaurante_id == restaurante_id,
         models.Promocao.ativo == True,
+        models.Promocao.cliente_id == None,  # Apenas globais
+        (models.Promocao.data_fim == None) | (models.Promocao.data_fim >= agora),
     ).all()
 
     combos = db.query(models.Combo).filter(
@@ -794,8 +1018,10 @@ def _buscar_promocoes(db: Session, restaurante_id: int) -> str:
         models.Combo.ativo == True,
     ).all()
 
-    result = {"promocoes": [], "combos": []}
+    result = {"promocoes": [], "combos": [], "cupons_exclusivos": []}
     for p in promos:
+        if p.uso_limitado and p.usos_realizados >= (p.limite_usos or 0):
+            continue
         result["promocoes"].append({
             "nome": p.nome,
             "tipo": p.tipo_desconto,
@@ -810,29 +1036,79 @@ def _buscar_promocoes(db: Session, restaurante_id: int) -> str:
             "economia": c.preco_original - c.preco_combo,
         })
 
+    # Buscar cupons exclusivos do cliente (se identificado na conversa)
+    if conversa and conversa.cliente_id:
+        exclusivos = db.query(models.Promocao).filter(
+            models.Promocao.restaurante_id == restaurante_id,
+            models.Promocao.cliente_id == conversa.cliente_id,
+            models.Promocao.ativo == True,
+            (models.Promocao.data_fim == None) | (models.Promocao.data_fim >= agora),
+        ).all()
+        for e in exclusivos:
+            if e.uso_limitado and e.usos_realizados >= (e.limite_usos or 0):
+                continue
+            validade = e.data_fim.strftime("%d/%m") if e.data_fim else "sem prazo"
+            result["cupons_exclusivos"].append({
+                "cupom": e.codigo_cupom,
+                "desconto": f"{e.valor_desconto:.0f}%",
+                "validade": validade,
+                "tipo": e.tipo_cupom,
+            })
+
     return json.dumps(result)
 
 
 def _registrar_avaliacao(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa]) -> str:
-    avaliacao = models.BotAvaliacao(
-        restaurante_id=restaurante_id,
-        pedido_id=args.get("pedido_id"),
-        cliente_id=conversa.cliente_id if conversa else None,
-        conversa_id=conversa.id if conversa else None,
-        nota=args["nota"],
-        categoria=args.get("categoria"),
-        detalhe=args.get("detalhe"),
-        status="respondida",
-        respondido_em=datetime.utcnow(),
-    )
-    db.add(avaliacao)
+    # Verificar se já existe avaliação pendente para o pedido (criada pelo worker)
+    avaliacao = None
+    if args.get("pedido_id"):
+        avaliacao = db.query(models.BotAvaliacao).filter(
+            models.BotAvaliacao.pedido_id == args["pedido_id"],
+            models.BotAvaliacao.restaurante_id == restaurante_id,
+            models.BotAvaliacao.status == "pendente",
+        ).first()
+
+    if avaliacao:
+        avaliacao.nota = args["nota"]
+        avaliacao.categoria = args.get("categoria")
+        avaliacao.detalhe = args.get("detalhe")
+        avaliacao.status = "respondida"
+        avaliacao.respondido_em = datetime.utcnow()
+        avaliacao.conversa_id = conversa.id if conversa else None
+    else:
+        avaliacao = models.BotAvaliacao(
+            restaurante_id=restaurante_id,
+            pedido_id=args.get("pedido_id"),
+            cliente_id=conversa.cliente_id if conversa else None,
+            conversa_id=conversa.id if conversa else None,
+            nota=args["nota"],
+            categoria=args.get("categoria"),
+            detalhe=args.get("detalhe"),
+            status="respondida",
+            respondido_em=datetime.utcnow(),
+        )
+        db.add(avaliacao)
+
     db.commit()
 
     nota = args["nota"]
+    resultado = {"sucesso": True, "nota": nota}
+
     if nota >= 4:
-        return json.dumps({"sucesso": True, "nota": nota, "mensagem": "Obrigado pela avaliação! 😊 Se puder, avalie a gente no Google Maps também!"})
+        resultado["mensagem"] = "Obrigado pela avaliação! 😊"
+        # Verificar se deve pedir Google Maps review
+        bot_config = db.query(models.BotConfig).filter(
+            models.BotConfig.restaurante_id == restaurante_id
+        ).first()
+        if bot_config and bot_config.avaliacao_pedir_google_review and bot_config.google_maps_url:
+            avaliacao.avaliou_maps = True
+            db.commit()
+            resultado["google_maps_url"] = bot_config.google_maps_url
+            resultado["mensagem"] = f"Obrigado pela nota {nota}! 😊 Se puder, deixa uma avaliação pra gente no Google Maps: {bot_config.google_maps_url}"
     else:
-        return json.dumps({"sucesso": True, "nota": nota, "mensagem": "Sentimos muito pela experiência. Já registrei o problema e o responsável vai entrar em contato."})
+        resultado["mensagem"] = "Sentimos muito pela experiência. Já registrei o problema e o responsável vai entrar em contato."
+
+    return json.dumps(resultado)
 
 
 def _registrar_problema(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa]) -> str:
@@ -845,20 +1121,105 @@ def _registrar_problema(db: Session, restaurante_id: int, args: dict, conversa: 
         descricao=args["descricao"],
     )
     db.add(problema)
+    db.flush()
+
+    # Buscar política configurada para o tipo de problema
+    bot_config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante_id
+    ).first()
+
+    resultado = {"sucesso": True, "problema_id": problema.id}
+    mensagem_acao = ""
+
+    if bot_config:
+        tipo = args["tipo"]
+        politica_map = {
+            "atraso": bot_config.politica_atraso,
+            "item_errado": bot_config.politica_pedido_errado,
+            "item_faltando": bot_config.politica_item_faltando,
+            "qualidade": bot_config.politica_qualidade,
+        }
+        politica = politica_map.get(tipo) or {}
+        if isinstance(politica, str):
+            import json as _json
+            try:
+                politica = _json.loads(politica)
+            except Exception:
+                politica = {}
+
+        acao = politica.get("acao", "desculpar")
+        desconto_pct = politica.get("desconto_pct", 0)
+        mensagem_custom = politica.get("mensagem", "")
+
+        if acao in ("desconto_proximo", "cupom_fixo") and desconto_pct > 0:
+            # Gerar cupom de desconto automático
+            codigo = f"DESC{''.join(random.choices(string.digits, k=4))}"
+            promo = models.Promocao(
+                restaurante_id=restaurante_id,
+                nome=f"Desconto compensação #{problema.id}",
+                tipo_desconto="percentual",
+                valor_desconto=desconto_pct,
+                codigo_cupom=codigo,
+                ativo=True,
+                uso_limitado=True,
+                limite_usos=1,
+                usos_realizados=0,
+            )
+            db.add(promo)
+            problema.resolucao_tipo = "desconto_proximo"
+            problema.cupom_gerado = codigo
+            problema.desconto_pct = desconto_pct
+            problema.resolvido_automaticamente = True
+            problema.resolvido = True
+            problema.resolvido_em = datetime.utcnow()
+            mensagem_acao = f"Como pedido de desculpas, gerei um cupom de {desconto_pct:.0f}% de desconto para o próximo pedido: {codigo}"
+            resultado["cupom"] = codigo
+            resultado["desconto_pct"] = desconto_pct
+
+        elif acao == "brinde_reenviar":
+            problema.resolucao_tipo = "brinde"
+            problema.resolvido_automaticamente = True
+            problema.resolvido = True
+            problema.resolvido_em = datetime.utcnow()
+            mensagem_acao = "Vou notificar a equipe para reenviar o item correto. O item errado fica como brinde!"
+
+        elif acao == "reembolso_parcial" and desconto_pct > 0:
+            problema.resolucao_tipo = "reembolso"
+            problema.desconto_pct = desconto_pct
+            problema.resolvido_automaticamente = True
+            problema.resolvido = True
+            problema.resolvido_em = datetime.utcnow()
+            mensagem_acao = f"Vou solicitar um reembolso parcial de {desconto_pct:.0f}% do valor do pedido. A equipe vai processar."
+
+        if mensagem_custom:
+            mensagem_acao = mensagem_custom + (f" {mensagem_acao}" if mensagem_acao else "")
+
     db.commit()
 
-    return json.dumps({"sucesso": True, "problema_id": problema.id, "mensagem": "Problema registrado. O responsável será notificado imediatamente."})
+    resultado["mensagem"] = mensagem_acao or "Problema registrado. O responsável será notificado imediatamente."
+    resultado["acao_aplicada"] = problema.resolucao_tipo or "desculpar"
+    return json.dumps(resultado)
 
 
-def _aplicar_cupom(db: Session, restaurante_id: int, args: dict) -> str:
+def _aplicar_cupom(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa] = None) -> str:
+    from datetime import datetime as dt
+    agora = dt.utcnow()
+
     cupom = db.query(models.Promocao).filter(
         models.Promocao.restaurante_id == restaurante_id,
         models.Promocao.codigo_cupom == args["codigo_cupom"].upper(),
         models.Promocao.ativo == True,
+        (models.Promocao.data_fim == None) | (models.Promocao.data_fim >= agora),
     ).first()
 
     if not cupom:
         return json.dumps({"valido": False, "mensagem": "Cupom inválido ou expirado"})
+
+    # Verificar se cupom exclusivo pertence ao cliente da conversa
+    if cupom.cliente_id:
+        cliente_id_conversa = conversa.cliente_id if conversa else None
+        if not cliente_id_conversa or cupom.cliente_id != cliente_id_conversa:
+            return json.dumps({"valido": False, "mensagem": "Este cupom é exclusivo para outro cliente"})
 
     if cupom.uso_limitado and cupom.usos_realizados >= (cupom.limite_usos or 0):
         return json.dumps({"valido": False, "mensagem": "Cupom esgotado"})
@@ -892,4 +1253,603 @@ def _escalar_humano(db: Session, restaurante_id: int, args: dict, conversa: Opti
     return json.dumps({
         "sucesso": True,
         "mensagem": "Conversa transferida para atendimento humano. O responsável será notificado.",
+    })
+
+
+# ==================== NOVAS FUNÇÕES (Comportamento Avançado da Bia) ====================
+
+
+def _rastrear_pedido(db: Session, restaurante_id: int, args: dict) -> str:
+    """Rastreamento completo: status, fila cozinha, motoboy GPS, ETA, link tracking."""
+    pedido = None
+    if args.get("pedido_id"):
+        pedido = db.query(models.Pedido).filter(
+            models.Pedido.id == args["pedido_id"],
+            models.Pedido.restaurante_id == restaurante_id,
+        ).first()
+    elif args.get("telefone"):
+        tel = "".join(c for c in args["telefone"] if c.isdigit())
+        pedido = db.query(models.Pedido).filter(
+            models.Pedido.restaurante_id == restaurante_id,
+            models.Pedido.cliente_telefone.like(f"%{tel[-8:]}"),
+            models.Pedido.status.notin_(["entregue", "cancelado", "finalizado"]),
+        ).order_by(models.Pedido.data_criacao.desc()).first()
+
+    if not pedido:
+        return json.dumps({"erro": "Nenhum pedido ativo encontrado"})
+
+    status_map = {
+        "pendente": "Recebido, aguardando confirmação",
+        "em_preparo": "Sendo preparado na cozinha 👨‍🍳",
+        "pronto": "Pronto! Aguardando entregador 📦",
+        "em_rota": "A caminho do seu endereço 🛵",
+        "entregue": "Entregue ✅",
+        "cancelado": "Cancelado ❌",
+        "agendado": "Agendado 📅",
+    }
+
+    resultado = {
+        "pedido_id": pedido.id,
+        "comanda": pedido.comanda,
+        "status": pedido.status,
+        "status_texto": status_map.get(pedido.status, pedido.status),
+        "itens": pedido.itens,
+        "valor_total": pedido.valor_total,
+    }
+
+    # Timeline de status
+    if pedido.historico_status:
+        resultado["timeline"] = pedido.historico_status
+
+    # Tempo desde criação
+    if pedido.data_criacao:
+        minutos = int((datetime.utcnow() - pedido.data_criacao).total_seconds() / 60)
+        resultado["minutos_desde_criacao"] = minutos
+
+    # Posição na fila da cozinha
+    if pedido.status == "em_preparo":
+        pedido_cozinha = db.query(models.PedidoCozinha).filter(
+            models.PedidoCozinha.pedido_id == pedido.id,
+        ).first()
+        if pedido_cozinha:
+            posicao = db.query(models.PedidoCozinha).filter(
+                models.PedidoCozinha.restaurante_id == restaurante_id,
+                models.PedidoCozinha.status.in_(["NOVO", "FAZENDO"]),
+                models.PedidoCozinha.criado_em <= pedido_cozinha.criado_em,
+                models.PedidoCozinha.pausado == False,
+            ).count()
+            resultado["posicao_fila"] = posicao
+            resultado["status_cozinha"] = pedido_cozinha.status
+            # ETA baseado na fila
+            config = db.query(models.ConfigRestaurante).filter(
+                models.ConfigRestaurante.restaurante_id == restaurante_id
+            ).first()
+            tempo_medio = config.tempo_medio_preparo if config else 30
+            resultado["eta_preparo_min"] = max(5, int(tempo_medio * posicao / max(1, posicao)))
+
+    # Motoboy + GPS (se em rota ou despachado)
+    if pedido.status in ("em_rota", "pronto"):
+        entrega = db.query(models.Entrega).filter(
+            models.Entrega.pedido_id == pedido.id,
+        ).first()
+        if entrega and entrega.motoboy_id:
+            motoboy = db.query(models.Motoboy).filter(models.Motoboy.id == entrega.motoboy_id).first()
+            if motoboy:
+                resultado["motoboy_nome"] = motoboy.nome
+                if motoboy.latitude_atual and motoboy.longitude_atual:
+                    resultado["motoboy_gps"] = {
+                        "lat": motoboy.latitude_atual,
+                        "lng": motoboy.longitude_atual,
+                    }
+                if entrega.tempo_entrega:
+                    resultado["eta_entrega_min"] = entrega.tempo_entrega
+
+    # Link de rastreamento
+    restaurante = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
+    if restaurante and restaurante.codigo_acesso:
+        resultado["link_rastreamento"] = f"https://superfood-api.fly.dev/cliente/{restaurante.codigo_acesso}/pedido/{pedido.id}/tracking"
+
+    return json.dumps(resultado)
+
+
+def _trocar_item_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig, args: dict) -> str:
+    """Troca item do pedido por outro do cardápio, respeitando status da cozinha."""
+    if not bot_config.pode_alterar_pedido:
+        return json.dumps({"erro": "Bot não tem permissão para alterar pedidos"})
+
+    pedido = db.query(models.Pedido).filter(
+        models.Pedido.id == args["pedido_id"],
+        models.Pedido.restaurante_id == restaurante_id,
+    ).first()
+
+    if not pedido:
+        return json.dumps({"erro": "Pedido não encontrado"})
+
+    if pedido.status not in ("pendente", "em_preparo"):
+        return json.dumps({"erro": f"Pedido #{pedido.comanda} não pode ser alterado (status: {pedido.status})"})
+
+    # Verificar KDS
+    pedido_cozinha = db.query(models.PedidoCozinha).filter(
+        models.PedidoCozinha.pedido_id == pedido.id,
+    ).first()
+    if pedido_cozinha and pedido_cozinha.status not in ("NOVO",):
+        return json.dumps({
+            "erro": f"A cozinha já começou a preparar o pedido #{pedido.comanda}! Não dá pra trocar agora 😅",
+        })
+
+    # Buscar item a remover
+    item_remover_nome = args.get("item_remover", "").lower()
+    itens_pedido = db.query(models.ItemPedido).filter(
+        models.ItemPedido.pedido_id == pedido.id,
+    ).all()
+
+    item_encontrado = None
+    for item in itens_pedido:
+        produto = db.query(models.Produto).filter(models.Produto.id == item.produto_id).first()
+        if produto and item_remover_nome in produto.nome.lower():
+            item_encontrado = item
+            break
+
+    if not item_encontrado:
+        return json.dumps({"erro": f"Item '{args.get('item_remover', '')}' não encontrado no pedido"})
+
+    # Buscar novo produto
+    item_novo_nome = args.get("item_novo", "").lower()
+    novo_produto = db.query(models.Produto).filter(
+        models.Produto.restaurante_id == restaurante_id,
+        models.Produto.disponivel == True,
+        models.Produto.nome.ilike(f"%{item_novo_nome}%"),
+    ).first()
+
+    if not novo_produto:
+        return json.dumps({"erro": f"Item '{args.get('item_novo', '')}' não encontrado no cardápio ou indisponível"})
+
+    # Remover item antigo
+    db.delete(item_encontrado)
+
+    # Adicionar novo item
+    preco_novo = novo_produto.preco_promocional if novo_produto.promocao and novo_produto.preco_promocional else novo_produto.preco
+    qtd = args.get("quantidade", 1)
+    novo_item = models.ItemPedido(
+        pedido_id=pedido.id,
+        produto_id=novo_produto.id,
+        quantidade=qtd,
+        preco_unitario=preco_novo,
+    )
+    db.add(novo_item)
+    db.flush()
+
+    # Recalcular total
+    itens_atualizados = db.query(models.ItemPedido).filter(models.ItemPedido.pedido_id == pedido.id).all()
+    valor_subtotal = sum(i.preco_unitario * i.quantidade for i in itens_atualizados)
+    pedido.valor_subtotal = valor_subtotal
+    pedido.valor_total = valor_subtotal + (pedido.valor_taxa_entrega or 0)
+
+    # Atualizar texto de itens
+    itens_texto = []
+    for i in itens_atualizados:
+        prod = db.query(models.Produto).filter(models.Produto.id == i.produto_id).first()
+        nome = prod.nome if prod else "?"
+        itens_texto.append(f"{i.quantidade}x {nome}")
+    pedido.itens = ", ".join(itens_texto)
+
+    db.commit()
+    return json.dumps({
+        "sucesso": True,
+        "removido": args.get("item_remover", ""),
+        "adicionado": f"{qtd}x {novo_produto.nome} (R${preco_novo:.2f})",
+        "novo_total": pedido.valor_total,
+        "mensagem": f"Troca feita! Tirei {args.get('item_remover', '')} e coloquei {qtd}x {novo_produto.nome}. Novo total: R${pedido.valor_total:.2f}",
+    })
+
+
+def _consultar_tempo_entrega(db: Session, restaurante_id: int, args: dict) -> str:
+    """Consulta tempo estimado real com base na fila da cozinha e bairro."""
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == restaurante_id
+    ).first()
+
+    tempo_medio_preparo = config.tempo_medio_preparo if config else 30
+
+    # Calcular tempo real baseado na fila da cozinha
+    pedidos_na_fila = db.query(models.PedidoCozinha).filter(
+        models.PedidoCozinha.restaurante_id == restaurante_id,
+        models.PedidoCozinha.status.in_(["NOVO", "FAZENDO"]),
+        models.PedidoCozinha.pausado == False,
+    ).count()
+
+    # Tempo base de preparo (ajustado pela fila)
+    tempo_preparo = tempo_medio_preparo
+    if pedidos_na_fila > 3:
+        tempo_preparo += (pedidos_na_fila - 3) * 5  # +5min para cada pedido além de 3
+
+    resultado = {
+        "tempo_preparo_min": tempo_preparo,
+        "pedidos_na_fila": pedidos_na_fila,
+    }
+
+    # Se bairro informado, buscar tempo e taxa de entrega
+    bairro_nome = args.get("bairro", "").strip()
+    if bairro_nome:
+        bairro = db.query(models.BairroEntrega).filter(
+            models.BairroEntrega.restaurante_id == restaurante_id,
+            models.BairroEntrega.ativo == True,
+            models.BairroEntrega.nome.ilike(f"%{bairro_nome}%"),
+        ).first()
+        if bairro:
+            resultado["bairro"] = bairro.nome
+            resultado["taxa_entrega"] = bairro.taxa_entrega
+            resultado["tempo_entrega_bairro_min"] = bairro.tempo_estimado_min
+            resultado["total_estimado_min"] = tempo_preparo + bairro.tempo_estimado_min
+        else:
+            # Bairro não encontrado — usar estimativa padrão
+            site_config = db.query(models.SiteConfig).filter(
+                models.SiteConfig.restaurante_id == restaurante_id
+            ).first()
+            tempo_entrega_padrao = site_config.tempo_entrega_estimado if site_config else 30
+            taxa_padrao = config.taxa_entrega_base if config else 5.0
+            resultado["bairro"] = bairro_nome
+            resultado["bairro_nao_cadastrado"] = True
+            resultado["taxa_entrega"] = taxa_padrao
+            resultado["tempo_entrega_bairro_min"] = tempo_entrega_padrao
+            resultado["total_estimado_min"] = tempo_preparo + tempo_entrega_padrao
+    else:
+        # Sem bairro — dar estimativa geral
+        site_config = db.query(models.SiteConfig).filter(
+            models.SiteConfig.restaurante_id == restaurante_id
+        ).first()
+        tempo_entrega_padrao = site_config.tempo_entrega_estimado if site_config else 30
+        resultado["tempo_entrega_medio_min"] = tempo_entrega_padrao
+        resultado["total_estimado_min"] = tempo_preparo + tempo_entrega_padrao
+
+    return json.dumps(resultado)
+
+
+def _consultar_bairros(db: Session, restaurante_id: int, args: dict) -> str:
+    """Lista bairros atendidos com taxas de entrega."""
+    query = db.query(models.BairroEntrega).filter(
+        models.BairroEntrega.restaurante_id == restaurante_id,
+        models.BairroEntrega.ativo == True,
+    )
+
+    nome_filtro = args.get("nome_bairro", "").strip()
+    if nome_filtro:
+        query = query.filter(models.BairroEntrega.nome.ilike(f"%{nome_filtro}%"))
+
+    bairros = query.order_by(models.BairroEntrega.nome).all()
+
+    if not bairros:
+        if nome_filtro:
+            return json.dumps({"encontrados": 0, "mensagem": f"Nenhum bairro encontrado com '{nome_filtro}'. Pode ser que não entregamos nessa região."})
+
+        # Sem bairros cadastrados — restaurante usa taxa fixa
+        config = db.query(models.ConfigRestaurante).filter(
+            models.ConfigRestaurante.restaurante_id == restaurante_id
+        ).first()
+        taxa = config.taxa_entrega_base if config else 5.0
+        return json.dumps({
+            "encontrados": 0,
+            "taxa_fixa": True,
+            "taxa_entrega_padrao": taxa,
+            "mensagem": f"Entregamos em toda a cidade! Taxa fixa de R${taxa:.2f}",
+        })
+
+    lista = [{
+        "nome": b.nome,
+        "taxa_entrega": b.taxa_entrega,
+        "tempo_estimado_min": b.tempo_estimado_min,
+    } for b in bairros]
+
+    return json.dumps({
+        "encontrados": len(lista),
+        "bairros": lista,
+    })
+
+
+def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa]) -> str:
+    """Valida endereço via Mapbox geocoding, calcula distância e taxa de entrega."""
+    from utils.mapbox_api import autocomplete_address
+    from utils.haversine import haversine
+
+    endereco_texto = args.get("endereco_texto", "").strip()
+    if not endereco_texto:
+        return json.dumps({"erro": "Informe o endereço com rua e número"})
+
+    restaurante = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
+    if not restaurante:
+        return json.dumps({"erro": "Restaurante não encontrado"})
+
+    config = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == restaurante_id
+    ).first()
+
+    raio_km = config.raio_entrega_km if config else 10.0
+    taxa_base = config.taxa_entrega_base if config else 5.0
+    distancia_base_km = config.distancia_base_km if config else 3.0
+    taxa_km_extra = config.taxa_km_extra if config else 1.5
+
+    rest_lat = restaurante.latitude
+    rest_lng = restaurante.longitude
+    proximity = (rest_lat, rest_lng) if rest_lat and rest_lng else None
+
+    # Enriquecer query com cidade/estado do restaurante se não inclusos
+    query = endereco_texto
+    cidade = (restaurante.cidade or "").strip()
+    estado = (restaurante.estado or "").strip()
+    endereco_lower = endereco_texto.lower()
+    if cidade and cidade.lower() not in endereco_lower:
+        query = f"{endereco_texto}, {cidade}"
+        if estado:
+            query = f"{query}, {estado}"
+
+    # Chamar Mapbox
+    sugestoes_raw = autocomplete_address(query, proximity)
+
+    # Fallback: sem cidade (query livre)
+    if not sugestoes_raw and query != endereco_texto:
+        sugestoes_raw = autocomplete_address(endereco_texto, proximity)
+
+    if not sugestoes_raw:
+        return json.dumps({
+            "encontrado": False,
+            "mensagem": "Não encontrei esse endereço. Pode informar a rua completa com número?",
+        })
+
+    # Processar sugestões (max 3 para o cliente)
+    sugestoes = []
+    for s in sugestoes_raw[:5]:
+        lat, lng = s["coordinates"]
+        distancia = 0.0
+        dentro_zona = True
+
+        if rest_lat and rest_lng:
+            distancia = haversine((rest_lat, rest_lng), (lat, lng))
+            dentro_zona = distancia <= raio_km
+
+        # Calcular taxa por distância
+        if distancia <= distancia_base_km:
+            taxa = taxa_base
+        else:
+            taxa = round(taxa_base + (distancia - distancia_base_km) * taxa_km_extra, 2)
+
+        sugestoes.append({
+            "place_name": s["place_name"],
+            "lat": lat,
+            "lng": lng,
+            "distancia_km": round(distancia, 2),
+            "dentro_zona": dentro_zona,
+            "taxa_entrega": taxa,
+        })
+
+    # Salvar sugestões no session_data da conversa
+    if conversa:
+        session_data = conversa.session_data or {}
+        session_data["endereco_sugestoes"] = sugestoes
+        session_data["endereco_complemento"] = args.get("complemento", "")
+        session_data["endereco_referencia"] = args.get("referencia", "")
+        conversa.session_data = session_data
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(conversa, "session_data")
+        db.flush()
+
+    # Filtrar apenas dentro da zona para apresentar ao cliente
+    dentro = [s for s in sugestoes if s["dentro_zona"]]
+    fora = [s for s in sugestoes if not s["dentro_zona"]]
+
+    if not dentro and fora:
+        # Todos fora da zona
+        return json.dumps({
+            "encontrado": True,
+            "confianca": "fora_zona",
+            "mensagem": f"O endereço encontrado está fora da nossa área de entrega (máximo {raio_km:.0f} km). Gostaria de retirar no restaurante?",
+            "sugestoes_fora": [{"place_name": s["place_name"], "distancia_km": s["distancia_km"]} for s in fora[:3]],
+        })
+
+    # Montar resposta baseada na confiança
+    if len(dentro) == 1 and dentro[0]["distancia_km"] < 5:
+        # Alta confiança — 1 resultado próximo
+        s = dentro[0]
+        letras = ["A"]
+        return json.dumps({
+            "encontrado": True,
+            "confianca": "alta",
+            "endereco": s["place_name"],
+            "distancia_km": s["distancia_km"],
+            "taxa_entrega": s["taxa_entrega"],
+            "opcoes_texto": [f"A) {s['place_name']} — R${s['taxa_entrega']:.2f}"],
+            "mensagem": f"Encontrei: {s['place_name']}. Taxa de entrega: R${s['taxa_entrega']:.2f}. Confirma?",
+        })
+    else:
+        # Média confiança — múltiplas opções
+        letras = ["A", "B", "C"]
+        opcoes = []
+        for i, s in enumerate(dentro[:3]):
+            opcoes.append(f"{letras[i]}) {s['place_name']} — R${s['taxa_entrega']:.2f}")
+
+        return json.dumps({
+            "encontrado": True,
+            "confianca": "media",
+            "opcoes_texto": opcoes,
+            "mensagem": "Encontrei esses endereços. Qual é o seu?\n" + "\n".join(opcoes),
+        })
+
+
+def _confirmar_endereco_validado(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa]) -> str:
+    """Confirma endereço escolhido pelo cliente e salva com coordenadas GPS."""
+    telefone = args.get("telefone", "")
+    tel_limpo = "".join(c for c in telefone if c.isdigit())
+    opcao_index = args.get("opcao_index", 0)
+
+    # Buscar cliente
+    cliente = db.query(models.Cliente).filter(
+        models.Cliente.restaurante_id == restaurante_id,
+        models.Cliente.telefone.like(f"%{tel_limpo[-8:]}"),
+    ).first()
+
+    if not cliente:
+        return json.dumps({"erro": "Cliente não encontrado. Cadastre primeiro."})
+
+    # Buscar sugestões salvas
+    if not conversa or not conversa.session_data:
+        return json.dumps({"erro": "Nenhuma validação de endereço pendente. Use validar_endereco primeiro."})
+
+    session_data = conversa.session_data or {}
+    sugestoes = session_data.get("endereco_sugestoes", [])
+
+    if not sugestoes:
+        return json.dumps({"erro": "Nenhuma sugestão de endereço encontrada. Use validar_endereco primeiro."})
+
+    if opcao_index < 0 or opcao_index >= len(sugestoes):
+        return json.dumps({"erro": f"Opção inválida. Escolha entre 0 e {len(sugestoes) - 1}."})
+
+    escolha = sugestoes[opcao_index]
+    place_name = escolha["place_name"]
+    lat = escolha["lat"]
+    lng = escolha["lng"]
+    taxa_entrega = escolha["taxa_entrega"]
+
+    # Extrair bairro do place_name (formato: "Rua X, 123, Bairro, Cidade - UF, CEP, Brasil")
+    partes = [p.strip() for p in place_name.split(",")]
+    bairro = partes[2] if len(partes) > 2 else ""
+
+    complemento = args.get("complemento", "") or session_data.get("endereco_complemento", "")
+    referencia = args.get("referencia", "") or session_data.get("endereco_referencia", "")
+
+    # Buscar/atualizar endereço padrão do cliente
+    endereco_existente = db.query(models.EnderecoCliente).filter(
+        models.EnderecoCliente.cliente_id == cliente.id,
+        models.EnderecoCliente.padrao == True,
+    ).first()
+
+    if endereco_existente:
+        endereco_existente.endereco_completo = place_name
+        endereco_existente.bairro = bairro
+        endereco_existente.complemento = complemento
+        endereco_existente.referencia = referencia
+        endereco_existente.latitude = lat
+        endereco_existente.longitude = lng
+        endereco_existente.validado_mapbox = True
+    else:
+        novo_endereco = models.EnderecoCliente(
+            cliente_id=cliente.id,
+            endereco_completo=place_name,
+            bairro=bairro,
+            complemento=complemento,
+            referencia=referencia,
+            latitude=lat,
+            longitude=lng,
+            validado_mapbox=True,
+            padrao=True,
+        )
+        db.add(novo_endereco)
+
+    # Salvar endereço validado no session_data para _criar_pedido usar
+    session_data["endereco_validado"] = {
+        "place_name": place_name,
+        "lat": lat,
+        "lng": lng,
+        "bairro": bairro,
+        "taxa_entrega": taxa_entrega,
+        "distancia_km": escolha["distancia_km"],
+        "complemento": complemento,
+        "referencia": referencia,
+    }
+    # Limpar sugestões pendentes
+    session_data.pop("endereco_sugestoes", None)
+    session_data.pop("endereco_complemento", None)
+    session_data.pop("endereco_referencia", None)
+    conversa.session_data = session_data
+    conversa.endereco_confirmado = place_name
+
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(conversa, "session_data")
+
+    db.commit()
+
+    endereco_display = place_name
+    if complemento:
+        endereco_display += f", {complemento}"
+
+    logger.info(f"Endereço validado GPS para cliente {cliente.id}: {place_name} ({lat},{lng})")
+
+    return json.dumps({
+        "sucesso": True,
+        "endereco": endereco_display,
+        "bairro": bairro,
+        "taxa_entrega": taxa_entrega,
+        "distancia_km": escolha["distancia_km"],
+        "validado_gps": True,
+        "mensagem": f"Endereço confirmado: {endereco_display}. Taxa de entrega: R${taxa_entrega:.2f}",
+    })
+
+
+def _atualizar_endereco_cliente(db: Session, restaurante_id: int, args: dict) -> str:
+    """Atualiza ou cadastra endereço de entrega do cliente."""
+    telefone = args.get("telefone", "")
+    tel_limpo = "".join(c for c in telefone if c.isdigit())
+
+    cliente = db.query(models.Cliente).filter(
+        models.Cliente.restaurante_id == restaurante_id,
+        models.Cliente.telefone.like(f"%{tel_limpo[-8:]}"),
+    ).first()
+
+    if not cliente:
+        return json.dumps({"erro": "Cliente não encontrado. Cadastre primeiro."})
+
+    endereco_completo = args.get("endereco_completo", "").strip()
+    bairro = args.get("bairro", "").strip()
+    complemento = args.get("complemento", "").strip()
+    referencia = args.get("referencia", "").strip()
+
+    if not endereco_completo:
+        return json.dumps({"erro": "Endereço completo é obrigatório"})
+
+    # Validar bairro na área de entrega (se bairros cadastrados)
+    if bairro:
+        tem_bairros = db.query(models.BairroEntrega).filter(
+            models.BairroEntrega.restaurante_id == restaurante_id,
+            models.BairroEntrega.ativo == True,
+        ).count()
+        if tem_bairros > 0:
+            bairro_encontrado = db.query(models.BairroEntrega).filter(
+                models.BairroEntrega.restaurante_id == restaurante_id,
+                models.BairroEntrega.ativo == True,
+                models.BairroEntrega.nome.ilike(f"%{bairro}%"),
+            ).first()
+            if not bairro_encontrado:
+                return json.dumps({
+                    "erro": f"Infelizmente não entregamos no bairro '{bairro}' 😔",
+                    "sugestao": "Consulte os bairros atendidos com consultar_bairros",
+                })
+
+    # Buscar endereço padrão existente
+    endereco_existente = db.query(models.EnderecoCliente).filter(
+        models.EnderecoCliente.cliente_id == cliente.id,
+        models.EnderecoCliente.padrao == True,
+    ).first()
+
+    if endereco_existente:
+        endereco_existente.endereco_completo = endereco_completo
+        endereco_existente.bairro = bairro
+        endereco_existente.complemento = complemento
+        endereco_existente.referencia = referencia
+        msg = "Endereço atualizado"
+    else:
+        novo_endereco = models.EnderecoCliente(
+            cliente_id=cliente.id,
+            endereco_completo=endereco_completo,
+            bairro=bairro,
+            complemento=complemento,
+            referencia=referencia,
+            padrao=True,
+        )
+        db.add(novo_endereco)
+        msg = "Endereço cadastrado"
+
+    db.commit()
+    return json.dumps({
+        "sucesso": True,
+        "endereco": endereco_completo,
+        "bairro": bairro,
+        "mensagem": f"{msg} com sucesso!",
     })

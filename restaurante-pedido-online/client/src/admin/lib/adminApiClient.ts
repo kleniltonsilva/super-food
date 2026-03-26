@@ -833,6 +833,41 @@ export async function getBotMensagens(conversaId: number) {
   return data;
 }
 
+export async function getBotRelatorioEficiencia(periodo: string = "30d") {
+  const { data } = await adminApi.get("/painel/bot/relatorio/eficiencia", { params: { periodo } });
+  return data;
+}
+
+export async function getBotRelatorioSatisfacao(periodo: string = "30d") {
+  const { data } = await adminApi.get("/painel/bot/relatorio/satisfacao", { params: { periodo } });
+  return data;
+}
+
+export async function getBotRelatorioClientesInativos() {
+  const { data } = await adminApi.get("/painel/bot/relatorio/clientes-inativos");
+  return data;
+}
+
+export async function getBotRelatorioErrosContornados(periodo: string = "30d") {
+  const { data } = await adminApi.get("/painel/bot/relatorio/erros-contornados", { params: { periodo } });
+  return data;
+}
+
+export async function criarRepescagemEmMassa(payload: {
+  cliente_ids: number[];
+  desconto_pct: number;
+  validade_dias: number;
+  canal: string;
+}) {
+  const { data } = await adminApi.post("/painel/bot/repescagem/criar-em-massa", payload);
+  return data;
+}
+
+export async function getBotRepescagemHistorico(pagina: number = 1) {
+  const { data } = await adminApi.get("/painel/bot/repescagem/historico", { params: { pagina } });
+  return data;
+}
+
 export async function uploadImagem(file: File, tipo: string = "produto") {
   // Obter restaurante_id do localStorage
   const restauranteStr = localStorage.getItem("sf_admin_restaurante");

@@ -11,6 +11,8 @@ import Login from "@/pages/Login";
 import OrderTracking from "@/pages/OrderTracking";
 import Account from "@/pages/Account";
 import OrderSuccess from "@/pages/OrderSuccess";
+import VerificarEmail from "@/pages/VerificarEmail";
+import EsqueciSenha from "@/pages/EsqueciSenha";
 import { Route, Switch } from "wouter";
 import AdminApp from "@/admin/AdminApp";
 import MotoboyApp from "@/motoboy/MotoboyApp";
@@ -38,6 +40,8 @@ function ClienteRouter() {
           <Route path={"/order/:id"} component={OrderTracking} />
           <Route path={"/loyalty"} component={Loyalty} />
           <Route path={"/login"} component={Login} />
+          <Route path={"/verificar-email"} component={VerificarEmail} />
+          <Route path={"/esqueci-senha"} component={EsqueciSenha} />
           <Route path={"/account"} component={Account} />
           <Route path={"/404"} component={NotFound} />
           {/* Final fallback route */}

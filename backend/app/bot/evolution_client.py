@@ -49,7 +49,8 @@ async def enviar_audio_ptt(
     url = f"{api_url.rstrip('/')}/message/sendWhatsAppAudio/{instance}"
     payload = {
         "number": _normalizar_numero(numero),
-        "audio": f"data:audio/mp3;base64,{audio_base64}",
+        "audio": audio_base64,
+        "encoding": True,
     }
     headers = {"apikey": api_key, "Content-Type": "application/json"}
 

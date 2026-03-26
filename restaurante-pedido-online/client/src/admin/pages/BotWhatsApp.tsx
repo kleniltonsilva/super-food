@@ -47,6 +47,19 @@ import {
   Phone,
   User,
   Clock,
+  BarChart3,
+  Users,
+  Shield,
+  MapPin,
+  ThumbsUp,
+  ThumbsDown,
+  FileText,
+  UserMinus,
+  Gift,
+  Send,
+  Mail,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -57,11 +70,17 @@ import {
   useBotDashboard,
   useBotConversas,
   useBotMensagens,
+  useBotRelatorioEficiencia,
+  useBotRelatorioSatisfacao,
+  useBotRelatorioClientesInativos,
+  useBotRelatorioErrosContornados,
+  useBotRepescagemHistorico,
+  useCriarRepescagemEmMassa,
 } from "@/admin/hooks/useAdminQueries";
 import { useFeatureFlag } from "@/admin/hooks/useFeatureFlag";
 import { cn } from "@/lib/utils";
 
-type TabType = "dashboard" | "config" | "conversas";
+type TabType = "dashboard" | "config" | "conversas" | "relatorios" | "repescagem";
 
 const VOZES = [
   { value: "rex", label: "Rex (masculino)" },
@@ -101,6 +120,19 @@ const RECLAMACAO_ACAO = [
   { value: "desculpar_registrar", label: "Pedir desculpas e registrar" },
   { value: "oferecer_credito", label: "Oferecer crédito automático" },
   { value: "escalar_dono", label: "Escalar para o dono" },
+];
+
+const POLITICA_ACOES = [
+  { value: "desculpar", label: "Apenas pedir desculpas" },
+  { value: "desconto_proximo", label: "Cupom desconto próximo pedido" },
+  { value: "brinde_reenviar", label: "Item como brinde + reenviar correto" },
+  { value: "reembolso_parcial", label: "Reembolso parcial" },
+];
+
+const PERIODOS = [
+  { value: "7d", label: "7 dias" },
+  { value: "30d", label: "30 dias" },
+  { value: "90d", label: "90 dias" },
 ];
 
 export default function BotWhatsApp() {
@@ -201,10 +233,19 @@ export default function BotWhatsApp() {
     );
   }
 
+  const [periodoRelatorio, setPeriodoRelatorio] = useState("30d");
+
+  const { data: relEficiencia } = useBotRelatorioEficiencia(periodoRelatorio);
+  const { data: relSatisfacao } = useBotRelatorioSatisfacao(periodoRelatorio);
+  const { data: relInativos } = useBotRelatorioClientesInativos();
+  const { data: relErros } = useBotRelatorioErrosContornados(periodoRelatorio);
+
   const tabs: { id: TabType; label: string; icon: typeof Bot }[] = [
     { id: "dashboard", label: "Dashboard", icon: TrendingUp },
     { id: "config", label: "Configurações", icon: Settings2 },
     { id: "conversas", label: "Conversas", icon: MessageSquare },
+    { id: "relatorios", label: "Relatórios", icon: BarChart3 },
+    { id: "repescagem", label: "Repescagem", icon: UserMinus },
   ];
 
   return (
@@ -658,6 +699,73 @@ export default function BotWhatsApp() {
               </div>
             </ConfigSection>
 
+            {/* Políticas de Erro */}
+            <ConfigSection title="Políticas de Erro" icon={Shield}>
+              <p className="text-xs text-[var(--text-muted)] mb-4">
+                Configure ações automáticas quando o bot detectar problemas em pedidos.
+              </p>
+              {[
+                { key: "politica_atraso", label: "Se a entrega atrasar..." },
+                { key: "politica_pedido_errado", label: "Se o pedido vier errado..." },
+                { key: "politica_item_faltando", label: "Se faltar um item..." },
+                { key: "politica_qualidade", label: "Se houver problema de qualidade..." },
+              ].map((pol) => {
+                const politica = (cfg[pol.key] as Record<string, unknown>) || { acao: "desculpar", desconto_pct: 0, mensagem: "" };
+                return (
+                  <div key={pol.key} className="mb-4 p-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+                    <Label className="text-[var(--text-primary)] text-sm font-medium">{pol.label}</Label>
+                    <div className="grid md:grid-cols-2 gap-3 mt-2">
+                      <Select
+                        value={(politica.acao as string) || "desculpar"}
+                        onValueChange={(v) =>
+                          updateLocal(pol.key, { ...politica, acao: v })
+                        }
+                      >
+                        <SelectTrigger className="bg-[var(--bg-card)] border-[var(--border-subtle)] text-[var(--text-primary)]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {POLITICA_ACOES.map((a) => (
+                            <SelectItem key={a.value} value={a.value}>
+                              {a.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {["desconto_proximo", "cupom_fixo", "reembolso_parcial"].includes(
+                        (politica.acao as string) || ""
+                      ) && (
+                        <div>
+                          <Label className="text-[var(--text-secondary)] text-xs">Desconto (%)</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={50}
+                            value={(politica.desconto_pct as number) ?? 10}
+                            onChange={(e) =>
+                              updateLocal(pol.key, { ...politica, desconto_pct: Number(e.target.value) })
+                            }
+                            className="bg-[var(--bg-card)] border-[var(--border-subtle)] text-[var(--text-primary)] w-24"
+                          />
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-2">
+                      <Label className="text-[var(--text-secondary)] text-xs">Mensagem personalizada (opcional)</Label>
+                      <Input
+                        value={(politica.mensagem as string) || ""}
+                        onChange={(e) =>
+                          updateLocal(pol.key, { ...politica, mensagem: e.target.value })
+                        }
+                        placeholder="Ex: Pedimos desculpas pelo transtorno!"
+                        className="bg-[var(--bg-card)] border-[var(--border-subtle)] text-[var(--text-primary)]"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </ConfigSection>
+
             {/* Pós-entrega */}
             <ConfigSection title="Pós-entrega" icon={Heart}>
               <div className="space-y-3">
@@ -682,6 +790,33 @@ export default function BotWhatsApp() {
                         updateLocal("delay_avaliacao_min", Number(e.target.value))
                       }
                       className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)] w-32"
+                    />
+                  </div>
+                )}
+                <ToggleRow
+                  label="Perguntar se houve problema antes da nota"
+                  desc="O bot pergunta 'tudo ok?' antes de pedir nota 1-5"
+                  icon={MessageCircle}
+                  checked={!!cfg.avaliacao_perguntar_problemas}
+                  onChange={(v) => updateLocal("avaliacao_perguntar_problemas", v)}
+                />
+                <ToggleRow
+                  label="Pedir review no Google Maps (nota ≥ 4)"
+                  desc="Envia link do Google Maps quando cliente dá nota alta"
+                  icon={MapPin}
+                  checked={!!cfg.avaliacao_pedir_google_review}
+                  onChange={(v) => updateLocal("avaliacao_pedir_google_review", v)}
+                />
+                {!!cfg.avaliacao_pedir_google_review && (
+                  <div className="ml-10">
+                    <Label className="text-[var(--text-secondary)] text-xs">
+                      URL Google Maps do restaurante
+                    </Label>
+                    <Input
+                      value={(cfg.google_maps_url as string) || ""}
+                      onChange={(e) => updateLocal("google_maps_url", e.target.value)}
+                      placeholder="https://g.page/r/..."
+                      className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
                     />
                   </div>
                 )}
@@ -719,22 +854,31 @@ export default function BotWhatsApp() {
                   onChange={(v) => updateLocal("repescagem_ativa", v)}
                 />
                 {!!cfg.repescagem_ativa && (
-                  <div className="ml-10 grid md:grid-cols-2 gap-4">
-                    <div>
-                      <Label className="text-[var(--text-secondary)] text-xs">
-                        Dias de inatividade
-                      </Label>
-                      <Input
-                        type="number"
-                        min={3}
-                        max={90}
-                        value={(cfg.repescagem_dias_inativo as number) ?? 15}
-                        onChange={(e) =>
-                          updateLocal("repescagem_dias_inativo", Number(e.target.value))
-                        }
-                        className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
-                      />
-                    </div>
+                  <div className="ml-10 space-y-3">
+                    <ToggleRow
+                      label="Detectar frequência individual"
+                      desc="Usa IA para calcular o intervalo médio de compra de cada cliente"
+                      icon={TrendingUp}
+                      checked={!!cfg.repescagem_usar_frequencia}
+                      onChange={(v) => updateLocal("repescagem_usar_frequencia", v)}
+                    />
+                    {!cfg.repescagem_usar_frequencia && (
+                      <div>
+                        <Label className="text-[var(--text-secondary)] text-xs">
+                          Dias de inatividade (modo fixo)
+                        </Label>
+                        <Input
+                          type="number"
+                          min={3}
+                          max={90}
+                          value={(cfg.repescagem_dias_inativo as number) ?? 15}
+                          onChange={(e) =>
+                            updateLocal("repescagem_dias_inativo", Number(e.target.value))
+                          }
+                          className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)] w-32"
+                        />
+                      </div>
+                    )}
                     <div>
                       <Label className="text-[var(--text-secondary)] text-xs">
                         Desconto repescagem (%)
@@ -747,7 +891,7 @@ export default function BotWhatsApp() {
                         onChange={(e) =>
                           updateLocal("repescagem_desconto_pct", Number(e.target.value))
                         }
-                        className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
+                        className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)] w-32"
                       />
                     </div>
                   </div>
@@ -928,6 +1072,405 @@ export default function BotWhatsApp() {
             </div>
           </div>
         )}
+        {/* ═══ TAB: Relatórios ═══ */}
+        {tab === "relatorios" && (
+          <div className="space-y-6">
+            {/* Filtro período */}
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-[var(--text-secondary)]">Período:</span>
+              {PERIODOS.map((p) => (
+                <button
+                  key={p.value}
+                  onClick={() => setPeriodoRelatorio(p.value)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                    periodoRelatorio === p.value
+                      ? "text-white"
+                      : "text-[var(--text-secondary)] bg-[var(--bg-card)] hover:bg-[var(--bg-card-hover)]"
+                  )}
+                  style={
+                    periodoRelatorio === p.value
+                      ? { backgroundColor: "var(--cor-primaria)" }
+                      : undefined
+                  }
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Eficiência */}
+            <Card className="p-5 bg-[var(--bg-card)] border-[var(--border-subtle)]">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-blue-400" />
+                Eficiência do Bot
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <MetricCard
+                  icon={MessageSquare}
+                  label="Conversas"
+                  value={relEficiencia?.total_conversas ?? 0}
+                  sub={`${relEficiencia?.total_pedidos_bot ?? 0} pedidos`}
+                  color="text-blue-400"
+                />
+                <MetricCard
+                  icon={ShoppingBag}
+                  label="Taxa conversão"
+                  value={`${relEficiencia?.taxa_conversao ?? 0}%`}
+                  sub="conversas → pedidos"
+                  color="text-green-400"
+                />
+                <MetricCard
+                  icon={Clock}
+                  label="Tempo resposta"
+                  value={
+                    relEficiencia?.tempo_medio_resposta_ms
+                      ? `${(relEficiencia.tempo_medio_resposta_ms / 1000).toFixed(1)}s`
+                      : "—"
+                  }
+                  sub="média por mensagem"
+                  color="text-purple-400"
+                />
+                <MetricCard
+                  icon={Bot}
+                  label="Resolução bot"
+                  value={`${relEficiencia?.taxa_resolucao_bot ?? 0}%`}
+                  sub={`${relEficiencia?.conversas_escaladas ?? 0} escaladas`}
+                  color="text-emerald-400"
+                />
+              </div>
+              {relEficiencia?.pedidos_por_dia && relEficiencia.pedidos_por_dia.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-xs text-[var(--text-muted)] mb-2">Pedidos por dia</p>
+                    <div className="flex items-end gap-1 h-24">
+                      {relEficiencia.pedidos_por_dia.slice(-14).map((d: any, i: number) => {
+                        const max = Math.max(...relEficiencia.pedidos_por_dia.map((x: any) => x.pedidos), 1);
+                        return (
+                          <div
+                            key={i}
+                            className="flex-1 rounded-t"
+                            style={{
+                              backgroundColor: "var(--cor-primaria)",
+                              height: `${(d.pedidos / max) * 100}%`,
+                              minHeight: d.pedidos > 0 ? "4px" : "1px",
+                              opacity: d.pedidos > 0 ? 1 : 0.2,
+                            }}
+                            title={`${d.data}: ${d.pedidos} pedidos`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs text-[var(--text-muted)] mb-2">Faturamento por dia</p>
+                    <div className="flex items-end gap-1 h-24">
+                      {relEficiencia.faturamento_por_dia?.slice(-14).map((d: any, i: number) => {
+                        const max = Math.max(...(relEficiencia.faturamento_por_dia || []).map((x: any) => x.valor), 1);
+                        return (
+                          <div
+                            key={i}
+                            className="flex-1 bg-emerald-500 rounded-t"
+                            style={{
+                              height: `${(d.valor / max) * 100}%`,
+                              minHeight: d.valor > 0 ? "4px" : "1px",
+                              opacity: d.valor > 0 ? 1 : 0.2,
+                            }}
+                            title={`${d.data}: R$${d.valor.toFixed(2)}`}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Card>
+
+            {/* Satisfação */}
+            <Card className="p-5 bg-[var(--bg-card)] border-[var(--border-subtle)]">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                <Star className="h-4 w-4 text-amber-400" />
+                Satisfação
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <MetricCard
+                  icon={TrendingUp}
+                  label="NPS"
+                  value={relSatisfacao?.nps ?? "—"}
+                  sub={
+                    (relSatisfacao?.nps ?? 0) >= 50
+                      ? "Excelente!"
+                      : (relSatisfacao?.nps ?? 0) >= 0
+                      ? "Bom"
+                      : "Precisa melhorar"
+                  }
+                  color={
+                    (relSatisfacao?.nps ?? 0) >= 50
+                      ? "text-green-400"
+                      : (relSatisfacao?.nps ?? 0) >= 0
+                      ? "text-amber-400"
+                      : "text-red-400"
+                  }
+                />
+                <MetricCard
+                  icon={Star}
+                  label="Média geral"
+                  value={relSatisfacao?.media_geral ? `${relSatisfacao.media_geral}/5` : "—"}
+                  sub={`${relSatisfacao?.total_avaliacoes ?? 0} avaliações`}
+                  color="text-amber-400"
+                />
+                <MetricCard
+                  icon={ThumbsUp}
+                  label="Satisfeitos"
+                  value={relSatisfacao?.clientes_satisfeitos ?? 0}
+                  sub="nota ≥ 4"
+                  color="text-green-400"
+                />
+                <MetricCard
+                  icon={ThumbsDown}
+                  label="Insatisfeitos"
+                  value={relSatisfacao?.clientes_insatisfeitos ?? 0}
+                  sub="nota ≤ 2"
+                  color="text-red-400"
+                />
+              </div>
+              {/* Distribuição de notas */}
+              {relSatisfacao?.distribuicao_notas && (
+                <div className="mb-4">
+                  <p className="text-xs text-[var(--text-muted)] mb-2">Distribuição de notas</p>
+                  <div className="flex items-end gap-2 h-20">
+                    {[1, 2, 3, 4, 5].map((n) => {
+                      const qtd = relSatisfacao.distribuicao_notas[String(n)] || 0;
+                      const max = Math.max(
+                        ...Object.values(relSatisfacao.distribuicao_notas as Record<string, number>),
+                        1
+                      );
+                      const cores = ["bg-red-500", "bg-orange-500", "bg-amber-500", "bg-lime-500", "bg-green-500"];
+                      return (
+                        <div key={n} className="flex-1 flex flex-col items-center gap-1">
+                          <div
+                            className={cn("w-full rounded-t", cores[n - 1])}
+                            style={{
+                              height: `${(qtd / max) * 100}%`,
+                              minHeight: qtd > 0 ? "8px" : "2px",
+                              opacity: qtd > 0 ? 1 : 0.2,
+                            }}
+                          />
+                          <span className="text-[10px] text-[var(--text-muted)]">{n}★</span>
+                          <span className="text-[10px] text-[var(--text-secondary)]">{qtd}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {/* Categorias de problemas */}
+              {relSatisfacao?.categorias_problemas && relSatisfacao.categorias_problemas.length > 0 && (
+                <div>
+                  <p className="text-xs text-[var(--text-muted)] mb-2">Problemas por categoria</p>
+                  <div className="space-y-2">
+                    {relSatisfacao.categorias_problemas.map((cat: any) => (
+                      <div key={cat.tipo} className="flex items-center justify-between text-sm">
+                        <span className="text-[var(--text-secondary)] capitalize">{cat.tipo.replace("_", " ")}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[var(--text-primary)]">{cat.total}</span>
+                          <Badge className="bg-green-500/20 text-green-400 text-[10px]">
+                            {cat.resolvido_bot} auto
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {relSatisfacao?.google_reviews_solicitados > 0 && (
+                <p className="text-xs text-[var(--text-muted)] mt-3">
+                  <MapPin className="h-3 w-3 inline mr-1" />
+                  {relSatisfacao.google_reviews_solicitados} reviews Google Maps solicitados
+                </p>
+              )}
+            </Card>
+
+            {/* Clientes Inativos */}
+            <Card className="p-5 bg-[var(--bg-card)] border-[var(--border-subtle)]">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                <Users className="h-4 w-4 text-orange-400" />
+                Clientes Inativos
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <MetricCard
+                  icon={Users}
+                  label="15-30 dias"
+                  value={relInativos?.resumo?.inativos_15_30 ?? 0}
+                  sub="inativos recentes"
+                  color="text-amber-400"
+                />
+                <MetricCard
+                  icon={Users}
+                  label="30-60 dias"
+                  value={relInativos?.resumo?.inativos_30_60 ?? 0}
+                  sub="em risco"
+                  color="text-orange-400"
+                />
+                <MetricCard
+                  icon={Users}
+                  label="60+ dias"
+                  value={relInativos?.resumo?.inativos_60_plus ?? 0}
+                  sub="muito inativos"
+                  color="text-red-400"
+                />
+                <MetricCard
+                  icon={Heart}
+                  label="Taxa retorno"
+                  value={`${relInativos?.repescagens?.taxa_retorno ?? 0}%`}
+                  sub={`${relInativos?.repescagens?.retornaram ?? 0}/${relInativos?.repescagens?.enviadas_total ?? 0} repescagens`}
+                  color="text-green-400"
+                />
+              </div>
+              {relInativos?.clientes && relInativos.clientes.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-[var(--text-muted)] border-b border-[var(--border-subtle)]">
+                        <th className="text-left py-2">Cliente</th>
+                        <th className="text-center py-2">Pedidos</th>
+                        <th className="text-center py-2">Freq. (dias)</th>
+                        <th className="text-center py-2">Inativo</th>
+                        <th className="text-center py-2">Nota</th>
+                        <th className="text-center py-2">Repescagem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {relInativos.clientes.slice(0, 15).map((c: any) => (
+                        <tr key={c.id} className="border-b border-[var(--border-subtle)]">
+                          <td className="py-2 text-[var(--text-primary)]">{c.nome}</td>
+                          <td className="text-center text-[var(--text-secondary)]">{c.total_pedidos}</td>
+                          <td className="text-center text-[var(--text-secondary)]">
+                            {c.media_intervalo_dias ? `~${c.media_intervalo_dias}` : "—"}
+                          </td>
+                          <td className="text-center">
+                            <Badge
+                              className={cn(
+                                "text-[10px]",
+                                c.dias_inativo >= 60
+                                  ? "bg-red-500/20 text-red-400"
+                                  : c.dias_inativo >= 30
+                                  ? "bg-orange-500/20 text-orange-400"
+                                  : "bg-amber-500/20 text-amber-400"
+                              )}
+                            >
+                              {c.dias_inativo}d
+                            </Badge>
+                          </td>
+                          <td className="text-center text-[var(--text-secondary)]">
+                            {c.ultima_avaliacao ? `${c.ultima_avaliacao}★` : "—"}
+                          </td>
+                          <td className="text-center">
+                            {c.repescagem_enviada ? (
+                              <Badge
+                                className={cn(
+                                  "text-[10px]",
+                                  c.retornou
+                                    ? "bg-green-500/20 text-green-400"
+                                    : "bg-blue-500/20 text-blue-400"
+                                )}
+                              >
+                                {c.retornou ? "Voltou!" : "Enviada"}
+                              </Badge>
+                            ) : (
+                              <span className="text-[var(--text-muted)]">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+
+            {/* Erros Contornados */}
+            <Card className="p-5 bg-[var(--bg-card)] border-[var(--border-subtle)]">
+              <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                <Shield className="h-4 w-4 text-purple-400" />
+                Erros Contornados
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <MetricCard
+                  icon={AlertTriangle}
+                  label="Total problemas"
+                  value={relErros?.total_problemas ?? 0}
+                  sub="no período"
+                  color="text-amber-400"
+                />
+                <MetricCard
+                  icon={Bot}
+                  label="Resolvidos pelo bot"
+                  value={relErros?.resolvidos_bot ?? 0}
+                  sub={`${relErros?.taxa_resolucao_automatica ?? 0}% automático`}
+                  color="text-green-400"
+                />
+                <MetricCard
+                  icon={User}
+                  label="Escalados humano"
+                  value={relErros?.escalados_humano ?? 0}
+                  sub="precisaram intervenção"
+                  color="text-orange-400"
+                />
+                <MetricCard
+                  icon={Percent}
+                  label="Cupons gerados"
+                  value={relErros?.cupons_gerados ?? 0}
+                  sub="como compensação"
+                  color="text-purple-400"
+                />
+              </div>
+              {/* Por tipo */}
+              {relErros?.por_tipo && relErros.por_tipo.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-xs text-[var(--text-muted)] mb-2">Por tipo de problema</p>
+                  <div className="space-y-2">
+                    {relErros.por_tipo.map((t: any) => (
+                      <div key={t.tipo} className="flex items-center justify-between text-sm">
+                        <span className="text-[var(--text-secondary)] capitalize">
+                          {t.tipo.replace("_", " ")}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[var(--text-primary)]">{t.total}</span>
+                          <Badge className="bg-green-500/20 text-green-400 text-[10px]">
+                            {t.auto_resolvidos} auto
+                          </Badge>
+                          <Badge className="bg-orange-500/20 text-orange-400 text-[10px]">
+                            {t.escalados} humano
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Por política */}
+              {relErros?.por_politica && relErros.por_politica.length > 0 && (
+                <div>
+                  <p className="text-xs text-[var(--text-muted)] mb-2">Por ação aplicada</p>
+                  <div className="flex flex-wrap gap-2">
+                    {relErros.por_politica.map((p: any) => (
+                      <Badge
+                        key={p.acao}
+                        className="bg-purple-500/20 text-purple-400 text-xs"
+                      >
+                        {p.acao?.replace("_", " ")} ({p.vezes_usada}x)
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* ═══ TAB: Repescagem ═══ */}
+        {tab === "repescagem" && <RepescagemTab />}
       </div>
 
       {/* Dialog desativar */}
@@ -1003,6 +1546,254 @@ function ConfigSection({
       </h3>
       {children}
     </Card>
+  );
+}
+
+function RepescagemTab() {
+  const { data: inativos, isLoading: loadingInativos } = useBotRelatorioClientesInativos();
+  const [paginaHistorico, setPaginaHistorico] = useState(1);
+  const { data: historico, isLoading: loadingHistorico } = useBotRepescagemHistorico(paginaHistorico);
+  const criarRepescagem = useCriarRepescagemEmMassa();
+
+  const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
+  const [descontoPct, setDescontoPct] = useState(10);
+  const [validadeDias, setValidadeDias] = useState(7);
+  const [canal, setCanal] = useState("whatsapp");
+
+  const clientes = inativos?.clientes || [];
+  const resumo = inativos?.resumo || {};
+  const repsResumo = inativos?.repescagens || {};
+
+  function toggleCliente(id: number) {
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleTodos() {
+    if (selecionados.size === clientes.length) {
+      setSelecionados(new Set());
+    } else {
+      setSelecionados(new Set(clientes.map((c: any) => c.id)));
+    }
+  }
+
+  async function enviarRepescagem() {
+    if (selecionados.size === 0) {
+      toast.error("Selecione ao menos um cliente");
+      return;
+    }
+    try {
+      const result = await criarRepescagem.mutateAsync({
+        cliente_ids: Array.from(selecionados),
+        desconto_pct: descontoPct,
+        validade_dias: validadeDias,
+        canal,
+      });
+      toast.success(`Repescagem enviada para ${result.total} clientes!`);
+      setSelecionados(new Set());
+    } catch {
+      toast.error("Erro ao enviar repescagem");
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Cards resumo */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <MetricCard icon={Users} label="Total inativos" value={clientes.length} sub="com pedidos" color="text-yellow-400" />
+        <MetricCard icon={UserMinus} label="15-30 dias" value={resumo.inativos_15_30 || 0} sub="inativos" color="text-orange-400" />
+        <MetricCard icon={UserMinus} label="30-60 dias" value={resumo.inativos_30_60 || 0} sub="inativos" color="text-red-400" />
+        <MetricCard icon={Gift} label="Taxa retorno" value={`${repsResumo.taxa_retorno || 0}%`} sub={`${repsResumo.retornaram || 0}/${repsResumo.enviadas_total || 0}`} color="text-green-400" />
+      </div>
+
+      {/* Config envio em massa */}
+      <Card className="p-5 bg-[var(--bg-card)] border-[var(--border-subtle)]">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+          <Send className="h-4 w-4" /> Envio em massa
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          <div>
+            <Label className="text-xs text-[var(--text-secondary)]">Desconto (%)</Label>
+            <Input type="number" min={5} max={50} value={descontoPct} onChange={(e) => setDescontoPct(Number(e.target.value))}
+              className="bg-[var(--bg-surface)] border-[var(--border-subtle)]" />
+          </div>
+          <div>
+            <Label className="text-xs text-[var(--text-secondary)]">Validade (dias)</Label>
+            <Input type="number" min={1} max={30} value={validadeDias} onChange={(e) => setValidadeDias(Number(e.target.value))}
+              className="bg-[var(--bg-surface)] border-[var(--border-subtle)]" />
+          </div>
+          <div>
+            <Label className="text-xs text-[var(--text-secondary)]">Canal</Label>
+            <Select value={canal} onValueChange={setCanal}>
+              <SelectTrigger className="bg-[var(--bg-surface)] border-[var(--border-subtle)]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                <SelectItem value="email">Email</SelectItem>
+                <SelectItem value="ambos">Ambos</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <Button
+          onClick={enviarRepescagem}
+          disabled={selecionados.size === 0 || criarRepescagem.isPending}
+          className="text-white"
+          style={{ backgroundColor: "var(--cor-primaria)" }}
+        >
+          {criarRepescagem.isPending ? (
+            <><RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Enviando...</>
+          ) : (
+            <><Send className="h-4 w-4 mr-2" /> Enviar para {selecionados.size} selecionado{selecionados.size !== 1 ? "s" : ""}</>
+          )}
+        </Button>
+      </Card>
+
+      {/* Lista clientes inativos */}
+      <Card className="p-5 bg-[var(--bg-card)] border-[var(--border-subtle)]">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2">
+            <Users className="h-4 w-4" /> Clientes inativos ({clientes.length})
+          </h3>
+          <button onClick={toggleTodos} className="text-xs font-medium flex items-center gap-1" style={{ color: "var(--cor-primaria)" }}>
+            {selecionados.size === clientes.length ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+            {selecionados.size === clientes.length ? "Desmarcar todos" : "Selecionar todos"}
+          </button>
+        </div>
+
+        {loadingInativos ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-[var(--bg-surface)] animate-pulse rounded-lg" />)}
+          </div>
+        ) : clientes.length === 0 ? (
+          <p className="text-sm text-[var(--text-muted)] text-center py-6">Nenhum cliente inativo encontrado</p>
+        ) : (
+          <div className="space-y-1 max-h-96 overflow-y-auto">
+            {clientes.map((c: any) => (
+              <div
+                key={c.id}
+                onClick={() => toggleCliente(c.id)}
+                className={cn(
+                  "flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors",
+                  selecionados.has(c.id) ? "bg-[var(--cor-primaria)]/10 border border-[var(--cor-primaria)]/30" : "hover:bg-[var(--bg-surface)]"
+                )}
+              >
+                {selecionados.has(c.id) ? (
+                  <CheckSquare className="h-4 w-4 shrink-0" style={{ color: "var(--cor-primaria)" }} />
+                ) : (
+                  <Square className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-[var(--text-primary)] truncate">{c.nome}</span>
+                    {c.repescagem_enviada && (
+                      <Badge variant="outline" className="text-[10px] py-0">
+                        {c.retornou ? "Retornou" : "Enviada"}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                    <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{c.telefone}</span>
+                    <span>{c.total_pedidos} pedidos</span>
+                    <span className="font-semibold text-orange-400">{c.dias_inativo}d inativo</span>
+                    {c.ultima_avaliacao != null && (
+                      <span className="flex items-center gap-0.5">
+                        <Star className="h-3 w-3 text-yellow-400" />{c.ultima_avaliacao}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      {/* Histórico de repescagens */}
+      <Card className="p-5 bg-[var(--bg-card)] border-[var(--border-subtle)]">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+          <Clock className="h-4 w-4" /> Histórico de repescagens
+        </h3>
+
+        {loadingHistorico ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => <div key={i} className="h-10 bg-[var(--bg-surface)] animate-pulse rounded-lg" />)}
+          </div>
+        ) : !historico?.items?.length ? (
+          <p className="text-sm text-[var(--text-muted)] text-center py-6">Nenhuma repescagem enviada ainda</p>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-[var(--text-muted)] border-b border-[var(--border-subtle)]">
+                    <th className="text-left py-2 px-2">Cliente</th>
+                    <th className="text-left py-2 px-2">Cupom</th>
+                    <th className="text-left py-2 px-2">Canal</th>
+                    <th className="text-left py-2 px-2">Data</th>
+                    <th className="text-left py-2 px-2">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historico.items.map((r: any) => (
+                    <tr key={r.id} className="border-b border-[var(--border-subtle)]/50">
+                      <td className="py-2 px-2">
+                        <div className="text-[var(--text-primary)] font-medium">{r.cliente_nome}</div>
+                        <div className="text-xs text-[var(--text-muted)]">{r.cliente_telefone}</div>
+                      </td>
+                      <td className="py-2 px-2">
+                        <code className="text-xs bg-[var(--bg-surface)] px-2 py-0.5 rounded font-mono">
+                          {r.cupom_codigo}
+                        </code>
+                        <span className="text-xs text-[var(--text-muted)] ml-1">{r.cupom_desconto_pct}%</span>
+                      </td>
+                      <td className="py-2 px-2">
+                        <Badge variant="outline" className="text-[10px]">
+                          {r.canal === "whatsapp" ? "WA" : r.canal === "email" ? "Email" : "WA+Email"}
+                        </Badge>
+                      </td>
+                      <td className="py-2 px-2 text-xs text-[var(--text-muted)]">
+                        {r.criado_em ? new Date(r.criado_em).toLocaleDateString("pt-BR") : "-"}
+                      </td>
+                      <td className="py-2 px-2">
+                        {r.retornou ? (
+                          <Badge className="bg-green-500/20 text-green-400 text-[10px]">Retornou</Badge>
+                        ) : r.lembrete_enviado ? (
+                          <Badge className="bg-yellow-500/20 text-yellow-400 text-[10px]">Lembrete enviado</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px]">Aguardando</Badge>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Paginação */}
+            {historico.paginas > 1 && (
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <Button size="sm" variant="outline" disabled={paginaHistorico <= 1}
+                  onClick={() => setPaginaHistorico((p) => p - 1)}>
+                  Anterior
+                </Button>
+                <span className="text-xs text-[var(--text-muted)]">
+                  Página {paginaHistorico} de {historico.paginas}
+                </span>
+                <Button size="sm" variant="outline" disabled={paginaHistorico >= historico.paginas}
+                  onClick={() => setPaginaHistorico((p) => p + 1)}>
+                  Próxima
+                </Button>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+    </div>
   );
 }
 

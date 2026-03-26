@@ -16,6 +16,7 @@ from .. import models, database
 from ..schemas import site_schemas
 from ..cache import cache_get, cache_set
 from utils.mapbox_api import autocomplete_address, check_coverage_zone
+from .auth_cliente import get_cliente_atual, get_cliente_opcional
 
 
 def _check_pix_online(db, restaurante_id: int) -> bool:
@@ -931,6 +932,7 @@ def get_promocoes(
 def validar_cupom(
     codigo_acesso: str,
     validacao: site_schemas.ValidarCupomRequest,
+    cliente: Optional[models.Cliente] = Depends(get_cliente_opcional),
     db: Session = Depends(database.get_db)
 ):
     """Valida um código de cupom e calcula desconto"""
@@ -958,6 +960,14 @@ def validar_cupom(
             "valido": False,
             "desconto_aplicado": 0,
             "mensagem": "Cupom inválido ou expirado"
+        }
+
+    # Verifica se é cupom exclusivo de outro cliente
+    if promocao.cliente_id and (not cliente or promocao.cliente_id != cliente.id):
+        return {
+            "valido": False,
+            "desconto_aplicado": 0,
+            "mensagem": "Este cupom é exclusivo para outro cliente"
         }
 
     # Verifica limite de usos
@@ -989,3 +999,44 @@ def validar_cupom(
         "desconto_aplicado": round(desconto, 2),
         "mensagem": f"Cupom '{promocao.nome}' aplicado! Desconto: R$ {desconto:.2f}"
     }
+
+
+@router.get("/{codigo_acesso}/meus-cupons")
+def listar_meus_cupons(
+    codigo_acesso: str,
+    cliente: models.Cliente = Depends(get_cliente_atual),
+    db: Session = Depends(database.get_db)
+):
+    """Lista cupons exclusivos do cliente logado (ativos e não expirados)."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == codigo_acesso.upper()
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=404, detail="Restaurante não encontrado")
+
+    agora = datetime.utcnow()
+
+    cupons = db.query(models.Promocao).filter(
+        models.Promocao.restaurante_id == restaurante.id,
+        models.Promocao.cliente_id == cliente.id,
+        models.Promocao.ativo == True,
+        (models.Promocao.data_fim == None) | (models.Promocao.data_fim >= agora),
+    ).all()
+
+    resultado = []
+    for c in cupons:
+        # Verificar se ainda tem usos disponíveis
+        if c.uso_limitado and c.usos_realizados >= (c.limite_usos or 0):
+            continue
+        resultado.append({
+            "id": c.id,
+            "codigo_cupom": c.codigo_cupom,
+            "tipo_desconto": c.tipo_desconto,
+            "valor_desconto": c.valor_desconto,
+            "tipo_cupom": c.tipo_cupom or "exclusivo",
+            "data_fim": c.data_fim.isoformat() if c.data_fim else None,
+            "nome": c.nome,
+        })
+
+    return resultado

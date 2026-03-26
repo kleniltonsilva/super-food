@@ -219,12 +219,21 @@ async def _processar_mensagem(
             if enviar_audio and bot_config.tts_autonomo:
                 audio_b64 = await xai_tts.gerar_audio(resposta_final, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
                 if audio_b64:
-                    await evolution_client.enviar_audio_ptt(
-                        numero, audio_b64,
-                        bot_config.evolution_instance,
-                        bot_config.evolution_api_url,
-                        bot_config.evolution_api_key,
-                    )
+                    try:
+                        await evolution_client.enviar_audio_ptt(
+                            numero, audio_b64,
+                            bot_config.evolution_instance,
+                            bot_config.evolution_api_url,
+                            bot_config.evolution_api_key,
+                        )
+                    except Exception as audio_err:
+                        logger.warning(f"Áudio falhou, enviando texto: {audio_err}")
+                        await evolution_client.enviar_texto(
+                            numero, resposta_final,
+                            bot_config.evolution_instance,
+                            bot_config.evolution_api_url,
+                            bot_config.evolution_api_key,
+                        )
                 else:
                     await evolution_client.enviar_texto(
                         numero, resposta_final,

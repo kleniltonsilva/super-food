@@ -4,7 +4,7 @@
 Router Auth Cliente - Autenticação, perfil, endereços e pedidos do cliente
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import Optional, List
@@ -12,9 +12,12 @@ from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 import os
+import random
+import string
 
 from .. import models, database
 from ..schemas import cliente_schemas
+from ..email_service import enviar_email_verificacao, enviar_email_reset_senha
 
 # ==================== CONFIG ====================
 
@@ -37,6 +40,11 @@ def hash_senha(senha: str) -> str:
 def verificar_senha(senha: str, senha_hash: str) -> bool:
     """Verifica senha bcrypt. Aplica strip() para consistência com hash_senha."""
     return pwd_context.verify(senha.strip(), senha_hash)
+
+
+def gerar_codigo_otp() -> str:
+    """Gera código numérico de 6 dígitos."""
+    return str(random.randint(100000, 999999))
 
 
 def criar_token(cliente_id: int, restaurante_id: int) -> str:
@@ -100,11 +108,12 @@ def get_cliente_opcional(
 # ==================== AUTH ENDPOINTS ====================
 
 @router.post("/registro", response_model=cliente_schemas.TokenResponse)
-def registrar_cliente(
+async def registrar_cliente(
     dados: cliente_schemas.ClienteCadastroRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(database.get_db)
 ):
-    """Cadastro de novo cliente"""
+    """Cadastro de novo cliente. Envia código de verificação por email."""
     # Busca restaurante
     restaurante = db.query(models.Restaurante).filter(
         models.Restaurante.codigo_acesso == dados.codigo_acesso_restaurante.upper(),
@@ -123,6 +132,10 @@ def registrar_cliente(
     if existente:
         raise HTTPException(status_code=409, detail="Email já cadastrado neste restaurante")
 
+    # Gerar código de verificação
+    agora = datetime.utcnow()
+    codigo_verif = gerar_codigo_otp()
+
     # Cria cliente
     cliente = models.Cliente(
         restaurante_id=restaurante.id,
@@ -132,8 +145,12 @@ def registrar_cliente(
         senha_hash=hash_senha(dados.senha),
         cpf=dados.cpf,
         data_nascimento=dados.data_nascimento,
-        data_cadastro=datetime.utcnow(),
-        ultimo_acesso=datetime.utcnow()
+        data_cadastro=agora,
+        ultimo_acesso=agora,
+        email_verificado=False,
+        codigo_verificacao=codigo_verif,
+        codigo_verificacao_expira=agora + timedelta(minutes=10),
+        verificacao_enviada_em=agora,
     )
 
     db.add(cliente)
@@ -143,6 +160,9 @@ def registrar_cliente(
         db.rollback()
         raise HTTPException(status_code=409, detail="Email já cadastrado. Tente fazer login.")
     db.refresh(cliente)
+
+    # Enviar email de verificação em background
+    background_tasks.add_task(enviar_email_verificacao, dados.email, dados.nome, codigo_verif)
 
     token = criar_token(cliente.id, restaurante.id)
 
@@ -285,6 +305,184 @@ def atualizar_perfil(
     db.commit()
     db.refresh(cliente)
     return cliente
+
+
+# ==================== VERIFICAÇÃO EMAIL ====================
+
+@router.post("/verificar-email")
+def verificar_email(
+    dados: cliente_schemas.VerificarEmailRequest,
+    cliente: models.Cliente = Depends(get_cliente_atual),
+    db: Session = Depends(database.get_db)
+):
+    """Verifica email do cliente com código OTP de 6 dígitos."""
+    if cliente.email_verificado:
+        return {"mensagem": "Email já verificado"}
+
+    if not cliente.codigo_verificacao:
+        raise HTTPException(status_code=400, detail="Nenhum código de verificação pendente")
+
+    agora = datetime.utcnow()
+
+    if cliente.codigo_verificacao_expira and agora > cliente.codigo_verificacao_expira:
+        raise HTTPException(status_code=400, detail="Código expirado. Solicite um novo código.")
+
+    if cliente.codigo_verificacao != dados.codigo:
+        raise HTTPException(status_code=400, detail="Código incorreto")
+
+    # Sucesso
+    cliente.email_verificado = True
+    cliente.codigo_verificacao = None
+    cliente.codigo_verificacao_expira = None
+    db.commit()
+
+    return {"mensagem": "Email verificado com sucesso!"}
+
+
+@router.post("/reenviar-verificacao")
+async def reenviar_verificacao(
+    background_tasks: BackgroundTasks,
+    cliente: models.Cliente = Depends(get_cliente_atual),
+    db: Session = Depends(database.get_db)
+):
+    """Reenvia código de verificação. Rate limit: 60s."""
+    if cliente.email_verificado:
+        return {"mensagem": "Email já verificado"}
+
+    if not cliente.email:
+        raise HTTPException(status_code=400, detail="Cliente não possui email cadastrado")
+
+    # Rate limit: 60s
+    agora = datetime.utcnow()
+    if cliente.verificacao_enviada_em:
+        segundos = (agora - cliente.verificacao_enviada_em).total_seconds()
+        if segundos < 60:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Aguarde {int(60 - segundos)} segundos para reenviar"
+            )
+
+    codigo = gerar_codigo_otp()
+    cliente.codigo_verificacao = codigo
+    cliente.codigo_verificacao_expira = agora + timedelta(minutes=10)
+    cliente.verificacao_enviada_em = agora
+    db.commit()
+
+    background_tasks.add_task(enviar_email_verificacao, cliente.email, cliente.nome, codigo)
+
+    return {"mensagem": "Código reenviado com sucesso"}
+
+
+# ==================== RESET SENHA ====================
+
+@router.post("/esqueci-senha")
+async def esqueci_senha(
+    dados: cliente_schemas.EsqueciSenhaRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(database.get_db)
+):
+    """Envia código de redefinição de senha. Sempre retorna 200 (segurança)."""
+    # Busca restaurante
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == dados.codigo_acesso_restaurante.upper(),
+        models.Restaurante.ativo == True
+    ).first()
+
+    if not restaurante:
+        # Não revelar se restaurante existe
+        return {"mensagem": "Se o email estiver cadastrado, você receberá um código de redefinição"}
+
+    # Busca cliente
+    cliente = db.query(models.Cliente).filter(
+        models.Cliente.email == dados.email,
+        models.Cliente.restaurante_id == restaurante.id,
+        models.Cliente.ativo == True
+    ).first()
+
+    if not cliente:
+        # Não revelar se email existe
+        return {"mensagem": "Se o email estiver cadastrado, você receberá um código de redefinição"}
+
+    # Rate limit: 60s
+    agora = datetime.utcnow()
+    if cliente.reset_enviado_em:
+        segundos = (agora - cliente.reset_enviado_em).total_seconds()
+        if segundos < 60:
+            # Ainda retorna 200 por segurança
+            return {"mensagem": "Se o email estiver cadastrado, você receberá um código de redefinição"}
+
+    codigo = gerar_codigo_otp()
+    cliente.codigo_reset_senha = codigo
+    cliente.codigo_reset_expira = agora + timedelta(minutes=10)
+    cliente.reset_enviado_em = agora
+    db.commit()
+
+    background_tasks.add_task(enviar_email_reset_senha, cliente.email, cliente.nome, codigo)
+
+    return {"mensagem": "Se o email estiver cadastrado, você receberá um código de redefinição"}
+
+
+@router.post("/redefinir-senha")
+def redefinir_senha(
+    dados: cliente_schemas.RedefinirSenhaRequest,
+    db: Session = Depends(database.get_db)
+):
+    """Redefine senha do cliente com código OTP."""
+    # Busca restaurante
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.codigo_acesso == dados.codigo_acesso_restaurante.upper(),
+        models.Restaurante.ativo == True
+    ).first()
+
+    if not restaurante:
+        raise HTTPException(status_code=400, detail="Código inválido ou expirado")
+
+    # Busca cliente
+    cliente = db.query(models.Cliente).filter(
+        models.Cliente.email == dados.email,
+        models.Cliente.restaurante_id == restaurante.id,
+        models.Cliente.ativo == True
+    ).first()
+
+    if not cliente:
+        raise HTTPException(status_code=400, detail="Código inválido ou expirado")
+
+    if not cliente.codigo_reset_senha:
+        raise HTTPException(status_code=400, detail="Nenhuma redefinição solicitada")
+
+    agora = datetime.utcnow()
+    if cliente.codigo_reset_expira and agora > cliente.codigo_reset_expira:
+        raise HTTPException(status_code=400, detail="Código expirado. Solicite um novo código.")
+
+    if cliente.codigo_reset_senha != dados.codigo:
+        raise HTTPException(status_code=400, detail="Código incorreto")
+
+    # Sucesso: atualiza senha
+    cliente.senha_hash = hash_senha(dados.nova_senha)
+    cliente.codigo_reset_senha = None
+    cliente.codigo_reset_expira = None
+    cliente.reset_enviado_em = None
+    db.commit()
+
+    return {"mensagem": "Senha redefinida com sucesso!"}
+
+
+# ==================== ALTERAR SENHA (AUTENTICADO) ====================
+
+@router.post("/alterar-senha")
+def alterar_senha(
+    dados: cliente_schemas.AlterarSenhaRequest,
+    cliente: models.Cliente = Depends(get_cliente_atual),
+    db: Session = Depends(database.get_db)
+):
+    """Altera senha do cliente autenticado (requer senha atual)."""
+    if not verificar_senha(dados.senha_atual, cliente.senha_hash):
+        raise HTTPException(status_code=400, detail="Senha atual incorreta")
+
+    cliente.senha_hash = hash_senha(dados.nova_senha)
+    db.commit()
+
+    return {"mensagem": "Senha alterada com sucesso!"}
 
 
 # ==================== ENDERECOS ====================

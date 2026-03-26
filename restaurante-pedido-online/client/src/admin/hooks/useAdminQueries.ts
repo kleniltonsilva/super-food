@@ -53,6 +53,11 @@ export const ADMIN_QUERY_KEYS = {
   botConfig: ["admin", "bot", "config"] as const,
   botDashboard: ["admin", "bot", "dashboard"] as const,
   botConversas: ["admin", "bot", "conversas"] as const,
+  botRelatorioEficiencia: ["admin", "bot", "relatorio", "eficiencia"] as const,
+  botRelatorioSatisfacao: ["admin", "bot", "relatorio", "satisfacao"] as const,
+  botRelatorioInativos: ["admin", "bot", "relatorio", "inativos"] as const,
+  botRelatorioErros: ["admin", "bot", "relatorio", "erros"] as const,
+  botRepescagemHistorico: ["admin", "bot", "repescagem", "historico"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -1243,5 +1248,58 @@ export function useBotMensagens(conversaId: number) {
     queryFn: () => api.getBotMensagens(conversaId),
     enabled: !!conversaId,
     staleTime: 10_000,
+  });
+}
+
+export function useBotRelatorioEficiencia(periodo: string = "30d") {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.botRelatorioEficiencia, periodo],
+    queryFn: () => api.getBotRelatorioEficiencia(periodo),
+    staleTime: 60_000,
+  });
+}
+
+export function useBotRelatorioSatisfacao(periodo: string = "30d") {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.botRelatorioSatisfacao, periodo],
+    queryFn: () => api.getBotRelatorioSatisfacao(periodo),
+    staleTime: 60_000,
+  });
+}
+
+export function useBotRelatorioClientesInativos() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.botRelatorioInativos,
+    queryFn: api.getBotRelatorioClientesInativos,
+    staleTime: 60_000,
+  });
+}
+
+export function useBotRelatorioErrosContornados(periodo: string = "30d") {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.botRelatorioErros, periodo],
+    queryFn: () => api.getBotRelatorioErrosContornados(periodo),
+    staleTime: 60_000,
+  });
+}
+
+// ─── Bot Repescagem ──────────────────────────────────────
+
+export function useBotRepescagemHistorico(pagina: number = 1) {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.botRepescagemHistorico, pagina],
+    queryFn: () => api.getBotRepescagemHistorico(pagina),
+    staleTime: 60_000,
+  });
+}
+
+export function useCriarRepescagemEmMassa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.criarRepescagemEmMassa,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botRepescagemHistorico });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botRelatorioInativos });
+    },
   });
 }

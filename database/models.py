@@ -260,6 +260,14 @@ class Cliente(Base):
     ativo = Column(Boolean, default=True)
     email_verificado = Column(Boolean, default=False)
     telefone_verificado = Column(Boolean, default=False)
+    # Verificação email (código OTP 6 dígitos)
+    codigo_verificacao = Column(String(6))
+    codigo_verificacao_expira = Column(DateTime)
+    verificacao_enviada_em = Column(DateTime)
+    # Reset senha (código OTP 6 dígitos)
+    codigo_reset_senha = Column(String(6))
+    codigo_reset_expira = Column(DateTime)
+    reset_enviado_em = Column(DateTime)
     # Timestamps
     data_cadastro = Column(DateTime, default=datetime.utcnow)
     ultimo_acesso = Column(DateTime)
@@ -268,6 +276,7 @@ class Cliente(Base):
     enderecos = relationship("EnderecoCliente", back_populates="cliente", cascade="all, delete-orphan")
     pedidos = relationship("Pedido", back_populates="cliente")
     carrinhos = relationship("Carrinho", back_populates="cliente", cascade="all, delete-orphan")
+    cupons_exclusivos = relationship("Promocao", foreign_keys="Promocao.cliente_id")
     __table_args__ = (
         UniqueConstraint('email', 'restaurante_id', name='uq_cliente_email_restaurante'),
         Index('idx_cliente_email', 'email'),
@@ -867,6 +876,9 @@ class Promocao(Base):
     limite_usos = Column(Integer)
     usos_realizados = Column(Integer, default=0)
     ativo = Column(Boolean, default=True)
+    # Cupom exclusivo por cliente (repescagem, compensação)
+    cliente_id = Column(Integer, ForeignKey("clientes.id", ondelete="SET NULL"))
+    tipo_cupom = Column(String(20), default='global')  # 'global' | 'exclusivo' | 'repescagem'
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     __table_args__ = (
@@ -1570,7 +1582,7 @@ class BotConfig(Base):
     taxa_cancelamento = Column(Float, default=0)
     # Pós-entrega
     avaliacao_ativa = Column(Boolean, default=True)
-    delay_avaliacao_min = Column(Integer, default=10)
+    delay_avaliacao_min = Column(Integer, default=20)
     avaliacao_lembrete_24h = Column(Boolean, default=True)
     reclamacao_acao = Column(String(20), default='manual')  # auto | manual
     reclamacao_credito_pct = Column(Float, default=0)
@@ -1580,11 +1592,22 @@ class BotConfig(Base):
     repescagem_ativa = Column(Boolean, default=False)
     repescagem_dias_inativo = Column(Integer, default=15)
     repescagem_desconto_pct = Column(Float, default=10)
+    repescagem_ultima_execucao = Column(DateTime)
+    repescagem_usar_frequencia = Column(Boolean, default=True)
+    # Políticas de erro
+    politica_atraso = Column(JSON, default=lambda: {"acao": "desculpar", "desconto_pct": 0, "mensagem": ""})
+    politica_pedido_errado = Column(JSON, default=lambda: {"acao": "desculpar", "desconto_pct": 0, "mensagem": ""})
+    politica_item_faltando = Column(JSON, default=lambda: {"acao": "desculpar", "desconto_pct": 0, "mensagem": ""})
+    politica_qualidade = Column(JSON, default=lambda: {"acao": "desculpar", "desconto_pct": 0, "mensagem": ""})
+    # Google Maps / Avaliação v2
+    google_maps_url = Column(String(500))
+    avaliacao_perguntar_problemas = Column(Boolean, default=True)
+    avaliacao_pedir_google_review = Column(Boolean, default=True)
     # Impressão automática
     impressao_automatica_bot = Column(Boolean, default=True)
     # Audio
     stt_ativo = Column(Boolean, default=True)
-    tts_autonomo = Column(Boolean, default=True)
+    tts_autonomo = Column(Boolean, default=False)
     # Limites
     max_tokens_dia = Column(Integer, default=50000)
     tokens_usados_hoje = Column(Integer, default=0)
@@ -1703,6 +1726,11 @@ class BotProblema(Base):
     resolucao = Column(Text)
     resolvido = Column(Boolean, default=False)
     notificou_dono = Column(Boolean, default=False)
+    # Resolução automática (políticas)
+    resolucao_tipo = Column(String(30))  # desconto_proximo | cupom_gerado | brinde | reembolso
+    cupom_gerado = Column(String(50))
+    desconto_pct = Column(Float)
+    resolvido_automaticamente = Column(Boolean, default=False)
     criado_em = Column(DateTime, default=datetime.utcnow)
     resolvido_em = Column(DateTime)
     # Relacionamentos
@@ -1725,9 +1753,17 @@ class BotRepescagem(Base):
     pedido_retorno_id = Column(Integer, ForeignKey("pedidos.id", ondelete="SET NULL"))
     criado_em = Column(DateTime, default=datetime.utcnow)
     retornou_em = Column(DateTime)
+    # Campos avançados (migration 037)
+    cupom_validade_dias = Column(Integer, default=7)
+    lembrete_enviado = Column(Boolean, default=False)
+    lembrete_enviado_em = Column(DateTime)
+    canal = Column(String(20), default='whatsapp')  # 'whatsapp' | 'email' | 'ambos'
+    email_enviado = Column(Boolean, default=False)
+    promocao_id = Column(Integer, ForeignKey("promocoes.id", ondelete="SET NULL"))
     # Relacionamentos
     restaurante = relationship("Restaurante")
     cliente = relationship("Cliente")
+    promocao = relationship("Promocao")
     __table_args__ = (
         Index('idx_bot_repescagens_restaurante', 'restaurante_id'),
     )

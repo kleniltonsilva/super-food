@@ -98,8 +98,8 @@ export default function Login() {
         senha: regSenha.trim(),
       });
       login(data.access_token, data.cliente);
-      toast.success(`Conta criada com sucesso! Bem-vindo, ${data.cliente.nome}!`);
-      navigate("/");
+      toast.success(`Conta criada! Verifique seu email para confirmar.`);
+      navigate("/verificar-email");
     } catch (err: any) {
       const status = err?.response?.status;
       const detail = err?.response?.data?.detail;
@@ -196,6 +196,16 @@ export default function Login() {
               >
                 {processing ? "Entrando..." : "Entrar"}
               </Button>
+              <div className="text-center mt-3">
+                <button
+                  type="button"
+                  onClick={() => navigate("/esqueci-senha")}
+                  className="text-sm font-semibold transition-colors hover:underline"
+                  style={{ color: `var(--cor-primaria, #E31A24)` }}
+                >
+                  Esqueci minha senha
+                </button>
+              </div>
             </form>
           </Card>
         )}

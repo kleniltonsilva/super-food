@@ -344,6 +344,50 @@ export async function validarCupom(codigo: string, subtotal: number) {
   return data;
 }
 
+// ==================== VERIFICAÇÃO EMAIL ====================
+
+export async function verificarEmail(codigo: string) {
+  const { data } = await api.post("/auth/cliente/verificar-email", { codigo });
+  return data;
+}
+
+export async function reenviarVerificacao() {
+  const { data } = await api.post("/auth/cliente/reenviar-verificacao");
+  return data;
+}
+
+// ==================== RESET SENHA ====================
+
+export async function esqueciSenha(email: string) {
+  const { data } = await api.post("/auth/cliente/esqueci-senha", {
+    email,
+    codigo_acesso_restaurante: getCodigoAcesso(),
+  });
+  return data;
+}
+
+export async function redefinirSenha(email: string, codigo: string, nova_senha: string) {
+  const { data } = await api.post("/auth/cliente/redefinir-senha", {
+    email,
+    codigo,
+    nova_senha,
+    codigo_acesso_restaurante: getCodigoAcesso(),
+  });
+  return data;
+}
+
+export async function alterarSenha(senha_atual: string, nova_senha: string) {
+  const { data } = await api.post("/auth/cliente/alterar-senha", { senha_atual, nova_senha });
+  return data;
+}
+
+// ==================== CUPONS EXCLUSIVOS ====================
+
+export async function getMeusCupons() {
+  const { data } = await api.get(`/site/${getCodigoAcesso()}/meus-cupons`);
+  return data;
+}
+
 // ==================== PIX STATUS (POLLING) ====================
 
 export async function getPixStatusPedido(pedidoId: number) {

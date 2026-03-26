@@ -42,6 +42,7 @@ interface Cliente {
   email: string;
   telefone: string;
   cpf?: string | null;
+  email_verificado?: boolean;
 }
 
 interface AuthContextType {

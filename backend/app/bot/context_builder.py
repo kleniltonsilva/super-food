@@ -15,6 +15,61 @@ from .. import models
 logger = logging.getLogger("superfood.bot.context")
 
 
+def _build_politicas_prompt(bot_config: models.BotConfig) -> str:
+    """Gera seção do prompt com políticas de resolução de problemas."""
+    acao_labels = {
+        "desculpar": "Apenas pedir desculpas",
+        "desconto_proximo": "Gerar cupom desconto próximo pedido",
+        "cupom_fixo": "Gerar cupom desconto fixo",
+        "brinde_reenviar": "Item fica como brinde + reenviar correto",
+        "reembolso_parcial": "Reembolso parcial",
+    }
+
+    def _format_politica(nome: str, politica) -> str:
+        if not politica:
+            return f"- {nome}: Pedir desculpas"
+        if isinstance(politica, str):
+            import json as _json
+            try:
+                politica = _json.loads(politica)
+            except Exception:
+                return f"- {nome}: Pedir desculpas"
+        acao = politica.get("acao", "desculpar")
+        desc = acao_labels.get(acao, acao)
+        pct = politica.get("desconto_pct", 0)
+        if pct and acao in ("desconto_proximo", "cupom_fixo", "reembolso_parcial"):
+            desc += f" ({pct:.0f}%)"
+        return f"- {nome}: {desc}"
+
+    linhas = [
+        "RESOLUÇÃO DE PROBLEMAS (políticas do restaurante):",
+        _format_politica("Atraso", bot_config.politica_atraso),
+        _format_politica("Pedido errado", bot_config.politica_pedido_errado),
+        _format_politica("Item faltando", bot_config.politica_item_faltando),
+        _format_politica("Qualidade", bot_config.politica_qualidade),
+        "",
+        "Ao detectar problema: SEMPRE use registrar_problema com o tipo correto.",
+        "O sistema aplica automaticamente a ação configurada (cupom, desconto, brinde).",
+        "Informe ao cliente a ação aplicada de forma natural e empática.",
+    ]
+    return "\n".join(linhas)
+
+
+def _build_avaliacao_prompt(bot_config: models.BotConfig) -> str:
+    """Gera seção do prompt com instruções de fase de avaliação."""
+    linhas = [
+        "FASE DE AVALIAÇÃO (quando session_data tem fase_avaliacao):",
+        '- Se fase="aguardando_feedback": pergunte se houve problema (sem pedir nota ainda)',
+        "- Se cliente relata problema: categorize → use registrar_problema com tipo correto",
+        '- Se cliente diz "tudo ok/ótimo/perfeito": peça nota de 1 a 5 → use registrar_avaliacao',
+        "- Se nota >= 4: agradeça com entusiasmo",
+    ]
+    if bot_config.avaliacao_pedir_google_review and bot_config.google_maps_url:
+        linhas.append(f"- Se nota >= 4: peça review no Google Maps: {bot_config.google_maps_url}")
+    linhas.append("- Se nota <= 2: peça desculpas, use registrar_problema se não registrou ainda")
+    return "\n".join(linhas)
+
+
 def build_system_prompt(bot_config: models.BotConfig) -> str:
     """Layer 1 — Prompt de sistema FIXO. Cacheable por restaurante."""
     nome = bot_config.nome_atendente or "Bia"
@@ -87,7 +142,45 @@ QUANDO RESTAURANTE FECHADO:
 - "mostra_cardapio": Mostrar cardápio mesmo fechado
 
 QUANDO ITEM ESGOTADO:
-- Ação: {bot_config.estoque_esgotado_acao}"""
+- Ação: {bot_config.estoque_esgotado_acao}
+
+RASTREAMENTO DE PEDIDOS:
+- Sempre use rastrear_pedido quando cliente perguntar "cadê meu pedido?", "onde tá?", "quanto falta?"
+- Informe posição na fila: "Seu pedido é o 3º na fila da cozinha"
+- Quando motoboy atribuído: "Já saiu com o João! Acompanhe aqui: {{link}}"
+- NUNCA invente tempo de entrega — use consultar_tempo_entrega para dados reais
+
+MODIFICAÇÃO DE PEDIDOS:
+- Use trocar_item_pedido para trocas específicas de itens
+- Se cozinha já começou: "Poxa, a cozinha já começou a preparar, não dá pra trocar 😅"
+- Se pedido ainda está pendente/novo: pode trocar livremente
+
+ENTREGA E BAIRROS:
+- Use consultar_bairros para informar taxas e áreas atendidas
+- Se bairro não atendido: "Infelizmente não entregamos nesse bairro ainda 😔"
+- Sempre confirme endereço + bairro antes de criar pedido
+- Use atualizar_endereco_cliente para salvar/atualizar endereço
+
+VALIDAÇÃO DE ENDEREÇO (GPS — OBRIGATÓRIO para entrega):
+- SEMPRE use validar_endereco ANTES de criar pedido quando cliente informar endereço novo
+- Separe rua+número do complemento: "Rua Augusta 123 apt 5" → endereco_texto="Rua Augusta 123", complemento="apt 5"
+- Complemento (apt, bloco, andar, casa dos fundos) NÃO vai no campo endereco_texto
+- Se confiança "alta" (1 resultado próximo): confirme direto — "Seu endereço é X, certo?"
+- Se confiança "media" (várias opções): apresente com letras — "A) ..., B) ..., C) ... Qual é o seu?"
+- Entenda respostas naturais: "a primeira", "essa aí", "é o B", "sim" → use confirmar_endereco_validado
+- Se "fora_zona": informe educadamente + sugira retirada no restaurante
+- Se não encontrou: peça rua completa com número — "Pode me passar a rua completa com número?"
+- Se cliente já tem endereço salvo com GPS validado: pergunte "Mando pro mesmo endereço de sempre?"
+- Após confirmar endereço: a taxa já está calculada, prossiga com forma de pagamento
+
+NOTIFICAÇÕES E AVALIAÇÃO:
+- O sistema envia notificações automáticas de mudança de status
+- NÃO peça nota direto na notificação de entrega — o worker de avaliação faz isso 20min depois
+- O worker pergunta primeiro se houve problema, depois pede nota
+
+{_build_politicas_prompt(bot_config)}
+
+{_build_avaliacao_prompt(bot_config)}\""""
 
 
 def build_restaurant_context(db: Session, restaurante_id: int) -> str:
@@ -220,8 +313,32 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
     tempo_min = site_config.tempo_entrega_estimado if site_config else 50
     pedido_minimo = site_config.pedido_minimo if site_config else 0
 
+    cidade = rest.cidade or "não informada"
+    estado = rest.estado or ""
+    area_entrega = f"{cidade}/{estado}".strip("/")
+
+    # Bairros atendidos
+    bairros_texto = ""
+    try:
+        bairros = db.query(models.BairroEntrega).filter(
+            models.BairroEntrega.restaurante_id == restaurante_id,
+            models.BairroEntrega.ativo == True,
+        ).order_by(models.BairroEntrega.nome).all()
+        if bairros:
+            bairros_linhas = []
+            for b in bairros:
+                bairros_linhas.append(f"  • {b.nome} — R${b.taxa_entrega:.2f} ({b.tempo_estimado_min}min)")
+            bairros_texto = "\nBAIRROS ATENDIDOS:\n" + "\n".join(bairros_linhas)
+        else:
+            taxa_base = config.taxa_entrega_base if config else 5.0
+            bairros_texto = f"\nENTREGA: Taxa fixa R${taxa_base:.2f} (sem bairros específicos cadastrados)"
+    except Exception:
+        logger.debug("Erro ao buscar bairros, ignorando")
+
     return f"""RESTAURANTE: {rest.nome_fantasia}
 ENDEREÇO: {rest.endereco_completo or 'Não informado'}
+CIDADE: {cidade.title()} — {estado.upper()}
+ÁREA DE ENTREGA: Somente dentro de {area_entrega}. Se o cliente informar endereço em outra cidade ou estado, informe educadamente que não é possível entregar naquela região.
 HORÁRIO HOJE ({dia_semana}): {horario_texto} · {status_texto}
 HORA ATUAL: {hora_atual}
 TEMPO MÉDIO ENTREGA: {tempo_min} min
@@ -231,7 +348,8 @@ FORMAS DE PAGAMENTO: {pagamento_texto}
 CARDÁPIO DISPONÍVEL:
 {cardapio_texto}
 {promos_texto}
-{combos_texto}"""
+{combos_texto}
+{bairros_texto}"""
 
 
 def build_client_context(
@@ -286,9 +404,72 @@ def build_client_context(
 
     endereco_texto = ""
     if endereco_padrao:
-        endereco_texto = f"\nENDEREÇO SALVO: {endereco_padrao.endereco_completo}"
+        validado_tag = " [validado GPS ✓]" if endereco_padrao.validado_mapbox else " [NÃO validado — validar com validar_endereco antes de criar pedido]"
+        endereco_texto = f"\nENDEREÇO SALVO: {endereco_padrao.endereco_completo}{validado_tag}"
         if endereco_padrao.complemento:
             endereco_texto += f", {endereco_padrao.complemento}"
+
+    # Estatísticas do cliente (total gasto, frequência, favorito)
+    stats_texto = ""
+    try:
+        from sqlalchemy import func
+        pedidos_entregues = db.query(models.Pedido).filter(
+            models.Pedido.cliente_id == cliente.id,
+            models.Pedido.restaurante_id == restaurante_id,
+            models.Pedido.status == "entregue",
+        )
+        total_pedidos = pedidos_entregues.count()
+        if total_pedidos > 0:
+            total_gasto = db.query(func.sum(models.Pedido.valor_total)).filter(
+                models.Pedido.cliente_id == cliente.id,
+                models.Pedido.restaurante_id == restaurante_id,
+                models.Pedido.status == "entregue",
+            ).scalar() or 0
+
+            # Item favorito (mais pedido)
+            primeiro_pedido = pedidos_entregues.order_by(models.Pedido.data_criacao.asc()).first()
+            ultimo_pedido_ent = pedidos_entregues.order_by(models.Pedido.data_criacao.desc()).first()
+
+            # Calcular frequência (pedidos por mês)
+            if primeiro_pedido and primeiro_pedido.data_criacao:
+                dias = max(1, (datetime.utcnow() - primeiro_pedido.data_criacao).days)
+                freq_mensal = round(total_pedidos / (dias / 30), 1)
+            else:
+                freq_mensal = 0
+
+            # Tempo desde último pedido
+            tempo_ultimo = ""
+            if ultimo_pedido_ent and ultimo_pedido_ent.data_criacao:
+                dias_ultimo = (datetime.utcnow() - ultimo_pedido_ent.data_criacao).days
+                if dias_ultimo == 0:
+                    tempo_ultimo = "hoje"
+                elif dias_ultimo == 1:
+                    tempo_ultimo = "ontem"
+                else:
+                    tempo_ultimo = f"há {dias_ultimo} dias"
+
+            stats_texto = f"\n📊 PERFIL: {total_pedidos} pedidos | R${total_gasto:.2f} total | {freq_mensal} pedidos/mês | Último: {tempo_ultimo}"
+
+            # Score de satisfação
+            avaliacoes = db.query(models.BotAvaliacao).filter(
+                models.BotAvaliacao.cliente_id == cliente.id,
+                models.BotAvaliacao.restaurante_id == restaurante_id,
+                models.BotAvaliacao.nota.isnot(None),
+            ).all()
+            if avaliacoes:
+                notas = [a.nota for a in avaliacoes]
+                media = sum(notas) / len(notas)
+                positivas = sum(1 for n in notas if n >= 4)
+                negativas = sum(1 for n in notas if n <= 2)
+                problemas_count = db.query(func.count(models.BotProblema.id)).filter(
+                    models.BotProblema.cliente_id == cliente.id,
+                    models.BotProblema.restaurante_id == restaurante_id,
+                ).scalar() or 0
+                stats_texto += f"\n😊 SATISFAÇÃO: {media:.1f}/5 ({len(avaliacoes)} avaliações, {positivas} positivas, {negativas} negativas) | {problemas_count} problemas reportados"
+            else:
+                stats_texto += "\n📋 SATISFAÇÃO: Sem avaliações ainda"
+    except Exception:
+        pass
 
     # Carrinho em construção
     carrinho_texto = ""
@@ -300,7 +481,7 @@ def build_client_context(
             carrinho_texto = f"\n🛒 CARRINHO ATUAL:\n" + "\n".join(linhas) + f"\n  Total parcial: R${total:.2f}"
 
     return f"""CLIENTE: {cliente.nome} (tel: {cliente.telefone})
-CPF: {cliente.cpf or 'Não informado'}{endereco_texto}{pedidos_texto}{ativo_texto}{carrinho_texto}"""
+CPF: {cliente.cpf or 'Não informado'}{endereco_texto}{stats_texto}{pedidos_texto}{ativo_texto}{carrinho_texto}"""
 
 
 def build_conversation_history(

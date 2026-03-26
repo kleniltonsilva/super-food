@@ -4,7 +4,8 @@ Router Bot WhatsApp Humanoide — Webhook Evolution + Endpoints Admin + Super Ad
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+import sqlalchemy as sa
+from sqlalchemy import func, case, cast, Date
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
@@ -82,6 +83,16 @@ def get_bot_config(
         "repescagem_ativa": config.repescagem_ativa,
         "repescagem_dias_inativo": config.repescagem_dias_inativo,
         "repescagem_desconto_pct": config.repescagem_desconto_pct,
+        "repescagem_usar_frequencia": config.repescagem_usar_frequencia,
+        # Políticas de erro
+        "politica_atraso": config.politica_atraso,
+        "politica_pedido_errado": config.politica_pedido_errado,
+        "politica_item_faltando": config.politica_item_faltando,
+        "politica_qualidade": config.politica_qualidade,
+        # Google Maps / Avaliação v2
+        "google_maps_url": config.google_maps_url,
+        "avaliacao_perguntar_problemas": config.avaliacao_perguntar_problemas,
+        "avaliacao_pedir_google_review": config.avaliacao_pedir_google_review,
         # Impressão
         "impressao_automatica_bot": config.impressao_automatica_bot,
         # Audio
@@ -122,8 +133,11 @@ async def update_bot_config(
         "avaliacao_ativa", "delay_avaliacao_min",
         "reclamacao_acao", "reclamacao_credito_pct",
         "repescagem_ativa", "repescagem_dias_inativo", "repescagem_desconto_pct",
+        "repescagem_usar_frequencia",
         "impressao_automatica_bot",
         "stt_ativo", "tts_autonomo",
+        "politica_atraso", "politica_pedido_errado", "politica_item_faltando", "politica_qualidade",
+        "google_maps_url", "avaliacao_perguntar_problemas", "avaliacao_pedir_google_review",
     ]
 
     for campo in campos_permitidos:
@@ -349,6 +363,537 @@ def bot_dashboard(
         "total_avaliacoes": total_avaliacoes,
         "problemas_abertos": problemas_abertos,
         "problemas_semana": problemas_semana,
+    }
+
+
+# ==================== ENDPOINTS RELATÓRIOS ====================
+
+
+def _parse_periodo(periodo: str) -> datetime:
+    """Converte string de período em datetime limite."""
+    dias = {"7d": 7, "30d": 30, "90d": 90}.get(periodo, 30)
+    return datetime.utcnow() - timedelta(days=dias)
+
+
+@router.get("/painel/bot/relatorio/eficiencia")
+def relatorio_eficiencia(
+    periodo: str = "30d",
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Relatório de eficiência do bot."""
+    desde = _parse_periodo(periodo)
+    rest_id = restaurante.id
+
+    total_conversas = db.query(func.count(models.BotConversa.id)).filter(
+        models.BotConversa.restaurante_id == rest_id,
+        models.BotConversa.criado_em >= desde,
+    ).scalar() or 0
+
+    total_pedidos = db.query(func.count(models.Pedido.id)).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.origem == "whatsapp_bot",
+        models.Pedido.data_criacao >= desde,
+    ).scalar() or 0
+
+    taxa_conversao = round((total_pedidos / max(1, total_conversas)) * 100, 1)
+
+    tempo_medio_ms = db.query(func.avg(models.BotMensagem.tempo_resposta_ms)).join(
+        models.BotConversa, models.BotMensagem.conversa_id == models.BotConversa.id
+    ).filter(
+        models.BotConversa.restaurante_id == rest_id,
+        models.BotMensagem.direcao == "enviada",
+        models.BotMensagem.tempo_resposta_ms.isnot(None),
+        models.BotMensagem.criado_em >= desde,
+    ).scalar()
+
+    escaladas = db.query(func.count(models.BotConversa.id)).filter(
+        models.BotConversa.restaurante_id == rest_id,
+        models.BotConversa.status == "handoff",
+        models.BotConversa.criado_em >= desde,
+    ).scalar() or 0
+
+    resolvidas = total_conversas - escaladas
+    taxa_resolucao = round((resolvidas / max(1, total_conversas)) * 100, 1)
+
+    # Pedidos por dia
+    pedidos_dia = db.query(
+        cast(models.Pedido.data_criacao, Date).label("data"),
+        func.count(models.Pedido.id).label("pedidos"),
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.origem == "whatsapp_bot",
+        models.Pedido.data_criacao >= desde,
+    ).group_by(cast(models.Pedido.data_criacao, Date)).order_by("data").all()
+
+    # Faturamento por dia
+    fat_dia = db.query(
+        cast(models.Pedido.data_criacao, Date).label("data"),
+        func.sum(models.Pedido.valor_total).label("valor"),
+    ).filter(
+        models.Pedido.restaurante_id == rest_id,
+        models.Pedido.origem == "whatsapp_bot",
+        models.Pedido.data_criacao >= desde,
+        models.Pedido.status != "cancelado",
+    ).group_by(cast(models.Pedido.data_criacao, Date)).order_by("data").all()
+
+    return {
+        "total_conversas": total_conversas,
+        "total_pedidos_bot": total_pedidos,
+        "taxa_conversao": taxa_conversao,
+        "tempo_medio_resposta_ms": int(tempo_medio_ms) if tempo_medio_ms else None,
+        "conversas_escaladas": escaladas,
+        "conversas_resolvidas_bot": resolvidas,
+        "taxa_resolucao_bot": taxa_resolucao,
+        "pedidos_por_dia": [{"data": str(r.data), "pedidos": r.pedidos} for r in pedidos_dia],
+        "faturamento_por_dia": [{"data": str(r.data), "valor": round(float(r.valor or 0), 2)} for r in fat_dia],
+    }
+
+
+@router.get("/painel/bot/relatorio/satisfacao")
+def relatorio_satisfacao(
+    periodo: str = "30d",
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Relatório de satisfação do bot."""
+    desde = _parse_periodo(periodo)
+    rest_id = restaurante.id
+
+    avaliacoes = db.query(models.BotAvaliacao).filter(
+        models.BotAvaliacao.restaurante_id == rest_id,
+        models.BotAvaliacao.nota.isnot(None),
+        models.BotAvaliacao.criado_em >= desde,
+    ).all()
+
+    total = len(avaliacoes)
+    notas = [a.nota for a in avaliacoes]
+    media = round(sum(notas) / max(1, total), 1)
+
+    distribuicao = {str(i): 0 for i in range(1, 6)}
+    for n in notas:
+        distribuicao[str(n)] = distribuicao.get(str(n), 0) + 1
+
+    # NPS: promotores (4-5) - detratores (1-2) / total * 100
+    promotores = sum(1 for n in notas if n >= 4)
+    detratores = sum(1 for n in notas if n <= 2)
+    nps = round(((promotores - detratores) / max(1, total)) * 100)
+
+    # Categorias de problemas
+    problemas = db.query(
+        models.BotProblema.tipo,
+        func.count(models.BotProblema.id).label("total"),
+        func.sum(case((models.BotProblema.resolvido_automaticamente == True, 1), else_=0)).label("auto"),
+    ).filter(
+        models.BotProblema.restaurante_id == rest_id,
+        models.BotProblema.criado_em >= desde,
+    ).group_by(models.BotProblema.tipo).all()
+
+    categorias = []
+    for p in problemas:
+        categorias.append({
+            "tipo": p.tipo,
+            "total": p.total,
+            "resolvido_bot": int(p.auto or 0),
+        })
+
+    # Google reviews solicitados
+    reviews = db.query(func.count(models.BotAvaliacao.id)).filter(
+        models.BotAvaliacao.restaurante_id == rest_id,
+        models.BotAvaliacao.avaliou_maps == True,
+        models.BotAvaliacao.criado_em >= desde,
+    ).scalar() or 0
+
+    satisfeitos = sum(1 for n in notas if n >= 4)
+    insatisfeitos = sum(1 for n in notas if n <= 2)
+
+    return {
+        "nps": nps,
+        "media_geral": media,
+        "distribuicao_notas": distribuicao,
+        "total_avaliacoes": total,
+        "categorias_problemas": categorias,
+        "google_reviews_solicitados": reviews,
+        "clientes_satisfeitos": satisfeitos,
+        "clientes_insatisfeitos": insatisfeitos,
+    }
+
+
+@router.get("/painel/bot/relatorio/clientes-inativos")
+def relatorio_clientes_inativos(
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Relatório de clientes inativos e repescagem."""
+    rest_id = restaurante.id
+    agora = datetime.utcnow()
+
+    from sqlalchemy import text
+
+    # Resumo por faixas de inatividade
+    clientes_raw = db.execute(text("""
+        SELECT
+            c.id, c.nome, c.telefone,
+            COUNT(p.id) as total_pedidos,
+            MAX(p.data_criacao) as ultimo_pedido,
+            MIN(p.data_criacao) as primeiro_pedido
+        FROM clientes c
+        JOIN pedidos p ON p.cliente_id = c.id
+            AND p.restaurante_id = :rest_id
+            AND p.status = 'entregue'
+        WHERE c.restaurante_id = :rest_id
+            AND c.telefone IS NOT NULL
+        GROUP BY c.id, c.nome, c.telefone
+        ORDER BY MAX(p.data_criacao) ASC
+    """), {"rest_id": rest_id}).fetchall()
+
+    total_clientes = len(clientes_raw)
+    inativos_15_30 = 0
+    inativos_30_60 = 0
+    inativos_60_plus = 0
+    lista_clientes = []
+
+    for row in clientes_raw:
+        cid, nome, tel, total, ultimo, primeiro = row
+        if not ultimo:
+            continue
+        dias = (agora - ultimo).days
+
+        if 15 <= dias < 30:
+            inativos_15_30 += 1
+        elif 30 <= dias < 60:
+            inativos_30_60 += 1
+        elif dias >= 60:
+            inativos_60_plus += 1
+
+        if dias >= 10:
+            media_intervalo = None
+            if total >= 2 and primeiro:
+                dias_total = max(1, (ultimo - primeiro).days)
+                media_intervalo = round(dias_total / max(1, total - 1), 1)
+
+            # Última avaliação
+            ult_av = db.query(models.BotAvaliacao.nota).filter(
+                models.BotAvaliacao.cliente_id == cid,
+                models.BotAvaliacao.restaurante_id == rest_id,
+                models.BotAvaliacao.nota.isnot(None),
+            ).order_by(models.BotAvaliacao.criado_em.desc()).first()
+
+            # Repescagem enviada?
+            reps = db.query(models.BotRepescagem).filter(
+                models.BotRepescagem.cliente_id == cid,
+                models.BotRepescagem.restaurante_id == rest_id,
+            ).order_by(models.BotRepescagem.criado_em.desc()).first()
+
+            lista_clientes.append({
+                "id": cid,
+                "nome": nome or "Cliente",
+                "telefone": tel,
+                "total_pedidos": total,
+                "ultimo_pedido": ultimo.isoformat() if ultimo else None,
+                "media_intervalo_dias": media_intervalo,
+                "dias_inativo": dias,
+                "ultima_avaliacao": ult_av[0] if ult_av else None,
+                "repescagem_enviada": reps is not None,
+                "retornou": reps.retornou if reps else False,
+            })
+
+    # Resumo repescagens
+    total_reps = db.query(func.count(models.BotRepescagem.id)).filter(
+        models.BotRepescagem.restaurante_id == rest_id,
+    ).scalar() or 0
+    retornaram = db.query(func.count(models.BotRepescagem.id)).filter(
+        models.BotRepescagem.restaurante_id == rest_id,
+        models.BotRepescagem.retornou == True,
+    ).scalar() or 0
+
+    return {
+        "resumo": {
+            "total_clientes": total_clientes,
+            "inativos_15_30": inativos_15_30,
+            "inativos_30_60": inativos_30_60,
+            "inativos_60_plus": inativos_60_plus,
+        },
+        "repescagens": {
+            "enviadas_total": total_reps,
+            "retornaram": retornaram,
+            "taxa_retorno": round((retornaram / max(1, total_reps)) * 100, 1),
+        },
+        "clientes": lista_clientes[:50],  # Limitar a 50
+    }
+
+
+# ==================== REPESCAGEM EM MASSA ====================
+
+@router.post("/painel/bot/repescagem/criar-em-massa")
+async def criar_repescagem_em_massa(
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Cria repescagem em massa para clientes inativos selecionados.
+    Gera cupom exclusivo VOLTA-{primeiro_nome}-{código_único} para cada cliente."""
+    import random
+    import string
+
+    body = await request.json()
+    cliente_ids = body.get("cliente_ids", [])
+    desconto_pct = body.get("desconto_pct", 10)
+    validade_dias = body.get("validade_dias", 7)
+    canal = body.get("canal", "whatsapp")  # 'whatsapp' | 'email' | 'ambos'
+
+    if not cliente_ids:
+        raise HTTPException(status_code=400, detail="Selecione ao menos um cliente")
+    if len(cliente_ids) > 50:
+        raise HTTPException(status_code=400, detail="Máximo 50 clientes por vez")
+
+    rest_id = restaurante.id
+    agora = datetime.utcnow()
+    resultados = []
+
+    # Buscar config do bot para Evolution API
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == rest_id,
+    ).first()
+
+    for cid in cliente_ids:
+        cliente = db.query(models.Cliente).filter(
+            models.Cliente.id == cid,
+            models.Cliente.restaurante_id == rest_id,
+        ).first()
+        if not cliente:
+            resultados.append({"cliente_id": cid, "status": "não encontrado"})
+            continue
+
+        # Gerar código exclusivo: VOLTA-{primeiro_nome}-{5 chars}
+        primeiro_nome = (cliente.nome or "cliente").split()[0].upper()
+        codigo_unico = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
+        cupom_codigo = f"VOLTA-{primeiro_nome}-{codigo_unico}"
+
+        # Verificar unicidade do cupom
+        while db.query(models.Promocao).filter(
+            models.Promocao.restaurante_id == rest_id,
+            models.Promocao.codigo_cupom == cupom_codigo,
+        ).first():
+            codigo_unico = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
+            cupom_codigo = f"VOLTA-{primeiro_nome}-{codigo_unico}"
+
+        # Criar promoção exclusiva
+        promo = models.Promocao(
+            restaurante_id=rest_id,
+            nome=f"Repescagem - {cliente.nome}",
+            descricao=f"Cupom exclusivo de retorno para {cliente.nome}",
+            tipo_desconto="percentual",
+            valor_desconto=desconto_pct,
+            codigo_cupom=cupom_codigo,
+            data_inicio=agora,
+            data_fim=agora + timedelta(days=validade_dias),
+            uso_limitado=True,
+            limite_usos=1,
+            ativo=True,
+            cliente_id=cid,
+            tipo_cupom="repescagem",
+        )
+        db.add(promo)
+        db.flush()
+
+        # Mensagem padrão humanizada
+        mensagem = (
+            f"Oi, {cliente.nome.split()[0]}! Sentimos sua falta aqui no {restaurante.nome_fantasia}. "
+            f"Preparamos um cupom exclusivo pra você: *{cupom_codigo}* com {desconto_pct}% de desconto! "
+            f"Válido por {validade_dias} dias. Te esperamos!"
+        )
+
+        # Criar BotRepescagem
+        repescagem = models.BotRepescagem(
+            restaurante_id=rest_id,
+            cliente_id=cid,
+            cupom_codigo=cupom_codigo,
+            cupom_desconto_pct=desconto_pct,
+            mensagem_enviada=mensagem,
+            cupom_validade_dias=validade_dias,
+            canal=canal,
+            promocao_id=promo.id,
+        )
+        db.add(repescagem)
+
+        status_envio = "cupom_criado"
+
+        # Enviar via WhatsApp
+        if canal in ("whatsapp", "ambos") and config and config.ativo and cliente.telefone:
+            try:
+                from ..bot.evolution_client import enviar_texto
+                await enviar_texto(
+                    numero=cliente.telefone,
+                    texto=mensagem,
+                    instance=config.evolution_instance,
+                    api_url=config.evolution_api_url,
+                    api_key=config.evolution_api_key,
+                )
+                status_envio = "whatsapp_enviado"
+            except Exception as e:
+                logger.error(f"Erro WA repescagem {cid}: {e}")
+                status_envio = "whatsapp_falhou"
+
+        # Enviar via email
+        if canal in ("email", "ambos") and cliente.email:
+            try:
+                from ..email_service import enviar_email_lembrete_cupom
+                await enviar_email_lembrete_cupom(
+                    email_destino=cliente.email,
+                    nome=cliente.nome.split()[0],
+                    codigo_cupom=cupom_codigo,
+                    desconto=f"{desconto_pct}%",
+                    expira=(agora + timedelta(days=validade_dias)).strftime("%d/%m/%Y"),
+                    nome_restaurante=restaurante.nome_fantasia,
+                )
+                if status_envio == "whatsapp_enviado":
+                    status_envio = "ambos_enviados"
+                else:
+                    status_envio = "email_enviado"
+                repescagem.email_enviado = True
+            except Exception as e:
+                logger.error(f"Erro email repescagem {cid}: {e}")
+
+        resultados.append({
+            "cliente_id": cid,
+            "nome": cliente.nome,
+            "cupom": cupom_codigo,
+            "status": status_envio,
+        })
+
+    db.commit()
+
+    return {
+        "sucesso": True,
+        "total": len(resultados),
+        "resultados": resultados,
+    }
+
+
+@router.get("/painel/bot/repescagem/historico")
+def historico_repescagem(
+    pagina: int = 1,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Lista histórico de repescagens paginado (20/página)."""
+    rest_id = restaurante.id
+    por_pagina = 20
+    offset = (pagina - 1) * por_pagina
+
+    total = db.query(func.count(models.BotRepescagem.id)).filter(
+        models.BotRepescagem.restaurante_id == rest_id,
+    ).scalar() or 0
+
+    repescagens = db.query(models.BotRepescagem).filter(
+        models.BotRepescagem.restaurante_id == rest_id,
+    ).order_by(models.BotRepescagem.criado_em.desc()).offset(offset).limit(por_pagina).all()
+
+    items = []
+    for r in repescagens:
+        cliente = db.query(models.Cliente).filter(models.Cliente.id == r.cliente_id).first()
+        items.append({
+            "id": r.id,
+            "cliente_nome": cliente.nome if cliente else "Removido",
+            "cliente_telefone": cliente.telefone if cliente else None,
+            "cupom_codigo": r.cupom_codigo,
+            "cupom_desconto_pct": r.cupom_desconto_pct,
+            "canal": r.canal or "whatsapp",
+            "retornou": r.retornou,
+            "lembrete_enviado": r.lembrete_enviado,
+            "criado_em": r.criado_em.isoformat() if r.criado_em else None,
+            "retornou_em": r.retornou_em.isoformat() if r.retornou_em else None,
+        })
+
+    return {
+        "total": total,
+        "pagina": pagina,
+        "paginas": (total + por_pagina - 1) // por_pagina,
+        "items": items,
+    }
+
+
+@router.get("/painel/bot/relatorio/erros-contornados")
+def relatorio_erros_contornados(
+    periodo: str = "30d",
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Relatório de erros contornados pelo bot."""
+    desde = _parse_periodo(periodo)
+    rest_id = restaurante.id
+
+    total = db.query(func.count(models.BotProblema.id)).filter(
+        models.BotProblema.restaurante_id == rest_id,
+        models.BotProblema.criado_em >= desde,
+    ).scalar() or 0
+
+    auto_resolvidos = db.query(func.count(models.BotProblema.id)).filter(
+        models.BotProblema.restaurante_id == rest_id,
+        models.BotProblema.resolvido_automaticamente == True,
+        models.BotProblema.criado_em >= desde,
+    ).scalar() or 0
+
+    escalados = total - auto_resolvidos
+    taxa = round((auto_resolvidos / max(1, total)) * 100, 1)
+
+    # Cupons gerados
+    cupons = db.query(func.count(models.BotProblema.id)).filter(
+        models.BotProblema.restaurante_id == rest_id,
+        models.BotProblema.cupom_gerado.isnot(None),
+        models.BotProblema.criado_em >= desde,
+    ).scalar() or 0
+
+    # Valor total descontos (estimativa)
+    descontos = db.query(func.sum(models.BotProblema.desconto_pct)).filter(
+        models.BotProblema.restaurante_id == rest_id,
+        models.BotProblema.desconto_pct.isnot(None),
+        models.BotProblema.criado_em >= desde,
+    ).scalar() or 0
+
+    # Por tipo
+    por_tipo = db.query(
+        models.BotProblema.tipo,
+        func.count(models.BotProblema.id).label("total"),
+        func.sum(case((models.BotProblema.resolvido_automaticamente == True, 1), else_=0)).label("auto_resolvidos"),
+        func.sum(case((models.BotProblema.resolvido_automaticamente != True, 1), else_=0)).label("escalados"),
+    ).filter(
+        models.BotProblema.restaurante_id == rest_id,
+        models.BotProblema.criado_em >= desde,
+    ).group_by(models.BotProblema.tipo).all()
+
+    # Por política
+    por_politica = db.query(
+        models.BotProblema.resolucao_tipo,
+        func.count(models.BotProblema.id).label("vezes"),
+    ).filter(
+        models.BotProblema.restaurante_id == rest_id,
+        models.BotProblema.resolucao_tipo.isnot(None),
+        models.BotProblema.criado_em >= desde,
+    ).group_by(models.BotProblema.resolucao_tipo).all()
+
+    return {
+        "total_problemas": total,
+        "resolvidos_bot": auto_resolvidos,
+        "escalados_humano": escalados,
+        "taxa_resolucao_automatica": taxa,
+        "cupons_gerados": cupons,
+        "valor_descontos_estimado": round(float(descontos), 2),
+        "por_tipo": [
+            {"tipo": r.tipo, "total": r.total, "auto_resolvidos": int(r.auto_resolvidos or 0), "escalados": int(r.escalados or 0)}
+            for r in por_tipo
+        ],
+        "por_politica": [
+            {"acao": r.resolucao_tipo, "vezes_usada": r.vezes}
+            for r in por_politica
+        ],
     }
 
 
