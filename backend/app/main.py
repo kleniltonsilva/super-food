@@ -43,6 +43,7 @@ from .websocket_manager import create_manager
 from .rate_limit import RateLimitMiddleware
 from .middleware import DomainTenantMiddleware
 from .demo_autopilot import demo_autopilot_loop
+from .auth import get_current_admin
 
 # Configura logging
 setup_logging()
@@ -252,13 +253,30 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # Vite dev
-        "http://localhost:8504",  # Streamlit
         "http://localhost:3000",  # React dev
+        "https://superfood-api.fly.dev",
+        "https://derekhfood.com.br",
+        "https://www.derekhfood.com.br",
     ],
+    allow_origin_regex=r"https://.*\.derekhfood\.com\.br",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+
+# ==================== Security Headers Middleware ====================
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    """Adiciona headers de segurança em todas as respostas."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if not request.url.path.startswith("/docs"):
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 # ==================== Request Logging Middleware ====================
@@ -494,11 +512,9 @@ async def health_ready(db: Session = Depends(get_db)):
 # ==================== Metrics Endpoint ====================
 @app.get("/metrics")
 async def get_metrics(
-    current_admin: models.SuperAdmin = Depends(
-        lambda: None  # Placeholder — proteger em producao
-    ),
+    current_admin: models.SuperAdmin = Depends(get_current_admin),
 ):
-    """Metricas de performance (proteger com auth em producao)"""
+    """Metricas de performance (apenas super admin)"""
     return metrics.get_metrics()
 
 
@@ -838,6 +854,11 @@ async def pagina_termos(request: Request):
 @app.get("/cancelamento", response_class=HTMLResponse)
 async def pagina_cancelamento(request: Request):
     return templates.TemplateResponse(request, "cancelamento.html")
+
+
+@app.get("/pix-online", response_class=HTMLResponse)
+async def pagina_pix_online(request: Request):
+    return templates.TemplateResponse(request, "pix-online.html")
 
 
 @app.get("/{path:path}", response_class=HTMLResponse)

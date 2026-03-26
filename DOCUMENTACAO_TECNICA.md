@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.0 | Última atualização: Março 2026
+> Versão 4.0.1 | Última atualização: Março 2026
 
 ---
 
@@ -206,7 +206,7 @@
 
 ### 2.17 Pagamento Pix Online (Woovi/OpenPix)
 - **Adesão com consentimento:** formulário com chave Pix + tipo + aceite de termos
-- **Custo:** R$0,85 por transação Pix (cobrado pela Woovi) — Derekh não cobra nada
+- **Custo:** 0,80% sobre o valor de cada transação Pix (cobrado pela Woovi) — Derekh não cobra nada
 - **Subconta virtual:** restaurante não precisa criar conta Woovi
 - **Dashboard financeiro:** saldo em tempo real, histórico de saques
 - **Saque manual:** com preview de taxa (grátis para saques >= R$500)
@@ -863,13 +863,14 @@ Restaurante saca (manual ou automático)
 
 ### 12.2 Páginas Legais (Compliance)
 
-Três páginas standalone servidas por Jinja2 (mesmo padrão visual da landing — Tailwind CDN, Inter, dark theme):
+Páginas standalone servidas por Jinja2 (mesmo padrão visual da landing — Tailwind CDN, Inter, dark theme):
 
 | Rota | Template | Conteúdo |
 |------|----------|----------|
 | `GET /privacidade` | `backend/templates/privacidade.html` | Política de Privacidade (LGPD) — 11 seções, 2 públicos (B2B + consumidor final) |
-| `GET /termos` | `backend/templates/termos.html` | Termos de Uso — 16 seções, contrato SaaS com tabela de planos e add-ons |
+| `GET /termos` | `backend/templates/termos.html` | Termos de Uso — 16 seções, contrato SaaS com tabela de planos e add-ons. Seção 7 (Pagamentos Online Pix) com 6 subseções detalhadas: 7.1 Natureza do Serviço, 7.2 Fluxo do Dinheiro, 7.3 Taxas e Custos, 7.4 Responsabilidades, 7.5 Consentimento, 7.6 Alterações nas Taxas |
 | `GET /cancelamento` | `backend/templates/cancelamento.html` | Política de Cancelamento — 7 seções, direito de arrependimento (Art. 49 CDC) |
+| `GET /pix-online` | `backend/templates/pix_online.html` | Página Pix Online — hero institucional, seção "Como Funciona" (4 passos visuais), taxas transparentes (0,80% Woovi, saques), calculadora interativa de taxas, comparativo com maquininhas/concorrentes, FAQ e CTA para ativação no painel |
 
 - **Links:** footer da landing page (coluna "Legal" + bottom bar inline)
 - **Empresa:** D ALVES FREITAS DOS SANTOS DESENVOLVIMENTO DE SOFTWARE LTDA — CNPJ 65.642.226/0001-31
@@ -1575,6 +1576,92 @@ Campanha de reativação de clientes inativos com cupons exclusivos personalizad
 | `client/src/admin/pages/BotWhatsApp.tsx` | Modificado | +aba Repescagem (lista + envio + histórico) |
 | `client/src/admin/lib/adminApiClient.ts` | Modificado | +2 funções admin API |
 | `client/src/admin/hooks/useAdminQueries.ts` | Modificado | +2 hooks |
+
+---
+
+## 19. Security Hardening (26/03/2026)
+
+Auditoria de segurança completa com correção de 8 vulnerabilidades críticas e high.
+
+### 19.1 Resumo das Correções
+
+| # | Vulnerabilidade | Severidade | Correção |
+|---|----------------|------------|----------|
+| 1 | Evolution API expunha API keys publicamente | Crítica | `EXPOSE_IN_FETCH_INSTANCES = false` |
+| 2 | `/metrics` acessível sem autenticação | High | Protegido com `Depends(get_current_admin)` |
+| 3 | Webhook Evolution aceitava qualquer POST | High | Validação header `apikey` via `hmac.compare_digest` |
+| 4 | SECRET_KEY com fallback hardcoded inseguro | High | Warning explícito + fallback dev-only separado |
+| 5 | SECRET_KEY duplicada em auth_cliente.py | Média | Importação centralizada do `auth.py` |
+| 6 | CORS permissivo (wildcard methods/headers) | Média | Origins explícitas + métodos/headers restritos |
+| 7 | Ausência de security headers HTTP | Média | Middleware HSTS, X-Frame-Options, CSP, nosniff |
+| 8 | Woovi webhook aceitava tudo sem secret | High | Rejeita em produção (`FLY_APP_NAME`) |
+| 9 | OpenDelivery webhook com validação bypass | High | Assinatura obrigatória quando secret existe |
+
+### 19.2 Security Headers
+
+Todas as respostas HTTP agora incluem:
+- `X-Content-Type-Options: nosniff` — previne MIME sniffing
+- `X-Frame-Options: DENY` — previne clickjacking
+- `X-XSS-Protection: 1; mode=block` — proteção XSS legacy
+- `Referrer-Policy: strict-origin-when-cross-origin` — controle de referrer
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains` — força HTTPS (exceto /docs)
+
+### 19.3 CORS
+
+Origins permitidas:
+- `http://localhost:5173` (Vite dev)
+- `http://localhost:3000` (React dev)
+- `https://superfood-api.fly.dev` (produção)
+- `https://derekhfood.com.br` e `https://www.derekhfood.com.br`
+- `https://*.derekhfood.com.br` (subdomínios via regex)
+
+Métodos: `GET, POST, PUT, PATCH, DELETE, OPTIONS` (não mais wildcard).
+Headers: `Authorization, Content-Type, X-Requested-With` (não mais wildcard).
+
+### 19.4 Webhook Evolution — Validação apikey
+
+- Header `apikey` validado via `hmac.compare_digest` contra `EVOLUTION_WEBHOOK_SECRET`
+- Secret configurado como variável de ambiente no Fly.io
+- Sem secret configurado (dev local): aceita tudo para facilitar desenvolvimento
+
+### 19.5 SECRET_KEY Centralizada
+
+- `auth.py` é a source of truth para `SECRET_KEY` e `ALGORITHM`
+- `auth_cliente.py` importa de `auth.py` (antes tinha fallback hardcoded próprio)
+- Warning emitido se SECRET_KEY não está no ambiente (não crashar app em dev)
+
+### 19.6 Testes de Segurança
+
+36 testes automatizados em `tests/test_security_hardening.py`:
+- Etapa 1: Evolution API expose (1 teste)
+- Etapa 2: /metrics auth (3 testes)
+- Etapa 3: Webhook Evolution apikey (4 testes)
+- Etapa 4: SECRET_KEY validação (5 testes)
+- Etapa 5: CORS configuração (7 testes)
+- Etapa 6: Security headers (7 testes)
+- Etapa 7: Woovi webhook produção (3 testes)
+- Etapa 8: OpenDelivery webhook (1 teste)
+- Integração geral (5 testes)
+
+### 19.7 Arquivos Modificados
+
+| Arquivo | Ação |
+|---------|------|
+| `evolution-api/fly.toml` | EXPOSE = false |
+| `backend/app/main.py` | /metrics auth, CORS prod, security headers middleware |
+| `backend/app/auth.py` | SECRET_KEY validação + warning |
+| `backend/app/routers/bot_whatsapp.py` | Validação apikey webhook |
+| `backend/app/routers/auth_cliente.py` | Import SECRET_KEY centralizado |
+| `backend/app/routers/integracoes.py` | Assinatura webhook obrigatória |
+| `backend/app/pix/woovi_client.py` | Rejeitar webhook sem secret em prod |
+| `tests/test_security_hardening.py` | 36 testes automatizados |
+
+### 19.8 Deploy — Secret Necessário
+
+```bash
+# Copiar AUTHENTICATION_API_KEY da Evolution para o backend
+fly secrets set EVOLUTION_WEBHOOK_SECRET="<apikey-da-evolution>" --app superfood-api
+```
 
 ---
 
