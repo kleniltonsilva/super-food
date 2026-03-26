@@ -164,6 +164,7 @@ class RestauranteUpdateRequest(BaseModel):
     limite_motoboys: Optional[int] = None
     data_vencimento: Optional[datetime] = None
     billing_status: Optional[str] = None  # manual, trial, active, overdue, suspended, canceled
+    plano_tier: Optional[int] = None  # 1=Básico, 2=Essencial, 3=Avançado, 4=Premium
 
 
 class RestauranteStatusUpdate(BaseModel):
