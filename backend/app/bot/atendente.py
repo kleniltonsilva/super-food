@@ -295,8 +295,8 @@ async def _processar_mensagem(
             resultado = await xai_llm.chat_completion(
                 messages=messages,
                 tools=TOOLS,
-                temperature=0.6,
-                max_tokens=400,
+                temperature=0.4,
+                max_tokens=1000,
             )
 
             total_tokens_in += resultado.get("tokens_input", 0)
