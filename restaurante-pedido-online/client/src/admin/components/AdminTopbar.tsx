@@ -156,7 +156,7 @@ export default function AdminTopbar({ onToggleSidebar }: AdminTopbarProps) {
         <Button
           variant="ghost"
           size="icon"
-          className="lg:hidden"
+          className="md:hidden"
           onClick={onToggleSidebar}
         >
           <Menu className="h-5 w-5" />

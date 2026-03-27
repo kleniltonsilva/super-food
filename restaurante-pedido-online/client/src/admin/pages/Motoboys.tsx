@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ADMIN_QUERY_KEYS } from "@/admin/hooks/useAdminQueries";
 import AdminLayout from "@/admin/components/AdminLayout";
@@ -12,6 +12,7 @@ import {
   useRankingMotoboys,
   useRelatorioMotoboys,
   useConfig,
+  useAtualizarConfig,
 } from "@/admin/hooks/useAdminQueries";
 import { getRelatorioMotoboys, atualizarHierarquia } from "@/admin/lib/adminApiClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,9 +47,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Plus, Pencil, Trash2, Check, X, Trophy, Key, Download, Loader2, AlertTriangle, ShieldCheck, Search, ArrowUp, ArrowDown, GripVertical, Info } from "lucide-react";
+import { Plus, Pencil, Trash2, Check, X, Trophy, Key, Download, Loader2, AlertTriangle, ShieldCheck, Search, ArrowUp, ArrowDown, GripVertical, Info, Save } from "lucide-react";
 import { toast } from "sonner";
 import { validarCPF, formatarCPF, limparCPF } from "@/utils/cpf";
+import InfoTooltip from "@/components/InfoTooltip";
 
 interface MotoboyForm {
   nome: string;
@@ -66,6 +68,7 @@ export default function Motoboys() {
   const { data: solicitacoes } = useSolicitacoesMotoboys();
   const { data: ranking } = useRankingMotoboys();
   const { data: config } = useConfig();
+  const atualizarConfig = useAtualizarConfig();
   const criarMotoboy = useCriarMotoboy();
   const atualizarMotoboy = useAtualizarMotoboy();
   const deletarMotoboy = useDeletarMotoboy();
@@ -92,6 +95,26 @@ export default function Motoboys() {
   const [pagDataFim, setPagDataFim] = useState("");
   const [pagDados, setPagDados] = useState<Record<string, unknown>[] | null>(null);
   const [pagLoading, setPagLoading] = useState(false);
+
+  // Config pagamento motoboy
+  const [configPag, setConfigPag] = useState<Record<string, unknown>>({});
+  useEffect(() => {
+    if (config) setConfigPag({
+      valor_base_motoboy: config.valor_base_motoboy,
+      valor_km_extra_motoboy: config.valor_km_extra_motoboy,
+      taxa_diaria: config.taxa_diaria,
+      valor_lanche: config.valor_lanche,
+      permitir_ver_saldo_motoboy: config.permitir_ver_saldo_motoboy,
+      permitir_finalizar_fora_raio: config.permitir_finalizar_fora_raio,
+    });
+  }, [config]);
+
+  function handleSaveConfigPag() {
+    atualizarConfig.mutate(configPag, {
+      onSuccess: () => toast.success("Configurações de pagamento salvas!"),
+      onError: () => toast.error("Erro ao salvar configurações"),
+    });
+  }
 
   async function moverHierarquia(motoboyId: number, direcao: "subir" | "descer") {
     const ativos = motoboyList
@@ -563,6 +586,80 @@ export default function Motoboys() {
 
           {/* Pagamentos */}
           <TabsContent value="pagamentos">
+            {/* Config Pagamento Motoboy */}
+            <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)] mb-4">
+              <CardHeader>
+                <CardTitle className="text-[var(--text-primary)] text-base">Configuração de Pagamento</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                      Valor Base (R$)
+                      <InfoTooltip text="Valor pago ao motoboy por entrega, independente da distância percorrida." />
+                    </label>
+                    <Input type="number" step="0.01" value={(configPag.valor_base_motoboy as number) || ""} onChange={(e) => setConfigPag({ ...configPag, valor_base_motoboy: Number(e.target.value) })} className="dark-input" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                      KM Extra (R$)
+                      <InfoTooltip text="Adicional pago ao motoboy por cada km além da distância base. Somado ao valor base." />
+                    </label>
+                    <Input type="number" step="0.01" value={(configPag.valor_km_extra_motoboy as number) || ""} onChange={(e) => setConfigPag({ ...configPag, valor_km_extra_motoboy: Number(e.target.value) })} className="dark-input" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                      Taxa Diária (R$)
+                      <InfoTooltip text="Valor fixo pago ao motoboy por dia trabalhado. 0 = não pagar taxa diária." />
+                    </label>
+                    <Input type="number" step="0.01" value={(configPag.taxa_diaria as number) || ""} onChange={(e) => setConfigPag({ ...configPag, taxa_diaria: Number(e.target.value) })} className="dark-input" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                      Valor Lanche (R$)
+                      <InfoTooltip text="Auxílio alimentação diário pago ao motoboy. 0 = não aplicar." />
+                    </label>
+                    <Input type="number" step="0.01" value={(configPag.valor_lanche as number) || ""} onChange={(e) => setConfigPag({ ...configPag, valor_lanche: Number(e.target.value) })} className="dark-input" />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+                  <div className="flex items-center justify-between gap-2 sm:justify-start">
+                    <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                      Ver Saldo
+                      <InfoTooltip text="Quando ativado, o motoboy pode ver seus ganhos acumulados no app." />
+                    </label>
+                    <Switch checked={!!configPag.permitir_ver_saldo_motoboy} onCheckedChange={(v) => setConfigPag({ ...configPag, permitir_ver_saldo_motoboy: v })} />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 sm:justify-start">
+                    <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
+                      Finalizar Fora do Raio
+                      <InfoTooltip text="Antifraude GPS. Quando desativado, motoboy só finaliza a menos de 50m do destino." />
+                    </label>
+                    <Switch checked={!!configPag.permitir_finalizar_fora_raio} onCheckedChange={(v) => setConfigPag({ ...configPag, permitir_finalizar_fora_raio: v })} />
+                  </div>
+                </div>
+
+                {!!configPag.permitir_finalizar_fora_raio && (
+                  <div className="flex items-center gap-2 rounded-md bg-yellow-500/10 border border-yellow-500/30 px-3 py-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
+                    <p className="text-xs text-yellow-400">
+                      Motoboys poderão finalizar entregas fora do raio de entrega.
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  size="sm"
+                  className="bg-[var(--cor-primaria)] hover:bg-[var(--cor-primaria)]/90"
+                  onClick={handleSaveConfigPag}
+                  disabled={atualizarConfig.isPending}
+                >
+                  <Save className="mr-1 h-4 w-4" /> Salvar Configurações
+                </Button>
+              </CardContent>
+            </Card>
+
             <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
               <CardHeader>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

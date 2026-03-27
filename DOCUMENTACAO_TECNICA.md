@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.1 | Última atualização: Março 2026
+> Versão 4.0.4 | Última atualização: 27/03/2026
 
 ---
 
@@ -36,7 +36,37 @@
 
 ## 2. PAINEL DO RESTAURANTE (ADMIN) — Manual Completo
 
+### 2.0 Navegação — Sidebar Agrupada (Reorganizada 27/03)
+
+A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos colapsáveis** + Dashboard fixo no topo:
+
+```
+[Dashboard]                     ← sempre visível
+
+━━ PEDIDOS & OPERAÇÃO ━━        (colapsável)
+  Pedidos | Caixa | Relatórios | Hist. Atrasos
+
+━━ CARDÁPIO ━━                  (colapsável)
+  Categorias | Produtos | Combos | Promoções | Fidelidade
+
+━━ CONFIGURAÇÕES ━━             (colapsável)
+  Restaurante | Motoboys | Mapa Entregadores | Cozinha Digital
+  Garçons | Bridge Impressora | WhatsApp Humanoide
+  Bairros e Taxas | Integrações | Pagamento Pix | Assinatura
+```
+
+**Comportamento:**
+- Estado colapsado salvo em `localStorage` (key: `admin_sidebar_groups`)
+- Grupo auto-expande quando contém a rota ativa
+- Feature lock (cadeado PRO) continua por `ROUTE_FEATURE_MAP`
+- **Responsivo:** md (768-1024px) sidebar compacta (64px, apenas ícones + tooltip hover), lg+ sidebar completa (256px)
+- Touch targets ≥ 44px (`py-3`)
+- Mobile: overlay com backdrop, fecha ao navegar
+
+**Arquivo:** `AdminSidebar.tsx`
+
 ### 2.1 Dashboard
+- **Quick Actions:** 3 cards de ação rápida no topo — Pedidos (badge pendentes), Caixa (aberto/fechado), WhatsApp Bot (ativo/inativo)
 - Métricas em tempo real: pedidos hoje, faturamento, ticket médio, pedidos por hora
 - Gráficos: vendas por dia (últimos 7 dias), vendas por forma de pagamento
 - Alertas: restaurante aberto/fechado, caixa aberto/fechado
@@ -77,6 +107,7 @@
   - Cada variação com preço adicional, ordem de exibição, estoque
 - **Pizza especial:** modo pizza habilitável com máximo de sabores por tamanho
   - Precificação: "mais caro" (cobra pelo sabor mais caro) ou "proporcional"
+  - **Config modo preço pizza:** card inline na página de Produtos (auto-save ao mudar)
   - Ingredientes adicionais globais configuráveis por restaurante
 - Controle de estoque: ilimitado ou quantidade definida
 - Disponibilidade on/off (indisponível some do site sem deletar)
@@ -99,6 +130,7 @@
 - Configuração de hierarquia (posição na fila de rotação)
 - Capacidade de entregas simultâneas configurável
 - Edição de senha, ativação/desativação individual
+- **Config Pagamento (na aba Pagamentos):** valor base, km extra, taxa diária, valor lanche, permitir ver saldo, antifraude GPS (finalizar fora do raio)
 
 ### 2.7 Mapa de Motoboys
 - Rastreamento GPS em tempo real no mapa (Mapbox GL)
@@ -237,17 +269,17 @@
   - Botão fechar sessão pelo admin
   - Status visual: ABERTA (amber), FECHANDO (vermelho)
 
-### 2.20 Configurações
-- **Loja:** nome, endereço, telefone, coordenadas GPS
-- **Site:** tipo de restaurante (8 temas), cores, logo, banner, favicon
-- **Operação:** horários de abertura/fechamento por dia da semana
-- **Entrega:** raio, taxa base, taxa por km, distância base, valor por km
-- **Motoboy:** valor base, valor km extra, taxa diária, valor lanche
-- **Despacho:** modo (rápido, cronológico, manual), máx pedidos por rota
-- **Pedidos online:** ativar/desativar, motivo de pausa, prazo
-- **Segurança:** senha do restaurante, operadores de caixa
-- **Impressão:** automática on/off, largura 58/80mm
-- **Pizza:** modo de precificação (mais caro ou proporcional)
+### 2.20 Configurações (Reorganizado 27/03)
+- **Tab Restaurante:**
+  - **Operação:** status (aberto/fechado/pausado), horários por dia da semana
+  - **Entrega:** modo prioridade, tolerância atraso, máx pedidos/rota, raio, taxas
+  - **Pedidos do Site:** aceitar automaticamente para clientes recorrentes
+  - **Controle de Pedidos Online:** ativar/desativar pedidos/entregas, motivo, prazo
+  - **Endereço:** endereço + geocodificação automática
+- **Tab Site/Cardápio:** logo, banner, pedido mínimo, tempos, WhatsApp, pagamentos, SEO
+- **Tab Impressora:** impressão automática on/off, largura 58/80mm, agente de impressão
+- **Obs:** Config pagamento motoboy → movida para página Motoboys (aba Pagamentos)
+- **Obs:** Config modo preço pizza → movida para página Produtos (card inline)
 
 ---
 
@@ -824,17 +856,26 @@ Restaurante saca (manual ou automático)
 - **URL backend:** https://superfood-api.fly.dev
 - Página de vendas com design moderno (Tailwind CSS)
 - Seções: hero, funcionalidades, tipos de restaurante, planos, depoimentos, FAQ, CTA
+- **CTA final (27/03):** "Comece agora com teste grátis. Sem cartão de crédito, sem burocracia. Nós montamos seu cardápio, comece a receber pedidos em minutos. Se já trabalha com plataformas como iFood, os pedidos são sincronizados com nosso sistema."
 - Botão WhatsApp flutuante (SVG) para contato comercial
-- **Banner "WhatsApp Humanoide"** na seção de planos — redesenhado (26/03/2026):
-  - Visual dark premium (slate-900/emerald-950) com efeitos glow animados
-  - Badge "Exclusivo Derekh Food" com ponto pulsante
-  - Stats rápidos: 22 ações autônomas, 24/7, voz humana, GPS integrado
-  - Botão "Saiba tudo que o Humanoide faz" — expande seção com 4 blocos detalhados:
-    1. Como funciona na prática (3 passos visuais)
-    2. 22 ações autônomas (grid com 12 principais: criar/alterar/cancelar pedido, GPS, rastreio, cupom, etc.)
-    3. Diferenciais exclusivos (6 cards: áudio bidirecional, GPS Mapbox, direto na cozinha, proativo, humanização, perfil cliente)
-    4. Controle total do dono (8 permissões configuráveis)
-  - CTA final: "Nenhum outro sistema de delivery no Brasil oferece isso."
+- **Card compacto "WhatsApp Humanoide"** na seção de planos (27/03/2026):
+  - Card horizontal (ícone + texto + preço + CTA) com link âncora para seção Bia abaixo
+  - Badge "Exclusivo" com ponto pulsante, preço R$99,45/mês (grátis no Premium)
+  - Botão "Ver tudo que ela faz ↓" → scroll para seção Bia
+- **Seção standalone "Descubra o que a Bia pode fazer"** (27/03/2026):
+  - Posição: entre Números/Social Proof e FAQ
+  - Background dark (#0f172a) com 3 orbs flutuantes (emerald/indigo/teal) blur 100px
+  - Grid overlay sutil (linhas brancas 2% opacity, 60px)
+  - **Hero:** Avatar robot com anel conic-gradient rotativo (8s) + badge "Inteligência Artificial" pulsante
+  - **22 ações:** Grid filtrável (5 botões: Todas/Pedidos/Atendimento/Inteligência/Proativo), cards com hover glow emerald
+  - **6 diferenciais técnicos:** Áudio bidirecional, GPS Mapbox, direto na cozinha, humanização, contexto cliente, proativa
+  - **Timeline 5 workers:** Dots luminosos coloridos com scroll-reveal escalonado (0s→0.6s)
+  - **8 regras configuráveis:** Toggles visuais decorativos (verde=on, cinza=off)
+  - **Handoff:** Card gradient com 4 steps visuais (Cliente pede → Sirene → Você assume → Devolve pra Bia)
+  - **CTAs:** "Veja a Bia em ação" (abre demo modal) + "Quero ativar" (link WhatsApp)
+  - **JS:** `biaFilter(cat)` toggle cards por `data-cat`, reusa IntersectionObserver existente
+  - **CSS:** ~200 linhas prefixo `bia-`, animações pure CSS (biaOrbFloat, biaRingSpin, biaPulse)
+  - **Mobile-first:** 2→3→4 cols, handoff steps empilham em mobile
 - **Card "Bridge Printer IA"** (funcionalidades) — redesenhado (26/03/2026):
   - Título acessível: "Todos os pedidos em um só lugar"
   - Texto focado no benefício para o restaurante, sem termos técnicos
@@ -870,7 +911,7 @@ Páginas standalone servidas por Jinja2 (mesmo padrão visual da landing — Tai
 | `GET /privacidade` | `backend/templates/privacidade.html` | Política de Privacidade (LGPD) — 11 seções, 2 públicos (B2B + consumidor final) |
 | `GET /termos` | `backend/templates/termos.html` | Termos de Uso — 16 seções, contrato SaaS com tabela de planos e add-ons. Seção 7 (Pagamentos Online Pix) com 6 subseções detalhadas: 7.1 Natureza do Serviço, 7.2 Fluxo do Dinheiro, 7.3 Taxas e Custos, 7.4 Responsabilidades, 7.5 Consentimento, 7.6 Alterações nas Taxas |
 | `GET /cancelamento` | `backend/templates/cancelamento.html` | Política de Cancelamento — 7 seções, direito de arrependimento (Art. 49 CDC) |
-| `GET /pix-online` | `backend/templates/pix_online.html` | Página Pix Online — hero institucional, seção "Como Funciona" (4 passos visuais), taxas transparentes (0,80% Woovi, saques), calculadora interativa de taxas, comparativo com maquininhas/concorrentes, FAQ e CTA para ativação no painel |
+| `GET /pix-online` | `backend/templates/pix_online.html` | Página Pix Online — hero institucional, seção "Como Funciona" (4 passos visuais), taxas transparentes (0,80% Woovi, saques), calculadora interativa de taxas (somente Pix, sem Boleto), comparativo com maquininhas/concorrentes, FAQ e CTA para ativação no painel |
 
 - **Links:** footer da landing page (coluna "Legal" + bottom bar inline)
 - **Empresa:** D ALVES FREITAS DOS SANTOS DESENVOLVIMENTO DE SOFTWARE LTDA — CNPJ 65.642.226/0001-31
@@ -1260,7 +1301,7 @@ backend/app/bot/
 ├── atendente.py          — Lógica principal (webhook → LLM → resposta)
 ├── context_builder.py    — Prompt em 3 camadas (sistema + restaurante + cliente)
 ├── function_calls.py     — 22 funções que o LLM pode chamar
-├── evolution_client.py   — Client Evolution API (enviar texto/áudio, baixar áudio)
+├── evolution_client.py   — Client Evolution API (texto/áudio/presença/digitando)
 ├── xai_llm.py            — Client xAI Grok (chat completion + function calling)
 ├── xai_tts.py            — Client xAI TTS (gerar áudio com voz)
 ├── groq_stt.py           — Client Groq Whisper STT (transcrever áudio)
@@ -1296,17 +1337,18 @@ Montar contexto 3 camadas:
     L3: Cliente (nome, endereço, pedidos, carrinho)
     |
     v
-Loop LLM (até 5 iterações):
-    xAI Grok-3-fast → function calling → executar → resultado → Grok responde
+Presença online + "digitando..." via Evolution API
     |
     v
-Delay humanizado (1-3 seg simulando digitação)
+Loop LLM (até 5 iterações):
+    xAI Grok-3-fast → function calling → executar → resultado → Grok responde
     |
     v
 Decidir texto ou áudio TTS (reciprocidade: cliente mandou áudio → bot responde áudio)
     |
     v
-Enviar via Evolution API (texto ou PTT nativo)
+Se texto: enviar com delay_ms=1500 (mostra "digitando..." 1.5s)
+Se áudio: enviar "gravando..." 3s + PTT com delay_ms=3000
     |
     v
 Salvar mensagem no BD + notificar painel via WebSocket
@@ -1422,18 +1464,27 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 4. Bot Restaurante: setar `tts_provider = "fish"` no BotConfig do restaurante
 5. Opcional: `pip install fish-audio-sdk` para usar SDK em vez de API raw
 
-#### Tags de Emoção (Sales Bot)
+#### Tags de Emoção Fish Audio S2-Pro (Sales Bot — atualizado 27/03)
 
-| Contexto | Tag |
-|----------|-----|
-| abertura | `[amigável e caloroso]` |
-| apresentacao | `[profissional e confiante]` |
-| beneficio | `[empolgado]` |
-| objecao | `[compreensivo e paciente]` |
-| urgencia | `[entusiasmado]` |
-| fechamento | `[confiante e animado]` |
-| followup | `[simpático e casual]` |
-| suporte | `[prestativo e calmo]` |
+| Contexto | Tag | Uso |
+|----------|-----|-----|
+| abertura | `[amigável]` | Primeiro contato |
+| apresentacao | `[profissional]` | Pitch de produto |
+| beneficio | `[empolgado]` | Destacar vantagens |
+| objecao | `[compreensivo]` | Objeções do lead |
+| urgencia | `[empolgado]` | Criar senso de urgência |
+| fechamento | `[empolgado]` | Fechar venda |
+| followup | `[amigável]` | Follow-up |
+| suporte | `[calmo]` | Suporte técnico |
+| serio | `[sério]` | Contexto formal/sério |
+| profissional | `[profissional]` | Pitch B2B |
+| amigavel | `[amigável]` | Conversa casual |
+| empolgado | `[empolgado]` | Notícia boa |
+| alivio | `[aliviado]` | Resolver problema |
+| pausa | `[pausa curta]` | Pausa dramática |
+| risinhos | `[risinhos]` | Tom divertido |
+
+Tags são livres (linguagem natural em colchetes) — Fish Audio S2-Pro interpreta qualquer tag.
 
 #### Fluxo de Fallback
 
@@ -1444,12 +1495,25 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 
 ### 17.9 Context Builder — 3 Camadas
 
-**Layer 1 — Sistema (cacheable, ~1500 tokens):**
+**Layer 1 — Sistema (cacheable, ~2000 tokens):**
 - Identidade do atendente (nome, tom)
 - Regras absolutas (nunca inventar preço, nunca revelar ser IA)
 - Capacidades habilitadas (criar pedido, dar desconto, etc.)
 - Comportamento quando fechado, item esgotado
 - Fluxo de pedido, upsell natural
+- **Regras de naturalidade (27/03/2026 — 12 correções baseadas em conversa real):**
+  - Emojis: 1-2 por mensagem, NUNCA repetir mesmo emoji em mensagens consecutivas
+  - Nome do cliente: máximo 2-3 vezes na conversa TODA (não a cada mensagem)
+  - Cardápio: se completo → enviar POR CATEGORIA, uma de cada vez
+  - Preços de tamanhos: SEMPRE preço FINAL (nunca "base + acréscimo")
+  - Pizza metade/metade: cobrar pelo SABOR MAIS CARO
+  - Confirmação final: SEMPRE incluir taxa entrega com bairro/distância
+  - Variação de frases: alternar "Tudo certo?", "Pode ser?", "Beleza?", etc.
+  - Encerramento: NÃO repetir "estou à disposição" em toda mensagem
+  - Alteração de pedido: dizer APENAS o que mudou + novo total (não repetir tudo)
+  - Endereço: se não encontrou → pedir endereço completo com bairro e cidade
+  - Mensagens curtas: max 3 linhas por mensagem, paragrafar com linha em branco
+  - Saudação: responder UMA vez (não duplicar ao receber "oi" + "quero pizza")
 
 **Layer 2 — Restaurante (semi-fixo, ~2000 tokens):**
 - Nome, endereço, horário (aberto/fechado com hora atual)
@@ -1576,6 +1640,84 @@ Na página "Gerenciar Restaurantes" do Super Admin:
 
 **Cache Anti-spam:**
 - `_limpar_cache_locks()` em atendente.py — limpa `_processing_locks` quando >100 entradas
+
+### 17.17 Presença e Indicadores de Digitação (27/03)
+
+Bot agora aparece "online" e mostra indicadores visuais no WhatsApp:
+
+**Funções adicionadas em `evolution_client.py`:**
+| Função | Endpoint Evolution | Descrição |
+|--------|-------------------|-----------|
+| `definir_presenca(instance, ...)` | `POST /instance/setPresence/{instance}` | Define presença da instância (available/unavailable) |
+| `enviar_presenca_conversa(numero, ...)` | `POST /chat/sendPresence/{instance}` | Envia "digitando..." ou "gravando áudio" para conversa específica |
+
+**Parâmetro `delay_ms` adicionado:**
+- `enviar_texto()`: aceita `delay_ms` — mostra "digitando..." automaticamente antes de enviar
+- `enviar_audio_ptt()`: aceita `delay_ms` — mostra "gravando áudio" antes de enviar
+
+**Integração no `atendente.py`:**
+1. Antes de chamar LLM: `definir_presenca("available")` + `enviar_presenca_conversa("composing", 15000ms)`
+2. Antes de enviar texto: `enviar_texto(delay_ms=1500)` — mostra "digitando..." por 1.5s
+3. Antes de enviar áudio: `enviar_presenca_conversa("recording", 3000ms)` + `enviar_audio_ptt(delay_ms=3000)`
+
+**Resultado UX:** Bot aparece online, mostra "digitando..." enquanto pensa, mostra "gravando..." antes de áudio — comportamento idêntico a um humano.
+
+### 17.18 Engenharia de Fala Natural — Dicção Áudio TTS (27/03)
+
+Sistema dual que transforma texto formal do LLM em fala natural brasileira para TTS. O LLM escreve em português correto; o áudio passa por transformação antes do TTS.
+
+**Princípio 70/30:** 70% formal + 30% informal = natural sem parecer inculto.
+
+**Bia (Bot Restaurante — `atendente.py`):**
+
+| Etapa | Transformação | Exemplo |
+|-------|--------------|---------|
+| 1. Contrações obrigatórias | Universais que todo brasileiro faz | não é→né, para o→pro, estou→tô, está→tá |
+| 2. R-drop verbos `-AR` | Apenas infinitivos -AR, com espaçamento 8 palavras | falar→falá, mandar→mandá, pagar→pagá |
+| 3. Blacklist | Proibido: cê, num, purque, prum, pruma | Validação final remove se escapar |
+
+**Ana (Sales Bot CRM — `wa_sales_bot.py`):**
+
+Pipeline 9 etapas com detecção de contexto emocional:
+
+| Etapa | Transformação |
+|-------|--------------|
+| 1. Contrações obrigatórias | não é→né, para o→pro, estou→tô, está→tá, estava→tava |
+| 2. R-drop verbos -AR | falar→falá, explicar→explicá (espaçamento 8 palavras) |
+| 3. Conectores informais | Inseridos 1 a cada 3 frases: "olha,", "tipo assim,", "sabe," |
+| 4. Finalizadores | 1 a cada 4 frases: "entende?", "faz sentido?", "tá ligado?" |
+| 5. Expressões congeladas | "Derekh Food", "por exemplo", "na verdade" — NUNCA modificar |
+| 6. Detecção de contexto | sério/profissional/amigável/empolgado com limites de conversão |
+| 7. Risadas → tags emoção | "haha", "rsrs" → `[risinhos]` |
+| 8. Tags emoção Fish Audio | Adicionadas automaticamente: `[amigável]`, `[profissional]`, etc. |
+| 9. Validação blacklist | Remove: cê, num, purque, prum, pruma |
+
+**Limites por contexto:**
+
+| Contexto | Max conversões | Keywords detectoras |
+|----------|---------------|-------------------|
+| sério | 1 | preço, valor, custo, contrato |
+| profissional | 2 | empresa, solução, plataforma |
+| amigável | 4 | show, legal, bacana, beleza |
+| empolgado | 5 | incrível, demais, fantástico |
+
+**Regra de espaçamento:** Máximo 1 conversão permitida a cada 8 palavras (anti-stacking).
+
+**Arquivos modificados:**
+- `backend/app/bot/atendente.py` — `_preparar_texto_para_audio()`, `_DICCAO_OBRIGATORIAS`, `_VERBOS_AR_DROP`
+- `Hacking-restaurant-b2b/crm/wa_sales_bot.py` — `_preparar_texto_para_audio()` (pipeline 9 etapas)
+- `Hacking-restaurant-b2b/crm/fish_tts.py` — `EMOTION_TAGS` atualizado
+
+### 17.19 Correções Function Calls (27/03)
+
+**`_validar_endereco` — Filtro por cidade:**
+- Após geocoding Mapbox, filtra resultados pela cidade do restaurante
+- Evita mostrar endereços de outros estados (ex: Alagoas quando restaurante é de Curitiba)
+- Se nenhum resultado na cidade: retorna mensagem pedindo endereço completo com bairro e cidade
+
+**`_criar_pedido` — Bairro e distância no retorno:**
+- Retorno JSON agora inclui `bairro_entrega` e `distancia_km`
+- LLM usa esses dados para incluir na confirmação final: "Taxa R$X,XX (Bairro tal, X.Xkm)"
 
 ---
 
@@ -1775,7 +1917,7 @@ fly secrets set EVOLUTION_WEBHOOK_SECRET="<apikey-da-evolution>" --app superfood
 
 ---
 
-*Documento gerado automaticamente pelo sistema Derekh Food v4.0.0*
-*Última atualização: 26/03/2026*
+*Documento gerado automaticamente pelo sistema Derekh Food v4.0.2*
+*Última atualização: 27/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
 *WhatsApp comercial: +1 555-900-4563*

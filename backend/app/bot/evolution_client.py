@@ -14,22 +14,70 @@ logger = logging.getLogger("superfood.bot.evolution")
 _TIMEOUT = 15
 
 
+async def definir_presenca(
+    instance: str,
+    api_url: str,
+    api_key: str,
+    presenca: str = "available",
+) -> None:
+    """Define presença da instância (available/unavailable).
+    Faz o bot aparecer 'online' no WhatsApp."""
+    url = f"{api_url.rstrip('/')}/instance/setPresence/{instance}"
+    payload = {"presence": presenca}
+    headers = {"apikey": api_key, "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+    except Exception as e:
+        logger.debug(f"setPresence({presenca}) falhou: {e}")
+
+
+async def enviar_presenca_conversa(
+    numero: str,
+    instance: str,
+    api_url: str,
+    api_key: str,
+    presenca: str = "composing",
+    delay_ms: int = 3000,
+) -> None:
+    """Envia indicador de presença para conversa específica.
+    presenca: 'composing' (digitando...) ou 'recording' (gravando áudio)."""
+    url = f"{api_url.rstrip('/')}/chat/sendPresence/{instance}"
+    payload = {
+        "number": _normalizar_numero(numero),
+        "delay": delay_ms,
+        "presence": presenca,
+    }
+    headers = {"apikey": api_key, "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+    except Exception as e:
+        logger.debug(f"sendPresence({presenca}) falhou: {e}")
+
+
 async def enviar_texto(
     numero: str,
     texto: str,
     instance: str,
     api_url: str,
     api_key: str,
+    delay_ms: int = 0,
 ) -> dict:
-    """Envia mensagem de texto via Evolution API."""
+    """Envia mensagem de texto via Evolution API.
+    delay_ms: se > 0, mostra 'digitando...' por N ms antes de enviar."""
     url = f"{api_url.rstrip('/')}/message/sendText/{instance}"
     payload = {
         "number": _normalizar_numero(numero),
         "text": texto,
     }
+    if delay_ms > 0:
+        payload["delay"] = delay_ms
     headers = {"apikey": api_key, "Content-Type": "application/json"}
 
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_TIMEOUT + (delay_ms / 1000)) as client:
         resp = await client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
@@ -43,18 +91,22 @@ async def enviar_audio_ptt(
     instance: str,
     api_url: str,
     api_key: str,
+    delay_ms: int = 0,
 ) -> dict:
     """Envia áudio como PTT nativo (bolinha verde) via Evolution API.
-    IMPORTANTE: Usar sendWhatsAppAudio (NÃO sendMedia) para PTT nativo."""
+    IMPORTANTE: Usar sendWhatsAppAudio (NÃO sendMedia) para PTT nativo.
+    delay_ms: se > 0, mostra indicador de gravação antes de enviar."""
     url = f"{api_url.rstrip('/')}/message/sendWhatsAppAudio/{instance}"
     payload = {
         "number": _normalizar_numero(numero),
         "audio": audio_base64,
         "encoding": True,
     }
+    if delay_ms > 0:
+        payload["delay"] = delay_ms
     headers = {"apikey": api_key, "Content-Type": "application/json"}
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=30 + (delay_ms / 1000)) as client:
         resp = await client.post(url, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()

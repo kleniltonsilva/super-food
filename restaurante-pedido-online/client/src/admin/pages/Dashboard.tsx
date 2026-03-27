@@ -13,6 +13,7 @@ import {
   useAjustarTempo,
   useAlertasAtraso,
   useMesas,
+  useBotConfig,
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,8 @@ import {
   AlertTriangle,
   Truck,
   Timer,
+  Bot,
+  ArrowRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -78,6 +81,7 @@ export default function Dashboard() {
   const modoDespacho = config?.modo_prioridade_entrega || "rapido_economico";
   const { data: alertasData } = useAlertasAtraso("hoje");
   const { data: mesasData } = useMesas();
+  const { data: botConfig } = useBotConfig();
   const totalAlertasHoje = alertasData?.resumo?.total ?? 0;
   const mediaAtrasoHoje = alertasData?.resumo?.media_atraso_min ?? 0;
   const totalMesasAbertas = mesasData?.total_abertas ?? 0;
@@ -313,6 +317,57 @@ export default function Dashboard() {
             </div>
           </div>
         )}
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-3 gap-3">
+          <button
+            onClick={() => navigate("/pedidos")}
+            className="flex items-center gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-3 transition-colors hover:bg-[var(--bg-card-hover)]"
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--cor-primaria)]/10">
+              <ShoppingBag className="h-5 w-5 text-[var(--cor-primaria)]" />
+            </div>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-sm font-medium text-[var(--text-primary)]">Pedidos</p>
+              <p className={`text-xs ${(data?.pedidos_pendentes ?? 0) > 0 ? "text-yellow-400 font-medium" : "text-[var(--text-muted)]"}`}>
+                {(data?.pedidos_pendentes ?? 0) > 0 ? `${data?.pedidos_pendentes} pendente${(data?.pedidos_pendentes ?? 0) > 1 ? "s" : ""}` : "Nenhum pendente"}
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          </button>
+
+          <button
+            onClick={() => navigate("/caixa")}
+            className="flex items-center gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-3 transition-colors hover:bg-[var(--bg-card-hover)]"
+          >
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${caixaAberto ? "bg-green-500/10" : "bg-red-500/10"}`}>
+              <Vault className={`h-5 w-5 ${caixaAberto ? "text-green-400" : "text-red-400"}`} />
+            </div>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-sm font-medium text-[var(--text-primary)]">Caixa</p>
+              <p className={`text-xs ${caixaAberto ? "text-green-400" : "text-red-400"}`}>
+                {caixaAberto ? "Aberto" : "Fechado"}
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          </button>
+
+          <button
+            onClick={() => navigate("/whatsapp-bot")}
+            className="flex items-center gap-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-card)] p-3 transition-colors hover:bg-[var(--bg-card-hover)]"
+          >
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${(botConfig as Record<string, unknown>)?.ativo ? "bg-green-500/10" : "bg-gray-500/10"}`}>
+              <Bot className={`h-5 w-5 ${(botConfig as Record<string, unknown>)?.ativo ? "text-green-400" : "text-[var(--text-muted)]"}`} />
+            </div>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="text-sm font-medium text-[var(--text-primary)]">WhatsApp Bot</p>
+              <p className={`text-xs ${(botConfig as Record<string, unknown>)?.ativo ? "text-green-400" : "text-[var(--text-muted)]"}`}>
+                {(botConfig as Record<string, unknown>)?.ativo ? "Ativo" : "Inativo"}
+              </p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-[var(--text-muted)]" />
+          </button>
+        </div>
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

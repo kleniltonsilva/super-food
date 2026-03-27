@@ -367,56 +367,6 @@ export default function Configuracoes() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
-                        Permitir Motoboy Ver Saldo
-                        <InfoTooltip text="Quando ativado, o motoboy pode ver seus ganhos acumulados (base + extras) no app de entregas." />
-                      </label>
-                      <Switch checked={!!restForm.permitir_ver_saldo_motoboy} onCheckedChange={(v) => updateRest("permitir_ver_saldo_motoboy", v)} />
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
-                          Permitir Finalizar Fora do Raio
-                          <InfoTooltip text="Antifraude GPS. Quando desativado, o motoboy só consegue finalizar a entrega se estiver a menos de 50 metros do endereço de destino." />
-                        </label>
-                        <Switch checked={!!restForm.permitir_finalizar_fora_raio} onCheckedChange={(v) => updateRest("permitir_finalizar_fora_raio", v)} />
-                      </div>
-                      {!!restForm.permitir_finalizar_fora_raio && (
-                        <div className="flex items-center gap-2 rounded-md bg-yellow-500/10 border border-yellow-500/30 px-3 py-2">
-                          <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
-                          <p className="text-xs text-yellow-400">
-                            Motoboys poderão finalizar entregas mesmo fora do raio de entrega configurado.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Modo Preço Pizza */}
-                <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
-                  <CardHeader>
-                    <CardTitle className="text-[var(--text-primary)]">Pizza</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                        Modo de preço para múltiplos sabores
-                        <InfoTooltip text="Define como calcular o preço da pizza com mais de 1 sabor. Mais Caro: cobra pelo sabor de maior preço (ex: Calabresa R$30 + Especial R$45 → R$45). Proporcional: divide proporcionalmente (ex: Calabresa R$30 + Especial R$45 → R$15 + R$22,50 = R$37,50)." />
-                      </label>
-                      <Select
-                        value={(restForm.modo_preco_pizza as string) || "mais_caro"}
-                        onValueChange={(v) => updateRest("modo_preco_pizza", v)}
-                      >
-                        <SelectTrigger className="dark-input"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="mais_caro">Mais Caro (cobra pelo sabor mais caro)</SelectItem>
-                          <SelectItem value="proporcional">Proporcional (divide entre sabores)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
                   </CardContent>
                 </Card>
 
@@ -546,47 +496,6 @@ export default function Configuracoes() {
                         </p>
                       </div>
                     )}
-                  </CardContent>
-                </Card>
-
-                {/* Pagamento Motoboy */}
-                <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
-                  <CardHeader>
-                    <CardTitle className="text-[var(--text-primary)]">Pagamento Motoboy</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                          Valor Base (R$)
-                          <InfoTooltip text="Valor pago ao motoboy por entrega, independente da distância percorrida." />
-                        </label>
-                        <Input type="number" step="0.01" value={(restForm.valor_base_motoboy as number) || ""} onChange={(e) => updateRest("valor_base_motoboy", Number(e.target.value))} className="dark-input" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                          KM Extra (R$)
-                          <InfoTooltip text="Adicional pago ao motoboy por cada km além da distância base. Somado ao valor base." />
-                        </label>
-                        <Input type="number" step="0.01" value={(restForm.valor_km_extra_motoboy as number) || ""} onChange={(e) => updateRest("valor_km_extra_motoboy", Number(e.target.value))} className="dark-input" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                          Taxa Diária (R$)
-                          <InfoTooltip text="Valor fixo pago ao motoboy por dia trabalhado, independente de quantas entregas fizer. 0 = não pagar taxa diária." />
-                        </label>
-                        <Input type="number" step="0.01" value={(restForm.taxa_diaria as number) || ""} onChange={(e) => updateRest("taxa_diaria", Number(e.target.value))} className="dark-input" />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
-                          Valor Lanche (R$)
-                          <InfoTooltip text="Auxílio alimentação diário pago ao motoboy. 0 = não aplicar auxílio alimentação." />
-                        </label>
-                        <Input type="number" step="0.01" value={(restForm.valor_lanche as number) || ""} onChange={(e) => updateRest("valor_lanche", Number(e.target.value))} className="dark-input" />
-                      </div>
-                    </div>
                   </CardContent>
                 </Card>
 

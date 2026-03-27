@@ -7,6 +7,8 @@ import {
   useToggleDisponibilidade,
   useDeletarProduto,
   useCarregarProdutosModelo,
+  useConfig,
+  useAtualizarConfig,
 } from "@/admin/hooks/useAdminQueries";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,8 +47,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Search, MoreHorizontal, Pencil, Trash2, Upload } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Pencil, Trash2, Upload, Settings } from "lucide-react";
 import { toast } from "sonner";
+import InfoTooltip from "@/components/InfoTooltip";
 
 export default function Produtos() {
   const [, navigate] = useLocation();
@@ -60,9 +63,21 @@ export default function Produtos() {
   if (busca.trim()) params.busca = busca.trim();
 
   const { data: produtos, isLoading } = useProdutos(params);
+  const { data: configData } = useConfig();
+  const atualizarConfig = useAtualizarConfig();
   const toggleDisp = useToggleDisponibilidade();
   const deletar = useDeletarProduto();
   const carregarModelo = useCarregarProdutosModelo();
+
+  function handlePizzaModeChange(value: string) {
+    atualizarConfig.mutate(
+      { modo_preco_pizza: value },
+      {
+        onSuccess: () => toast.success("Modo de preço pizza atualizado"),
+        onError: () => toast.error("Erro ao salvar"),
+      }
+    );
+  }
 
   function handleToggle(id: number, atual: boolean) {
     toggleDisp.mutate(
@@ -138,6 +153,32 @@ export default function Produtos() {
                     {c.nome as string}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+
+        {/* Config Modo Preço Pizza */}
+        <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Settings className="h-4 w-4 text-[var(--text-muted)]" />
+              <span className="text-sm font-medium text-[var(--text-secondary)]">
+                Preço pizza (múltiplos sabores)
+              </span>
+              <InfoTooltip text="Mais Caro: cobra pelo sabor mais caro (ex: R$30 + R$45 → R$45). Proporcional: divide entre sabores (ex: R$30 + R$45 → R$37,50)." />
+            </div>
+            <Select
+              value={(configData as Record<string, unknown>)?.modo_preco_pizza as string || "mais_caro"}
+              onValueChange={handlePizzaModeChange}
+              disabled={atualizarConfig.isPending}
+            >
+              <SelectTrigger className="w-full sm:w-56 dark-input">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="mais_caro">Mais Caro</SelectItem>
+                <SelectItem value="proporcional">Proporcional</SelectItem>
               </SelectContent>
             </Select>
           </CardContent>

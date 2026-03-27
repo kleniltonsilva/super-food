@@ -76,22 +76,22 @@ MEMORY.md (hub — SEMPRE carregado)
 ## ESTADO ATUAL DO PROJETO
 
 - **Nome:** Derekh Food (anteriormente Super Food)
-- **Versão:** 4.0.0 (tag v4.0.0)
+- **Versão:** 4.0.2
 - **Autor:** Klenilton Silva (@kleniltonsilva)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 26/03/2026 (noite)
-- **Migrations em produção:** 001-034 (última: 034_feature_flags)
-- **Migrations implementadas (aguardando deploy):** 035 (Bot WhatsApp), 036 (Bot WhatsApp V2), 037 (Repescagem + Verificação Email + Reset Senha)
-- **Security Hardening:** ✅ 8 vulnerabilidades corrigidas, 36 testes, aguardando deploy
+- **Última sessão:** 27/03/2026
+- **Migrations em produção:** 001-036 (última: 036_bot_whatsapp_v2)
+- **Migrations implementadas (aguardando deploy):** 037 (Repescagem + Verificação Email + Reset Senha)
+- **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
+- **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 22 function calls, handoff com senha, STT/TTS, repescagem, testado E2E em produção
 - **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
 - **Repescagem + Verificação Email + Reset Senha:** Migration 037, 25 arquivos, cupons exclusivos VOLTA-{NOME}-{código}
-- **Auditoria Bot WhatsApp:** ✅ 5 fases (cadeado, segurança, WebSocket, UX handoff com senha, cache)
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** Módulos 1,5 (Pix → Sales), domínio próprio, configurar Resend prod, deploy migrations 035-037, deploy security hardening + EVOLUTION_WEBHOOK_SECRET
+- **Pendente:** Módulos 1,5 (Pix → Sales), domínio próprio, configurar Resend prod, deploy migration 037
 
 ---
 
@@ -547,7 +547,7 @@ super-food/
 - [x] 4 hooks: useBotInstancias, useCriarBotInstancia, useAtualizarBotInstancia, useDeletarBotInstancia
 
 **Etapa 9: Deploy**
-- [ ] Deploy migration 035 + testar E2E: criar instância → ativar → enviar mensagem → pedido via bot → cozinha
+- [x] Deploy migration 035-036 + auditoria 5 fases + testes E2E em produção (26-27/03)
 
 ---
 
