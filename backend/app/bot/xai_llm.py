@@ -19,8 +19,8 @@ async def chat_completion(
     messages: list[dict],
     tools: list[dict] | None = None,
     model: str = MODELO_PADRAO,
-    temperature: float = 0.6,
-    max_tokens: int = 400,
+    temperature: float = 0.4,
+    max_tokens: int = 1000,
 ) -> dict:
     """Chama xAI Grok com function calling.
 
@@ -28,7 +28,7 @@ async def chat_completion(
         messages: Lista de mensagens [{role, content}]
         tools: Definições de ferramentas para function calling
         model: Modelo a usar
-        temperature: Criatividade (0.6 para precisão)
+        temperature: Criatividade (0.4 para precisão em pedidos)
         max_tokens: Máximo de tokens na resposta
 
     Returns:

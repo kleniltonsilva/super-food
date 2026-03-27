@@ -74,6 +74,26 @@ def _get_evolution_config() -> tuple:
     return url, instance, key
 
 
+def _enviar_presenca(numero: str, presenca: str = "composing",
+                     delay_ms: int = 3000, instance_override: str = "") -> None:
+    """Envia indicador de presença para conversa (composing/recording).
+    Faz o contato ver 'digitando...' ou 'gravando áudio...' antes da resposta."""
+    url, inst, key = _get_evolution_config()
+    if instance_override:
+        inst = instance_override
+    if not url or not key:
+        return
+    try:
+        httpx.post(
+            f"{url}/chat/sendPresence/{inst}",
+            headers={"apikey": key, "Content-Type": "application/json"},
+            json={"number": numero, "delay": delay_ms, "presence": presenca},
+            timeout=5,
+        )
+    except Exception:
+        pass  # presença é cosmética, não bloquear envio
+
+
 def _get_wa_config() -> tuple:
     """Retorna (phone_number_id, access_token) do WhatsApp Cloud API (fallback)."""
     phone_id = obter_configuracao("wa_phone_id") or os.environ.get("WHATSAPP_PHONE_ID", "")
@@ -193,6 +213,9 @@ def _enviar_via_evolution(numero: str, texto: str, instance_override: str = "") 
         instance = instance_override
     if not url or not key:
         return {"erro": "Evolution API não configurada"}
+
+    # Indicador "digitando..." antes de enviar
+    _enviar_presenca(numero, "composing", delay_ms=3000, instance_override=instance_override)
 
     try:
         resp = httpx.post(
@@ -416,6 +439,9 @@ def _enviar_audio_evolution(numero: str, audio_base64: str, instance: str = "",
         inst = instance
     if not url or not key:
         return {"erro": "Evolution API não configurada"}
+
+    # Indicador "gravando áudio..." antes de enviar
+    _enviar_presenca(numero, "recording", delay_ms=5000, instance_override=instance)
 
     try:
         resp = httpx.post(

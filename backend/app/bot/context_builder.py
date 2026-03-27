@@ -279,8 +279,8 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
                 models.VariacaoProduto.ativo == True,
             ).all()
             for v in variacoes:
-                extra = f" (+R${v.preco_adicional:.2f})" if v.preco_adicional > 0 else ""
-                cardapio_linhas.append(f"    ↳ {v.tipo_variacao}: {v.nome}{extra}")
+                preco_final_var = preco + (v.preco_adicional or 0)
+                cardapio_linhas.append(f"    ↳ {v.tipo_variacao}: {v.nome} — R${preco_final_var:.2f}")
 
     cardapio_texto = "\n".join(cardapio_linhas) if cardapio_linhas else "Cardápio vazio"
 
