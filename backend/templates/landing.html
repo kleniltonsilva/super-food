@@ -290,6 +290,234 @@
       .quiz-type-card { padding: 12px 8px; }
       .quiz-title { font-size: 1.2rem; }
     }
+
+    /* ========== SEÇÃO BIA — Descubra o que a Bia pode fazer ========== */
+    .bia-section {
+      background: #0f172a;
+      background-image: linear-gradient(180deg, #0f172a 0%, #0c1425 40%, #0f172a 100%);
+      position: relative;
+      overflow: hidden;
+    }
+    .bia-grid-overlay {
+      position: absolute; inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+    .bia-orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(100px);
+      opacity: 0.15;
+      pointer-events: none;
+    }
+    .bia-orb-1 { width: 500px; height: 500px; background: #10b981; top: -100px; left: -150px; animation: biaOrbFloat 12s ease-in-out infinite; }
+    .bia-orb-2 { width: 400px; height: 400px; background: #6366f1; bottom: -80px; right: -120px; animation: biaOrbFloat 15s ease-in-out 2s infinite; }
+    .bia-orb-3 { width: 350px; height: 350px; background: #14b8a6; top: 50%; left: 50%; transform: translate(-50%,-50%); animation: biaOrbFloat 13s ease-in-out 4s infinite; }
+
+    @keyframes biaOrbFloat {
+      0%, 100% { transform: translateY(0) scale(1); }
+      50% { transform: translateY(-40px) scale(1.05); }
+    }
+    @keyframes biaRingSpin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    @keyframes biaPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }
+      50% { box-shadow: 0 0 0 12px rgba(16,185,129,0); }
+    }
+    @keyframes biaFadeSlideUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .bia-avatar-ring {
+      width: 140px; height: 140px;
+      border-radius: 50%;
+      padding: 4px;
+      background: conic-gradient(#10b981, #6366f1, #14b8a6, #10b981);
+      animation: biaRingSpin 8s linear infinite;
+      margin: 0 auto;
+    }
+    .bia-avatar-ring img {
+      width: 100%; height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 3px solid #0f172a;
+    }
+    .bia-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(16,185,129,0.1);
+      border: 1px solid rgba(16,185,129,0.3);
+      color: #34d399;
+      padding: 6px 16px; border-radius: 999px;
+      font-size: 0.8rem; font-weight: 600;
+      margin-top: 16px;
+    }
+    .bia-badge-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: biaPulse 3s ease-in-out infinite;
+    }
+    .bia-name-glow {
+      background: linear-gradient(135deg, #10b981, #34d399);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      filter: drop-shadow(0 0 20px rgba(16,185,129,0.3));
+    }
+
+    /* Filtros */
+    .bia-filter-btn {
+      padding: 8px 20px; border-radius: 999px;
+      font-size: 0.85rem; font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.05);
+      color: #94a3b8;
+      cursor: pointer; transition: all 0.25s;
+    }
+    .bia-filter-btn:hover, .bia-filter-btn.active {
+      background: rgba(16,185,129,0.15);
+      border-color: rgba(16,185,129,0.4);
+      color: #34d399;
+    }
+
+    /* Cards 22 ações */
+    .bia-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 16px;
+      padding: 20px 16px;
+      text-align: center;
+      transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+      position: relative;
+      overflow: hidden;
+    }
+    .bia-card::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: radial-gradient(circle at 50% 0%, rgba(16,185,129,0.08), transparent 70%);
+      opacity: 0; transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    .bia-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(16,185,129,0.3);
+      box-shadow: 0 8px 30px rgba(16,185,129,0.1);
+    }
+    .bia-card:hover::before { opacity: 1; }
+    .bia-card-emoji { font-size: 2rem; margin-bottom: 8px; }
+    .bia-card-title { font-size: 0.9rem; font-weight: 700; color: #e2e8f0; margin-bottom: 4px; }
+    .bia-card-desc { font-size: 0.78rem; color: #64748b; line-height: 1.4; }
+    .bia-card.hidden-by-filter { display: none; }
+
+    /* Timeline workers */
+    .bia-timeline { position: relative; padding-left: 36px; }
+    .bia-timeline::before {
+      content: ''; position: absolute; left: 13px; top: 0; bottom: 0;
+      width: 2px;
+      background: linear-gradient(to bottom, #10b981, #6366f1, #14b8a6);
+      border-radius: 1px;
+    }
+    .bia-timeline-item {
+      position: relative; margin-bottom: 28px;
+      opacity: 0; transform: translateY(20px);
+      transition: all 0.5s ease-out;
+    }
+    .bia-timeline-item.visible { opacity: 1; transform: translateY(0); }
+    .bia-timeline-dot {
+      position: absolute; left: -30px; top: 4px;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 12px rgba(16,185,129,0.5);
+    }
+    .bia-timeline-title { font-size: 0.95rem; font-weight: 700; color: #e2e8f0; }
+    .bia-timeline-desc { font-size: 0.85rem; color: #64748b; margin-top: 2px; }
+
+    /* Regras toggles */
+    .bia-rule-card {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex; align-items: center; gap: 12px;
+    }
+    .bia-toggle {
+      width: 40px; height: 22px;
+      border-radius: 11px;
+      position: relative;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .bia-toggle.on { background: #10b981; }
+    .bia-toggle.off { background: #475569; }
+    .bia-toggle::after {
+      content: '';
+      position: absolute; top: 3px;
+      width: 16px; height: 16px;
+      border-radius: 50%; background: white;
+      transition: left 0.2s;
+    }
+    .bia-toggle.on::after { left: 21px; }
+    .bia-toggle.off::after { left: 3px; }
+    .bia-rule-label { font-size: 0.85rem; font-weight: 600; color: #cbd5e1; }
+    .bia-rule-sub { font-size: 0.75rem; color: #64748b; }
+
+    /* Handoff card */
+    .bia-handoff {
+      background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(99,102,241,0.1));
+      border: 1px solid rgba(16,185,129,0.2);
+      border-radius: 20px;
+      padding: 32px;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+    .bia-handoff-steps {
+      display: flex; align-items: center; justify-content: center;
+      gap: 12px; flex-wrap: wrap; margin-top: 24px;
+    }
+    .bia-handoff-step {
+      background: rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 12px 18px;
+      text-align: center;
+      font-size: 0.85rem; color: #cbd5e1; font-weight: 600;
+      min-width: 110px;
+    }
+    .bia-handoff-arrow { color: #10b981; font-size: 1.2rem; }
+    @media (max-width: 640px) {
+      .bia-handoff-steps { flex-direction: column; gap: 8px; }
+      .bia-handoff-arrow { transform: rotate(90deg); }
+      .bia-handoff { padding: 24px 18px; }
+      .bia-avatar-ring { width: 110px; height: 110px; }
+    }
+
+    /* CTAs */
+    .bia-cta-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white; font-weight: 700; font-size: 1rem;
+      padding: 14px 32px; border-radius: 14px;
+      border: none; cursor: pointer;
+      transition: all 0.25s;
+      text-decoration: none;
+    }
+    .bia-cta-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(16,185,129,0.3); }
+    .bia-cta-secondary {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: transparent;
+      border: 2px solid rgba(255,255,255,0.15);
+      color: #94a3b8; font-weight: 600; font-size: 0.95rem;
+      padding: 12px 28px; border-radius: 14px;
+      cursor: pointer; transition: all 0.25s;
+      text-decoration: none;
+    }
+    .bia-cta-secondary:hover { border-color: rgba(16,185,129,0.4); color: #34d399; }
   </style>
 </head>
 <body class="bg-white text-slate-800 font-sans antialiased overflow-x-hidden">
@@ -1209,6 +1437,309 @@
     </section>
 
     <!-- ============================================================ -->
+    <!-- DESCUBRA O QUE A BIA PODE FAZER                              -->
+    <!-- ============================================================ -->
+    <section class="bia-section py-20 lg:py-28">
+      <div class="bia-grid-overlay"></div>
+      <div class="bia-orb bia-orb-1"></div>
+      <div class="bia-orb bia-orb-2"></div>
+      <div class="bia-orb bia-orb-3"></div>
+
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+
+        <!-- HERO — Conheça a Bia -->
+        <div class="text-center mb-16 scroll-reveal">
+          <div class="bia-avatar-ring">
+            <img src="/static/chefe-robo-derekh.png" alt="Bia — Atendente IA Derekh Food">
+          </div>
+          <div class="bia-badge">
+            <span class="bia-badge-dot"></span>
+            Inteligência Artificial
+          </div>
+          <h2 class="text-3xl sm:text-4xl lg:text-5xl font-display font-extrabold text-white mt-6">
+            Descubra o que a <span class="bia-name-glow">Bia</span> pode fazer
+          </h2>
+          <p class="text-slate-400 text-lg max-w-2xl mx-auto mt-4 leading-relaxed">
+            Ela atende seus clientes no WhatsApp como uma pessoa de verdade — cria pedidos, responde dúvidas, envia áudio e trabalha 24 horas sem folga.
+          </p>
+        </div>
+
+        <!-- FILTROS -->
+        <div class="flex flex-wrap justify-center gap-3 mb-10 scroll-reveal">
+          <button class="bia-filter-btn active" onclick="biaFilter('todas')">Todas</button>
+          <button class="bia-filter-btn" onclick="biaFilter('pedidos')">Pedidos</button>
+          <button class="bia-filter-btn" onclick="biaFilter('atendimento')">Atendimento</button>
+          <button class="bia-filter-btn" onclick="biaFilter('inteligencia')">Inteligência</button>
+          <button class="bia-filter-btn" onclick="biaFilter('proativo')">Proativo</button>
+        </div>
+
+        <!-- GRID 22 AÇÕES -->
+        <div id="biaGrid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 mb-20 scroll-reveal">
+          <!-- PEDIDOS (7) -->
+          <div class="bia-card" data-cat="pedidos">
+            <div class="bia-card-emoji">🛒</div>
+            <div class="bia-card-title">Criar pedido</div>
+            <div class="bia-card-desc">Monta o pedido completo pelo WhatsApp</div>
+          </div>
+          <div class="bia-card" data-cat="pedidos">
+            <div class="bia-card-emoji">✏️</div>
+            <div class="bia-card-title">Alterar pedido</div>
+            <div class="bia-card-desc">Troca itens ou quantidades antes de confirmar</div>
+          </div>
+          <div class="bia-card" data-cat="pedidos">
+            <div class="bia-card-emoji">❌</div>
+            <div class="bia-card-title">Cancelar pedido</div>
+            <div class="bia-card-desc">Cancela se ainda der tempo, com educação</div>
+          </div>
+          <div class="bia-card" data-cat="pedidos">
+            <div class="bia-card-emoji">🔁</div>
+            <div class="bia-card-title">Repetir último pedido</div>
+            <div class="bia-card-desc">"Quero o mesmo de ontem" — e pronto</div>
+          </div>
+          <div class="bia-card" data-cat="pedidos">
+            <div class="bia-card-emoji">📍</div>
+            <div class="bia-card-title">Rastrear entrega</div>
+            <div class="bia-card-desc">Mostra status e previsão em tempo real</div>
+          </div>
+          <div class="bia-card" data-cat="pedidos">
+            <div class="bia-card-emoji">🔄</div>
+            <div class="bia-card-title">Trocar item</div>
+            <div class="bia-card-desc">Substitui um item do pedido sem refazer</div>
+          </div>
+          <div class="bia-card" data-cat="pedidos">
+            <div class="bia-card-emoji">📋</div>
+            <div class="bia-card-title">Consultar pedidos</div>
+            <div class="bia-card-desc">Lista pedidos recentes e detalhes</div>
+          </div>
+
+          <!-- ATENDIMENTO (8) -->
+          <div class="bia-card" data-cat="atendimento">
+            <div class="bia-card-emoji">📖</div>
+            <div class="bia-card-title">Enviar cardápio</div>
+            <div class="bia-card-desc">Mostra o menu organizado por categoria</div>
+          </div>
+          <div class="bia-card" data-cat="atendimento">
+            <div class="bia-card-emoji">📂</div>
+            <div class="bia-card-title">Filtrar categorias</div>
+            <div class="bia-card-desc">"O que tem de pizza?" — filtra na hora</div>
+          </div>
+          <div class="bia-card" data-cat="atendimento">
+            <div class="bia-card-emoji">🕐</div>
+            <div class="bia-card-title">Informar horário</div>
+            <div class="bia-card-desc">Diz se tá aberto e quando abre/fecha</div>
+          </div>
+          <div class="bia-card" data-cat="atendimento">
+            <div class="bia-card-emoji">🎟️</div>
+            <div class="bia-card-title">Aplicar cupom</div>
+            <div class="bia-card-desc">Valida e aplica cupom de desconto</div>
+          </div>
+          <div class="bia-card" data-cat="atendimento">
+            <div class="bia-card-emoji">🔥</div>
+            <div class="bia-card-title">Mostrar promoções</div>
+            <div class="bia-card-desc">Divulga ofertas ativas e combos</div>
+          </div>
+          <div class="bia-card" data-cat="atendimento">
+            <div class="bia-card-emoji">📌</div>
+            <div class="bia-card-title">Validar endereço</div>
+            <div class="bia-card-desc">Confirma endereço e calcula taxa de entrega</div>
+          </div>
+          <div class="bia-card" data-cat="atendimento">
+            <div class="bia-card-emoji">🚚</div>
+            <div class="bia-card-title">Calcular entrega</div>
+            <div class="bia-card-desc">Mostra taxa por distância e bairro</div>
+          </div>
+          <div class="bia-card" data-cat="atendimento">
+            <div class="bia-card-emoji">🙋</div>
+            <div class="bia-card-title">Escalar humano</div>
+            <div class="bia-card-desc">Transfere para atendente com senha segura</div>
+          </div>
+
+          <!-- INTELIGÊNCIA (3) -->
+          <div class="bia-card" data-cat="inteligencia">
+            <div class="bia-card-emoji">👤</div>
+            <div class="bia-card-title">Cadastrar cliente</div>
+            <div class="bia-card-desc">Cria o perfil na primeira conversa</div>
+          </div>
+          <div class="bia-card" data-cat="inteligencia">
+            <div class="bia-card-emoji">🧠</div>
+            <div class="bia-card-title">Reconhecer cliente</div>
+            <div class="bia-card-desc">Lembra nome, endereço e pedidos anteriores</div>
+          </div>
+          <div class="bia-card" data-cat="inteligencia">
+            <div class="bia-card-emoji">💰</div>
+            <div class="bia-card-title">Dar desconto</div>
+            <div class="bia-card-desc">Oferece desconto se o dono permitir</div>
+          </div>
+
+          <!-- PROATIVO (4) -->
+          <div class="bia-card" data-cat="proativo">
+            <div class="bia-card-emoji">⭐</div>
+            <div class="bia-card-title">Pedir avaliação</div>
+            <div class="bia-card-desc">10 min após entrega, pergunta como foi</div>
+          </div>
+          <div class="bia-card" data-cat="proativo">
+            <div class="bia-card-emoji">⚠️</div>
+            <div class="bia-card-title">Detectar problema</div>
+            <div class="bia-card-desc">Avaliação ruim? Registra e avisa o dono</div>
+          </div>
+          <div class="bia-card" data-cat="proativo">
+            <div class="bia-card-emoji">⏱️</div>
+            <div class="bia-card-title">Avisar atraso</div>
+            <div class="bia-card-desc">Se demorar, avisa o cliente antes de reclamar</div>
+          </div>
+          <div class="bia-card" data-cat="proativo">
+            <div class="bia-card-emoji">💌</div>
+            <div class="bia-card-title">Repescar cliente</div>
+            <div class="bia-card-desc">Sumiu? A Bia manda um cupom exclusivo</div>
+          </div>
+        </div>
+
+        <!-- TIMELINE — Workers automáticos -->
+        <div class="max-w-2xl mx-auto mb-20">
+          <h3 class="text-2xl font-display font-bold text-white text-center mb-3 scroll-reveal">
+            Ela trabalha até quando você dorme
+          </h3>
+          <p class="text-slate-400 text-center mb-10 scroll-reveal">5 tarefas automáticas rodando em background, sem você precisar fazer nada.</p>
+
+          <div class="bia-timeline">
+            <div class="bia-timeline-item scroll-reveal">
+              <div class="bia-timeline-dot"></div>
+              <div class="bia-timeline-title">⭐ Avaliação pós-entrega</div>
+              <div class="bia-timeline-desc">10 minutos depois, pergunta como foi a experiência</div>
+            </div>
+            <div class="bia-timeline-item scroll-reveal" style="transition-delay: 0.15s">
+              <div class="bia-timeline-dot" style="background: #6366f1; box-shadow: 0 0 12px rgba(99,102,241,0.5);"></div>
+              <div class="bia-timeline-title">⏱️ Detector de atraso</div>
+              <div class="bia-timeline-desc">Se passar do tempo estimado, avisa o cliente proativamente</div>
+            </div>
+            <div class="bia-timeline-item scroll-reveal" style="transition-delay: 0.3s">
+              <div class="bia-timeline-dot" style="background: #14b8a6; box-shadow: 0 0 12px rgba(20,184,166,0.5);"></div>
+              <div class="bia-timeline-title">🔄 Reset diário</div>
+              <div class="bia-timeline-desc">Renova limites de mensagens e tokens toda meia-noite</div>
+            </div>
+            <div class="bia-timeline-item scroll-reveal" style="transition-delay: 0.45s">
+              <div class="bia-timeline-dot" style="background: #f59e0b; box-shadow: 0 0 12px rgba(245,158,11,0.5);"></div>
+              <div class="bia-timeline-title">🎟️ Lembrete de cupom</div>
+              <div class="bia-timeline-desc">Cupom perto de vencer? A Bia avisa o cliente</div>
+            </div>
+            <div class="bia-timeline-item scroll-reveal" style="transition-delay: 0.6s">
+              <div class="bia-timeline-dot" style="background: #ec4899; box-shadow: 0 0 12px rgba(236,72,153,0.5);"></div>
+              <div class="bia-timeline-title">💌 Repescagem inteligente</div>
+              <div class="bia-timeline-desc">Cliente sumiu? Manda cupom exclusivo com código personalizado</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- REGRAS — Você manda, ela obedece -->
+        <div class="mb-20">
+          <h3 class="text-2xl font-display font-bold text-white text-center mb-3 scroll-reveal">
+            Você manda, ela obedece
+          </h3>
+          <p class="text-slate-400 text-center mb-10 scroll-reveal">Configure exatamente o que a Bia pode ou não fazer no seu restaurante.</p>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-5xl mx-auto scroll-reveal">
+            <div class="bia-rule-card">
+              <div class="bia-toggle on"></div>
+              <div>
+                <div class="bia-rule-label">Criar pedidos</div>
+                <div class="bia-rule-sub">Montar pedido completo</div>
+              </div>
+            </div>
+            <div class="bia-rule-card">
+              <div class="bia-toggle on"></div>
+              <div>
+                <div class="bia-rule-label">Cancelar pedidos</div>
+                <div class="bia-rule-sub">Se ainda em preparo</div>
+              </div>
+            </div>
+            <div class="bia-rule-card">
+              <div class="bia-toggle off"></div>
+              <div>
+                <div class="bia-rule-label">Desconto máximo</div>
+                <div class="bia-rule-sub">Definir teto de %</div>
+              </div>
+            </div>
+            <div class="bia-rule-card">
+              <div class="bia-toggle on"></div>
+              <div>
+                <div class="bia-rule-label">Nome da atendente</div>
+                <div class="bia-rule-sub">Personalizar para sua marca</div>
+              </div>
+            </div>
+            <div class="bia-rule-card">
+              <div class="bia-toggle on"></div>
+              <div>
+                <div class="bia-rule-label">Fora do horário</div>
+                <div class="bia-rule-sub">Atender mesmo fechado</div>
+              </div>
+            </div>
+            <div class="bia-rule-card">
+              <div class="bia-toggle on"></div>
+              <div>
+                <div class="bia-rule-label">Repescagem</div>
+                <div class="bia-rule-sub">Cupom para quem sumiu</div>
+              </div>
+            </div>
+            <div class="bia-rule-card">
+              <div class="bia-toggle on"></div>
+              <div>
+                <div class="bia-rule-label">Avaliação</div>
+                <div class="bia-rule-sub">Pedir nota pós-entrega</div>
+              </div>
+            </div>
+            <div class="bia-rule-card">
+              <div class="bia-toggle on"></div>
+              <div>
+                <div class="bia-rule-label">Limite mensagens</div>
+                <div class="bia-rule-sub">Teto diário por cliente</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HANDOFF — E se quiser falar com pessoa? -->
+        <div class="mb-20 scroll-reveal">
+          <h3 class="text-2xl font-display font-bold text-white text-center mb-3">
+            E se quiser falar com uma pessoa?
+          </h3>
+          <p class="text-slate-400 text-center mb-8">Controle total — com senha, sirene e um clique.</p>
+
+          <div class="bia-handoff">
+            <div class="text-center">
+              <span class="text-4xl">🔐</span>
+              <p class="text-slate-300 mt-4 leading-relaxed">
+                Quando o cliente pede atendimento humano, a Bia toca uma <strong class="text-white">sirene no seu painel</strong> e pede uma <strong class="text-white">senha</strong> ao operador. Ninguém assume sem autorização. Quando terminar, você devolve a conversa para a Bia com um clique.
+              </p>
+            </div>
+            <div class="bia-handoff-steps">
+              <div class="bia-handoff-step">🗣️ Cliente pede</div>
+              <span class="bia-handoff-arrow">→</span>
+              <div class="bia-handoff-step">🔔 Sirene toca</div>
+              <span class="bia-handoff-arrow">→</span>
+              <div class="bia-handoff-step">👤 Você assume</div>
+              <span class="bia-handoff-arrow">→</span>
+              <div class="bia-handoff-step">🤖 Devolve pra Bia</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CTAs -->
+        <div class="text-center scroll-reveal">
+          <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
+            <button onclick="abrirHumanoideDemo()" class="bia-cta-primary">
+              ▶ Veja a Bia em ação
+            </button>
+            <a href="https://wa.me/351933358929?text=Quero%20ativar%20a%20Bia%20no%20meu%20restaurante" target="_blank" class="bia-cta-secondary">
+              💬 Quero ativar
+            </a>
+          </div>
+          <p class="text-slate-500 text-sm">Grátis no plano Premium. Nos demais: R$99,45/mês.</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
     <!-- FAQ                                                           -->
     <!-- ============================================================ -->
     <section id="faq" class="py-20 lg:py-28 bg-white">
@@ -1339,7 +1870,7 @@
             Pronto para transformar seu delivery?
           </h2>
           <p class="text-lg text-orange-100 mb-10 max-w-2xl mx-auto">
-            Comece agora com teste grátis. Sem cartão de crédito, sem burocracia. Monte seu cardápio e comece a receber pedidos em minutos.
+            Comece agora com teste grátis. Sem cartão de crédito, sem burocracia. Nós montamos seu cardápio, comece a receber pedidos em minutos. Se já trabalha com plataformas como iFood, os pedidos são sincronizados com nosso sistema.
           </p>
           <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a href="https://wa.me/5511971765565?text=Olá! Tenho interesse no Derekh Food para meu restaurante." target="_blank"
@@ -2562,6 +3093,21 @@
         btn.textContent = 'Fechar detalhes';
         arrow.style.transform = 'rotate(180deg)';
       }
+    }
+
+    // ===================== BIA — FILTRO CARDS =====================
+    function biaFilter(cat) {
+      const cards = document.querySelectorAll('#biaGrid .bia-card');
+      const btns = document.querySelectorAll('.bia-filter-btn');
+      btns.forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      cards.forEach(c => {
+        if (cat === 'todas' || c.dataset.cat === cat) {
+          c.classList.remove('hidden-by-filter');
+        } else {
+          c.classList.add('hidden-by-filter');
+        }
+      });
     }
 
     // ===================== NAVEGAÇÃO =====================
