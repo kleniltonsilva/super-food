@@ -26,7 +26,7 @@ O Derekh Food e composto por **10 aplicacoes principais**:
 | **Sales Autopilot CRM** | FastAPI + Jinja2 | `derekh-crm.fly.dev` | CRM B2B prospeccao automatica (email + WA + IA) |
 | **Evolution API** | Self-hosted | `derekh-evolution.fly.dev` | WhatsApp gateway (Baileys) |
 
-**Versao atual: 4.0.1 (26/03/2026) — Em producao: https://superfood-api.fly.dev**
+**Versao atual: 4.0.2 (26/03/2026) — Em producao: https://superfood-api.fly.dev**
 
 ### Stack Tecnologica
 
@@ -34,7 +34,7 @@ O Derekh Food e composto por **10 aplicacoes principais**:
 |--------|-----------|
 | Backend API | Python 3.12+ / FastAPI / Uvicorn |
 | ORM | SQLAlchemy 2.0+ |
-| Migrations | Alembic (34 migrations) |
+| Migrations | Alembic (37 migrations) |
 | Banco (dev) | SQLite |
 | Banco (prod) | PostgreSQL 16+ / PgBouncer |
 | Frontend | React 19 + TypeScript + Vite 7 + Tailwind CSS 4 |
@@ -189,14 +189,18 @@ super-food/
 │       ├── auth.py             # Auth JWT para restaurantes
 │       ├── database.py         # get_db() para FastAPI DI
 │       ├── models.py           # Re-exporta de database/models.py
+│       ├── feature_flags.py    # Registry central features (22 features, 4 tiers)
+│       ├── feature_guard.py    # FastAPI Depends factory (verificar_feature)
+│       ├── email_service.py    # Servico email transacional Resend
 │       ├── storage.py          # Abstração storage (Local / R2)
 │       ├── cache.py            # Redis cache helper
 │       ├── rate_limit.py       # Rate limiting (Redis sliding window)
-│       ├── routers/            # 17 arquivos de rotas (130+ endpoints)
+│       ├── routers/            # 21 arquivos de rotas (160+ endpoints)
 │       │   ├── auth_restaurante.py  # Auth JWT restaurante
-│       │   ├── auth_cliente.py      # Auth cliente
+│       │   ├── auth_cliente.py      # Auth cliente (registro, verificacao email, reset senha)
 │       │   ├── auth_motoboy.py      # Auth motoboy
 │       │   ├── auth_cozinheiro.py   # Auth cozinheiro (KDS)
+│       │   ├── auth_garcom.py       # Auth garcom
 │       │   ├── auth_admin.py        # Auth super admin
 │       │   ├── painel.py            # Todas rotas /painel/* (admin restaurante)
 │       │   ├── admin.py             # Rotas /api/admin/* (super admin)
@@ -204,13 +208,15 @@ super-food/
 │       │   ├── carrinho.py          # Carrinho/checkout
 │       │   ├── upload.py            # Upload imagens (JWT + Pillow)
 │       │   ├── kds.py               # Endpoints KDS cozinha (pedidos, status, assumir)
+│       │   ├── garcom.py            # Endpoints garcom (mesas, sessoes, pedidos)
+│       │   ├── bot_whatsapp.py      # Bot WhatsApp Humanoide (webhook, config, conversas, handoff)
+│       │   ├── bridge.py            # Bridge Printer (parse cupom, orders, patterns)
 │       │   ├── pix.py               # Endpoints Pix online (ativacao, saque, config)
 │       │   ├── pix_webhooks.py      # Webhook Woovi/OpenPix (pagamentos Pix)
 │       │   ├── integracoes.py        # Integracoes marketplace (iFood, Open Delivery)
 │       │   ├── billing.py            # Billing restaurante (assinatura/pagamento)
 │       │   ├── billing_admin.py      # Billing super admin (config, dashboard, acoes)
 │       │   ├── billing_webhooks.py   # Webhook Asaas (pagamentos)
-│       │   ├── pedidos.py           # Pedidos legado
 │       │   └── motoboys.py          # GPS motoboys
 │       ├── billing/            # Sistema de cobranca Asaas (PIX + Boleto)
 │       │   ├── asaas_client.py      # httpx async (sandbox/prod)
@@ -218,6 +224,15 @@ super-food/
 │       │   └── billing_tasks.py     # Task periodica (30min) + polling
 │       ├── pix/                # Pix online Woovi/OpenPix
 │       │   └── woovi_service.py     # Client API Woovi (subcontas, cobranças, saques)
+│       ├── bot/                # Bot WhatsApp Humanoide (IA)
+│       │   ├── atendente.py        # Logica principal (webhook → LLM → resposta)
+│       │   ├── context_builder.py  # Prompt 3 camadas (sistema + restaurante + cliente)
+│       │   ├── function_calls.py   # 22 funcoes que o LLM pode chamar
+│       │   ├── evolution_client.py # Client Evolution API (texto/audio)
+│       │   ├── xai_llm.py          # Client xAI Grok (LLM + function calling)
+│       │   ├── xai_tts.py          # Client xAI TTS (gerar audio com voz)
+│       │   ├── groq_stt.py         # Client Groq Whisper STT (transcrever audio)
+│       │   └── workers.py          # Workers periodicos (avaliacao, repescagem, atraso)
 │       ├── integrations/       # iFood + Open Delivery clients
 │       ├── schemas/            # Pydantic schemas
 │       └── utils/              # Despacho, menus, templates
@@ -229,7 +244,7 @@ super-food/
 │   ├── init.py                 # Funcoes de inicializacao
 │   └── seed/                   # Seeds (super admin, planos, restaurante, etc)
 │
-├── migrations/                 # Alembic (29 migrations)
+├── migrations/                 # Alembic (37 migrations)
 │   └── versions/
 │
 ├── restaurante-pedido-online/  # FRONTEND REACT (todas as SPAs)
@@ -240,7 +255,7 @@ super-food/
 │   └── client/
 │       └── src/
 │           ├── main.tsx            # Entry point React
-│           ├── App.tsx             # Router principal (5 apps: cliente, admin, motoboy, superadmin, kds)
+│           ├── App.tsx             # Router principal (7 apps: cliente, admin, motoboy, superadmin, kds, garcom, site)
 │           ├── index.css           # Estilos globais + Tailwind + CSS vars tematicos
 │           │
 │           ├── pages/              # Paginas site cliente (11 paginas)
@@ -293,6 +308,13 @@ super-food/
 │           │   ├── components/     # KdsPrivateRoute.tsx
 │           │   └── pages/          # KdsLogin, KdsMain (Preparo + Despacho)
 │           │
+│           ├── garcom/            # APP GARCOM (PWA)
+│           │   ├── GarcomApp.tsx   # Router garcom (auth + WebSocket)
+│           │   ├── lib/            # garcomApiClient.ts
+│           │   ├── contexts/       # GarcomAuthContext.tsx
+│           │   ├── hooks/          # useGarcomQueries.ts, useGarcomWebSocket.ts
+│           │   └── pages/          # Login, Grid, Mesa, Menu, Transferir
+│           │
 │           └── superadmin/         # SUPER ADMIN
 │               ├── SuperAdminApp.tsx  # Router super admin
 │               ├── lib/            # superAdminApiClient.ts
@@ -331,9 +353,9 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 ## Funcionalidades Principais
 
 ### API FastAPI (Backend)
-- API REST completa com 130+ endpoints documentados (Swagger/ReDoc)
-- WebSockets para notificacoes em tempo real por restaurante (3 canais: restaurante, printer, kds)
-- Servindo 5 React SPAs em producao (admin, motoboy, kds cozinha, superadmin, site cliente)
+- API REST completa com 160+ endpoints documentados (Swagger/ReDoc)
+- WebSockets para notificacoes em tempo real por restaurante (4 canais: restaurante, printer, kds, garcom)
+- Servindo 7 React SPAs em producao (admin, motoboy, kds cozinha, garcom, superadmin, site cliente, verificacao email)
 - Upload de imagens com resize automatico (WebP)
 - JWT auth para restaurantes (24h), clientes (72h), motoboys (30d), cozinheiros (7d), super admin (12h)
 - Rate limiting, cache Redis, health checks
@@ -389,6 +411,96 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 - WebSocket em tempo real (canal `ws:kds`)
 - Auto-criacao de PedidoCozinha quando pedido muda para `em_preparo` e KDS ativo
 - Admin: CRUD cozinheiros, config KDS (tempo alerta/critico, som), monitor em tempo real
+
+### App Garcom (PWA)
+- Login com codigo do restaurante + login + senha do garcom
+- Grid visual de mesas (LIVRE/ABERTA/FECHANDO) com cores por status
+- Abertura de mesa (num. pessoas, alergias, tags, notas)
+- Cardapio por categorias com carrinho e course selector (entrada, prato principal, sobremesa)
+- Envio de pedido para cozinha (integrado com KDS)
+- Transferencia de mesa, cancelamento de itens, solicitacao de fechamento
+- Itens esgotados em tempo real (compartilhado com site e KDS)
+- WebSocket + sons distintos (sndReady, snd86, sndClick)
+- Tema dark com accent amber (#d97706)
+
+### Bot WhatsApp Humanoide — "Bia" (IA)
+
+A **Bia** e a atendente virtual da Derekh Food. Ela conversa no WhatsApp como uma pessoa real — sem menus robotizados, sem "digite 1 para...", sem respostas engessadas. O cliente fala normalmente (texto ou audio) e ela entende, responde e resolve.
+
+#### O que a Bia faz (22 acoes autonomas)
+
+| # | Acao | O que faz |
+|---|------|-----------|
+| 1 | Criar pedido | Monta o pedido completo conversando com o cliente, escolhe itens, confirma endereco e forma de pagamento |
+| 2 | Alterar pedido | Troca itens, muda endereco ou observacoes de um pedido ja feito (se ainda nao saiu para entrega) |
+| 3 | Cancelar pedido | Cancela o pedido a pedido do cliente, seguindo as regras do restaurante |
+| 4 | Repetir ultimo pedido | Cliente diz "quero o mesmo de ontem" e ela repete automaticamente |
+| 5 | Rastrear pedido | Informa o status atual: em preparo, saiu para entrega, previsao de chegada |
+| 6 | Consultar pedido | Mostra detalhes do pedido: itens, valor total, forma de pagamento |
+| 7 | Trocar item | Substitui um item especifico dentro de um pedido em andamento |
+| 8 | Ver cardapio | Envia o cardapio completo ou filtrado por categoria (ex: "o que tem de pizza?") |
+| 9 | Ver categorias | Lista as categorias disponiveis (pizzas, bebidas, sobremesas, etc.) |
+| 10 | Verificar horario | Diz se o restaurante esta aberto agora e qual o horario de funcionamento |
+| 11 | Aplicar cupom | Valida e aplica cupom de desconto no pedido do cliente |
+| 12 | Ver promocoes | Mostra promocoes ativas do dia (combos, descontos, frete gratis) |
+| 13 | Informar endereco | Confirma endereco de entrega e calcula se esta dentro da area de cobertura |
+| 14 | Calcular entrega | Informa o valor da taxa de entrega antes de fechar o pedido |
+| 15 | Escalar para humano | Quando o cliente pede para falar com uma pessoa, avisa o dono com som de sirene |
+| 16 | Cadastrar cliente | Registra novo cliente automaticamente durante a conversa (nome, telefone, endereco) |
+| 17 | Reconhecer cliente | Identifica clientes que ja compraram antes e usa o historico para atender melhor |
+| 18 | Dar desconto | Oferece desconto personalizado para clientes especiais (limite configuravel pelo dono) |
+| 19 | Pedir avaliacao | Apos a entrega, pergunta ao cliente como foi a experiencia (nota de 1 a 5) |
+| 20 | Registrar problema | Se o cliente reclama, registra o problema e avisa o dono imediatamente |
+| 21 | Detectar atraso | Percebe que um pedido esta atrasado e avisa o cliente proativamente antes que ele reclame |
+| 22 | Repescar cliente | Envia mensagem para clientes inativos com cupom exclusivo VOLTA-{NOME} para trazer de volta |
+
+#### Audio bidirecional
+
+- O cliente pode enviar **audio no WhatsApp** (bolinha verde PTT) e a Bia entende tudo
+- A Bia responde com **audio em voz natural** (nao robotica), como se fosse uma pessoa digitando e gravando
+- Tecnologias: reconhecimento de voz (Groq Whisper) + sintese de voz (xAI TTS)
+
+#### Trabalha sozinha 24h (5 tarefas automaticas em background)
+
+| Tarefa | Quando roda | O que faz |
+|--------|-------------|-----------|
+| Avaliacao pos-entrega | 10 min apos entrega | Envia mensagem perguntando "como foi seu pedido?" |
+| Deteccao de atraso | A cada 5 min | Verifica pedidos atrasados e avisa o cliente antes que reclame |
+| Reset diario | Todo dia a meia-noite | Renova os limites de mensagens e tokens de cada restaurante |
+| Lembrete de cupom | 1x por dia | Avisa clientes que tem cupom proximo de vencer |
+| Status proativo | Quando muda status | Avisa o cliente quando o pedido muda de fase (ex: "saiu para entrega!") |
+
+#### Handoff — quando o cliente quer falar com uma pessoa
+
+1. Cliente pede para falar com humano (ou a Bia percebe que nao consegue resolver)
+2. **Som de sirene** toca no painel do restaurante (impossivel ignorar)
+3. O dono aceita com **senha de seguranca** (ninguem mais pode assumir)
+4. O dono conversa diretamente com o cliente pelo painel
+5. Quando terminar, devolve o atendimento para a Bia com um clique
+
+Durante o handoff, a Bia **para de responder** — o dono tem controle total.
+
+#### Regras configuraveis pelo dono
+
+O dono do restaurante controla tudo pelo painel:
+
+| Regra | Padrao | Descricao |
+|-------|--------|-----------|
+| Criar pedidos | Ligado | Bia pode montar e confirmar pedidos |
+| Cancelar pedidos | Ligado | Bia pode cancelar a pedido do cliente |
+| Desconto maximo | 10% | Limite maximo de desconto que a Bia pode dar |
+| Nome da atendente | "Bia" | Pode trocar o nome (ex: "Ana", "Lu") |
+| Responder fora do horario | Ligado | Bia informa o horario e sugere pedir depois |
+| Repescagem | Ligado | Bia busca clientes inativos com cupom |
+| Pedir avaliacao | Ligado | Bia pede nota apos entrega |
+| Limite de mensagens | 100/dia | Maximo de mensagens por dia (evita custos excessivos) |
+
+#### Disponibilidade e preco
+
+- **Gratis** no plano Premium (R$527/mes)
+- Nos demais planos: **add-on R$99,45/mes**
+- Sem limite de conversas simultaneas
+- Funciona 24 horas, 7 dias por semana
 
 ### App Motoboy (PWA)
 - Login com codigo do restaurante + usuario + senha
@@ -611,6 +723,9 @@ Todas as configuracoes do painel restaurante possuem tooltips (icone ℹ️) com
 | `/garcom/auth` | auth_garcom.py | 2 | Login, me (garcom) |
 | `/painel/garcom` | painel.py | 6 | CRUD garcons, config, monitor mesas |
 | `/painel/bridge` | bridge.py | 10 | Parse cupom (Groq IA), orders, patterns, status |
+| `/painel/bot` | bot_whatsapp.py | 11 | Config, dashboard, conversas, mensagens, handoff, repescagem |
+| `/api/admin/bot` | bot_whatsapp.py | 4 | CRUD instancias bot por restaurante |
+| `/webhooks/evolution` | bot_whatsapp.py | 1 | Webhook Evolution API (WhatsApp) |
 | `/ws/garcom/{id}` | main.py | 1 | WebSocket garcom |
 | `/health` | main.py | 3 | Health check (live, ready, full) |
 
@@ -777,6 +892,22 @@ services:
 
 ## Changelog
 
+### v4.0.2 (26/03/2026) — WhatsApp Humanoide + Auditoria Completa
+
+- **Bot WhatsApp Humanoide deployed** — Atendente IA "Bia" com 22 funcoes autonomas, STT/TTS bidirecional, handoff com senha
+- **Migration 035-036 deployed** — 6 tabelas bot (config, conversas, mensagens, avaliacoes, problemas, repescagens)
+- **Auditoria 5 fases concluida:**
+  - Bug cadeado sidebar: refreshRestaurante() no SelecionarPlano + bridge_printer tier fix
+  - Seguranca backend: whitelist campos admin PUT bot, whitelist restaurante expandida
+  - WebSocket 5 workers: todos broadcast bot_mensagem, novo evento bot_handoff_solicitado (som sirene)
+  - UX Painel: handoff com senha, mensagem manual admin, paginacao conversas/mensagens
+  - Cache anti-spam: _limpar_cache_locks() para _processing_locks
+- **Handoff completo:** escalar_humano → aguardando_handoff → admin aceita(senha)/recusa → bot sugere ligar
+- **Repescagem avancada** — cupons exclusivos VOLTA-{NOME}, envio massa WA/email, lembrete automatico 24h
+- **Verificacao email** — OTP 6 digitos via Resend, countdown 10min, rate limit 60s
+- **Reset senha** — esqueci senha com OTP email, 2 etapas seguras
+- **Testado em producao** — Todos endpoints bot validados E2E (config, dashboard, conversas, handoff, mensagens)
+
 ### v4.0.1 (26/03/2026) — Security Hardening
 
 - **8 vulnerabilidades corrigidas** — Evolution API expose, /metrics sem auth, webhook sem validacao, SECRET_KEY fallback, CORS wildcard, security headers, Woovi webhook, OpenDelivery webhook
@@ -865,7 +996,9 @@ services:
 - [x] Fase 19: Sales Autopilot CRM Automatico (email branded + regras outreach + WA inteligente + auto-import + trial detection) ✅
 - [x] Fase 19.1: Demo WhatsApp Humanoide na Landing Page (20 cenarios × 8 tipos = 160 conversas + brain replay) ✅
 - [x] Fase 20: Security Hardening (8 vulnerabilidades, security headers, CORS, webhook auth, 36 testes) ✅
-- [ ] Fase 21: WhatsApp Humanoide (atendimento IA humanizado 24h, sem menus robotizados — Premium incluso, demais +R$99,45/mês)
+- [x] Fase 21: WhatsApp Humanoide — atendente IA 24h, 22 funcoes, handoff com senha, repescagem, STT/TTS bidirecional, auditoria 5 fases ✅
+- [x] Fase 22: Repescagem Avancada + Verificacao Email + Reset Senha (migration 037, cupons VOLTA-{NOME}, OTP email) ✅
+- [ ] Fase 23: Pix Online Woovi/OpenPix (subcontas, split, QR Code, saque automatico)
 
 ---
 

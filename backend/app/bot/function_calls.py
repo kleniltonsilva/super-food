@@ -740,6 +740,13 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
     codigo_acesso = restaurante.codigo_acesso if restaurante else ""
     link_rastreamento = f"https://superfood-api.fly.dev/cliente/{codigo_acesso}/pedido/{pedido.id}/tracking" if codigo_acesso else None
 
+    # Info de entrega para confirmação (bairro/distância)
+    bairro_entrega = ""
+    distancia_km = 0
+    if endereco_validado:
+        bairro_entrega = endereco_validado.get("bairro", "")
+        distancia_km = endereco_validado.get("distancia_km", 0)
+
     return json.dumps({
         "sucesso": True,
         "pedido_id": pedido.id,
@@ -748,6 +755,8 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
         "itens": itens_texto,
         "valor_subtotal": valor_total,
         "taxa_entrega": taxa_entrega,
+        "bairro_entrega": bairro_entrega,
+        "distancia_km": distancia_km,
         "valor_total": valor_total_final,
         "link_rastreamento": link_rastreamento,
         "mensagem": f"Pedido #{comanda} criado! Valor: R${valor_total_final:.2f}. Status: {status_inicial}",
@@ -1660,8 +1669,29 @@ def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Op
     dentro = [s for s in sugestoes if s["dentro_zona"]]
     fora = [s for s in sugestoes if not s["dentro_zona"]]
 
+    # Filtrar por cidade do restaurante — evitar mostrar endereços de outras cidades/estados
+    cidade_rest = (restaurante.cidade or "").lower().strip()
+    if cidade_rest and dentro:
+        na_cidade = [s for s in dentro if cidade_rest in s["place_name"].lower()]
+        if na_cidade:
+            dentro = na_cidade  # Priorizar resultados na cidade correta
+        else:
+            # Todos resultados dentro do raio mas em cidades erradas — pedir mais detalhes
+            return json.dumps({
+                "encontrado": False,
+                "mensagem": f"Não encontrei esse endereço em {cidade_rest.title()}. Pode me informar o endereço completo com bairro e cidade?",
+            })
+
     if not dentro and fora:
-        # Todos fora da zona
+        # Todos fora da zona — verificar se estão em cidades erradas
+        if cidade_rest:
+            na_cidade_fora = [s for s in fora if cidade_rest in s["place_name"].lower()]
+            if not na_cidade_fora:
+                # Nenhum resultado na cidade do restaurante
+                return json.dumps({
+                    "encontrado": False,
+                    "mensagem": f"Não encontrei esse endereço em {cidade_rest.title()}. Pode me informar o endereço completo com bairro e cidade?",
+                })
         return json.dumps({
             "encontrado": True,
             "confianca": "fora_zona",

@@ -44,15 +44,24 @@ FISH_API_URL = "https://api.fish.audio/v1/tts"
 FISH_MODEL = "s2-pro"
 
 # Mapeamento de emoções por contexto de venda (S2-Pro tags livres)
+# Tags em português (lingua natural do áudio) — Fish Audio S2 suporta tags livres
 EMOTION_TAGS = {
-    "abertura": "[amigável e caloroso]",
-    "apresentacao": "[profissional e confiante]",
+    "abertura": "[amigável]",
+    "apresentacao": "[profissional]",
     "beneficio": "[empolgado]",
-    "objecao": "[compreensivo e paciente]",
-    "urgencia": "[entusiasmado]",
-    "fechamento": "[confiante e animado]",
-    "followup": "[simpático e casual]",
-    "suporte": "[prestativo e calmo]",
+    "objecao": "[compreensivo]",
+    "urgencia": "[empolgado]",
+    "fechamento": "[empolgado]",
+    "followup": "[amigável]",
+    "suporte": "[calmo]",
+    # Novos contextos alinhados com Engenharia de Fala Natural
+    "serio": "[sério]",
+    "profissional": "[profissional]",
+    "amigavel": "[amigável]",
+    "empolgado": "[empolgado]",
+    "alivio": "[aliviado]",
+    "pausa": "[pausa curta]",
+    "risinhos": "[risinhos]",
 }
 
 

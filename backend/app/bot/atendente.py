@@ -39,46 +39,74 @@ _DEDUP_MAX = 500
 # ============================================================
 import re as _re
 
-# Dicção brasileira — contrações naturais (expressões compostas primeiro!)
-_DICCAO_BR = [
-    (r'\bnão é\b', 'né'), (r'\bpara o\b', 'pro'), (r'\bpara a\b', 'pra'),
-    (r'\bvocê\b', 'cê'), (r'\bVocê\b', 'Cê'),
+# ============================================================
+# DICÇÃO BRASILEIRA PARA ÁUDIO — Abordagem 70/30
+# 70% formal + 30% informal = som humano sem parecer analfabeto.
+# Proporção: OBRIGATÓRIAS sempre, PERMITIDAS com espaçamento.
+# PROIBIDO: você→cê, não→num, porque→purque, verbos -ER/-IR drop.
+# ============================================================
+
+# OBRIGATÓRIAS — tão universais que todo brasileiro fala assim
+_DICCAO_OBRIGATORIAS = [
+    (r'\bnão é\b', 'né'), (r'\bNão é\b', 'Né'),
+    (r'\bpara o\b', 'pro'), (r'\bpara os\b', 'pros'),
+    (r'\bpara a\b', 'pra'), (r'\bpara as\b', 'pras'),
+    (r'\bpara\b', 'pra'), (r'\bPara\b', 'Pra'),
     (r'\bestou\b', 'tô'), (r'\bEstou\b', 'Tô'),
     (r'\bestá\b', 'tá'), (r'\bEstá\b', 'Tá'),
     (r'\bestão\b', 'tão'), (r'\bestamos\b', 'tamo'),
-    (r'\bpara\b', 'pra'), (r'\bPara\b', 'Pra'),
-    (r'\bporque\b', 'purque'), (r'\bPorque\b', 'Purque'),
-    (r'\bnão\b', 'num'), (r'\bNão\b', 'Num'),
-    (r'\bobrigado\b', 'brigado'), (r'\bObrigado\b', 'Brigado'),
-    (r'\bobrigada\b', 'brigada'), (r'\bObrigada\b', 'Brigada'),
-    (r'\bvamos\b', 'vamo'), (r'\bVamos\b', 'Vamo'),
+    (r'\bestava\b', 'tava'), (r'\bEstava\b', 'Tava'),
+    (r'\bestavam\b', 'tavam'),
 ]
+
+# PERMITIDAS — verbos -AR que podem perder o R (com controle de espaçamento)
+_VERBOS_AR_DROP = {
+    'falar', 'explicar', 'mandar', 'pagar', 'ajudar', 'mostrar', 'usar',
+    'cobrar', 'achar', 'deixar', 'passar', 'ligar', 'chamar', 'precisar',
+    'conversar', 'retornar', 'testar', 'cancelar', 'contar', 'gostar',
+    'adicionar', 'confirmar', 'verificar', 'preparar', 'entregar', 'buscar',
+}
 
 
 def _preparar_texto_para_audio(texto: str) -> str:
     """Transforma português correto do LLM → dicção falada brasileira para TTS.
 
-    6 etapas: dicção, R-drop, plurais, risadas, emojis, visual cleanup.
+    Abordagem 70/30: maioria formal, contrações apenas nas mais universais.
+    NUNCA transforma: você, não, porque, verbos -ER/-IR, plurais.
     Pronúncia de marcas (Derekh→Dérikh) é feita pelo TTS module.
     """
-    # 1. Dicção brasileira (contrações naturais)
-    for pattern, repl in _DICCAO_BR:
+    # 1. Contrações OBRIGATÓRIAS (universais — todo brasileiro fala)
+    for pattern, repl in _DICCAO_OBRIGATORIAS:
         texto = _re.sub(pattern, repl, texto)
-    # 2+3. Plurais com R + R-drop infinitivos
-    texto = _re.sub(r'(\w{2,})ares\b', r'\1á', texto)
-    texto = _re.sub(r'(\w{2,})eres\b', r'\1ê', texto)
-    texto = _re.sub(r'(\w+)antes\b', r'\1ante', texto)
-    texto = _re.sub(r'(\w+)entes\b', r'\1ente', texto)
-    texto = _re.sub(r'(\w+)ões\b', r'\1ão', texto)
-    texto = _re.sub(r'(\w{2,})ar\b', r'\1á', texto)
-    texto = _re.sub(r'(\w{2,})er\b', r'\1ê', texto)
-    texto = _re.sub(r'(\w{2,})ir\b', r'\1i', texto)
-    # 4+5. Risadas e emojis → remover
+
+    # 2. R-drop CONTROLADO — apenas verbos -AR, com espaçamento de 8 palavras
+    palavras = texto.split()
+    ultima_conversao_pos = -10  # posição da última conversão permitida
+    for i, palavra in enumerate(palavras):
+        # Limpar pontuação para checagem
+        limpa = _re.sub(r'[.,!?;:]+$', '', palavra).lower()
+        if limpa in _VERBOS_AR_DROP and palavra.endswith(('ar', 'ar.', 'ar!', 'ar?', 'ar,')):
+            # Respeitar espaçamento: mínimo 8 palavras entre conversões permitidas
+            if i - ultima_conversao_pos >= 8 and i > 0:
+                # Preservar pontuação original
+                sufixo = palavra[len(limpa):]
+                palavras[i] = palavra[:-(len('ar') + len(sufixo))] + 'á' + sufixo
+                ultima_conversao_pos = i
+    texto = ' '.join(palavras)
+
+    # 3. Encerramento casual — "obrigado" → "brigado" APENAS na última frase
+    if texto.rstrip().endswith(('obrigado!', 'obrigada!', 'obrigado.', 'obrigada.')):
+        texto = _re.sub(r'\bobrigado\b', 'brigado', texto, count=0, flags=_re.IGNORECASE)
+    elif texto.rstrip().endswith(('obrigado', 'obrigada')):
+        texto = _re.sub(r'\b(O|o)brigad(o|a)\s*$', lambda m: ('B' if m.group(1) == 'O' else 'b') + 'rigad' + m.group(2), texto)
+
+    # 4. Risadas → remover
     texto = _re.sub(r'\bk{3,}\b', '', texto, flags=_re.IGNORECASE)
     texto = _re.sub(r'\bha{3,}h?\b', '', texto, flags=_re.IGNORECASE)
     texto = _re.sub(r'\brs{2,}\b', '', texto, flags=_re.IGNORECASE)
     texto = _re.sub(r'\bhehe\b', '', texto, flags=_re.IGNORECASE)
-    # 6. Remover elementos visuais
+
+    # 5. Remover elementos visuais (URLs, markdown, emojis)
     texto = _re.sub(r'https?://\S+', '', texto)
     texto = _re.sub(r'\*{1,2}(.+?)\*{1,2}', r'\1', texto)
     texto = _re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', texto)
@@ -88,7 +116,8 @@ def _preparar_texto_para_audio(texto: str) -> str:
         r'\U0001FA00-\U0001FA6F\U0001FA70-\U0001FAFF\U00002600-\U000026FF'
         r'\U0000FE00-\U0000FE0F\U0000200D]', '', texto
     )
-    # Limpeza final
+
+    # 6. Limpeza final
     texto = _re.sub(r'  +', ' ', texto)
     texto = _re.sub(r'\s+([.,!?])', r'\1', texto)
     return texto.strip()
@@ -247,6 +276,15 @@ async def _processar_mensagem(
         # Mensagem atual
         messages.append({"role": "user", "content": texto})
 
+        # 7.5. Presença: ficar "online" + "digitando..." enquanto processa
+        await evolution_client.definir_presenca(
+            bot_config.evolution_instance, bot_config.evolution_api_url, bot_config.evolution_api_key, "available"
+        )
+        await evolution_client.enviar_presenca_conversa(
+            numero, bot_config.evolution_instance, bot_config.evolution_api_url, bot_config.evolution_api_key,
+            presenca="composing", delay_ms=15000,
+        )
+
         # 8. Chamar LLM com function calling (loop até 5 iterações)
         resposta_final = None
         total_tokens_in = 0
@@ -324,11 +362,18 @@ async def _processar_mensagem(
                     audio_b64 = await xai_tts.gerar_audio(resposta_audio, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
                 if audio_b64:
                     try:
+                        # Mostrar indicador de gravação antes de enviar áudio
+                        await evolution_client.enviar_presenca_conversa(
+                            numero, bot_config.evolution_instance,
+                            bot_config.evolution_api_url, bot_config.evolution_api_key,
+                            presenca="recording", delay_ms=3000,
+                        )
                         await evolution_client.enviar_audio_ptt(
                             numero, audio_b64,
                             bot_config.evolution_instance,
                             bot_config.evolution_api_url,
                             bot_config.evolution_api_key,
+                            delay_ms=3000,
                         )
                     except Exception as audio_err:
                         # Fallback: enviar texto direto (LLM já escreve correto)
@@ -338,6 +383,7 @@ async def _processar_mensagem(
                             bot_config.evolution_instance,
                             bot_config.evolution_api_url,
                             bot_config.evolution_api_key,
+                            delay_ms=1500,
                         )
                 else:
                     # TTS falhou: enviar texto direto (LLM já escreve correto)
@@ -346,6 +392,7 @@ async def _processar_mensagem(
                         bot_config.evolution_instance,
                         bot_config.evolution_api_url,
                         bot_config.evolution_api_key,
+                        delay_ms=1500,
                     )
             else:
                 # TEXTO: enviar direto — LLM já gera português correto
@@ -354,6 +401,7 @@ async def _processar_mensagem(
                     bot_config.evolution_instance,
                     bot_config.evolution_api_url,
                     bot_config.evolution_api_key,
+                    delay_ms=1500,
                 )
             envio_ok = True
         except Exception as e:
