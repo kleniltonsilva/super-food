@@ -319,7 +319,7 @@ async def _processar_mensagem(
 
                 logger.info(f"Function call: {fn_name}({json.dumps(fn_args, ensure_ascii=False)[:100]})")
 
-                resultado_fn = executar_funcao(
+                resultado_fn = await executar_funcao(
                     fn_name, fn_args, db, restaurante_id, bot_config, conversa
                 )
 
@@ -335,8 +335,13 @@ async def _processar_mensagem(
             resposta_final = "Opa, me dá um segundo que estou verificando aqui..."
 
         # 8.5 SAFETY NET: Detectar "confirmação fantasma" — LLM diz confirmado sem chamar criar_pedido
+        # Skip safety net se criar_pedido retornou pix_online (pedido aguardando pagamento, não vai pra cozinha)
         chamou_criar_pedido = any(fc["nome"] == "criar_pedido" for fc in function_calls_log)
-        if resposta_final and not chamou_criar_pedido and bot_config.pode_criar_pedido:
+        criou_pedido_pix = any(
+            fc["nome"] == "criar_pedido" and "pix_online" in fc.get("resultado", "")
+            for fc in function_calls_log
+        )
+        if resposta_final and not chamou_criar_pedido and not criou_pedido_pix and bot_config.pode_criar_pedido:
             _PHANTOM_PATTERNS = [
                 "pedido confirmado", "pedido criado", "seu pedido já",
                 "comanda #", "comanda wa", "já vou preparar",
@@ -401,7 +406,7 @@ async def _processar_mensagem(
 
                             logger.info(f"SAFETY NET FC: {fn_name}({json.dumps(fn_args, ensure_ascii=False)[:200]})")
 
-                            resultado_fn = executar_funcao(fn_name, fn_args, db, restaurante_id, bot_config, conversa)
+                            resultado_fn = await executar_funcao(fn_name, fn_args, db, restaurante_id, bot_config, conversa)
                             function_calls_log.append({"nome": fn_name, "args": fn_args, "resultado": resultado_fn[:200]})
 
                             messages.append({

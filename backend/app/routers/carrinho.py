@@ -477,7 +477,8 @@ async def finalizar_carrinho(
         if finalizacao.endereco_entrega and not (lat_entrega and lng_entrega):
             try:
                 from utils.mapbox_api import geocode_address
-                coords = geocode_address(finalizacao.endereco_entrega)
+                pais_rest = getattr(_rest_for_demo, 'pais', None) or None
+                coords = geocode_address(finalizacao.endereco_entrega, country=pais_rest)
                 if coords:
                     lat_entrega, lng_entrega = coords
             except Exception:
@@ -645,6 +646,7 @@ async def finalizar_carrinho(
                 "pix_online": True,
                 "pix_qr_code": pix_data.get("qr_code_image", ""),
                 "pix_br_code": pix_data.get("br_code", ""),
+                "pix_payment_link": pix_data.get("payment_link_url", ""),
                 "pix_expira_em": pix_data.get("expira_em", ""),
             }
         except Exception as e:

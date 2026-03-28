@@ -19,6 +19,27 @@ from utils.mapbox_api import autocomplete_address, check_coverage_zone
 from .auth_cliente import get_cliente_atual, get_cliente_opcional
 
 
+def _detectar_pais_restaurante(restaurante, db) -> str:
+    """Detecta o país do restaurante. Auto-corrige se pais='BR' mas coordenadas estão fora do Brasil."""
+    pais = getattr(restaurante, 'pais', None) or "BR"
+    if pais == "BR" and restaurante.latitude and restaurante.longitude:
+        lat, lng = restaurante.latitude, restaurante.longitude
+        if not (-35 <= lat <= 6 and -75 <= lng <= -34):
+            try:
+                from utils.calculos import detectar_cidade_endereco
+                info = detectar_cidade_endereco(restaurante.endereco_completo or f"{lat},{lng}")
+                if info and info.get("pais_codigo"):
+                    pais = info["pais_codigo"]
+                    try:
+                        restaurante.pais = pais
+                        db.commit()
+                    except Exception:
+                        pass
+            except Exception:
+                pais = None  # Não filtrar se falhar
+    return pais
+
+
 def _check_pix_online(db, restaurante_id: int) -> bool:
     """Verifica se Pix online está ativo. Retorna False se tabela não existir."""
     try:
@@ -232,6 +253,7 @@ def get_pix_status_pedido(
         "pix_pago": cobranca.status == "COMPLETED" if cobranca else False,
         "pix_qr_code": cobranca.qr_code_imagem if cobranca else None,
         "pix_br_code": cobranca.br_code if cobranca else None,
+        "pix_payment_link": cobranca.payment_link_url if cobranca else None,
         "pix_expira_em": cobranca.expira_em.isoformat() if cobranca and cobranca.expira_em else None,
     }
 
@@ -528,7 +550,8 @@ def autocomplete_endereco(
     # Proximity: prioriza resultados próximos ao restaurante
     proximity = (restaurante.latitude, restaurante.longitude) if restaurante.latitude else None
     
-    sugestoes = autocomplete_address(query, proximity, country=restaurante.pais or "BR")
+    pais = _detectar_pais_restaurante(restaurante, db)
+    sugestoes = autocomplete_address(query, proximity, country=pais)
 
     return {"sugestoes": sugestoes}
 

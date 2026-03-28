@@ -189,9 +189,27 @@ def autocomplete_endereco_restaurante(
             else:
                 print("[ERRO] Não foi possível geocodificar o endereço do restaurante")
 
+        # Determinar país do restaurante (auto-detect se necessário)
+        pais = getattr(restaurante, 'pais', None) or "BR"
+        if pais == "BR" and rest_lat and rest_lon:
+            # Verificar se coordenadas são realmente do Brasil
+            if not (-35 <= rest_lat <= 6 and -75 <= rest_lon <= -34):
+                try:
+                    from utils.calculos import detectar_cidade_endereco
+                    info = detectar_cidade_endereco(restaurante.endereco_completo or f"{rest_lat},{rest_lon}")
+                    if info and info.get("pais_codigo"):
+                        pais = info["pais_codigo"]
+                        try:
+                            restaurante.pais = pais
+                            session.commit()
+                        except Exception:
+                            pass
+                except Exception:
+                    pais = None  # Não filtrar por país
+
         # Estratégia 1: Busca com proximity (se temos coordenadas)
         if rest_lat and rest_lon:
-            sugestoes = _buscar_com_proximity(query, rest_lat, rest_lon, raio_km, limite)
+            sugestoes = _buscar_com_proximity(query, rest_lat, rest_lon, raio_km, limite, country=pais)
             if sugestoes:
                 return sugestoes
 
@@ -212,13 +230,13 @@ def autocomplete_endereco_restaurante(
                         break
 
         if cidade:
-            sugestoes = _buscar_com_cidade(query, cidade, estado, rest_lat, rest_lon, raio_km, limite)
+            sugestoes = _buscar_com_cidade(query, cidade, estado, rest_lat, rest_lon, raio_km, limite, country=pais)
             if sugestoes:
                 return sugestoes
 
         # Estratégia 3: Busca simples (fallback)
         print("[INFO] Usando busca simples sem filtros")
-        return autocomplete_address(query, (rest_lat, rest_lon) if rest_lat and rest_lon else None)
+        return autocomplete_address(query, (rest_lat, rest_lon) if rest_lat and rest_lon else None, country=pais)
 
     except Exception as e:
         print(f"[ERRO] Falha no autocomplete: {e}")
@@ -234,7 +252,8 @@ def _buscar_com_proximity(
     rest_lat: float,
     rest_lon: float,
     raio_km: float,
-    limite: int
+    limite: int,
+    country: Optional[str] = None,
 ) -> List[Dict]:
     """Busca endereços usando proximity do Mapbox"""
     try:
@@ -242,11 +261,12 @@ def _buscar_com_proximity(
         params = {
             "access_token": MAPBOX_TOKEN,
             "limit": 10,
-            "country": "BR",
             "language": "pt",
             "types": "address,poi,place",
             "proximity": f"{rest_lon},{rest_lat}"  # lon,lat
         }
+        if country:
+            params["country"] = country
 
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()
@@ -288,7 +308,8 @@ def _buscar_com_cidade(
     rest_lat: Optional[float],
     rest_lon: Optional[float],
     raio_km: float,
-    limite: int
+    limite: int,
+    country: Optional[str] = None,
 ) -> List[Dict]:
     """Busca endereços filtrando por cidade"""
     try:
@@ -301,10 +322,11 @@ def _buscar_com_cidade(
         params = {
             "access_token": MAPBOX_TOKEN,
             "limit": 10,
-            "country": "BR",
             "language": "pt",
             "types": "address,poi,place"
         }
+        if country:
+            params["country"] = country
 
         # Adicionar proximity se disponível
         if rest_lat and rest_lon:

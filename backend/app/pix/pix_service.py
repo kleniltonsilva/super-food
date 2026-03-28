@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from .. import models
 from .woovi_client import woovi_client
@@ -265,6 +266,7 @@ async def criar_cobranca_pedido(pedido_id: int, db: Session) -> dict:
             "correlation_id": cobranca_existente.correlation_id,
             "qr_code_image": cobranca_existente.qr_code_imagem,
             "br_code": cobranca_existente.br_code,
+            "payment_link_url": cobranca_existente.payment_link_url or "",
             "valor_centavos": cobranca_existente.valor_centavos,
             "expira_em": cobranca_existente.expira_em.isoformat() if cobranca_existente.expira_em else None,
         }
@@ -297,6 +299,7 @@ async def criar_cobranca_pedido(pedido_id: int, db: Session) -> dict:
     woovi_charge_id = charge.get("correlationID", correlation_id)
     qr_code_imagem = charge.get("qrCodeImage", "")
     br_code = charge.get("brCode", "")
+    payment_link_url = charge.get("paymentLinkUrl", "")
     transaction_id = charge.get("transactionID", "")
 
     # Expiracao: 30 minutos a partir de agora
@@ -313,6 +316,7 @@ async def criar_cobranca_pedido(pedido_id: int, db: Session) -> dict:
         status="ACTIVE",
         qr_code_imagem=qr_code_imagem,
         br_code=br_code,
+        payment_link_url=payment_link_url,
         expira_em=expira_em,
         criado_em=datetime.utcnow(),
     )
@@ -330,6 +334,7 @@ async def criar_cobranca_pedido(pedido_id: int, db: Session) -> dict:
         "correlation_id": correlation_id,
         "qr_code_image": qr_code_imagem,
         "br_code": br_code,
+        "payment_link_url": payment_link_url,
         "valor_centavos": valor_centavos,
         "expira_em": expira_em.isoformat(),
     }
@@ -345,8 +350,10 @@ async def processar_pagamento_confirmado(
 
     - Encontra PixCobranca pelo charge_id ou correlation_id
     - Atualiza status para COMPLETED
-    - Atualiza pedido para 'confirmado' (se ainda pendente)
+    - Atualiza pedido: pendente → em_preparo (pix pago = vai pra cozinha)
+    - Se KDS ativo: cria PedidoCozinha
     - Notifica restaurante via WebSocket
+    - Se pedido veio do WhatsApp bot: envia mensagem de confirmação via Evolution
     """
     # Buscar cobranca por woovi_charge_id ou correlation_id
     cobranca = db.query(models.PixCobranca).filter(
@@ -366,15 +373,46 @@ async def processar_pagamento_confirmado(
     cobranca.status = "COMPLETED"
     cobranca.pago_em = datetime.utcnow()
 
-    # Atualizar pedido
+    # Atualizar pedido — pix confirmado = pode ir pra cozinha (em_preparo)
     pedido = db.query(models.Pedido).filter(
         models.Pedido.id == cobranca.pedido_id,
     ).first()
 
     if pedido and pedido.status == "pendente":
-        pedido.status = "confirmado"
+        # Verificar se KDS ativo para enviar direto pra cozinha
+        config_kds = None
+        try:
+            config_kds = db.query(models.ConfigCozinha).filter(
+                models.ConfigCozinha.restaurante_id == pedido.restaurante_id,
+                models.ConfigCozinha.kds_ativo == True,
+            ).first()
+        except Exception:
+            pass
+
+        if config_kds:
+            pedido.status = "em_preparo"
+            # Criar PedidoCozinha
+            try:
+                pc = models.PedidoCozinha(
+                    restaurante_id=pedido.restaurante_id,
+                    pedido_id=pedido.id,
+                    status="NOVO",
+                    criado_em=datetime.utcnow(),
+                )
+                db.add(pc)
+            except Exception as e:
+                logger.warning(f"Erro ao criar PedidoCozinha apos Pix: {e}")
+        else:
+            pedido.status = "confirmado"
+
+        # Atualizar historico_status
+        historico = list(pedido.historico_status or [])
+        historico.append({"status": pedido.status, "timestamp": datetime.utcnow().isoformat()})
+        pedido.historico_status = historico
+        flag_modified(pedido, "historico_status")
+
         logger.info(
-            f"Pedido {pedido.id} (comanda {pedido.comanda}) confirmado via Pix"
+            f"Pedido {pedido.id} (comanda {pedido.comanda}) → {pedido.status} via Pix"
         )
 
     db.commit()
@@ -396,6 +434,56 @@ async def processar_pagamento_confirmado(
             )
         except Exception as e:
             logger.warning(f"Erro ao enviar WebSocket pix_confirmado: {e}")
+
+    # Se pedido veio do WhatsApp bot: notificar cliente via Evolution
+    if pedido and pedido.origem == "whatsapp_bot" and pedido.cliente_telefone:
+        try:
+            bot_config = db.query(models.BotConfig).filter(
+                models.BotConfig.restaurante_id == pedido.restaurante_id,
+                models.BotConfig.ativo == True,
+            ).first()
+
+            if bot_config and bot_config.evolution_instance:
+                from ..bot.evolution_client import enviar_texto
+
+                valor_fmt = f"R${cobranca.valor_centavos/100:.2f}"
+                texto = (
+                    f"Pagamento Pix de {valor_fmt} confirmado! "
+                    f"Seu pedido #{pedido.comanda} já foi para a cozinha. "
+                    f"Obrigado!"
+                )
+
+                await enviar_texto(
+                    numero=pedido.cliente_telefone,
+                    texto=texto,
+                    instance=bot_config.evolution_instance,
+                    api_url=bot_config.evolution_api_url,
+                    api_key=bot_config.evolution_api_key,
+                )
+
+                # Registrar BotMensagem
+                conversa = db.query(models.BotConversa).filter(
+                    models.BotConversa.restaurante_id == pedido.restaurante_id,
+                    models.BotConversa.telefone.like(f"%{pedido.cliente_telefone[-8:]}"),
+                    models.BotConversa.ativa == True,
+                ).first()
+
+                if conversa:
+                    msg = models.BotMensagem(
+                        conversa_id=conversa.id,
+                        direcao="saida",
+                        tipo="texto",
+                        conteudo=texto,
+                        tokens_usados=0,
+                    )
+                    db.add(msg)
+                    db.commit()
+
+                logger.info(
+                    f"Notificacao Pix confirmado enviada via WhatsApp para {pedido.cliente_telefone[:8]}***"
+                )
+        except Exception as e:
+            logger.warning(f"Erro ao notificar cliente WhatsApp sobre Pix confirmado: {e}")
 
     logger.info(
         f"Pagamento Pix confirmado: cobranca {cobranca.id}, "

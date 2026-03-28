@@ -1247,6 +1247,7 @@ class PixCobranca(Base):
     status = Column(String(30), default='ACTIVE')
     qr_code_imagem = Column(Text)
     br_code = Column(Text)
+    payment_link_url = Column(Text)
     expira_em = Column(DateTime)
     pago_em = Column(DateTime)
     criado_em = Column(DateTime, default=datetime.utcnow)

@@ -1,12 +1,15 @@
 """
-Function Calls do Bot WhatsApp — 15 funções que o LLM pode chamar.
+Function Calls do Bot WhatsApp — funções que o LLM pode chamar.
 Cada função acessa o banco diretamente com restaurante_id (multi-tenant).
 PEDIDOS SÃO CRIADOS SEM APROVAÇÃO HUMANA — vão direto para a cozinha.
+Pix Online: quando forma_pagamento='pix' e restaurante tem PixConfig ativo,
+o pedido fica pendente e gera link de pagamento automaticamente.
 """
 import json
 import random
 import string
 import logging
+import inspect
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -366,12 +369,40 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "gerar_cobranca_pix",
+            "description": "Gera nova cobrança Pix Online para um pedido (caso a anterior tenha expirado). Retorna link de pagamento e código Pix copia-e-cola.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pedido_id": {"type": "integer", "description": "ID do pedido"},
+                },
+                "required": ["pedido_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_pagamento_pix",
+            "description": "Consulta se o pagamento Pix de um pedido foi confirmado. Retorna status da cobrança.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pedido_id": {"type": "integer", "description": "ID do pedido"},
+                },
+                "required": ["pedido_id"],
+            },
+        },
+    },
 ]
 
 
 # ==================== EXECUÇÃO DAS FUNÇÕES ====================
 
-def executar_funcao(
+async def executar_funcao(
     nome: str,
     args: dict,
     db: Session,
@@ -384,6 +415,8 @@ def executar_funcao(
     Usa savepoint (begin_nested) para isolar erros de BD —
     se a função falhar, só o savepoint é revertido, preservando
     a transação principal (conversa, msg_recebida, etc.).
+
+    Suporta funções sync e async (criar_pedido, gerar_cobranca_pix, etc.).
     """
     savepoint = None
     try:
@@ -398,7 +431,7 @@ def executar_funcao(
         elif nome == "buscar_categorias":
             result = _buscar_categorias(db, restaurante_id)
         elif nome == "criar_pedido":
-            result = _criar_pedido(db, restaurante_id, bot_config, args, conversa)
+            result = await _criar_pedido(db, restaurante_id, bot_config, args, conversa)
         elif nome == "alterar_pedido":
             result = _alterar_pedido(db, restaurante_id, bot_config, args)
         elif nome == "cancelar_pedido":
@@ -433,6 +466,10 @@ def executar_funcao(
             result = _validar_endereco(db, restaurante_id, args, conversa)
         elif nome == "confirmar_endereco_validado":
             result = _confirmar_endereco_validado(db, restaurante_id, args, conversa)
+        elif nome == "gerar_cobranca_pix":
+            result = await _gerar_cobranca_pix(db, restaurante_id, args)
+        elif nome == "consultar_pagamento_pix":
+            result = _consultar_pagamento_pix(db, restaurante_id, args)
         else:
             result = json.dumps({"erro": f"Função desconhecida: {nome}"})
 
@@ -577,8 +614,9 @@ def _buscar_categorias(db: Session, restaurante_id: int) -> str:
     })
 
 
-def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig, args: dict, conversa: Optional[models.BotConversa]) -> str:
-    """Cria pedido DIRETO — sem aprovação humana. Vai para cozinha automaticamente."""
+async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig, args: dict, conversa: Optional[models.BotConversa]) -> str:
+    """Cria pedido DIRETO — sem aprovação humana. Vai para cozinha automaticamente.
+    Se forma_pagamento='pix' e Pix Online ativo: pedido fica pendente + gera link pagamento."""
     if not bot_config.pode_criar_pedido:
         return json.dumps({"erro": "Bot não tem permissão para criar pedidos"})
 
@@ -681,8 +719,29 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
 
     valor_total_final = valor_total + taxa_entrega
 
-    # Criar pedido — STATUS: pendente → em_preparo se impressão automática
-    status_inicial = "em_preparo" if bot_config.impressao_automatica_bot else "pendente"
+    # Pix Online: verificar se restaurante aderiu E forma_pagamento = pix
+    forma_pagamento = args.get("forma_pagamento", "dinheiro")
+    pix_online = False
+    pix_config = None
+    if forma_pagamento == "pix":
+        try:
+            pix_config = db.query(models.PixConfig).filter(
+                models.PixConfig.restaurante_id == restaurante_id,
+                models.PixConfig.ativo == True,
+            ).first()
+            if pix_config:
+                pix_online = True
+        except Exception:
+            pass
+
+    # Criar pedido — STATUS:
+    # - Se Pix Online: pendente (aguarda pagamento)
+    # - Se impressão automática: em_preparo
+    # - Senão: pendente
+    if pix_online:
+        status_inicial = "pendente"
+    else:
+        status_inicial = "em_preparo" if bot_config.impressao_automatica_bot else "pendente"
 
     pedido = models.Pedido(
         restaurante_id=restaurante_id,
@@ -769,7 +828,7 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
         bairro_entrega = endereco_validado.get("bairro", "")
         distancia_km = endereco_validado.get("distancia_km", 0)
 
-    return json.dumps({
+    resultado = {
         "sucesso": True,
         "pedido_id": pedido.id,
         "comanda": comanda,
@@ -782,7 +841,31 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
         "valor_total": valor_total_final,
         "link_rastreamento": link_rastreamento,
         "mensagem": f"Pedido #{comanda} criado! Valor: R${valor_total_final:.2f}. Status: {status_inicial}",
-    })
+    }
+
+    # Pix Online: gerar cobrança automaticamente
+    if pix_online:
+        try:
+            from ..pix.pix_service import criar_cobranca_pedido
+            pix_data = await criar_cobranca_pedido(pedido.id, db)
+            resultado["pix_online"] = True
+            resultado["pix_payment_link"] = pix_data.get("payment_link_url", "")
+            resultado["pix_br_code"] = pix_data.get("br_code", "")
+            resultado["mensagem"] = (
+                f"Pedido #{comanda} criado! Valor: R${valor_total_final:.2f}. "
+                f"Pagamento Pix pendente — envie o link ao cliente."
+            )
+            logger.info(f"Cobrança Pix gerada para pedido #{comanda} via WhatsApp Bot")
+        except Exception as e:
+            logger.error(f"Erro ao gerar cobrança Pix para pedido #{comanda}: {e}")
+            resultado["pix_online"] = True
+            resultado["pix_erro"] = str(e)
+            resultado["mensagem"] = (
+                f"Pedido #{comanda} criado! Valor: R${valor_total_final:.2f}. "
+                f"Não foi possível gerar o link Pix agora — use gerar_cobranca_pix para tentar novamente."
+            )
+
+    return json.dumps(resultado)
 
 
 def _alterar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig, args: dict) -> str:
@@ -1641,8 +1724,28 @@ def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Op
         if estado:
             query = f"{query}, {estado}"
 
-    # Chamar Mapbox — filtrar pelo país do restaurante
-    pais = restaurante.pais or "BR"
+    # Determinar país do restaurante — auto-detectar se necessário
+    pais = getattr(restaurante, 'pais', None) or "BR"
+    if pais == "BR" and rest_lat and rest_lng:
+        # Verificar se coordenadas são realmente do Brasil (lat -35 a 5, lng -75 a -35)
+        if not (-35 <= rest_lat <= 6 and -75 <= rest_lng <= -34):
+            # Coordenadas fora do Brasil — detectar país real via Mapbox reverse
+            try:
+                from utils.calculos import detectar_cidade_endereco
+                info = detectar_cidade_endereco(f"{rest_lat},{rest_lng}")
+                if info and info.get("pais_codigo"):
+                    pais = info["pais_codigo"]
+                    # Salvar para cache futuro
+                    try:
+                        restaurante.pais = pais
+                        db.commit()
+                        logger.info(f"País auto-detectado para restaurante {restaurante_id}: {pais}")
+                    except Exception:
+                        pass
+            except Exception:
+                # Fallback: não filtrar por país
+                pais = None
+
     sugestoes_raw = autocomplete_address(query, proximity, country=pais)
 
     # Fallback: sem cidade (query livre)
@@ -1933,4 +2036,86 @@ def _atualizar_endereco_cliente(db: Session, restaurante_id: int, args: dict) ->
         "endereco": endereco_completo,
         "bairro": bairro,
         "mensagem": f"{msg} com sucesso!",
+    })
+
+
+# ==================== PIX ONLINE — FUNCTION CALLS ====================
+
+async def _gerar_cobranca_pix(db: Session, restaurante_id: int, args: dict) -> str:
+    """Gera nova cobrança Pix para um pedido (caso a anterior tenha expirado)."""
+    pedido_id = args.get("pedido_id")
+    if not pedido_id:
+        return json.dumps({"erro": "pedido_id é obrigatório"})
+
+    pedido = db.query(models.Pedido).filter(
+        models.Pedido.id == pedido_id,
+        models.Pedido.restaurante_id == restaurante_id,
+    ).first()
+
+    if not pedido:
+        return json.dumps({"erro": "Pedido não encontrado"})
+
+    # Invalidar cobrança anterior se expirada
+    cobranca_antiga = db.query(models.PixCobranca).filter(
+        models.PixCobranca.pedido_id == pedido_id,
+        models.PixCobranca.status == "ACTIVE",
+    ).first()
+    if cobranca_antiga:
+        if cobranca_antiga.expira_em and cobranca_antiga.expira_em < datetime.utcnow():
+            cobranca_antiga.status = "EXPIRED"
+            db.commit()
+        else:
+            # Cobrança ainda ativa — retornar ela
+            return json.dumps({
+                "sucesso": True,
+                "pix_payment_link": cobranca_antiga.payment_link_url or "",
+                "pix_br_code": cobranca_antiga.br_code or "",
+                "mensagem": "Cobrança Pix já existe e ainda está ativa.",
+            })
+
+    try:
+        from ..pix.pix_service import criar_cobranca_pedido
+        pix_data = await criar_cobranca_pedido(pedido_id, db)
+        return json.dumps({
+            "sucesso": True,
+            "pix_payment_link": pix_data.get("payment_link_url", ""),
+            "pix_br_code": pix_data.get("br_code", ""),
+            "mensagem": "Nova cobrança Pix gerada! Envie o link ao cliente.",
+        })
+    except Exception as e:
+        return json.dumps({"erro": f"Erro ao gerar cobrança Pix: {e}"})
+
+
+def _consultar_pagamento_pix(db: Session, restaurante_id: int, args: dict) -> str:
+    """Consulta status do pagamento Pix de um pedido."""
+    pedido_id = args.get("pedido_id")
+    if not pedido_id:
+        return json.dumps({"erro": "pedido_id é obrigatório"})
+
+    pedido = db.query(models.Pedido).filter(
+        models.Pedido.id == pedido_id,
+        models.Pedido.restaurante_id == restaurante_id,
+    ).first()
+
+    if not pedido:
+        return json.dumps({"erro": "Pedido não encontrado"})
+
+    cobranca = db.query(models.PixCobranca).filter(
+        models.PixCobranca.pedido_id == pedido_id,
+        models.PixCobranca.restaurante_id == restaurante_id,
+    ).order_by(models.PixCobranca.criado_em.desc()).first()
+
+    if not cobranca:
+        return json.dumps({
+            "pago": False,
+            "status": "sem_cobranca",
+            "mensagem": "Nenhuma cobrança Pix encontrada para este pedido.",
+        })
+
+    pago = cobranca.status == "COMPLETED"
+    return json.dumps({
+        "pago": pago,
+        "status": cobranca.status,
+        "pago_em": cobranca.pago_em.isoformat() if cobranca.pago_em else None,
+        "mensagem": "Pagamento confirmado!" if pago else f"Status: {cobranca.status}. Pagamento ainda não confirmado.",
     })

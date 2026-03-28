@@ -8,7 +8,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { ArrowLeft, MapPin, CreditCard, User, Plus, Search, QrCode, Copy, Clock, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, MapPin, CreditCard, User, Plus, Search, QrCode, Copy, Clock, CheckCircle2, ExternalLink } from "lucide-react";
 import { useLocation } from "wouter";
 import { autocompleteEndereco, validarEntrega, validarCupom } from "@/lib/apiClient";
 import { useCarrinho, useEnderecos, useFinalizarPedido, useCriarEndereco, usePixStatusPedido, useMeusCupons } from "@/hooks/useQueries";
@@ -61,6 +61,7 @@ export default function Checkout() {
   const [pixData, setPixData] = useState<{
     qr_code: string;
     br_code: string;
+    payment_link: string;
     expira_em: string;
     pedido_id: number;
   } | null>(null);
@@ -435,6 +436,7 @@ export default function Checkout() {
         setPixData({
           qr_code: result.pix_qr_code,
           br_code: result.pix_br_code,
+          payment_link: result.pix_payment_link || "",
           expira_em: result.pix_expira_em,
           pedido_id: result.pedido_id,
         });
@@ -951,6 +953,16 @@ export default function Checkout() {
                   </Button>
                 </div>
               </div>
+            )}
+
+            {pixData.payment_link && (
+              <Button
+                className="w-full"
+                onClick={() => window.open(pixData.payment_link, "_blank")}
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Abrir link de pagamento
+              </Button>
             )}
 
             <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">

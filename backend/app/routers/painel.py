@@ -24,6 +24,27 @@ def get_rest(current_restaurante=Depends(auth.get_current_restaurante)):
     return current_restaurante
 
 
+def _detectar_pais_restaurante(restaurante, db) -> str:
+    """Detecta o país do restaurante. Auto-corrige se pais='BR' mas coordenadas estão fora do Brasil."""
+    pais = getattr(restaurante, 'pais', None) or "BR"
+    if pais == "BR" and restaurante.latitude and restaurante.longitude:
+        lat, lng = restaurante.latitude, restaurante.longitude
+        if not (-35 <= lat <= 6 and -75 <= lng <= -34):
+            try:
+                from utils.calculos import detectar_cidade_endereco
+                info = detectar_cidade_endereco(restaurante.endereco_completo or f"{lat},{lng}")
+                if info and info.get("pais_codigo"):
+                    pais = info["pais_codigo"]
+                    try:
+                        restaurante.pais = pais
+                        db.commit()
+                    except Exception:
+                        pass
+            except Exception:
+                pais = None
+    return pais
+
+
 def verificar_billing_ativo(rest: models.Restaurante = Depends(get_rest)):
     """Bloqueia operações quando billing suspenso/cancelado. Retorna 403."""
     if rest.billing_status in ("suspended_billing", "canceled_billing"):
@@ -3467,7 +3488,8 @@ def painel_autocomplete_endereco(
     elif rest.latitude and rest.longitude:
         proximity = (rest.latitude, rest.longitude)
 
-    sugestoes = autocomplete_address(query, proximity, country=rest.pais or "BR")
+    pais = _detectar_pais_restaurante(rest, db)
+    sugestoes = autocomplete_address(query, proximity, country=pais)
     return {"sugestoes": sugestoes}
 
 

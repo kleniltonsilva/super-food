@@ -23,12 +23,14 @@ except ImportError:
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
 
-def geocode_address(endereco: str):
+def geocode_address(endereco: str, country: str = None):
     MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN")
     if not MAPBOX_TOKEN:
         raise HTTPException(status_code=500, detail="MAPBOX_TOKEN não configurado")
     url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{requests.utils.quote(endereco)}.json"
-    params = {"access_token": MAPBOX_TOKEN, "limit": 1, "country": "BR"}
+    params = {"access_token": MAPBOX_TOKEN, "limit": 1}
+    if country:
+        params["country"] = country
     response = requests.get(url, params=params)
     if response.status_code != 200 or not response.json()["features"]:
         return None, None
@@ -42,7 +44,8 @@ def criar_pedido(
     current_restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
     db: Session = Depends(database.get_db)
 ):
-    lat, lon = geocode_address(pedido.endereco_entrega)
+    pais_rest = getattr(current_restaurante, 'pais', None) or None
+    lat, lon = geocode_address(pedido.endereco_entrega, country=pais_rest)
     if lat is None:
         raise HTTPException(status_code=400, detail="Endereço cliente inválido")
 

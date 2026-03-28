@@ -488,6 +488,26 @@ async def criar_restaurante(
     restaurante.gerar_codigo_acesso()
     restaurante.set_senha(senha_padrao)
 
+    # Geocodificar endereço + detectar cidade/estado/país
+    if dados.endereco_completo and dados.endereco_completo.strip():
+        try:
+            from utils.mapbox_api import geocode_address
+            from utils.calculos import detectar_cidade_endereco
+            coords = geocode_address(dados.endereco_completo.strip())
+            if coords:
+                restaurante.latitude = coords[0]
+                restaurante.longitude = coords[1]
+            info = detectar_cidade_endereco(dados.endereco_completo.strip())
+            if info:
+                if info.get("cidade") and not restaurante.cidade:
+                    restaurante.cidade = info["cidade"]
+                if info.get("estado") and not restaurante.estado:
+                    restaurante.estado = info["estado"]
+                if info.get("pais_codigo"):
+                    restaurante.pais = info["pais_codigo"]
+        except Exception:
+            pass  # Salva restaurante mesmo sem geocoding
+
     db.add(restaurante)
     db.flush()
 

@@ -350,6 +350,27 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
             pagamentos.append("Vale Refeição")
     pagamento_texto = ", ".join(pagamentos) if pagamentos else "Dinheiro, Cartão, Pix"
 
+    # Pix Online (pagamento por link/QR Code) — detectar se restaurante aderiu
+    pix_online_texto = ""
+    try:
+        pix_config = db.query(models.PixConfig).filter(
+            models.PixConfig.restaurante_id == restaurante_id,
+            models.PixConfig.ativo == True,
+        ).first()
+        if pix_config:
+            pix_online_texto = (
+                "\n\nPIX ONLINE ATIVO: Quando forma_pagamento='pix', o sistema gera automaticamente "
+                "um link de pagamento Pix. Após criar o pedido, você receberá um link — envie ao cliente "
+                "para ele pagar. O pedido fica 'pendente' até o pagamento ser confirmado automaticamente. "
+                "NÃO diga que o pedido foi para a cozinha até o pagamento ser confirmado. "
+                "Use gerar_cobranca_pix se precisar gerar novo link (ex: expirou). "
+                "Use consultar_pagamento_pix para verificar se o cliente já pagou."
+            )
+            if "Pix" not in pagamento_texto:
+                pagamento_texto += ", Pix Online"
+    except Exception:
+        pass  # PixConfig table may not exist yet
+
     # Tempo entrega
     tempo_min = site_config.tempo_entrega_estimado if site_config else 50
     pedido_minimo = site_config.pedido_minimo if site_config else 0
@@ -393,7 +414,8 @@ CARDÁPIO DISPONÍVEL:
 {cardapio_texto}
 {promos_texto}
 {combos_texto}
-{bairros_texto}"""
+{bairros_texto}
+{pix_online_texto}"""
 
 
 def build_client_context(
