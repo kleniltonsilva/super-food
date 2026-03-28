@@ -385,6 +385,7 @@ Para a arvore completa com descricoes detalhadas, veja `ESTRUTURA.md`.
 - **Billing/Assinatura**: dashboard MRR, config trial/suspensao, audit log, acoes por restaurante
 - **Integracoes**: credenciais plataforma (iFood, Open Delivery) por restaurante
 - **Dominios personalizados**: SSL automatico via Fly.io Certificates API
+- **Bot IA (Tokens)**: dashboard uso tokens por periodo (dia/semana/mes), custo USD/BRL, chart diario, tabela por restaurante
 
 ### Painel Restaurante (20+ Paginas)
 - Dashboard com metricas + entregas ativas + alertas de atraso
@@ -723,8 +724,8 @@ Todas as configuracoes do painel restaurante possuem tooltips (icone ℹ️) com
 | `/garcom/auth` | auth_garcom.py | 2 | Login, me (garcom) |
 | `/painel/garcom` | painel.py | 6 | CRUD garcons, config, monitor mesas |
 | `/painel/bridge` | bridge.py | 10 | Parse cupom (Groq IA), orders, patterns, status |
-| `/painel/bot` | bot_whatsapp.py | 11 | Config, dashboard, conversas, mensagens, handoff, repescagem |
-| `/api/admin/bot` | bot_whatsapp.py | 4 | CRUD instancias bot por restaurante |
+| `/painel/bot` | bot_whatsapp.py | 11 | Config, dashboard, conversas (busca nome/tel), mensagens, handoff, repescagem |
+| `/api/admin/bot` | bot_whatsapp.py | 5 | CRUD instancias bot + dashboard token-usage |
 | `/webhooks/evolution` | bot_whatsapp.py | 1 | Webhook Evolution API (WhatsApp) |
 | `/ws/garcom/{id}` | main.py | 1 | WebSocket garcom |
 | `/health` | main.py | 3 | Health check (live, ready, full) |
@@ -891,6 +892,15 @@ services:
 ---
 
 ## Changelog
+
+### v4.0.5 (28/03/2026) — Token Dashboard + Busca Conversas + Fix Rastreamento
+
+- **Dashboard tokens super admin** — Nova pagina `/bot-tokens` (BotTokenDashboard.tsx): uso por periodo (dia/semana/mes), custo USD/BRL, chart diario recharts, tabela por restaurante
+- **Endpoint GET /api/admin/bot/token-usage** — Totais tokens in/out, custo (Grok-3-fast pricing), audio STT, uso por restaurante, chart diario
+- **Card tokens removido do painel restaurante** — Movido exclusivamente para super admin
+- **Busca conversas bot** — Input busca com debounce 500ms no painel (nome ILIKE + telefone LIKE se ≥4 digitos)
+- **Fix link rastreamento** — URLs do bot corrigidas de `/pedido/{id}/tracking` para `/order/{id}` + usa BASE_URL
+- **Sidebar super admin** — Novo item "Bot IA (Tokens)" com icone Bot
 
 ### v4.0.2 (26/03/2026) — WhatsApp Humanoide + Auditoria Completa
 

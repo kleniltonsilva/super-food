@@ -13,6 +13,7 @@ import BillingDashboard from "@/superadmin/pages/BillingDashboard";
 import ConfigBilling from "@/superadmin/pages/ConfigBilling";
 import GerenciarDemos from "@/superadmin/pages/GerenciarDemos";
 import EditarDemo from "@/superadmin/pages/EditarDemo";
+import BotTokenDashboard from "@/superadmin/pages/BotTokenDashboard";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -59,6 +60,10 @@ function SuperAdminRouter() {
 
       <Route path="/billing">
         <SuperAdminPrivateRoute><BillingDashboard /></SuperAdminPrivateRoute>
+      </Route>
+
+      <Route path="/bot-tokens">
+        <SuperAdminPrivateRoute><BotTokenDashboard /></SuperAdminPrivateRoute>
       </Route>
 
       {/* Dashboard */}

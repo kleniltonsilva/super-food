@@ -228,18 +228,32 @@ def desativar_bot(
 @router.get("/painel/bot/conversas")
 def listar_conversas(
     status: Optional[str] = None,
+    busca: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
     restaurante: models.Restaurante = Depends(get_current_restaurante),
     _feature: None = Depends(verificar_feature("bot_whatsapp")),
     db: Session = Depends(database.get_db),
 ):
-    """Lista conversas do bot com paginação."""
+    """Lista conversas do bot com paginação e busca por nome/telefone."""
     query = db.query(models.BotConversa).filter(
         models.BotConversa.restaurante_id == restaurante.id
     )
     if status:
         query = query.filter(models.BotConversa.status == status)
+    if busca and busca.strip():
+        termo = busca.strip()
+        # Se contém dígitos (≥4), busca por telefone OU nome; senão só nome
+        has_digits = sum(1 for ch in termo if ch.isdigit()) >= 4
+        if has_digits:
+            query = query.filter(
+                sa.or_(
+                    models.BotConversa.telefone.contains(termo),
+                    models.BotConversa.nome_cliente.ilike(f"%{termo}%"),
+                )
+            )
+        else:
+            query = query.filter(models.BotConversa.nome_cliente.ilike(f"%{termo}%"))
 
     total = query.count()
     conversas = query.order_by(models.BotConversa.atualizado_em.desc()).offset(offset).limit(limit).all()
@@ -1207,6 +1221,159 @@ async def atualizar_instancia_bot(
     db.commit()
 
     return {"sucesso": True, "mensagem": "Instância atualizada"}
+
+
+@router.get("/api/admin/bot/token-usage")
+def token_usage_dashboard(
+    periodo: str = "daily",
+    restaurante_id: Optional[int] = None,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Dashboard de uso de tokens do bot — Super Admin.
+    periodo: daily (hoje), weekly (7 dias), monthly (30 dias)
+    """
+    dias = {"daily": 1, "weekly": 7, "monthly": 30}.get(periodo, 1)
+    desde = datetime.utcnow() - timedelta(days=dias)
+
+    # Base query: mensagens enviadas pelo bot (com tokens)
+    base_q = (
+        db.query(models.BotMensagem)
+        .join(models.BotConversa, models.BotMensagem.conversa_id == models.BotConversa.id)
+        .filter(
+            models.BotMensagem.direcao == "enviada",
+            models.BotMensagem.criado_em >= desde,
+        )
+    )
+    if restaurante_id:
+        base_q = base_q.filter(models.BotConversa.restaurante_id == restaurante_id)
+
+    # Totais agregados
+    totais = db.query(
+        func.coalesce(func.sum(models.BotMensagem.tokens_input), 0).label("tokens_input"),
+        func.coalesce(func.sum(models.BotMensagem.tokens_output), 0).label("tokens_output"),
+        func.count(models.BotMensagem.id).label("total_mensagens"),
+    ).select_from(models.BotMensagem).join(
+        models.BotConversa, models.BotMensagem.conversa_id == models.BotConversa.id
+    ).filter(
+        models.BotMensagem.direcao == "enviada",
+        models.BotMensagem.criado_em >= desde,
+    )
+    if restaurante_id:
+        totais = totais.filter(models.BotConversa.restaurante_id == restaurante_id)
+    totais = totais.first()
+
+    tokens_in = int(totais.tokens_input or 0)
+    tokens_out = int(totais.tokens_output or 0)
+
+    # Pricing xAI Grok-3-fast: $5/1M input, $25/1M output
+    custo_usd = (tokens_in * 5 / 1_000_000) + (tokens_out * 25 / 1_000_000)
+    custo_brl = custo_usd * 5.7  # taxa aproximada
+
+    # Restaurantes ativos no período
+    rest_ativos_q = db.query(
+        func.count(sa.distinct(models.BotConversa.restaurante_id))
+    ).join(
+        models.BotMensagem, models.BotMensagem.conversa_id == models.BotConversa.id
+    ).filter(
+        models.BotMensagem.direcao == "enviada",
+        models.BotMensagem.criado_em >= desde,
+    )
+    if restaurante_id:
+        rest_ativos_q = rest_ativos_q.filter(models.BotConversa.restaurante_id == restaurante_id)
+    restaurantes_ativos = rest_ativos_q.scalar() or 0
+
+    # Áudio STT (mensagens recebidas tipo=audio)
+    audio_q = db.query(
+        func.count(models.BotMensagem.id).label("total"),
+    ).select_from(models.BotMensagem).join(
+        models.BotConversa, models.BotMensagem.conversa_id == models.BotConversa.id
+    ).filter(
+        models.BotMensagem.tipo == "audio",
+        models.BotMensagem.direcao == "recebida",
+        models.BotMensagem.criado_em >= desde,
+    )
+    if restaurante_id:
+        audio_q = audio_q.filter(models.BotConversa.restaurante_id == restaurante_id)
+    audio_total = audio_q.scalar() or 0
+
+    # Por restaurante
+    por_rest_q = db.query(
+        models.BotConversa.restaurante_id,
+        func.coalesce(func.sum(models.BotMensagem.tokens_input), 0).label("tokens_in"),
+        func.coalesce(func.sum(models.BotMensagem.tokens_output), 0).label("tokens_out"),
+        func.count(models.BotMensagem.id).label("mensagens"),
+    ).join(
+        models.BotConversa, models.BotMensagem.conversa_id == models.BotConversa.id
+    ).filter(
+        models.BotMensagem.direcao == "enviada",
+        models.BotMensagem.criado_em >= desde,
+    )
+    if restaurante_id:
+        por_rest_q = por_rest_q.filter(models.BotConversa.restaurante_id == restaurante_id)
+    por_rest_q = por_rest_q.group_by(models.BotConversa.restaurante_id).all()
+
+    por_restaurante = []
+    for row in por_rest_q:
+        rest = db.query(models.Restaurante).filter(models.Restaurante.id == row.restaurante_id).first()
+        ti = int(row.tokens_in or 0)
+        to_ = int(row.tokens_out or 0)
+        custo_r = (ti * 5 / 1_000_000) + (to_ * 25 / 1_000_000)
+        por_restaurante.append({
+            "restaurante_id": row.restaurante_id,
+            "nome": rest.nome_fantasia if rest else "?",
+            "plano": rest.plano if rest else "?",
+            "tokens_input": ti,
+            "tokens_output": to_,
+            "mensagens": row.mensagens,
+            "custo_usd": round(custo_r, 4),
+            "custo_brl": round(custo_r * 5.7, 2),
+        })
+    por_restaurante.sort(key=lambda x: x["custo_usd"], reverse=True)
+
+    # Chart diário
+    chart_q = db.query(
+        cast(models.BotMensagem.criado_em, Date).label("dia"),
+        func.coalesce(func.sum(models.BotMensagem.tokens_input), 0).label("tokens_input"),
+        func.coalesce(func.sum(models.BotMensagem.tokens_output), 0).label("tokens_output"),
+        func.count(models.BotMensagem.id).label("mensagens"),
+    ).join(
+        models.BotConversa, models.BotMensagem.conversa_id == models.BotConversa.id
+    ).filter(
+        models.BotMensagem.direcao == "enviada",
+        models.BotMensagem.criado_em >= desde,
+    )
+    if restaurante_id:
+        chart_q = chart_q.filter(models.BotConversa.restaurante_id == restaurante_id)
+    chart_q = chart_q.group_by(cast(models.BotMensagem.criado_em, Date)).order_by("dia").all()
+
+    chart_diario = []
+    for row in chart_q:
+        ti = int(row.tokens_input or 0)
+        to_ = int(row.tokens_output or 0)
+        chart_diario.append({
+            "dia": str(row.dia),
+            "tokens_input": ti,
+            "tokens_output": to_,
+            "mensagens": row.mensagens,
+            "custo_usd": round((ti * 5 / 1_000_000) + (to_ * 25 / 1_000_000), 4),
+        })
+
+    return {
+        "totais": {
+            "tokens_input": tokens_in,
+            "tokens_output": tokens_out,
+            "total_mensagens": totais.total_mensagens,
+            "custo_usd": round(custo_usd, 4),
+            "custo_brl": round(custo_brl, 2),
+            "restaurantes_ativos": restaurantes_ativos,
+        },
+        "audio_stt": {
+            "total_transcricoes": audio_total,
+        },
+        "por_restaurante": por_restaurante,
+        "chart_diario": chart_diario,
+    }
 
 
 @router.delete("/api/admin/bot/instancia/{config_id}")

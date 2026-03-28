@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from .. import models
+from ..email_service import BASE_URL
 
 logger = logging.getLogger("superfood.bot.functions")
 
@@ -759,7 +760,7 @@ def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig
 
     # Montar link de rastreamento
     codigo_acesso = restaurante.codigo_acesso if restaurante else ""
-    link_rastreamento = f"https://superfood-api.fly.dev/cliente/{codigo_acesso}/pedido/{pedido.id}/tracking" if codigo_acesso else None
+    link_rastreamento = f"{BASE_URL}/cliente/{codigo_acesso}/order/{pedido.id}" if codigo_acesso else None
 
     # Info de entrega para confirmação (bairro/distância)
     bairro_entrega = ""
@@ -1402,7 +1403,7 @@ def _rastrear_pedido(db: Session, restaurante_id: int, args: dict) -> str:
     # Link de rastreamento
     restaurante = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
     if restaurante and restaurante.codigo_acesso:
-        resultado["link_rastreamento"] = f"https://superfood-api.fly.dev/cliente/{restaurante.codigo_acesso}/pedido/{pedido.id}/tracking"
+        resultado["link_rastreamento"] = f"{BASE_URL}/cliente/{restaurante.codigo_acesso}/order/{pedido.id}"
 
     return json.dumps(resultado)
 

@@ -60,6 +60,7 @@ import {
   Mail,
   CheckSquare,
   Square,
+  Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -148,6 +149,8 @@ export default function BotWhatsApp() {
   const [msgTexto, setMsgTexto] = useState("");
   const [senhaHandoff, setSenhaHandoff] = useState("");
   const [showHandoffDialog, setShowHandoffDialog] = useState<number | null>(null);
+  const [buscaConversas, setBuscaConversas] = useState("");
+  const [buscaDebounced, setBuscaDebounced] = useState("");
 
   // Auto-selecionar conversa vinda da notificação (?conversa=ID)
   useEffect(() => {
@@ -164,10 +167,19 @@ export default function BotWhatsApp() {
     }
   }, []);
 
+  // Debounce busca conversas (500ms)
+  useEffect(() => {
+    const timer = setTimeout(() => setBuscaDebounced(buscaConversas), 500);
+    return () => clearTimeout(timer);
+  }, [buscaConversas]);
+
   const { hasFeature, requiredPlano } = useFeatureFlag("bot_whatsapp");
   const { data: botConfig, isLoading: loadingConfig, refetch: refetchConfig } = useBotConfig();
   const { data: dashboard, isLoading: loadingDash } = useBotDashboard();
-  const { data: conversasData, isLoading: loadingConversas } = useBotConversas({ limit: 50 });
+  const { data: conversasData, isLoading: loadingConversas } = useBotConversas({
+    limit: 50,
+    busca: buscaDebounced || undefined,
+  });
   const conversasList = conversasData?.conversas || [];
   const { data: mensagensData } = useBotMensagens(conversaSelecionada || 0);
 
@@ -420,31 +432,7 @@ export default function BotWhatsApp() {
               />
             </div>
 
-            {/* Uso tokens */}
-            <Card className="p-4 bg-[var(--bg-card)] border-[var(--border-subtle)]">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-[var(--text-primary)]">
-                  Uso de tokens hoje
-                </span>
-                <span className="text-xs text-[var(--text-muted)]">
-                  {cfg.tokens_usados_hoje?.toLocaleString() ?? 0} /{" "}
-                  {cfg.max_tokens_dia?.toLocaleString() ?? "∞"}
-                </span>
-              </div>
-              <div className="h-2 bg-[var(--bg-surface)] rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-green-500 rounded-full transition-all"
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      cfg.max_tokens_dia
-                        ? ((cfg.tokens_usados_hoje || 0) / cfg.max_tokens_dia) * 100
-                        : 0
-                    )}%`,
-                  }}
-                />
-              </div>
-            </Card>
+            {/* Tokens movidos para Super Admin */}
 
             {/* Problemas + Avaliações */}
             <div className="grid md:grid-cols-2 gap-4">
@@ -950,6 +938,15 @@ export default function BotWhatsApp() {
               <h3 className="text-sm font-medium text-[var(--text-secondary)] mb-2">
                 Conversas recentes
               </h3>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-[var(--text-muted)]" />
+                <Input
+                  placeholder="Buscar por nome ou telefone..."
+                  value={buscaConversas}
+                  onChange={(e) => setBuscaConversas(e.target.value)}
+                  className="pl-9 h-9 bg-[var(--bg-surface)] border-[var(--border-subtle)] text-sm"
+                />
+              </div>
               {loadingConversas && (
                 <p className="text-sm text-[var(--text-muted)]">Carregando...</p>
               )}

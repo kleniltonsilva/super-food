@@ -328,3 +328,9 @@ export async function deletarBotInstancia(configId: number) {
   const { data } = await superAdminApi.delete(`/api/admin/bot/instancia/${configId}`);
   return data;
 }
+
+// ─── Bot Token Usage (Super Admin) ──────────────────────
+export async function getBotTokenUsage(params?: { periodo?: string; restaurante_id?: number }) {
+  const { data } = await superAdminApi.get("/api/admin/bot/token-usage", { params });
+  return data;
+}

@@ -1234,7 +1234,7 @@ export function useBotDashboard() {
   });
 }
 
-export function useBotConversas(params?: { status?: string; limit?: number }) {
+export function useBotConversas(params?: { status?: string; busca?: string; limit?: number }) {
   return useQuery({
     queryKey: [...ADMIN_QUERY_KEYS.botConversas, params],
     queryFn: () => api.getBotConversas(params),

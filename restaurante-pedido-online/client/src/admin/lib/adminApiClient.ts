@@ -823,7 +823,7 @@ export async function getBotDashboard() {
   return data;
 }
 
-export async function getBotConversas(params?: { status?: string; limit?: number; offset?: number }) {
+export async function getBotConversas(params?: { status?: string; busca?: string; limit?: number; offset?: number }) {
   const { data } = await adminApi.get("/painel/bot/conversas", { params });
   return data;
 }

@@ -11,6 +11,7 @@ import {
   Plug,
   Receipt,
   Sparkles,
+  Bot,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,7 @@ const menuItems = [
   { path: "/billing", label: "Billing", icon: Receipt },
   { path: "/integracoes", label: "Integrações", icon: Plug },
   { path: "/demos", label: "Demos", icon: Sparkles },
+  { path: "/bot-tokens", label: "Bot IA (Tokens)", icon: Bot },
   { path: "/erros", label: "Erros (Sentry)", icon: Bug },
 ];
 

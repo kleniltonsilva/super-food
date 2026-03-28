@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.4 | Última atualização: 27/03/2026
+> Versão 4.0.5 | Última atualização: 28/03/2026
 
 ---
 
@@ -633,6 +633,14 @@ Admin escolhe:
 - Monitoramento de erros em tempo real
 - Integração com Sentry.io
 - Dashboard de erros por período
+
+### 8.8 Bot IA (Tokens)
+- Dashboard de uso de tokens do bot WhatsApp por período (hoje / 7 dias / 30 dias)
+- Cards resumo: tokens input/output, custo USD/BRL, áudios STT (Groq), restaurantes ativos
+- Gráfico de linha: uso diário input vs output (recharts)
+- Tabela detalhada por restaurante: nome, plano, tokens, mensagens, custo
+- Pricing xAI Grok-3-fast: $5/1M input, $25/1M output
+- Rota: `/bot-tokens` | Arquivo: `BotTokenDashboard.tsx`
 
 ---
 
@@ -1544,7 +1552,7 @@ Tags são livres (linguagem natural em colchetes) — Fish Audio S2-Pro interpre
 | PUT | `/painel/bot/config` | Atualizar configuração (permissões, comportamento, voz) |
 | POST | `/painel/bot/ativar` | Ativar bot (requer config prévia pelo Super Admin) |
 | POST | `/painel/bot/desativar` | Desativar bot |
-| GET | `/painel/bot/conversas` | Listar conversas com paginação (filtro por status, offset, limit) |
+| GET | `/painel/bot/conversas` | Listar conversas com paginação (filtro por status, busca por nome/telefone, offset, limit) |
 | GET | `/painel/bot/conversas/{id}/mensagens` | Mensagens de uma conversa com paginação (pagina, limite) |
 | POST | `/painel/bot/conversas/{id}/enviar-mensagem` | Enviar mensagem manual do admin ao cliente (requer handoff) |
 | POST | `/painel/bot/conversas/{id}/escalar` | Assumir controle da conversa (requer senha admin) |
@@ -1560,6 +1568,7 @@ Tags são livres (linguagem natural em colchetes) — Fish Audio S2-Pro interpre
 | POST | `/api/admin/bot/criar-instancia/{restaurante_id}` | Criar/atualizar instância bot |
 | PUT | `/api/admin/bot/instancia/{config_id}` | Atualizar instância (Evolution, número, etc.) |
 | DELETE | `/api/admin/bot/instancia/{config_id}` | Deletar instância |
+| GET | `/api/admin/bot/token-usage` | Dashboard uso de tokens (periodo: daily/weekly/monthly, restaurante_id opcional) |
 
 ### 17.11 Workers Periódicos
 
@@ -1579,9 +1588,9 @@ Tags são livres (linguagem natural em colchetes) — Fish Audio S2-Pro interpre
 ### 17.12 Frontend Admin — BotWhatsApp.tsx
 
 Página "Bot WhatsApp" no painel do restaurante com 5 abas:
-- **Dashboard:** conversas hoje/semana, pedidos via bot, faturamento, avaliação média, tokens usados
+- **Dashboard:** conversas hoje/semana, pedidos via bot, faturamento, avaliação média (tokens movidos para Super Admin)
 - **Configurações:** toggle on/off, nome do atendente, permissões, comportamento
-- **Conversas:** lista com paginação, badges de status (ATIVA/ADMIN/QUER HUMANO), detalhe chat view com:
+- **Conversas:** lista com paginação + **busca por nome/telefone** (debounce 500ms), badges de status (ATIVA/ADMIN/QUER HUMANO), detalhe chat view com:
   - **Handoff com senha:** quando cliente pede humano, bot notifica painel com som sirene. Admin pode aceitar (com senha) ou recusar. Se aceitar, bot para de responder. Se recusar, bot sugere ligar para restaurante.
   - **Mensagem manual:** quando em handoff, admin pode enviar mensagens diretamente ao cliente (com tag [ADMIN])
   - **Devolver ao bot:** admin pode devolver controle para o bot a qualquer momento
@@ -1599,13 +1608,20 @@ Página "Bot WhatsApp" no painel do restaurante com 5 abas:
    - **Recusar** → status = `ativa` → bot envia ao cliente: "O responsável não está disponível. Ligue para {telefone}"
 5. Quando admin termina → clica "Devolver ao Bot" → status = `ativa` → bot volta a responder
 
-### 17.13 Frontend Super Admin — Modal Bot
+### 17.13 Frontend Super Admin — Modal Bot + Dashboard Tokens
 
 Na página "Gerenciar Restaurantes" do Super Admin:
 - Modal para criar/editar instância bot por restaurante
 - Campos: Evolution instance, API URL, API key, número WhatsApp, nome atendente
 - Toggle ativar/desativar
 - Lista de todas as instâncias bot configuradas
+
+**Página "Bot IA (Tokens)"** — rota `/bot-tokens` (`BotTokenDashboard.tsx`):
+- Seletor período: Hoje / 7 dias / 30 dias
+- 5 cards resumo: Total Tokens (in/out), Custo USD, Custo BRL, Áudios STT, Restaurantes ativos
+- LineChart (recharts): uso diário input vs output
+- Tabela: uso por restaurante ordenada por custo (nome, plano, tokens in/out, msgs, USD, BRL)
+- Pricing: xAI Grok-3-fast ($5/1M input, $25/1M output)
 
 ### 17.14 Secrets Fly.io
 

@@ -76,12 +76,12 @@ MEMORY.md (hub — SEMPRE carregado)
 ## ESTADO ATUAL DO PROJETO
 
 - **Nome:** Derekh Food (anteriormente Super Food)
-- **Versão:** 4.0.2
+- **Versão:** 4.0.5
 - **Autor:** Klenilton Silva (@kleniltonsilva)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 27/03/2026
+- **Última sessão:** 28/03/2026
 - **Migrations em produção:** 001-036 (última: 036_bot_whatsapp_v2)
 - **Migrations implementadas (aguardando deploy):** 037 (Repescagem + Verificação Email + Reset Senha)
 - **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes

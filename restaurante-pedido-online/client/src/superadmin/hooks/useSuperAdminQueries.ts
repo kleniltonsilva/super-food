@@ -41,6 +41,7 @@ import {
   criarBotInstancia,
   atualizarBotInstancia,
   deletarBotInstancia,
+  getBotTokenUsage,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -459,5 +460,14 @@ export function useDeletarBotInstancia() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["superadmin", "bot", "instancias"] });
     },
+  });
+}
+
+// ─── Bot Token Usage ──────────────────────────────────
+export function useBotTokenUsage(params?: { periodo?: string; restaurante_id?: number }) {
+  return useQuery({
+    queryKey: ["superadmin", "bot", "token-usage", params] as const,
+    queryFn: () => getBotTokenUsage(params),
+    staleTime: 60_000,
   });
 }
