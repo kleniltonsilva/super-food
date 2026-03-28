@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import AdminLayout from "@/admin/components/AdminLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -148,6 +148,21 @@ export default function BotWhatsApp() {
   const [msgTexto, setMsgTexto] = useState("");
   const [senhaHandoff, setSenhaHandoff] = useState("");
   const [showHandoffDialog, setShowHandoffDialog] = useState<number | null>(null);
+
+  // Auto-selecionar conversa vinda da notificação (?conversa=ID)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const conversaParam = params.get("conversa");
+    if (conversaParam) {
+      const id = Number(conversaParam);
+      if (id > 0) {
+        setTab("conversas");
+        setConversaSelecionada(id);
+      }
+      // Limpar param da URL sem reload
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   const { hasFeature, requiredPlano } = useFeatureFlag("bot_whatsapp");
   const { data: botConfig, isLoading: loadingConfig, refetch: refetchConfig } = useBotConfig();

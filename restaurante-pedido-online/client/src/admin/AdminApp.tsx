@@ -132,11 +132,12 @@ function AdminWebSocket() {
         const nomeCliente = dados.nome_cliente as string || "Cliente";
         const resposta = dados.resposta as string || "";
         const pedidoCriado = dados.pedido_criado as boolean || false;
+        const conversaId = dados.conversa_id as number | undefined;
         addNotification({
           tipo: "bot_mensagem",
           titulo: pedidoCriado ? `Bot: Pedido criado via WhatsApp` : `Bot: ${nomeCliente}`,
           mensagem: resposta.length > 80 ? resposta.slice(0, 80) + "..." : resposta,
-          acao: "/whatsapp-bot",
+          acao: conversaId ? `/whatsapp-bot?conversa=${conversaId}` : "/whatsapp-bot",
         });
         if (pedidoCriado) {
           toast.success(`Pedido criado via WhatsApp — ${nomeCliente}`, {
