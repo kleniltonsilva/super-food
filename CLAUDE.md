@@ -82,17 +82,18 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
 - **Última sessão:** 28/03/2026
-- **Migrations em produção:** 001-036 (última: 036_bot_whatsapp_v2)
+- **Migrations em produção:** 001-036 + 039-040 (última: 040_pix_payment_link)
 - **Migrations implementadas (aguardando deploy):** 037 + 038 (Repescagem + Verificação Email + Reset Senha + campo pais)
 - **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
-- **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 22 function calls, handoff com senha, STT/TTS, repescagem, testado E2E em produção
-- **Geocoding multi-país:** Campo `pais` (ISO 2 letras) no Restaurante, autocomplete filtrado por país, migration 038
+- **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 24 function calls (+ gerar_cobranca_pix, consultar_pagamento_pix), handoff com senha, STT/TTS, repescagem, testado E2E em produção
+- **Geocoding multi-país:** Reverse geocoding direto, normalização acentos, filtro relaxado para não-BR, migration 038+040
+- **Pix Online (Sprint 17):** Backend implementado (migration 040, paymentLinkUrl, bot Pix integrado, webhook notificação), aguardando WOOVI_APP_ID válido
 - **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
 - **Repescagem + Verificação Email + Reset Senha:** Migration 037, 25 arquivos, cupons exclusivos VOLTA-{NOME}-{código}
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** Módulos 1,5 (Pix → Sales), domínio próprio, configurar Resend prod, deploy migrations 037-038
+- **Pendente:** Deploy migrations 037-038, configurar WOOVI_APP_ID real, Módulo 5 (Sales), domínio próprio, Resend prod
 
 ---
 
