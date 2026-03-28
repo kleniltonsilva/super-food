@@ -3488,14 +3488,8 @@ def painel_autocomplete_endereco(
     """Autocomplete de endereço via Mapbox, com proximidade do restaurante."""
     from utils.mapbox_api import autocomplete_address
 
-    config = db.query(models.ConfigRestaurante).filter(
-        models.ConfigRestaurante.restaurante_id == rest.id
-    ).first()
-
     proximity = None
-    if config and config.latitude and config.longitude:
-        proximity = (config.latitude, config.longitude)
-    elif rest.latitude and rest.longitude:
+    if rest.latitude and rest.longitude:
         proximity = (rest.latitude, rest.longitude)
 
     pais = _detectar_pais_restaurante(rest, db)
