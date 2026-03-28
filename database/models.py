@@ -51,6 +51,7 @@ class Restaurante(Base):
     endereco_completo = Column(Text, nullable=False)
     cidade = Column(String(100))  # Cidade do restaurante (para filtros de autocomplete)
     estado = Column(String(2))    # UF do estado
+    pais = Column(String(2), default="BR")  # Código ISO país (BR, PT, US...)
     cep = Column(String(10))      # CEP
     latitude = Column(Float)
     longitude = Column(Float)

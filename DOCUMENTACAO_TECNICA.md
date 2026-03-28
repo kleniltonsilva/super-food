@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.5 | Última atualização: 28/03/2026
+> Versão 4.0.6 | Última atualização: 28/03/2026
 
 ---
 
@@ -21,7 +21,7 @@
   9. Bridge Printer Agent (Windows — intercepta impressões de plataformas externas)
 
 ### Diferenciais
-- Sistema 100% brasileiro, desenvolvido em português
+- Sistema multi-país (BR, PT, etc.) com geocoding automático por país do restaurante
 - Multi-tenant: 1 instância serve todos os restaurantes
 - Layouts temáticos por tipo de restaurante (8 temas)
 - Sem necessidade de app nativo — PWA funciona em qualquer celular
@@ -275,7 +275,7 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
   - **Entrega:** modo prioridade, tolerância atraso, máx pedidos/rota, raio, taxas
   - **Pedidos do Site:** aceitar automaticamente para clientes recorrentes
   - **Controle de Pedidos Online:** ativar/desativar pedidos/entregas, motivo, prazo
-  - **Endereço:** endereço + geocodificação automática
+  - **Endereço:** endereço + geocodificação automática (detecta país, cidade, estado, GPS via Mapbox)
 - **Tab Site/Cardápio:** logo, banner, pedido mínimo, tempos, WhatsApp, pagamentos, SEO
 - **Tab Impressora:** impressão automática on/off, largura 58/80mm, agente de impressão
 - **Obs:** Config pagamento motoboy → movida para página Motoboys (aba Pagamentos)
@@ -1726,10 +1726,24 @@ Pipeline 9 etapas com detecção de contexto emocional:
 
 ### 17.19 Correções Function Calls (27/03)
 
-**`_validar_endereco` — Filtro por cidade:**
-- Após geocoding Mapbox, filtra resultados pela cidade do restaurante
-- Evita mostrar endereços de outros estados (ex: Alagoas quando restaurante é de Curitiba)
+**`_validar_endereco` — Filtro por cidade e país:**
+- Autocomplete Mapbox filtra pelo país do restaurante (`rest.pais`, ex: "BR", "PT")
+- Após geocoding, filtra resultados pela cidade do restaurante
+- Evita mostrar endereços de outros estados/países
 - Se nenhum resultado na cidade: retorna mensagem pedindo endereço completo com bairro e cidade
+
+**Geocoding multi-país (28/03):**
+- Campo `pais` (ISO 2 letras) adicionado ao modelo Restaurante (default "BR")
+- "Salvar e Geocodificar" detecta país automaticamente via Mapbox reverse geocoding
+- Autocomplete (painel, site cliente, Bia) filtra pelo `country=rest.pais`
+- Removido `country: "BR"` hardcoded de `geocode_address()` e `autocomplete_address()`
+
+**Fix mensagens duplicadas bot (28/03):**
+- Causa: 2 Gunicorn workers rodavam `_notificar_mudancas_status()` em paralelo (race condition)
+- Fix: `SELECT FOR UPDATE SKIP LOCKED` na query de conversas (PostgreSQL)
+
+**Fix URL tracking workers (28/03):**
+- `workers.py` usava URL antiga `/pedido/{id}/tracking` → corrigido para `/order/{id}` com `BASE_URL`
 
 **`_criar_pedido` — Bairro e distância no retorno:**
 - Retorno JSON agora inclui `bairro_entrega` e `distancia_km`

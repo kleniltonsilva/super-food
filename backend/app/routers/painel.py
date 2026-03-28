@@ -3467,7 +3467,7 @@ def painel_autocomplete_endereco(
     elif rest.latitude and rest.longitude:
         proximity = (rest.latitude, rest.longitude)
 
-    sugestoes = autocomplete_address(query, proximity)
+    sugestoes = autocomplete_address(query, proximity, country=rest.pais or "BR")
     return {"sugestoes": sugestoes}
 
 

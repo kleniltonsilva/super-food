@@ -1,11 +1,10 @@
-"""Adicionar colunas faltantes em bairros_entrega e promocoes
+"""Adicionar colunas faltantes em bairros_entrega, promocoes e restaurantes
 
 Revision ID: 038_add_missing_columns
 Revises: 037_repescagem_verificacao_senha
 Create Date: 2026-03-28
 
-Corrige: bairros_entrega.atualizado_em, promocoes.descricao, promocoes.atualizado_em
-Causa: ORM model define colunas que nunca foram adicionadas via migration.
+Corrige: bairros_entrega.atualizado_em, promocoes.descricao/etc, restaurantes.pais
 """
 
 from alembic import op
@@ -25,6 +24,11 @@ def upgrade() -> None:
                 ALTER TABLE bairros_entrega ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT now();
             END IF;
         END $$;
+    """)
+
+    # === RESTAURANTES: pais (código ISO 2 letras, default BR) ===
+    op.execute("""
+        ALTER TABLE restaurantes ADD COLUMN IF NOT EXISTS pais VARCHAR(2) DEFAULT 'BR';
     """)
 
     # === PROMOCOES: TODAS colunas do ORM que podem estar faltando ===

@@ -528,8 +528,8 @@ def autocomplete_endereco(
     # Proximity: prioriza resultados próximos ao restaurante
     proximity = (restaurante.latitude, restaurante.longitude) if restaurante.latitude else None
     
-    sugestoes = autocomplete_address(query, proximity)
-    
+    sugestoes = autocomplete_address(query, proximity, country=restaurante.pais or "BR")
+
     return {"sugestoes": sugestoes}
 
 

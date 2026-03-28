@@ -76,22 +76,23 @@ MEMORY.md (hub — SEMPRE carregado)
 ## ESTADO ATUAL DO PROJETO
 
 - **Nome:** Derekh Food (anteriormente Super Food)
-- **Versão:** 4.0.5
+- **Versão:** 4.0.6
 - **Autor:** Klenilton Silva (@kleniltonsilva)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
 - **Última sessão:** 28/03/2026
 - **Migrations em produção:** 001-036 (última: 036_bot_whatsapp_v2)
-- **Migrations implementadas (aguardando deploy):** 037 (Repescagem + Verificação Email + Reset Senha)
+- **Migrations implementadas (aguardando deploy):** 037 + 038 (Repescagem + Verificação Email + Reset Senha + campo pais)
 - **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
 - **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 22 function calls, handoff com senha, STT/TTS, repescagem, testado E2E em produção
+- **Geocoding multi-país:** Campo `pais` (ISO 2 letras) no Restaurante, autocomplete filtrado por país, migration 038
 - **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
 - **Repescagem + Verificação Email + Reset Senha:** Migration 037, 25 arquivos, cupons exclusivos VOLTA-{NOME}-{código}
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** Módulos 1,5 (Pix → Sales), domínio próprio, configurar Resend prod, deploy migration 037
+- **Pendente:** Módulos 1,5 (Pix → Sales), domínio próprio, configurar Resend prod, deploy migrations 037-038
 
 ---
 

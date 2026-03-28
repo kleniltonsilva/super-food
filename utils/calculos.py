@@ -396,6 +396,7 @@ def detectar_cidade_endereco(endereco: str) -> Optional[Dict]:
         cidade = None
         estado = None
         pais = None
+        pais_codigo = None
 
         for feature in data.get("features", []):
             place_type = feature.get("place_type", [])
@@ -404,17 +405,25 @@ def detectar_cidade_endereco(endereco: str) -> Optional[Dict]:
                 cidade = feature.get("text")
             elif "region" in place_type:
                 estado = feature.get("text")
-                # Tenta pegar a sigla do estado
+                # Tenta pegar a sigla do estado/região
                 props = feature.get("properties", {})
                 if props.get("short_code"):
-                    estado = props["short_code"].replace("BR-", "")
+                    # Remove prefixo de país (BR-, PT-, US-, etc.)
+                    code = props["short_code"]
+                    if "-" in code:
+                        estado = code.split("-", 1)[1]
+                    else:
+                        estado = code
             elif "country" in place_type:
                 pais = feature.get("text")
+                props = feature.get("properties", {})
+                pais_codigo = (props.get("short_code") or "").upper()
 
         return {
             'cidade': cidade,
             'estado': estado,
             'pais': pais,
+            'pais_codigo': pais_codigo,
             'coordenadas': coords
         }
 

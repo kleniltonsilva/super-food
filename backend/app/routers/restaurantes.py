@@ -17,7 +17,7 @@ def geocode_address(endereco: str):
     try:
         encoded = requests.utils.quote(endereco)
         url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{encoded}.json"
-        params = {"access_token": MAPBOX_TOKEN, "limit": 1, "country": "BR"}
+        params = {"access_token": MAPBOX_TOKEN, "limit": 1}
         response = requests.get(url, params=params, timeout=15)
         response.raise_for_status()
 

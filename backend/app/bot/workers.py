@@ -15,7 +15,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from .. import models
-from ..database import SessionLocal
+from ..database import SessionLocal, DATABASE_URL
+from ..email_service import BASE_URL
+
+_IS_POSTGRES = "postgresql" in DATABASE_URL
 
 logger = logging.getLogger("superfood.bot.workers")
 
@@ -657,13 +660,17 @@ async def _notificar_mudancas_status(db: Session, ws_manager=None):
 
     for config in bot_configs:
         # Buscar conversas ativas recentes (últimas 4h)
+        # FOR UPDATE SKIP LOCKED evita que 2 Gunicorn workers processem a mesma conversa
         limite = datetime.utcnow() - timedelta(hours=4)
-        conversas = db.query(models.BotConversa).filter(
+        q = db.query(models.BotConversa).filter(
             models.BotConversa.restaurante_id == config.restaurante_id,
             models.BotConversa.status == "ativa",
             models.BotConversa.atualizado_em >= limite,
             models.BotConversa.pedido_ativo_id.isnot(None),
-        ).all()
+        )
+        if _IS_POSTGRES:
+            q = q.with_for_update(skip_locked=True)
+        conversas = q.all()
 
         for conversa in conversas:
             pedido = db.query(models.Pedido).filter(
@@ -715,7 +722,7 @@ async def _notificar_mudancas_status(db: Session, ws_manager=None):
                 ).first()
                 link = ""
                 if restaurante and restaurante.codigo_acesso:
-                    link = f"\nAcompanhe aqui: https://superfood-api.fly.dev/cliente/{restaurante.codigo_acesso}/pedido/{pedido.id}/tracking"
+                    link = f"\nAcompanhe aqui: {BASE_URL}/cliente/{restaurante.codigo_acesso}/order/{pedido.id}"
 
                 mensagem = f"Pedido #{pedido.comanda} saiu{motoboy_nome}! 🛵{link}"
 

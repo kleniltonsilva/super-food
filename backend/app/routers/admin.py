@@ -163,6 +163,8 @@ class RestauranteUpdateRequest(BaseModel):
     valor_plano: Optional[float] = None
     limite_motoboys: Optional[int] = None
     data_vencimento: Optional[datetime] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     billing_status: Optional[str] = None  # manual, trial, active, overdue, suspended, canceled
     plano_tier: Optional[int] = None  # 1=Básico, 2=Essencial, 3=Avançado, 4=Premium
 

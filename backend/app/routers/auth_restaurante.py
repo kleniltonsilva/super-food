@@ -181,6 +181,7 @@ def atualizar_perfil(
         try:
             from utils.mapbox_api import geocode_address
             from utils.calculos import detectar_cidade_endereco
+            # Geocoding sem filtro de país (busca livre para detectar o país correto)
             coords = geocode_address(novo_endereco.strip())
             if coords:
                 lat, lng = coords
@@ -192,6 +193,8 @@ def atualizar_perfil(
                         current_restaurante.cidade = info["cidade"]
                     if info.get("estado"):
                         current_restaurante.estado = info["estado"]
+                    if info.get("pais_codigo"):
+                        current_restaurante.pais = info["pais_codigo"]
         except Exception:
             pass  # Salva endereço mesmo sem geocoding
 

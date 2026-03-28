@@ -30,10 +30,11 @@ if not MAPBOX_TOKEN:
 
 
 # ==================== GEOCODING ====================
-def geocode_address(address: str) -> Optional[Tuple[float, float]]:
+def geocode_address(address: str, country: Optional[str] = None) -> Optional[Tuple[float, float]]:
     """
     Geocodifica endereço usando Mapbox Geocoding API.
     Retorna (lat, lng) ou None se falhar.
+    country: código ISO 2 letras (ex: "BR", "PT"). Se None, busca mundial.
     """
     if not address or not MAPBOX_TOKEN:
         print(f"[ERRO] Endereço vazio ou MAPBOX_TOKEN não configurado: {address}")
@@ -43,9 +44,10 @@ def geocode_address(address: str) -> Optional[Tuple[float, float]]:
     params = {
         "access_token": MAPBOX_TOKEN,
         "limit": 1,
-        "country": "BR",
         "language": "pt",
     }
+    if country:
+        params["country"] = country
 
     try:
         response = requests.get(url, params=params, timeout=10)
@@ -65,13 +67,14 @@ def geocode_address(address: str) -> Optional[Tuple[float, float]]:
 
 
 # ==================== AUTOCOMPLETE DE ENDEREÇOS ====================
-def autocomplete_address(query: str, proximity: Optional[Tuple[float, float]] = None) -> List[Dict]:
+def autocomplete_address(query: str, proximity: Optional[Tuple[float, float]] = None, country: Optional[str] = None) -> List[Dict]:
     """
     Retorna sugestões de endereços conforme o usuário digita
 
     Args:
         query: Texto parcial digitado pelo usuário
         proximity: (lat, lon) para priorizar resultados próximos
+        country: código ISO 2 letras do país (ex: "BR", "PT"). Se None, busca mundial.
 
     Returns:
         Lista de sugestões: [{'place_name': str, 'coordinates': (lat, lon)}, ...]
@@ -88,10 +91,11 @@ def autocomplete_address(query: str, proximity: Optional[Tuple[float, float]] = 
     params = {
         "access_token": MAPBOX_TOKEN,
         "limit": 5,
-        "country": "BR",
         "language": "pt",
         "types": "address,poi"  # Endereços e pontos de interesse
     }
+    if country:
+        params["country"] = country
 
     # Prioriza resultados próximos ao restaurante
     if proximity:

@@ -1641,12 +1641,13 @@ def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Op
         if estado:
             query = f"{query}, {estado}"
 
-    # Chamar Mapbox
-    sugestoes_raw = autocomplete_address(query, proximity)
+    # Chamar Mapbox — filtrar pelo país do restaurante
+    pais = restaurante.pais or "BR"
+    sugestoes_raw = autocomplete_address(query, proximity, country=pais)
 
     # Fallback: sem cidade (query livre)
     if not sugestoes_raw and query != endereco_texto:
-        sugestoes_raw = autocomplete_address(endereco_texto, proximity)
+        sugestoes_raw = autocomplete_address(endereco_texto, proximity, country=pais)
 
     if not sugestoes_raw:
         return json.dumps({
