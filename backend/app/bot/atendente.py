@@ -348,7 +348,19 @@ async def _processar_mensagem(
             texto_lower = resposta_final.lower()
             phantom = any(p in texto_lower for p in _PHANTOM_PATTERNS)
 
-            if phantom:
+            # Verificar se há contexto real de pedido (endereço validado OU itens no carrinho)
+            # Evita falso positivo em conversas de consulta (horário, bairros, etc.)
+            has_order_context = False
+            if conversa and conversa.session_data:
+                has_order_context = bool(conversa.session_data.get("endereco_validado"))
+            if not has_order_context:
+                # Checar se validar_endereco foi chamado nesta interação
+                has_order_context = any(
+                    fc["nome"] in ("validar_endereco", "confirmar_endereco_validado")
+                    for fc in function_calls_log
+                )
+
+            if phantom and has_order_context:
                 logger.warning(f"SAFETY NET: LLM disse 'confirmado' sem chamar criar_pedido — forçando function call")
 
                 # Injetar mensagem de correção e forçar tool_choice
