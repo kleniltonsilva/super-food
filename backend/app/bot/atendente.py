@@ -334,6 +334,88 @@ async def _processar_mensagem(
         if not resposta_final:
             resposta_final = "Opa, me dá um segundo que estou verificando aqui..."
 
+        # 8.5 SAFETY NET: Detectar "confirmação fantasma" — LLM diz confirmado sem chamar criar_pedido
+        chamou_criar_pedido = any(fc["nome"] == "criar_pedido" for fc in function_calls_log)
+        if resposta_final and not chamou_criar_pedido and bot_config.pode_criar_pedido:
+            _PHANTOM_PATTERNS = [
+                "pedido confirmado", "pedido criado", "seu pedido já",
+                "comanda #", "comanda wa", "já vou preparar",
+                "encaminhei pra cozinha", "mandei pra cozinha",
+                "enviei pra cozinha", "anotei seu pedido",
+                "tá feito", "pedido registrado", "confirmei seu pedido",
+                "pedido foi criado", "seu pedido foi", "pedido anotado",
+            ]
+            texto_lower = resposta_final.lower()
+            phantom = any(p in texto_lower for p in _PHANTOM_PATTERNS)
+
+            if phantom:
+                logger.warning(f"SAFETY NET: LLM disse 'confirmado' sem chamar criar_pedido — forçando function call")
+
+                # Injetar mensagem de correção e forçar tool_choice
+                messages.append({"role": "assistant", "content": resposta_final})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "SISTEMA INTERNO: Você disse que o pedido foi confirmado/criado, mas NÃO chamou a função criar_pedido. "
+                        "O pedido NÃO existe no sistema. Chame criar_pedido AGORA com os dados desta conversa. "
+                        "Use produto_id do cardápio fornecido no contexto do restaurante."
+                    ),
+                })
+
+                try:
+                    resultado_force = await xai_llm.chat_completion(
+                        messages=messages,
+                        tools=TOOLS,
+                        temperature=0.3,
+                        max_tokens=1000,
+                        tool_choice={"type": "function", "function": {"name": "criar_pedido"}},
+                    )
+
+                    total_tokens_in += resultado_force.get("tokens_input", 0)
+                    total_tokens_out += resultado_force.get("tokens_output", 0)
+
+                    force_tool_calls = resultado_force.get("tool_calls")
+                    if force_tool_calls:
+                        # Executar as function calls forçadas
+                        messages.append({
+                            "role": "assistant",
+                            "content": resultado_force.get("content"),
+                            "tool_calls": force_tool_calls,
+                        })
+
+                        for tc in force_tool_calls:
+                            fn_name = tc["function"]["name"]
+                            fn_args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"]
+
+                            logger.info(f"SAFETY NET FC: {fn_name}({json.dumps(fn_args, ensure_ascii=False)[:200]})")
+
+                            resultado_fn = executar_funcao(fn_name, fn_args, db, restaurante_id, bot_config, conversa)
+                            function_calls_log.append({"nome": fn_name, "args": fn_args, "resultado": resultado_fn[:200]})
+
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "content": resultado_fn,
+                            })
+
+                        # Obter resposta final com resultado real do criar_pedido
+                        resultado_final2 = await xai_llm.chat_completion(
+                            messages=messages,
+                            tools=TOOLS,
+                            temperature=0.4,
+                            max_tokens=1000,
+                        )
+                        total_tokens_in += resultado_final2.get("tokens_input", 0)
+                        total_tokens_out += resultado_final2.get("tokens_output", 0)
+
+                        if resultado_final2.get("content"):
+                            resposta_final = resultado_final2["content"]
+                            logger.info("SAFETY NET: criar_pedido forçado com sucesso, resposta atualizada")
+
+                except Exception as e:
+                    logger.error(f"SAFETY NET erro: {e}", exc_info=True)
+                    # Manter resposta original se safety net falhar
+
         # 9. Delay humanizado (1-3 seg)
         delay = _calcular_delay_humano(len(resposta_final))
         await asyncio.sleep(delay)

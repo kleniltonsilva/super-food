@@ -21,6 +21,7 @@ async def chat_completion(
     model: str = MODELO_PADRAO,
     temperature: float = 0.4,
     max_tokens: int = 1000,
+    tool_choice: str | dict = "auto",
 ) -> dict:
     """Chama xAI Grok com function calling.
 
@@ -53,7 +54,7 @@ async def chat_completion(
     }
     if tools:
         payload["tools"] = tools
-        payload["tool_choice"] = "auto"
+        payload["tool_choice"] = tool_choice
 
     headers = {
         "Authorization": f"Bearer {xai_key}",
