@@ -880,6 +880,7 @@ def _repetir_ultimo_pedido(db: Session, restaurante_id: int, bot_config: models.
         for item in ultimo.carrinho_json:
             produto = db.query(models.Produto).filter(
                 models.Produto.id == item.get("produto_id"),
+                models.Produto.restaurante_id == restaurante_id,
                 models.Produto.disponivel == True,
             ).first()
             if produto:
@@ -1358,7 +1359,7 @@ def _rastrear_pedido(db: Session, restaurante_id: int, args: dict) -> str:
                 models.ConfigRestaurante.restaurante_id == restaurante_id
             ).first()
             tempo_medio = config.tempo_medio_preparo if config else 30
-            resultado["eta_preparo_min"] = max(5, int(tempo_medio * posicao / max(1, posicao)))
+            resultado["eta_preparo_min"] = max(5, int(tempo_medio * max(1, posicao)))
 
     # Motoboy + GPS (se em rota ou despachado)
     if pedido.status in ("em_rota", "pronto"):
@@ -1418,7 +1419,10 @@ def _trocar_item_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
 
     item_encontrado = None
     for item in itens_pedido:
-        produto = db.query(models.Produto).filter(models.Produto.id == item.produto_id).first()
+        produto = db.query(models.Produto).filter(
+            models.Produto.id == item.produto_id,
+            models.Produto.restaurante_id == restaurante_id,
+        ).first()
         if produto and item_remover_nome in produto.nome.lower():
             item_encontrado = item
             break
