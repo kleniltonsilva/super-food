@@ -378,61 +378,77 @@ def executar_funcao(
     bot_config: models.BotConfig,
     conversa: Optional[models.BotConversa] = None,
 ) -> str:
-    """Executa uma function call e retorna resultado como string JSON."""
+    """Executa uma function call e retorna resultado como string JSON.
+
+    Usa savepoint (begin_nested) para isolar erros de BD —
+    se a função falhar, só o savepoint é revertido, preservando
+    a transação principal (conversa, msg_recebida, etc.).
+    """
+    savepoint = None
     try:
+        savepoint = db.begin_nested()
+
         if nome == "buscar_cliente":
-            return _buscar_cliente(db, restaurante_id, args.get("telefone", ""))
+            result = _buscar_cliente(db, restaurante_id, args.get("telefone", ""))
         elif nome == "cadastrar_cliente":
-            return _cadastrar_cliente(db, restaurante_id, args)
+            result = _cadastrar_cliente(db, restaurante_id, args)
         elif nome == "buscar_cardapio":
-            return _buscar_cardapio(db, restaurante_id, args.get("busca", ""))
+            result = _buscar_cardapio(db, restaurante_id, args.get("busca", ""))
         elif nome == "buscar_categorias":
-            return _buscar_categorias(db, restaurante_id)
+            result = _buscar_categorias(db, restaurante_id)
         elif nome == "criar_pedido":
-            return _criar_pedido(db, restaurante_id, bot_config, args, conversa)
+            result = _criar_pedido(db, restaurante_id, bot_config, args, conversa)
         elif nome == "alterar_pedido":
-            return _alterar_pedido(db, restaurante_id, bot_config, args)
+            result = _alterar_pedido(db, restaurante_id, bot_config, args)
         elif nome == "cancelar_pedido":
-            return _cancelar_pedido(db, restaurante_id, bot_config, args)
+            result = _cancelar_pedido(db, restaurante_id, bot_config, args)
         elif nome == "repetir_ultimo_pedido":
-            return _repetir_ultimo_pedido(db, restaurante_id, bot_config, args, conversa)
+            result = _repetir_ultimo_pedido(db, restaurante_id, bot_config, args, conversa)
         elif nome == "consultar_status_pedido":
-            return _consultar_status_pedido(db, restaurante_id, args)
+            result = _consultar_status_pedido(db, restaurante_id, args)
         elif nome == "verificar_horario":
-            return _verificar_horario(db, restaurante_id)
+            result = _verificar_horario(db, restaurante_id)
         elif nome == "buscar_promocoes":
-            return _buscar_promocoes(db, restaurante_id, conversa)
+            result = _buscar_promocoes(db, restaurante_id, conversa)
         elif nome == "registrar_avaliacao":
-            return _registrar_avaliacao(db, restaurante_id, args, conversa)
+            result = _registrar_avaliacao(db, restaurante_id, args, conversa)
         elif nome == "registrar_problema":
-            return _registrar_problema(db, restaurante_id, args, conversa)
+            result = _registrar_problema(db, restaurante_id, args, conversa)
         elif nome == "aplicar_cupom":
-            return _aplicar_cupom(db, restaurante_id, args, conversa)
+            result = _aplicar_cupom(db, restaurante_id, args, conversa)
         elif nome == "escalar_humano":
-            return _escalar_humano(db, restaurante_id, args, conversa)
+            result = _escalar_humano(db, restaurante_id, args, conversa)
         elif nome == "rastrear_pedido":
-            return _rastrear_pedido(db, restaurante_id, args)
+            result = _rastrear_pedido(db, restaurante_id, args)
         elif nome == "trocar_item_pedido":
-            return _trocar_item_pedido(db, restaurante_id, bot_config, args)
+            result = _trocar_item_pedido(db, restaurante_id, bot_config, args)
         elif nome == "consultar_tempo_entrega":
-            return _consultar_tempo_entrega(db, restaurante_id, args)
+            result = _consultar_tempo_entrega(db, restaurante_id, args)
         elif nome == "consultar_bairros":
-            return _consultar_bairros(db, restaurante_id, args)
+            result = _consultar_bairros(db, restaurante_id, args)
         elif nome == "atualizar_endereco_cliente":
-            return _atualizar_endereco_cliente(db, restaurante_id, args)
+            result = _atualizar_endereco_cliente(db, restaurante_id, args)
         elif nome == "validar_endereco":
-            return _validar_endereco(db, restaurante_id, args, conversa)
+            result = _validar_endereco(db, restaurante_id, args, conversa)
         elif nome == "confirmar_endereco_validado":
-            return _confirmar_endereco_validado(db, restaurante_id, args, conversa)
+            result = _confirmar_endereco_validado(db, restaurante_id, args, conversa)
         else:
-            return json.dumps({"erro": f"Função desconhecida: {nome}"})
+            result = json.dumps({"erro": f"Função desconhecida: {nome}"})
+
+        return result
     except Exception as e:
         logger.error(f"Erro executando {nome}: {e}", exc_info=True)
-        # Rollback para resetar transação — previne InFailedSqlTransaction cascata
+        # Rollback apenas do savepoint — preserva transação principal
         try:
-            db.rollback()
+            if savepoint:
+                savepoint.rollback()
+            else:
+                db.rollback()
         except Exception:
-            pass
+            try:
+                db.rollback()
+            except Exception:
+                pass
         return json.dumps({"erro": str(e)})
 
 

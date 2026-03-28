@@ -27,11 +27,19 @@ def upgrade() -> None:
         END $$;
     """)
 
-    # === PROMOCOES: descricao + atualizado_em ===
+    # === PROMOCOES: TODAS colunas do ORM que podem estar faltando ===
     op.execute("""
         DO $$ BEGIN
             IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'promocoes') THEN
                 ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS descricao TEXT;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS desconto_maximo FLOAT;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS valor_pedido_minimo FLOAT DEFAULT 0.0;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS uso_limitado BOOLEAN DEFAULT FALSE;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS limite_usos INTEGER;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS usos_realizados INTEGER DEFAULT 0;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS data_inicio TIMESTAMP;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS data_fim TIMESTAMP;
+                ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS codigo_cupom VARCHAR(50);
                 ALTER TABLE promocoes ADD COLUMN IF NOT EXISTS atualizado_em TIMESTAMP DEFAULT now();
             END IF;
         END $$;
