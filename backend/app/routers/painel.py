@@ -25,21 +25,31 @@ def get_rest(current_restaurante=Depends(auth.get_current_restaurante)):
 
 
 def _detectar_pais_restaurante(restaurante, db) -> str:
-    """Detecta o país do restaurante. Auto-corrige se pais='BR' mas coordenadas estão fora do Brasil."""
+    """Detecta o país do restaurante via reverse geocoding direto. Auto-corrige se pais='BR' mas coordenadas fora do Brasil."""
+    import os
     pais = getattr(restaurante, 'pais', None) or "BR"
     if pais == "BR" and restaurante.latitude and restaurante.longitude:
         lat, lng = restaurante.latitude, restaurante.longitude
         if not (-35 <= lat <= 6 and -75 <= lng <= -34):
             try:
-                from utils.calculos import detectar_cidade_endereco
-                info = detectar_cidade_endereco(restaurante.endereco_completo or f"{lat},{lng}")
-                if info and info.get("pais_codigo"):
-                    pais = info["pais_codigo"]
-                    try:
-                        restaurante.pais = pais
-                        db.commit()
-                    except Exception:
-                        pass
+                import requests as req
+                token = os.getenv("MAPBOX_TOKEN")
+                if token:
+                    url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{lng},{lat}.json"
+                    params = {"access_token": token, "types": "country", "language": "pt"}
+                    resp = req.get(url, params=params, timeout=10)
+                    if resp.status_code == 200:
+                        for feat in resp.json().get("features", []):
+                            if "country" in feat.get("place_type", []):
+                                code = (feat.get("properties", {}).get("short_code") or "").upper()
+                                if code:
+                                    pais = code
+                                    try:
+                                        restaurante.pais = pais
+                                        db.commit()
+                                    except Exception:
+                                        pass
+                                    break
             except Exception:
                 pais = None
     return pais

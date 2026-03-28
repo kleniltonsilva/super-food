@@ -377,7 +377,21 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
 
     cidade = rest.cidade or "não informada"
     estado = rest.estado or ""
-    area_entrega = f"{cidade}/{estado}".strip("/")
+    # Detectar país do restaurante
+    pais_codigo = getattr(rest, 'pais', None) or "BR"
+    pais_nome_map = {
+        "BR": "Brasil", "PT": "Portugal", "US": "Estados Unidos", "AO": "Angola",
+        "MZ": "Moçambique", "CV": "Cabo Verde", "ES": "Espanha", "FR": "França",
+        "IT": "Itália", "DE": "Alemanha", "GB": "Reino Unido",
+    }
+    pais_nome = pais_nome_map.get(pais_codigo, pais_codigo)
+    # Montar área de entrega — não mostrar estado numérico (ex: "02" de distritos portugueses)
+    if estado and estado.isalpha():
+        area_entrega = f"{cidade}/{estado}"
+    else:
+        area_entrega = cidade
+    if pais_codigo != "BR":
+        area_entrega = f"{area_entrega}, {pais_nome}"
 
     # Bairros atendidos (tabela pode não existir em prod — usar savepoint)
     bairros_texto = ""
@@ -400,10 +414,17 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
         nested.rollback()
         logger.debug("Tabela bairros_entrega não encontrada, ignorando")
 
+    # Linha cidade/estado/país para o prompt
+    if estado and estado.isalpha():
+        cidade_estado_linha = f"CIDADE: {cidade.title()} — {estado.upper()}, {pais_nome}"
+    else:
+        cidade_estado_linha = f"CIDADE: {cidade.title()}, {pais_nome}"
+
     return f"""RESTAURANTE: {rest.nome_fantasia}
 ENDEREÇO: {rest.endereco_completo or 'Não informado'}
-CIDADE: {cidade.title()} — {estado.upper()}
-ÁREA DE ENTREGA: Somente dentro de {area_entrega}. Se o cliente informar endereço em outra cidade ou estado, informe educadamente que não é possível entregar naquela região.
+{cidade_estado_linha}
+PAÍS: {pais_nome} ({pais_codigo})
+ÁREA DE ENTREGA: Somente dentro de {area_entrega}. Se o cliente informar endereço em outra cidade ou país, informe educadamente que não é possível entregar naquela região.
 HORÁRIO HOJE ({dia_semana}): {horario_texto} · {status_texto}
 HORA ATUAL: {hora_atual}
 TEMPO MÉDIO ENTREGA: {tempo_min} min

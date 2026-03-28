@@ -10,6 +10,7 @@ import random
 import string
 import logging
 import inspect
+import unicodedata
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -1688,6 +1689,35 @@ def _consultar_bairros(db: Session, restaurante_id: int, args: dict) -> str:
     })
 
 
+def _normalize_text(text: str) -> str:
+    """Remove acentos e normaliza texto para comparação."""
+    nfkd = unicodedata.normalize('NFKD', text)
+    return ''.join(c for c in nfkd if not unicodedata.category(c).startswith('M')).lower()
+
+
+def _reverse_geocode_country(lat: float, lng: float) -> Optional[str]:
+    """Reverse geocoding direto para detectar país (ISO 2 letras). Mais confiável que forward geocode."""
+    import os
+    import requests as req
+    token = os.getenv("MAPBOX_TOKEN")
+    if not token:
+        return None
+    try:
+        url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{lng},{lat}.json"
+        params = {"access_token": token, "types": "country", "language": "pt"}
+        resp = req.get(url, params=params, timeout=10)
+        resp.raise_for_status()
+        features = resp.json().get("features", [])
+        for f in features:
+            if "country" in f.get("place_type", []):
+                code = (f.get("properties", {}).get("short_code") or "").upper()
+                if code:
+                    return code
+    except Exception:
+        pass
+    return None
+
+
 def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa]) -> str:
     """Valida endereço via Mapbox geocoding, calcula distância e taxa de entrega."""
     from utils.mapbox_api import autocomplete_address
@@ -1714,37 +1744,37 @@ def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Op
     rest_lng = restaurante.longitude
     proximity = (rest_lat, rest_lng) if rest_lat and rest_lng else None
 
-    # Enriquecer query com cidade/estado do restaurante se não inclusos
-    query = endereco_texto
-    cidade = (restaurante.cidade or "").strip()
-    estado = (restaurante.estado or "").strip()
-    endereco_lower = endereco_texto.lower()
-    if cidade and cidade.lower() not in endereco_lower:
-        query = f"{endereco_texto}, {cidade}"
-        if estado:
-            query = f"{query}, {estado}"
-
-    # Determinar país do restaurante — auto-detectar se necessário
+    # Determinar país do restaurante — auto-detectar se necessário (ANTES de enriquecer query)
     pais = getattr(restaurante, 'pais', None) or "BR"
     if pais == "BR" and rest_lat and rest_lng:
         # Verificar se coordenadas são realmente do Brasil (lat -35 a 5, lng -75 a -35)
         if not (-35 <= rest_lat <= 6 and -75 <= rest_lng <= -34):
-            # Coordenadas fora do Brasil — detectar país real via Mapbox reverse
-            try:
-                from utils.calculos import detectar_cidade_endereco
-                info = detectar_cidade_endereco(f"{rest_lat},{rest_lng}")
-                if info and info.get("pais_codigo"):
-                    pais = info["pais_codigo"]
-                    # Salvar para cache futuro
-                    try:
-                        restaurante.pais = pais
-                        db.commit()
-                        logger.info(f"País auto-detectado para restaurante {restaurante_id}: {pais}")
-                    except Exception:
-                        pass
-            except Exception:
+            # Coordenadas fora do Brasil — detectar país real via reverse geocoding direto
+            detected = _reverse_geocode_country(rest_lat, rest_lng)
+            if detected:
+                pais = detected
+                # Salvar para cache futuro
+                try:
+                    restaurante.pais = pais
+                    db.commit()
+                    logger.info(f"País auto-detectado para restaurante {restaurante_id}: {pais}")
+                except Exception:
+                    db.rollback()
+            else:
                 # Fallback: não filtrar por país
                 pais = None
+
+    # Enriquecer query com cidade do restaurante se não inclusos (normalizar acentos)
+    query = endereco_texto
+    cidade = (restaurante.cidade or "").strip()
+    estado = (restaurante.estado or "").strip()
+    endereco_norm = _normalize_text(endereco_texto)
+    cidade_norm = _normalize_text(cidade) if cidade else ""
+    if cidade_norm and cidade_norm not in endereco_norm:
+        query = f"{endereco_texto}, {cidade}"
+        # Só adicionar estado se for código alfabético (ex: SP, RJ) — NÃO códigos numéricos (ex: 02, 11)
+        if estado and estado.isalpha() and len(estado) <= 4:
+            query = f"{query}, {estado}"
 
     sugestoes_raw = autocomplete_address(query, proximity, country=pais)
 
@@ -1800,11 +1830,17 @@ def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Op
     fora = [s for s in sugestoes if not s["dentro_zona"]]
 
     # Filtrar por cidade do restaurante — evitar mostrar endereços de outras cidades/estados
-    cidade_rest = (restaurante.cidade or "").lower().strip()
-    if cidade_rest and dentro:
-        na_cidade = [s for s in dentro if cidade_rest in s["place_name"].lower()]
+    # Usa normalização de acentos: "Garvão" matches "garvao" no place_name do Mapbox
+    cidade_rest = (restaurante.cidade or "").strip()
+    cidade_rest_norm = _normalize_text(cidade_rest) if cidade_rest else ""
+    if cidade_rest_norm and dentro:
+        na_cidade = [s for s in dentro if cidade_rest_norm in _normalize_text(s["place_name"])]
         if na_cidade:
             dentro = na_cidade  # Priorizar resultados na cidade correta
+        elif pais and pais != "BR":
+            # Para países não-BR (ex: Portugal), vilas/freguesias podem não aparecer no place_name
+            # Se está dentro do raio de entrega, aceitar resultado (a distância já valida)
+            pass
         else:
             # Todos resultados dentro do raio mas em cidades erradas — pedir mais detalhes
             return json.dumps({
@@ -1814,10 +1850,10 @@ def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Op
 
     if not dentro and fora:
         # Todos fora da zona — verificar se estão em cidades erradas
-        if cidade_rest:
-            na_cidade_fora = [s for s in fora if cidade_rest in s["place_name"].lower()]
-            if not na_cidade_fora:
-                # Nenhum resultado na cidade do restaurante
+        if cidade_rest_norm:
+            na_cidade_fora = [s for s in fora if cidade_rest_norm in _normalize_text(s["place_name"])]
+            if not na_cidade_fora and pais == "BR":
+                # Nenhum resultado na cidade do restaurante (só bloquear para BR)
                 return json.dumps({
                     "encontrado": False,
                     "mensagem": f"Não encontrei esse endereço em {cidade_rest.title()}. Pode me informar o endereço completo com bairro e cidade?",

@@ -195,15 +195,22 @@ def autocomplete_endereco_restaurante(
             # Verificar se coordenadas são realmente do Brasil
             if not (-35 <= rest_lat <= 6 and -75 <= rest_lon <= -34):
                 try:
-                    from utils.calculos import detectar_cidade_endereco
-                    info = detectar_cidade_endereco(restaurante.endereco_completo or f"{rest_lat},{rest_lon}")
-                    if info and info.get("pais_codigo"):
-                        pais = info["pais_codigo"]
-                        try:
-                            restaurante.pais = pais
-                            session.commit()
-                        except Exception:
-                            pass
+                    # Reverse geocoding direto (mais confiável que forward geocode de texto)
+                    url_rev = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{rest_lon},{rest_lat}.json"
+                    params_rev = {"access_token": MAPBOX_TOKEN, "types": "country", "language": "pt"}
+                    resp_rev = requests.get(url_rev, params=params_rev, timeout=10)
+                    if resp_rev.status_code == 200:
+                        for feat in resp_rev.json().get("features", []):
+                            if "country" in feat.get("place_type", []):
+                                code = (feat.get("properties", {}).get("short_code") or "").upper()
+                                if code:
+                                    pais = code
+                                    try:
+                                        restaurante.pais = pais
+                                        session.commit()
+                                    except Exception:
+                                        pass
+                                    break
                 except Exception:
                     pais = None  # Não filtrar por país
 
@@ -315,7 +322,8 @@ def _buscar_com_cidade(
     try:
         # Construir query com cidade
         query_completa = f"{query}, {cidade}"
-        if estado:
+        # Só adicionar estado se for código alfabético (ex: SP, RJ) — NÃO numérico (ex: 02, 11)
+        if estado and estado.isalpha() and len(estado) <= 4:
             query_completa = f"{query_completa}, {estado}"
 
         url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{quote(query_completa)}.json"
