@@ -508,7 +508,14 @@ async def _processar_mensagem(
         # Atualizar tokens
         bot_config.tokens_usados_hoje = (bot_config.tokens_usados_hoje or 0) + total_tokens_in + total_tokens_out
 
-        db.commit()
+        try:
+            db.commit()
+        except Exception as commit_err:
+            logger.error(f"Commit final falhou (msg/tokens): {commit_err}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
 
         # 12. Notificar painel via WebSocket
         await _notificar_painel(restaurante_id, conversa, resposta_final, function_calls_log)

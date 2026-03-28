@@ -427,7 +427,12 @@ def executar_funcao(
         else:
             return json.dumps({"erro": f"Função desconhecida: {nome}"})
     except Exception as e:
-        logger.error(f"Erro executando {nome}: {e}")
+        logger.error(f"Erro executando {nome}: {e}", exc_info=True)
+        # Rollback para resetar transação — previne InFailedSqlTransaction cascata
+        try:
+            db.rollback()
+        except Exception:
+            pass
         return json.dumps({"erro": str(e)})
 
 
