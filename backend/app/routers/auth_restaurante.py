@@ -114,7 +114,8 @@ def login_restaurante(
 
     tier = getattr(restaurante, "plano_tier", None) or get_tier(restaurante.plano)
     overrides = getattr(restaurante, "features_override", None)
-    features = get_all_features(restaurante.plano, overrides=overrides, plano_tier=tier)
+    addons = {"addon_bot_whatsapp": bool(getattr(restaurante, "addon_bot_whatsapp", False))}
+    features = get_all_features(restaurante.plano, overrides=overrides, plano_tier=tier, addons=addons)
     # Trial → tudo True
     if restaurante.billing_status == "trial":
         features = {k: True for k in features}
@@ -135,6 +136,8 @@ def login_restaurante(
             "billing_bloqueado": billing_bloqueado,
             "dias_vencido": restaurante.dias_vencido or 0,
             "features": features,
+            "addon_bot_whatsapp": bool(getattr(restaurante, "addon_bot_whatsapp", False)),
+            "addon_bot_valor": getattr(restaurante, "addon_bot_valor", 0) or 0,
         }
     )
 
@@ -155,11 +158,14 @@ def me_restaurante(
 
     tier = getattr(current_restaurante, "plano_tier", None) or get_tier(current_restaurante.plano)
     overrides = getattr(current_restaurante, "features_override", None)
-    features = get_all_features(current_restaurante.plano, overrides=overrides, plano_tier=tier)
+    addons = {"addon_bot_whatsapp": bool(getattr(current_restaurante, "addon_bot_whatsapp", False))}
+    features = get_all_features(current_restaurante.plano, overrides=overrides, plano_tier=tier, addons=addons)
     if current_restaurante.billing_status == "trial":
         features = {k: True for k in features}
     data["plano_tier"] = tier
     data["features"] = features
+    data["addon_bot_whatsapp"] = bool(getattr(current_restaurante, "addon_bot_whatsapp", False))
+    data["addon_bot_valor"] = getattr(current_restaurante, "addon_bot_valor", 0) or 0
     return data
 
 

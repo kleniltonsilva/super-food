@@ -16,6 +16,8 @@ export interface Restaurante {
   plano?: string;
   plano_tier?: number;
   features?: Record<string, boolean>;
+  addon_bot_whatsapp?: boolean;
+  addon_bot_valor?: number;
 }
 
 interface AdminAuthContextType {

@@ -136,6 +136,12 @@ export default function SelecionarPlano() {
                     )}
                   </div>
 
+                  {plano.tier === 4 && (
+                    <div className="flex items-center justify-center">
+                      <Badge className="bg-green-500/20 text-green-400 text-xs">WhatsApp Humanoide incluso</Badge>
+                    </div>
+                  )}
+
                   <ul className="text-sm text-[var(--text-secondary)] space-y-1.5 text-left max-h-48 overflow-y-auto">
                     <li className="flex items-center gap-2">
                       <Check className="h-4 w-4 text-green-400 shrink-0" />

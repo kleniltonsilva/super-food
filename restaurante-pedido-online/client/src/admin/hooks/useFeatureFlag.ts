@@ -27,34 +27,34 @@ export const FEATURE_MIN_TIER: Record<string, number> = {
 };
 
 export const FEATURE_LABELS: Record<string, string> = {
-  site_cardapio: "Site e Cardápio",
+  site_cardapio: "Site e Cardapio",
   pedidos: "Pedidos",
   dashboard: "Dashboard",
   caixa: "Caixa",
   bairros_taxas: "Bairros e Taxas",
   motoboys: "Motoboys",
-  configuracoes: "Configurações",
-  relatorios_basicos: "Relatórios Básicos",
-  cupons_promocoes: "Cupons e Promoções",
+  configuracoes: "Configuracoes",
+  relatorios_basicos: "Relatorios Basicos",
+  cupons_promocoes: "Cupons e Promocoes",
   fidelidade: "Programa de Fidelidade",
   combos: "Combos Promocionais",
-  relatorios_avancados: "Relatórios Avançados",
+  relatorios_avancados: "Relatorios Avancados",
   operadores_caixa: "Operadores de Caixa",
   kds_cozinha: "KDS Cozinha Digital",
-  app_garcom: "App Garçom",
-  integracoes_marketplace: "Integrações Marketplace",
+  app_garcom: "App Garcom",
+  integracoes_marketplace: "Integracoes Marketplace",
   pix_online: "Pix Online",
-  dominio_personalizado: "Domínio Personalizado",
-  analytics_avancado: "Analytics Avançado",
+  dominio_personalizado: "Dominio Personalizado",
+  analytics_avancado: "Analytics Avancado",
   bridge_printer: "Bridge Printer IA",
   bot_whatsapp: "WhatsApp Humanoide",
   suporte_dedicado: "Suporte Dedicado",
 };
 
 export const TIER_TO_PLANO: Record<number, string> = {
-  1: "Básico",
+  1: "Basico",
   2: "Essencial",
-  3: "Avançado",
+  3: "Avancado",
   4: "Premium",
 };
 
@@ -71,12 +71,20 @@ export const ROUTE_FEATURE_MAP: Record<string, string> = {
   "/whatsapp-bot": "bot_whatsapp",
 };
 
+// Add-ons: features disponíveis como add-on pago
+export const ADDON_FEATURES: Record<string, { price: number; minTier: number; includedTier: number }> = {
+  bot_whatsapp: { price: 99.45, minTier: 2, includedTier: 4 },
+};
+
 export function useFeatureFlag(feature: string) {
   const { restaurante } = useAdminAuth();
 
   const features = restaurante?.features as Record<string, boolean> | undefined;
   const planoTier = restaurante?.plano_tier ?? 1;
-  const plano = restaurante?.plano ?? "Básico";
+  const plano = restaurante?.plano ?? "Basico";
+  const addonInfo = ADDON_FEATURES[feature];
+  const isAddon = !!addonInfo;
+  const addonActive = isAddon && !!(restaurante as any)?.addon_bot_whatsapp;
 
   // Se tem features do backend, usar diretamente
   if (features && feature in features) {
@@ -86,6 +94,10 @@ export function useFeatureFlag(feature: string) {
       planoTier,
       requiredPlano: TIER_TO_PLANO[FEATURE_MIN_TIER[feature] ?? 1] ?? "Essencial",
       featureLabel: FEATURE_LABELS[feature] ?? feature,
+      isAddon,
+      addonActive,
+      addonPrice: addonInfo?.price ?? 0,
+      canSubscribeAddon: isAddon && planoTier >= addonInfo.minTier && planoTier < addonInfo.includedTier,
     };
   }
 
@@ -97,5 +109,9 @@ export function useFeatureFlag(feature: string) {
     planoTier,
     requiredPlano: TIER_TO_PLANO[minTier] ?? "Essencial",
     featureLabel: FEATURE_LABELS[feature] ?? feature,
+    isAddon,
+    addonActive,
+    addonPrice: addonInfo?.price ?? 0,
+    canSubscribeAddon: isAddon && planoTier >= addonInfo.minTier && planoTier < addonInfo.includedTier,
   };
 }

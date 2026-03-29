@@ -434,6 +434,66 @@ def demos_publicos(db: Session = Depends(get_db)):
         return JSONResponse(content=[])
 
 
+# ==================== Endpoint público — Solicitar Cadastro (onboarding) ====================
+@app.post("/api/public/solicitar-cadastro")
+async def solicitar_cadastro(request: Request, db: Session = Depends(get_db)):
+    """Recebe solicitação de cadastro da landing page. Sem autenticação."""
+    import re
+    body = await request.json()
+
+    nome_fantasia = (body.get("nome_fantasia") or "").strip()
+    nome_responsavel = (body.get("nome_responsavel") or "").strip()
+    email = (body.get("email") or "").strip().lower()
+    telefone = re.sub(r'\D', '', (body.get("telefone") or "").strip())
+    cnpj = (body.get("cnpj") or "").strip() or None
+    cidade = (body.get("cidade") or "").strip() or None
+    estado = (body.get("estado") or "").strip() or None
+    tipo_restaurante = (body.get("tipo_restaurante") or "geral").strip()
+    mensagem = (body.get("mensagem") or "").strip() or None
+
+    # Validações
+    if len(nome_fantasia) < 3:
+        raise HTTPException(status_code=400, detail="Nome do restaurante deve ter pelo menos 3 caracteres")
+    if len(nome_responsavel) < 3:
+        raise HTTPException(status_code=400, detail="Nome do responsável deve ter pelo menos 3 caracteres")
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        raise HTTPException(status_code=400, detail="Email inválido")
+    if len(telefone) < 10 or len(telefone) > 11:
+        raise HTTPException(status_code=400, detail="Telefone inválido (10 ou 11 dígitos com DDD)")
+
+    # Anti-spam: máximo 3 solicitações por email nas últimas 24h
+    from datetime import datetime, timedelta
+    limite = datetime.utcnow() - timedelta(hours=24)
+    contagem = db.query(models.SolicitacaoCadastro).filter(
+        models.SolicitacaoCadastro.email == email,
+        models.SolicitacaoCadastro.criado_em >= limite,
+    ).count()
+    if contagem >= 3:
+        raise HTTPException(status_code=429, detail="Muitas solicitações. Tente novamente em 24 horas.")
+
+    # Capturar IP
+    ip_origem = request.headers.get("x-forwarded-for", request.client.host if request.client else None)
+    if ip_origem and "," in ip_origem:
+        ip_origem = ip_origem.split(",")[0].strip()
+
+    solicitacao = models.SolicitacaoCadastro(
+        nome_fantasia=nome_fantasia,
+        nome_responsavel=nome_responsavel,
+        email=email,
+        telefone=telefone,
+        cnpj=cnpj,
+        cidade=cidade,
+        estado=estado,
+        tipo_restaurante=tipo_restaurante,
+        mensagem=mensagem,
+        ip_origem=ip_origem,
+    )
+    db.add(solicitacao)
+    db.commit()
+
+    return {"sucesso": True, "mensagem": "Solicitação enviada! Entraremos em contato em breve."}
+
+
 # ==================== PWA files (manifest, service worker) ====================
 @app.get("/manifest.json")
 async def serve_manifest():

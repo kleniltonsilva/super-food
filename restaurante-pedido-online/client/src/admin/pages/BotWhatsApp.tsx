@@ -173,7 +173,7 @@ export default function BotWhatsApp() {
     return () => clearTimeout(timer);
   }, [buscaConversas]);
 
-  const { hasFeature, requiredPlano } = useFeatureFlag("bot_whatsapp");
+  const { hasFeature, requiredPlano, addonActive, canSubscribeAddon } = useFeatureFlag("bot_whatsapp");
   const { data: botConfig, isLoading: loadingConfig, refetch: refetchConfig } = useBotConfig();
   const { data: dashboard, isLoading: loadingDash } = useBotDashboard();
   const { data: conversasData, isLoading: loadingConversas } = useBotConversas({
@@ -239,15 +239,28 @@ export default function BotWhatsApp() {
             WhatsApp Humanoide
           </h2>
           <p className="text-[var(--text-secondary)] mb-4 max-w-md">
-            Atendimento inteligente por WhatsApp com IA. Disponível no plano{" "}
-            <strong>{requiredPlano}</strong>.
+            Atendimento inteligente por WhatsApp com IA.
+            {canSubscribeAddon
+              ? " Disponivel como add-on por R$99,45/mes ou incluso no plano Premium."
+              : ` Disponivel no plano ${requiredPlano}.`}
           </p>
-          <Button
-            onClick={() => (window.location.href = "/admin/billing/planos")}
-            style={{ backgroundColor: "var(--cor-primaria)" }}
-          >
-            Ver planos
-          </Button>
+          <div className="flex gap-3">
+            {canSubscribeAddon && (
+              <Button
+                onClick={() => (window.location.href = "/admin/billing")}
+                style={{ backgroundColor: "var(--cor-primaria)" }}
+              >
+                Contratar add-on (R$99,45/mes)
+              </Button>
+            )}
+            <Button
+              variant={canSubscribeAddon ? "outline" : "default"}
+              onClick={() => (window.location.href = "/admin/billing/planos")}
+              style={canSubscribeAddon ? undefined : { backgroundColor: "var(--cor-primaria)" }}
+            >
+              Ver planos
+            </Button>
+          </div>
         </div>
       </AdminLayout>
     );
@@ -290,6 +303,19 @@ export default function BotWhatsApp() {
   return (
     <AdminLayout>
       <div className="space-y-6">
+        {/* Banner add-on */}
+        {addonActive && (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+            <Bot className="h-5 w-5 text-green-400 shrink-0" />
+            <p className="text-sm text-green-400">
+              Ativo via add-on (+R$99,45/mes) —{" "}
+              <a href="/admin/billing" className="underline hover:no-underline">
+                Gerenciar assinatura
+              </a>
+            </p>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">

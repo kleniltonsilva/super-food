@@ -11,7 +11,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from .. import models, database, auth
-from ..billing.billing_service import get_billing_status, selecionar_plano, get_planos_disponiveis
+from ..billing.billing_service import (
+    get_billing_status, selecionar_plano, get_planos_disponiveis,
+    ativar_addon_bot, desativar_addon_bot, get_addons_status,
+)
 from ..billing.asaas_client import asaas_client
 
 router = APIRouter(prefix="/painel/billing", tags=["Billing Restaurante"])
@@ -150,3 +153,44 @@ async def get_fatura_pix(
             raise HTTPException(status_code=502, detail="Erro ao buscar PIX no Asaas")
 
     raise HTTPException(status_code=404, detail="PIX não disponível para esta fatura")
+
+
+# ─── Add-ons ──────────────────────────────────────────
+
+@router.get("/addons")
+def listar_addons(
+    restaurante: models.Restaurante = Depends(_get_restaurante_billing),
+    db: Session = Depends(database.get_db),
+):
+    """Lista add-ons disponíveis com status para o restaurante."""
+    return get_addons_status(restaurante, db)
+
+
+@router.post("/addon/bot-whatsapp/ativar")
+async def endpoint_ativar_addon_bot(
+    restaurante: models.Restaurante = Depends(_get_restaurante_billing),
+    db: Session = Depends(database.get_db),
+):
+    """Ativa add-on Bot WhatsApp (+R$99,45/mês na fatura)."""
+    try:
+        resultado = await ativar_addon_bot(restaurante.id, db)
+        return resultado
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao comunicar com gateway de pagamento: {e}")
+
+
+@router.post("/addon/bot-whatsapp/desativar")
+async def endpoint_desativar_addon_bot(
+    restaurante: models.Restaurante = Depends(_get_restaurante_billing),
+    db: Session = Depends(database.get_db),
+):
+    """Desativa add-on Bot WhatsApp (valor da fatura volta ao original)."""
+    try:
+        resultado = await desativar_addon_bot(restaurante.id, db)
+        return resultado
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Erro ao comunicar com gateway de pagamento: {e}")

@@ -14,6 +14,7 @@ import ConfigBilling from "@/superadmin/pages/ConfigBilling";
 import GerenciarDemos from "@/superadmin/pages/GerenciarDemos";
 import EditarDemo from "@/superadmin/pages/EditarDemo";
 import BotTokenDashboard from "@/superadmin/pages/BotTokenDashboard";
+import Solicitacoes from "@/superadmin/pages/Solicitacoes";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
@@ -24,6 +25,10 @@ function SuperAdminRouter() {
 
       <Route path="/restaurantes/novo">
         <SuperAdminPrivateRoute><NovoRestaurante /></SuperAdminPrivateRoute>
+      </Route>
+
+      <Route path="/solicitacoes">
+        <SuperAdminPrivateRoute><Solicitacoes /></SuperAdminPrivateRoute>
       </Route>
 
       <Route path="/restaurantes">

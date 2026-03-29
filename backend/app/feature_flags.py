@@ -110,6 +110,29 @@ FEATURES_POR_PLANO: dict[str, list[str]] = {
 }
 
 
+# ─── Add-ons disponíveis ───
+# feature_key → campo no model Restaurante
+ADDON_FEATURES: dict[str, str] = {
+    "bot_whatsapp": "addon_bot_whatsapp",
+}
+
+ADDON_PRICES: dict[str, float] = {
+    "bot_whatsapp": 99.45,
+}
+
+ADDON_MIN_TIER: dict[str, int] = {
+    "bot_whatsapp": 2,  # Mínimo Essencial
+}
+
+ADDON_INCLUDED_TIER: dict[str, int] = {
+    "bot_whatsapp": 4,  # Incluso no Premium
+}
+
+ADDON_LABELS: dict[str, str] = {
+    "bot_whatsapp": "WhatsApp Humanoide (Add-on)",
+}
+
+
 def get_tier(plano_nome: Optional[str]) -> int:
     """Retorna tier numérico a partir do nome do plano. Default: 1 (Básico)."""
     if not plano_nome:
@@ -117,7 +140,13 @@ def get_tier(plano_nome: Optional[str]) -> int:
     return PLANO_TO_TIER.get(plano_nome, PLANO_TO_TIER.get(plano_nome.strip(), 1))
 
 
-def has_feature(plano: Optional[str], feature_key: str, overrides: Optional[str] = None, plano_tier: Optional[int] = None) -> bool:
+def has_feature(
+    plano: Optional[str],
+    feature_key: str,
+    overrides: Optional[str] = None,
+    plano_tier: Optional[int] = None,
+    addons: Optional[dict[str, bool]] = None,
+) -> bool:
     """Verifica se um plano tem acesso a uma feature.
 
     Args:
@@ -125,6 +154,7 @@ def has_feature(plano: Optional[str], feature_key: str, overrides: Optional[str]
         feature_key: Chave da feature (ex: "kds_cozinha")
         overrides: JSON string de overrides do Super Admin (ex: '{"kds_cozinha": true}')
         plano_tier: Tier pré-computado (evita recalcular)
+        addons: Dict com add-ons ativos (ex: {"addon_bot_whatsapp": True})
     """
     # Override do Super Admin tem prioridade absoluta
     if overrides:
@@ -137,16 +167,29 @@ def has_feature(plano: Optional[str], feature_key: str, overrides: Optional[str]
 
     tier = plano_tier if plano_tier is not None else get_tier(plano)
     min_tier = FEATURE_TIERS.get(feature_key, 1)
+
+    # Check add-on: se feature disponível via add-on e add-on ativo
+    if tier < min_tier and addons and feature_key in ADDON_FEATURES:
+        addon_field = ADDON_FEATURES[feature_key]
+        if addons.get(addon_field):
+            return True
+
     return tier >= min_tier
 
 
-def get_all_features(plano: Optional[str], overrides: Optional[str] = None, plano_tier: Optional[int] = None) -> dict[str, bool]:
+def get_all_features(
+    plano: Optional[str],
+    overrides: Optional[str] = None,
+    plano_tier: Optional[int] = None,
+    addons: Optional[dict[str, bool]] = None,
+) -> dict[str, bool]:
     """Retorna dict com todas features e se o plano tem acesso.
 
     Args:
         plano: Nome do plano
         overrides: JSON string de overrides
         plano_tier: Tier pré-computado
+        addons: Dict com add-ons ativos
     """
     tier = plano_tier if plano_tier is not None else get_tier(plano)
 
@@ -161,8 +204,13 @@ def get_all_features(plano: Optional[str], overrides: Optional[str] = None, plan
     for feature_key, min_tier in FEATURE_TIERS.items():
         if feature_key in override_dict:
             result[feature_key] = bool(override_dict[feature_key])
+        elif tier >= min_tier:
+            result[feature_key] = True
+        elif addons and feature_key in ADDON_FEATURES:
+            addon_field = ADDON_FEATURES[feature_key]
+            result[feature_key] = bool(addons.get(addon_field))
         else:
-            result[feature_key] = tier >= min_tier
+            result[feature_key] = False
     return result
 
 

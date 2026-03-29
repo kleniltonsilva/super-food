@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.6 | Última atualização: 28/03/2026
+> Versão 4.0.6 | Última atualização: 29/03/2026
 
 ---
 
@@ -30,6 +30,7 @@
 - Sistema de billing integrado (Asaas)
 - Pix Online para clientes (Woovi/OpenPix)
 - Feature Flags por plano: 4 tiers (Básico→Essencial→Avançado→Premium) com 22 features controladas
+- Sistema de Add-ons: funcionalidades contratáveis à parte (ex: WhatsApp Humanoide +R$99,45/mês)
 - Bridge Printer IA: intercepta cupons de iFood/Rappi e converte em pedidos Derekh automaticamente
 
 ---
@@ -254,6 +255,11 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
   - Lembretes automáticos antes do vencimento
   - Suspensão parcial (pode ver mas não operar)
   - Preservação de dados por 90 dias após cancelamento
+- **Add-ons:** funcionalidades extras cobradas na mesma fatura (fatura única):
+  - WhatsApp Humanoide: +R$99,45/mês (mínimo plano Essencial, incluso no Premium)
+  - Seção "Add-ons" na página Minha Assinatura com ativar/desativar + breakdown de valores
+  - Upgrade para Premium auto-desativa add-ons (já incluso gratuitamente)
+  - Sidebar mostra badge "ADD-ON" em vez de "PRO" para features disponíveis como add-on
 
 ### 2.19 Garçons
 - **Aba Garçons:** CRUD completo (nome, login, senha, emoji avatar)
@@ -642,6 +648,23 @@ Admin escolhe:
 - Pricing xAI Grok-3-fast: $5/1M input, $25/1M output
 - Rota: `/bot-tokens` | Arquivo: `BotTokenDashboard.tsx`
 
+### 8.9 Solicitações de Cadastro (Onboarding Self-Service)
+- Gestão de solicitações de novos restaurantes vindas da landing page (`/onboarding`)
+- **Filtros por status:** Todos, Pendentes, Aprovados, Rejeitados
+- **Badge** com contagem de pendentes
+- **Tabela:** nome, responsável, contato, cidade, data, status, ações
+- **Ações por solicitação:**
+  - Ver detalhes (modal com todos os dados + IP + mensagem)
+  - Criar restaurante (1-click: modal pré-preenchido com dados da solicitação, seleção de plano, trial 15 dias, email boas-vindas automático)
+  - Rejeitar (com motivo opcional)
+- **Fluxo criar restaurante:** ConfigRestaurante + SiteConfig + seed produtos + trial + email automáticos
+- Vincula `restaurante_id` à solicitação para rastreabilidade
+- Rota: `/solicitacoes` | Arquivo: `Solicitacoes.tsx`
+- **Endpoints:**
+  - `GET /api/admin/solicitacoes` — lista (filtro status, busca)
+  - `PUT /api/admin/solicitacoes/{id}/status` — aprovar/rejeitar
+  - `POST /api/admin/solicitacoes/{id}/criar-restaurante` — converter em restaurante
+
 ---
 
 ## 9. API TÉCNICA
@@ -679,8 +702,8 @@ Admin escolhe:
 | Site Cliente | `/cliente/{codigo}/*` | 9 | Cardápio, busca, rastreamento, endereços, meus-cupons |
 | Motoboy | `/motoboy/*` | 6 | Entregas, GPS, ganhos, finalizar |
 | KDS | `/kds/*` | 5 | Pedidos cozinha, status, assumir, refazer |
-| Super Admin | `/api/admin/*` | 15 | CRUD restaurantes, planos, billing, integrações, **features override**, **CNPJ lookup** |
-| Billing | `/painel/billing/*` | 5 | Assinatura, faturas, pagamento, planos disponíveis (com features) |
+| Super Admin | `/api/admin/*` | 18 | CRUD restaurantes, planos, billing, integrações, **features override**, **CNPJ lookup**, **solicitações cadastro** |
+| Billing | `/painel/billing/*` | 8 | Assinatura, faturas, pagamento, planos disponíveis (com features), add-ons (listar/ativar/desativar) |
 | Billing Admin | `/api/admin/billing/*` | 6 | MRR, inadimplentes, ações billing |
 | Webhooks | `/webhooks/*` | 2 | Asaas, Woovi |
 | Integrações | `/painel/integracoes/*` | 4 | Connect/disconnect marketplace (gate: `integracoes_marketplace`) |
@@ -695,7 +718,7 @@ Admin escolhe:
 | Domínios | `/painel/dominios/*` | 4 | CRUD domínios personalizados (gate: `dominio_personalizado`) |
 | Analytics | `/painel/relatorios/analytics` | 1 | Analytics avançado (gate: `analytics_avancado`) |
 | Operadores Caixa | `/painel/caixa/operadores/*` | 3 | CRUD operadores (gate: `operadores_caixa`) |
-| Público | `/api/public/*` | 2 | Planos (com features) e demos para landing page |
+| Público | `/api/public/*` | 3 | Planos (com features), demos e solicitar-cadastro (onboarding) |
 
 ### 9.3 WebSocket Channels
 | Canal | Auth | Eventos |
@@ -896,6 +919,24 @@ Restaurante saca (manual ou automático)
 - **Quiz Diagnóstico:** formulário interativo que calcula quanto o restaurante perde sem sistema (por tipo)
 - **Correção ortográfica (26/03/2026):** 23+ correções de acentuação (mês, grátis, período, dúvidas, é, já, número, opção, Relatórios, Promoções, Garçom, Integrações, Domínio, Avançado, Básico)
 
+### 12.2 Landing Page Onboarding — /onboarding (29/03/2026)
+- **URL:** `https://superfood-api.fly.dev/onboarding` ou `https://derekhfood.com.br/onboarding`
+- **Propósito:** Captação self-service de novos restaurantes (sem preços, foco em dores e interesse)
+- **Design:** Single page dark (gray-950) com gradientes orange, scroll suave
+- **Seções:**
+  1. **Hero:** "Seu restaurante merece vender mais" + CTA "Quero Experimentar Grátis" + badge "15 dias grátis"
+  2. **Dores:** 4 cards (pedidos perdidos no WhatsApp, dependência iFood 27%, sem controle caixa, cardápio desatualizado)
+  3. **Features:** 9 cards (site próprio, bot WhatsApp 24h, painel completo, KDS, app garçom, Pix, relatórios, fidelidade, motoboys rastreados)
+  4. **Social Proof:** 3 números (restaurantes, pedidos, taxa retorno)
+  5. **Formulário:** nome restaurante, responsável, email, telefone (máscara), cidade, estado (select UF), tipo restaurante (8 tipos), mensagem
+  6. **Footer:** logo + copyright
+- **Anti-spam:** máximo 3 solicitações por email em 24h (HTTP 429)
+- **Endpoint:** `POST /api/public/solicitar-cadastro` (sem autenticação)
+- **Tela de sucesso:** mensagem de confirmação + opção enviar outra
+- **Migration 042:** tabela `solicitacoes_cadastro` (id, nome_fantasia, nome_responsavel, email, telefone, cnpj, cidade, estado, tipo_restaurante, mensagem, status, motivo_rejeicao, restaurante_id FK, criado_em, atualizado_em, ip_origem)
+- **Fluxo completo:** Prospect → formulário → BD → Super Admin review → 1-click criar restaurante → trial + email
+- **Arquivo:** `client/src/pages/Landing.tsx`
+
 ### 12.3 Demo WhatsApp Humanoide (Modal Interativo)
 - **Botões de ativação:** 2 locais — banner WhatsApp Humanoide (planos) e FAQ
 - **Modal smartphone:** em desktop simula frame de celular (380×720px, border-radius 40px); em mobile ocupa tela inteira (full-screen imersivo)
@@ -1001,7 +1042,69 @@ O sistema usa **comparação por tier inteiro** (1-4) com hierarquia cumulativa.
 | `bridge_printer` | Todos `/painel/bridge/*` | `verificar_feature("bridge_printer")` |
 | `integracoes_marketplace` | Todos `/painel/integracoes/*` | `verificar_feature("integracoes_marketplace")` |
 
-### 13.4 Super Admin Override
+### 13.4 Sistema de Add-ons
+
+Add-ons são funcionalidades contratáveis à parte, cobradas na mesma fatura Asaas (fatura única integrada). A assinatura existente é atualizada com o novo valor.
+
+**Arquivos-chave:**
+- `backend/app/feature_flags.py` — Constantes `ADDON_FEATURES`, `ADDON_PRICES`, `ADDON_MIN_TIER`, `ADDON_INCLUDED_TIER`, `ADDON_LABELS`
+- `backend/app/feature_guard.py` — `addon_info` no 403 (preço, can_subscribe, min_tier)
+- `backend/app/billing/billing_service.py` — `ativar_addon_bot()`, `desativar_addon_bot()`, `get_addons_status()`
+- Migration 041 — campos addon em `restaurantes` e `asaas_assinaturas` + tabela `addon_audit_log`
+
+**Add-ons disponíveis:**
+
+| Add-on | Key | Preço/mês | Plano Mínimo | Incluso em |
+|--------|-----|-----------|:------------:|:----------:|
+| WhatsApp Humanoide | `bot_whatsapp` | R$99,45 | Essencial (T2) | Premium (T4) |
+
+**Fluxo de ativação:**
+1. Restaurante acessa Minha Assinatura → seção Add-ons
+2. Clica "Ativar" → dialog com breakdown: Plano R$279,90 + Bot R$99,45 = R$379,35
+3. Confirma → `billing_service.ativar_addon_bot()`:
+   - Valida: tier >= 2, tier < 4, billing_status == "active", addon não ativo
+   - Atualiza assinatura Asaas: `atualizar_assinatura(sub_id, value=novo_valor)`
+   - BD: `addon_bot_whatsapp=True`, `addon_bot_valor=99.45`
+   - Registra `AddonAuditLog` + `BillingAuditLog`
+4. Feature guard passa: `has_feature()` aceita addons dict → bot acessível
+
+**Fluxo de desativação:**
+1. Restaurante clica "Desativar" → confirma
+2. `billing_service.desativar_addon_bot()`:
+   - Atualiza Asaas: volta ao valor base
+   - BD: `addon_bot_whatsapp=False`, desliga `bot_config.bot_ativo`
+   - Registra auditoria
+
+**Edge cases:**
+| Cenário | Comportamento |
+|---------|---------------|
+| Trial ativa addon | Bloqueado — trial já tem Premium |
+| Básico (T1) ativa addon | Bloqueado — requer Essencial+ |
+| Premium ativa addon | Bloqueado — já incluso grátis |
+| Upgrade para Premium com addon | Auto-desativa addon (já incluso) |
+| Downgrade de Premium | Perde bot — precisa ativar addon manualmente |
+| Desativa mid-cycle | Asaas atualiza valor; bot desliga imediato |
+
+**Endpoints:**
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/painel/billing/addons` | Lista add-ons com status/preço/pode_assinar |
+| POST | `/painel/billing/addon/bot-whatsapp/ativar` | Ativa add-on bot |
+| POST | `/painel/billing/addon/bot-whatsapp/desativar` | Desativa add-on bot |
+
+**Tabelas BD (Migration 041):**
+- `restaurantes`: `addon_bot_whatsapp` (Bool), `addon_bot_valor` (Float), `addon_bot_ativado_em` (DateTime), `addon_bot_desativado_em` (DateTime)
+- `asaas_assinaturas`: `valor_base_plano` (Float), `valor_addons` (Float), `addons_json` (Text/JSON)
+- `addon_audit_log`: id, restaurante_id, addon, acao, valor_anterior, valor_novo, motivo, criado_em
+
+**Frontend:**
+- Hooks: `useAddons()`, `useAtivarAddonBot()`, `useDesativarAddonBot()`
+- Billing.tsx: seção "Add-ons" com cards, dialogs de confirmação, breakdown de valores
+- BotWhatsApp.tsx: banner "Ativo via add-on (+R$99,45/mês)" quando acesso é via addon
+- AdminSidebar.tsx: badge "ADD-ON" em vez de "PRO" para features de addon
+- useFeatureFlag.ts: retorna `isAddon`, `addonActive`, `addonPrice`, `canSubscribeAddon`
+
+### 13.5 Super Admin Override
 
 - `GET /api/admin/restaurantes/{id}/features` — lista features + overrides
 - `PUT /api/admin/restaurantes/{id}/features` — body `{"kds_cozinha": true}` → dá acesso
@@ -1947,7 +2050,7 @@ fly secrets set EVOLUTION_WEBHOOK_SECRET="<apikey-da-evolution>" --app superfood
 
 ---
 
-*Documento gerado automaticamente pelo sistema Derekh Food v4.0.2*
-*Última atualização: 27/03/2026*
+*Documento gerado automaticamente pelo sistema Derekh Food v4.0.7*
+*Última atualização: 29/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
 *WhatsApp comercial: +1 555-900-4563*

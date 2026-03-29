@@ -13,6 +13,7 @@ import {
   Sparkles,
   Bot,
   X,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -25,6 +26,7 @@ const menuItems = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard },
   { path: "/restaurantes", label: "Restaurantes", icon: Store },
   { path: "/restaurantes/novo", label: "Novo Restaurante", icon: PlusCircle },
+  { path: "/solicitacoes", label: "Solicitações", icon: ClipboardList },
   { path: "/planos", label: "Planos", icon: CreditCard },
   { path: "/inadimplentes", label: "Inadimplentes", icon: AlertTriangle },
   { path: "/billing", label: "Billing", icon: Receipt },

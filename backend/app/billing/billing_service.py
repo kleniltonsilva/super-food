@@ -13,7 +13,8 @@ from .. import models
 from .asaas_client import asaas_client
 from ..feature_flags import (
     get_tier, get_features_list_for_plano, get_new_features_for_plano,
-    FEATURE_LABELS, MOTOBOYS_POR_TIER, PlanTier,
+    FEATURE_LABELS, MOTOBOYS_POR_TIER, PlanTier, TIER_TO_PLANO,
+    ADDON_PRICES, ADDON_MIN_TIER, ADDON_INCLUDED_TIER, ADDON_LABELS,
 )
 
 logger = logging.getLogger("superfood.billing")
@@ -171,11 +172,37 @@ async def selecionar_plano(
     was_trial = restaurante.billing_status == "trial"
 
     # Atualizar plano/limites do restaurante (status será atualizado após Asaas)
+    novo_tier = get_tier(plano)
+
+    # Se upgrade para Premium (tier 4) e tem addon bot ativo → auto-desativar (já incluso)
+    addon_desativado = False
+    if novo_tier >= 4 and getattr(restaurante, "addon_bot_whatsapp", False):
+        restaurante.addon_bot_whatsapp = False
+        restaurante.addon_bot_valor = 0.0
+        restaurante.addon_bot_desativado_em = datetime.utcnow()
+        addon_desativado = True
+        addon_audit = models.AddonAuditLog(
+            restaurante_id=restaurante_id,
+            addon="bot_whatsapp",
+            acao="auto_desativado",
+            valor_anterior=ADDON_PRICES.get("bot_whatsapp", 99.45),
+            valor_novo=0,
+            motivo=f"Upgrade para plano {plano} (bot incluso)",
+        )
+        db.add(addon_audit)
+
+    # Se tem addon ativo e troca plano (tier < 4) → somar addon ao valor
+    addon_valor = 0.0
+    if not addon_desativado and getattr(restaurante, "addon_bot_whatsapp", False):
+        addon_valor = ADDON_PRICES.get("bot_whatsapp", 99.45)
+        if ciclo == "MONTHLY":
+            valor = round(valor + addon_valor, 2)
+
     restaurante.plano = plano
     restaurante.plano_ciclo = ciclo
     restaurante.valor_plano = valor  # valor por ciclo: mensal ou anual total
     restaurante.limite_motoboys = plano_info["limite_motoboys"]
-    restaurante.plano_tier = get_tier(plano)
+    restaurante.plano_tier = novo_tier
     restaurante.data_vencimento = proximo_vencimento
 
     # Criar assinatura no Asaas
@@ -464,6 +491,11 @@ def get_billing_status(restaurante: models.Restaurante, db: Session) -> dict:
         "pix_info": pix_info,
         "dias_cancelamento": config.dias_cancelamento,
         "dias_suspensao": config.dias_suspensao,
+        # Add-ons
+        "addon_bot_whatsapp": bool(getattr(restaurante, "addon_bot_whatsapp", False)),
+        "addon_bot_valor": getattr(restaurante, "addon_bot_valor", 0) or 0,
+        "valor_base_plano": assinatura.valor_base_plano if assinatura else None,
+        "valor_addons": assinatura.valor_addons if assinatura else 0,
     }
 
 
@@ -594,4 +626,222 @@ def get_planos_disponiveis(db: Session) -> list:
                 for f in new_features
             ],
         })
+
     return resultado
+
+
+async def ativar_addon_bot(restaurante_id: int, db: Session):
+    """Ativa add-on Bot WhatsApp para o restaurante."""
+    import json as _json
+
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == restaurante_id
+    ).first()
+    if not restaurante:
+        raise ValueError("Restaurante não encontrado")
+
+    tier = getattr(restaurante, "plano_tier", None) or get_tier(restaurante.plano)
+    addon_price = ADDON_PRICES.get("bot_whatsapp", 99.45)
+    min_tier = ADDON_MIN_TIER.get("bot_whatsapp", 2)
+    included_tier = ADDON_INCLUDED_TIER.get("bot_whatsapp", 4)
+
+    # Validações
+    if restaurante.billing_status == "trial":
+        raise ValueError("Durante o período de teste você já tem acesso ao Bot WhatsApp (Premium).")
+    if tier < min_tier:
+        raise ValueError(f"Plano mínimo para este add-on é Essencial (Tier {min_tier}). Seu plano atual é {restaurante.plano}.")
+    if tier >= included_tier:
+        raise ValueError("O Bot WhatsApp já está incluso no seu plano Premium.")
+    if restaurante.billing_status not in ("active",):
+        raise ValueError("Sua assinatura precisa estar ativa para contratar add-ons.")
+    if getattr(restaurante, "addon_bot_whatsapp", False):
+        raise ValueError("Add-on Bot WhatsApp já está ativo.")
+
+    # Buscar assinatura ativa
+    assinatura = db.query(models.AsaasAssinatura).filter(
+        models.AsaasAssinatura.restaurante_id == restaurante_id,
+        models.AsaasAssinatura.status == "ACTIVE",
+    ).first()
+
+    if not assinatura:
+        raise ValueError("Nenhuma assinatura ativa encontrada.")
+
+    # Salvar valor base se não existe
+    if assinatura.valor_base_plano is None:
+        assinatura.valor_base_plano = assinatura.valor
+
+    # Calcular novo valor
+    novo_valor = round(assinatura.valor + addon_price, 2)
+
+    # Atualizar Asaas
+    if asaas_client.configured and assinatura.asaas_subscription_id:
+        await asaas_client.atualizar_assinatura(
+            assinatura.asaas_subscription_id,
+            value=novo_valor,
+        )
+
+    # Atualizar BD
+    valor_anterior = assinatura.valor
+    assinatura.valor = novo_valor
+    assinatura.valor_addons = addon_price
+    addons_dict = {}
+    if assinatura.addons_json:
+        try:
+            addons_dict = _json.loads(assinatura.addons_json)
+        except (ValueError, TypeError):
+            pass
+    addons_dict["bot_whatsapp"] = addon_price
+    assinatura.addons_json = _json.dumps(addons_dict)
+
+    restaurante.addon_bot_whatsapp = True
+    restaurante.addon_bot_valor = addon_price
+    restaurante.addon_bot_ativado_em = datetime.utcnow()
+    restaurante.addon_bot_desativado_em = None
+    restaurante.valor_plano = novo_valor
+
+    # Audit
+    addon_audit = models.AddonAuditLog(
+        restaurante_id=restaurante_id,
+        addon="bot_whatsapp",
+        acao="ativado",
+        valor_anterior=valor_anterior,
+        valor_novo=novo_valor,
+        motivo=f"Add-on ativado pelo restaurante ({restaurante.plano} + R${addon_price})",
+    )
+    db.add(addon_audit)
+    registrar_audit(db, restaurante_id, "addon_activated", {
+        "addon": "bot_whatsapp",
+        "valor_anterior": valor_anterior,
+        "valor_novo": novo_valor,
+        "addon_price": addon_price,
+    })
+
+    db.commit()
+    return {
+        "addon": "bot_whatsapp",
+        "valor_anterior": valor_anterior,
+        "valor_novo": novo_valor,
+        "addon_price": addon_price,
+    }
+
+
+async def desativar_addon_bot(restaurante_id: int, db: Session):
+    """Desativa add-on Bot WhatsApp do restaurante."""
+    import json as _json
+
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == restaurante_id
+    ).first()
+    if not restaurante:
+        raise ValueError("Restaurante não encontrado")
+
+    if not getattr(restaurante, "addon_bot_whatsapp", False):
+        raise ValueError("Add-on Bot WhatsApp não está ativo.")
+
+    addon_price = ADDON_PRICES.get("bot_whatsapp", 99.45)
+
+    # Buscar assinatura ativa
+    assinatura = db.query(models.AsaasAssinatura).filter(
+        models.AsaasAssinatura.restaurante_id == restaurante_id,
+        models.AsaasAssinatura.status == "ACTIVE",
+    ).first()
+
+    if not assinatura:
+        raise ValueError("Nenhuma assinatura ativa encontrada.")
+
+    # Calcular novo valor
+    novo_valor = round(max(assinatura.valor - addon_price, 0), 2)
+    # Restaurar ao base se possível
+    if assinatura.valor_base_plano:
+        novo_valor = assinatura.valor_base_plano
+
+    # Atualizar Asaas
+    if asaas_client.configured and assinatura.asaas_subscription_id:
+        await asaas_client.atualizar_assinatura(
+            assinatura.asaas_subscription_id,
+            value=novo_valor,
+        )
+
+    # Atualizar BD
+    valor_anterior = assinatura.valor
+    assinatura.valor = novo_valor
+    assinatura.valor_addons = 0
+    addons_dict = {}
+    if assinatura.addons_json:
+        try:
+            addons_dict = _json.loads(assinatura.addons_json)
+        except (ValueError, TypeError):
+            pass
+    addons_dict.pop("bot_whatsapp", None)
+    assinatura.addons_json = _json.dumps(addons_dict) if addons_dict else None
+
+    restaurante.addon_bot_whatsapp = False
+    restaurante.addon_bot_valor = 0.0
+    restaurante.addon_bot_desativado_em = datetime.utcnow()
+    restaurante.valor_plano = novo_valor
+
+    # Desligar bot ativo
+    bot_config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante_id
+    ).first()
+    if bot_config and bot_config.bot_ativo:
+        bot_config.bot_ativo = False
+
+    # Audit
+    addon_audit = models.AddonAuditLog(
+        restaurante_id=restaurante_id,
+        addon="bot_whatsapp",
+        acao="desativado",
+        valor_anterior=valor_anterior,
+        valor_novo=novo_valor,
+        motivo="Add-on desativado pelo restaurante",
+    )
+    db.add(addon_audit)
+    registrar_audit(db, restaurante_id, "addon_deactivated", {
+        "addon": "bot_whatsapp",
+        "valor_anterior": valor_anterior,
+        "valor_novo": novo_valor,
+    })
+
+    db.commit()
+    return {
+        "addon": "bot_whatsapp",
+        "valor_anterior": valor_anterior,
+        "valor_novo": novo_valor,
+    }
+
+
+def get_addons_status(restaurante: models.Restaurante, db: Session) -> list:
+    """Retorna lista de add-ons com status para o restaurante."""
+    tier = getattr(restaurante, "plano_tier", None) or get_tier(restaurante.plano)
+    result = []
+
+    for addon_key, price in ADDON_PRICES.items():
+        min_tier = ADDON_MIN_TIER.get(addon_key, 2)
+        included_tier = ADDON_INCLUDED_TIER.get(addon_key, 4)
+        is_trial = restaurante.billing_status == "trial"
+        is_included = tier >= included_tier or is_trial
+        is_active = bool(getattr(restaurante, f"addon_{addon_key}", False))
+        can_subscribe = (
+            tier >= min_tier
+            and tier < included_tier
+            and not is_trial
+            and restaurante.billing_status == "active"
+            and not is_active
+        )
+
+        result.append({
+            "key": addon_key,
+            "label": ADDON_LABELS.get(addon_key, addon_key),
+            "price": price,
+            "active": is_active,
+            "included": is_included,
+            "can_subscribe": can_subscribe,
+            "min_tier": min_tier,
+            "min_plano": TIER_TO_PLANO.get(min_tier, "Essencial"),
+            "included_tier": included_tier,
+            "included_plano": TIER_TO_PLANO.get(included_tier, "Premium"),
+            "ativado_em": getattr(restaurante, f"addon_{addon_key}_ativado_em", None),
+        })
+
+    return result

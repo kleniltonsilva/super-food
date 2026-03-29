@@ -2412,3 +2412,248 @@ def set_features_override(
         "overrides": existing,
         "features": features,
     }
+
+
+# ==================== Solicitações de Cadastro (Onboarding) ====================
+
+class SolicitacaoStatusUpdate(BaseModel):
+    status: str  # aprovado, rejeitado
+    motivo: Optional[str] = None
+
+
+class CriarRestauranteDeSolicitacao(BaseModel):
+    endereco_completo: str = ""
+    plano: str = "Básico"
+    valor_plano: float = 169.90
+    limite_motoboys: int = 2
+    criar_site: bool = True
+    tipo_restaurante: str = "geral"
+    enviar_email: bool = True
+    iniciar_trial: bool = True
+
+
+@router.get("/solicitacoes")
+def listar_solicitacoes(
+    status: Optional[str] = Query(None),
+    busca: Optional[str] = Query(None),
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Lista solicitações de cadastro (filtro por status e busca)."""
+    query = db.query(models.SolicitacaoCadastro)
+
+    if status:
+        query = query.filter(models.SolicitacaoCadastro.status == status)
+    if busca:
+        termo = f"%{busca}%"
+        query = query.filter(
+            or_(
+                models.SolicitacaoCadastro.nome_fantasia.ilike(termo),
+                models.SolicitacaoCadastro.email.ilike(termo),
+                models.SolicitacaoCadastro.telefone.ilike(termo),
+                models.SolicitacaoCadastro.nome_responsavel.ilike(termo),
+            )
+        )
+
+    solicitacoes = query.order_by(models.SolicitacaoCadastro.criado_em.desc()).all()
+
+    # Contagem por status
+    total_pendentes = db.query(func.count(models.SolicitacaoCadastro.id)).filter(
+        models.SolicitacaoCadastro.status == "pendente"
+    ).scalar() or 0
+
+    return {
+        "solicitacoes": [
+            {
+                "id": s.id,
+                "nome_fantasia": s.nome_fantasia,
+                "nome_responsavel": s.nome_responsavel,
+                "email": s.email,
+                "telefone": s.telefone,
+                "cnpj": s.cnpj,
+                "cidade": s.cidade,
+                "estado": s.estado,
+                "tipo_restaurante": s.tipo_restaurante,
+                "mensagem": s.mensagem,
+                "status": s.status,
+                "motivo_rejeicao": s.motivo_rejeicao,
+                "restaurante_id": s.restaurante_id,
+                "criado_em": s.criado_em.isoformat() if s.criado_em else None,
+                "atualizado_em": s.atualizado_em.isoformat() if s.atualizado_em else None,
+                "ip_origem": s.ip_origem,
+            }
+            for s in solicitacoes
+        ],
+        "total_pendentes": total_pendentes,
+    }
+
+
+@router.put("/solicitacoes/{solicitacao_id}/status")
+def atualizar_status_solicitacao(
+    solicitacao_id: int,
+    dados: SolicitacaoStatusUpdate,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Aprovar ou rejeitar solicitação de cadastro."""
+    sol = db.query(models.SolicitacaoCadastro).filter(
+        models.SolicitacaoCadastro.id == solicitacao_id
+    ).first()
+    if not sol:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+
+    if dados.status not in ("aprovado", "rejeitado"):
+        raise HTTPException(status_code=400, detail="Status deve ser 'aprovado' ou 'rejeitado'")
+
+    sol.status = dados.status
+    if dados.status == "rejeitado" and dados.motivo:
+        sol.motivo_rejeicao = dados.motivo
+    sol.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {"sucesso": True, "status": sol.status}
+
+
+@router.post("/solicitacoes/{solicitacao_id}/criar-restaurante")
+async def criar_restaurante_de_solicitacao(
+    solicitacao_id: int,
+    dados: CriarRestauranteDeSolicitacao,
+    current_admin: models.SuperAdmin = Depends(auth.get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Converte solicitação em restaurante real (1-click)."""
+    sol = db.query(models.SolicitacaoCadastro).filter(
+        models.SolicitacaoCadastro.id == solicitacao_id
+    ).first()
+    if not sol:
+        raise HTTPException(status_code=404, detail="Solicitação não encontrada")
+    if sol.restaurante_id:
+        raise HTTPException(status_code=400, detail="Restaurante já foi criado para esta solicitação")
+
+    # Verificar email duplicado
+    email_limpo = sol.email.strip().lower()
+    existe_email = db.query(models.Restaurante).filter(
+        models.Restaurante.email == email_limpo
+    ).first()
+    if existe_email:
+        raise HTTPException(status_code=400, detail=f"Email {email_limpo} já cadastrado no restaurante '{existe_email.nome_fantasia}'")
+
+    # Verificar CNPJ duplicado (se informado)
+    cnpj_limpo = None
+    if sol.cnpj:
+        cnpj_limpo = re.sub(r'\D', '', sol.cnpj)
+        if cnpj_limpo:
+            existe_cnpj = db.query(models.Restaurante).filter(
+                models.Restaurante.cnpj == cnpj_limpo
+            ).first()
+            if existe_cnpj:
+                raise HTTPException(status_code=400, detail=f"CNPJ já cadastrado no restaurante '{existe_cnpj.nome_fantasia}'")
+
+    # Gerar senha padrão (primeiros 6 dígitos do telefone)
+    telefone_limpo = re.sub(r'\D', '', sol.telefone or '')
+    senha_padrao = telefone_limpo[:6] if len(telefone_limpo) >= 6 else "123456"
+
+    endereco = dados.endereco_completo.strip() if dados.endereco_completo.strip() else f"{sol.cidade or ''}, {sol.estado or ''}".strip(", ")
+    if not endereco:
+        endereco = "A definir"
+
+    restaurante = models.Restaurante(
+        nome=sol.nome_fantasia,
+        nome_fantasia=sol.nome_fantasia,
+        cnpj=cnpj_limpo or None,
+        email=email_limpo,
+        telefone=telefone_limpo,
+        endereco_completo=endereco,
+        cidade=sol.cidade,
+        estado=sol.estado,
+        plano=dados.plano,
+        valor_plano=dados.valor_plano,
+        limite_motoboys=dados.limite_motoboys,
+        ativo=True,
+        status='ativo',
+        data_vencimento=datetime.utcnow() + timedelta(days=30),
+    )
+    restaurante.gerar_codigo_acesso()
+    restaurante.set_senha(senha_padrao)
+
+    db.add(restaurante)
+    db.flush()
+
+    # Config padrão
+    config = models.ConfigRestaurante(restaurante_id=restaurante.id)
+    db.add(config)
+
+    # Site config
+    if dados.criar_site:
+        site_config = models.SiteConfig(
+            restaurante_id=restaurante.id,
+            tipo_restaurante=dados.tipo_restaurante or sol.tipo_restaurante or "geral",
+        )
+        db.add(site_config)
+
+    db.commit()
+    db.refresh(restaurante)
+
+    # Seed produtos padrão
+    tipo_rest = dados.tipo_restaurante or sol.tipo_restaurante or "geral"
+    if dados.criar_site:
+        try:
+            from database.seed.seed_produtos_padrao import criar_produtos_padrao
+            total = criar_produtos_padrao(db, restaurante.id, tipo_rest)
+            if total > 0:
+                db.commit()
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Seed produtos padrão falhou: {e}")
+            db.rollback()
+            db.refresh(restaurante)
+
+    # Iniciar trial
+    trial_dias = 15
+    if dados.iniciar_trial:
+        try:
+            from ..billing.billing_service import iniciar_trial
+            await iniciar_trial(restaurante.id, db, admin_id=current_admin.id)
+            db.refresh(restaurante)
+            config_billing = db.query(models.ConfigBilling).first()
+            if config_billing:
+                trial_dias = config_billing.trial_dias or 15
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Erro ao iniciar trial: {e}")
+
+    # Vincular solicitação
+    sol.restaurante_id = restaurante.id
+    sol.status = "aprovado"
+    sol.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    # Enviar email boas-vindas
+    email_enviado = False
+    if dados.enviar_email and email_limpo:
+        try:
+            link_painel = f"{BASE_URL}/admin/login"
+            link_onboarding = f"{BASE_URL}/admin/inicio"
+            resultado_email = await enviar_email_boas_vindas(
+                email_destino=email_limpo,
+                nome_fantasia=sol.nome_fantasia,
+                codigo_acesso=restaurante.codigo_acesso,
+                senha_padrao=senha_padrao,
+                link_painel=link_painel,
+                link_onboarding=link_onboarding,
+            )
+            email_enviado = resultado_email.get("enviado", False)
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Erro ao enviar email boas-vindas: {e}")
+
+    return {
+        "sucesso": True,
+        "restaurante": {
+            "id": restaurante.id,
+            "nome_fantasia": restaurante.nome_fantasia,
+            "email": restaurante.email,
+            "codigo_acesso": restaurante.codigo_acesso,
+            "senha_padrao": senha_padrao,
+            "plano": restaurante.plano,
+            "trial_dias": trial_dias,
+        },
+        "email_enviado": email_enviado,
+    }

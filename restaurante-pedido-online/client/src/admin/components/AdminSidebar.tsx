@@ -31,7 +31,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ROUTE_FEATURE_MAP } from "@/admin/hooks/useFeatureFlag";
+import { ROUTE_FEATURE_MAP, ADDON_FEATURES } from "@/admin/hooks/useFeatureFlag";
 
 interface AdminSidebarProps {
   open: boolean;
@@ -183,7 +183,7 @@ export default function AdminSidebar({ open, onClose }: AdminSidebarProps) {
           <span className="truncate md:hidden lg:inline">{item.label}</span>
           {isLocked && (
             <span className="ml-auto text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded md:hidden lg:inline">
-              PRO
+              {featureKey && featureKey in ADDON_FEATURES ? "ADD-ON" : "PRO"}
             </span>
           )}
           {/* Compact mode tooltip (md only) */}

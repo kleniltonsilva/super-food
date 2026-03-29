@@ -334,3 +334,36 @@ export async function getBotTokenUsage(params?: { periodo?: string; restaurante_
   const { data } = await superAdminApi.get("/api/admin/bot/token-usage", { params });
   return data;
 }
+
+// ─── Solicitações de Cadastro (Onboarding) ──────────────
+export async function getSolicitacoes(status?: string) {
+  const { data } = await superAdminApi.get("/api/admin/solicitacoes", {
+    params: status ? { status } : undefined,
+  });
+  return data;
+}
+
+export async function atualizarSolicitacao(
+  id: number,
+  payload: { status: string; motivo?: string }
+) {
+  const { data } = await superAdminApi.put(`/api/admin/solicitacoes/${id}/status`, payload);
+  return data;
+}
+
+export async function criarRestauranteDeSolicitacao(
+  id: number,
+  payload: {
+    endereco_completo?: string;
+    plano?: string;
+    valor_plano?: number;
+    limite_motoboys?: number;
+    criar_site?: boolean;
+    tipo_restaurante?: string;
+    enviar_email?: boolean;
+    iniciar_trial?: boolean;
+  }
+) {
+  const { data } = await superAdminApi.post(`/api/admin/solicitacoes/${id}/criar-restaurante`, payload);
+  return data;
+}

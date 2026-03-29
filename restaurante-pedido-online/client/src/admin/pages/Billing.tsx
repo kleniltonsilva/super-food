@@ -1,13 +1,15 @@
 import AdminLayout from "@/admin/components/AdminLayout";
-import { useBillingStatus, useFaturas } from "@/admin/hooks/useAdminQueries";
+import { useBillingStatus, useFaturas, useAddons, useAtivarAddonBot, useDesativarAddonBot } from "@/admin/hooks/useAdminQueries";
+import { useAdminAuth } from "@/admin/contexts/AdminAuthContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { CreditCard, Calendar, AlertTriangle, FileText, ExternalLink } from "lucide-react";
+import { CreditCard, Calendar, AlertTriangle, FileText, ExternalLink, Bot, Plus, X } from "lucide-react";
 import { useLocation } from "wouter";
 import { getFaturaPix } from "@/admin/lib/adminApiClient";
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { toast } from "sonner";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   manual: { label: "Manual", color: "bg-gray-500/20 text-gray-400" },
@@ -29,10 +31,15 @@ const FATURA_STATUS: Record<string, { label: string; color: string }> = {
 
 export default function Billing() {
   const [, navigate] = useLocation();
+  const { refreshRestaurante } = useAdminAuth();
   const { data: billing, isLoading } = useBillingStatus();
   const { data: faturasData } = useFaturas();
+  const { data: addons } = useAddons();
+  const ativarAddon = useAtivarAddonBot();
+  const desativarAddon = useDesativarAddonBot();
   const [pixDialog, setPixDialog] = useState<{ qr_code: string; copia_cola: string; valor: number } | null>(null);
   const [loadingPix, setLoadingPix] = useState(false);
+  const [addonDialog, setAddonDialog] = useState<"ativar" | "desativar" | null>(null);
 
   async function handleVerPix(faturaId: number) {
     setLoadingPix(true);
@@ -44,6 +51,32 @@ export default function Billing() {
     } finally {
       setLoadingPix(false);
     }
+  }
+
+  function handleAtivarAddon() {
+    ativarAddon.mutate(undefined, {
+      onSuccess: async () => {
+        toast.success("Add-on WhatsApp Humanoide ativado!");
+        setAddonDialog(null);
+        await refreshRestaurante();
+      },
+      onError: (err: any) => {
+        toast.error(err?.response?.data?.detail || "Erro ao ativar add-on");
+      },
+    });
+  }
+
+  function handleDesativarAddon() {
+    desativarAddon.mutate(undefined, {
+      onSuccess: async () => {
+        toast.success("Add-on desativado. O bot foi desligado.");
+        setAddonDialog(null);
+        await refreshRestaurante();
+      },
+      onError: (err: any) => {
+        toast.error(err?.response?.data?.detail || "Erro ao desativar add-on");
+      },
+    });
   }
 
   if (isLoading) {
@@ -59,6 +92,16 @@ export default function Billing() {
   const statusInfo = STATUS_LABELS[billing?.billing_status] || STATUS_LABELS.manual;
   const trialFim = billing?.trial_fim ? new Date(billing.trial_fim) : null;
   const diasTrial = trialFim ? Math.max(0, Math.ceil((trialFim.getTime() - Date.now()) / 86400000)) : 0;
+  const isTrial = billing?.billing_status === "trial" && diasTrial > 0;
+  const isPremium = billing?.plano === "Premium";
+
+  // Add-on bot info
+  const botAddon = (addons as any[])?.find((a: any) => a.key === "bot_whatsapp");
+  const showAddons = !isTrial && !isPremium && billing?.billing_status === "active";
+
+  // Valor base e addon para breakdown
+  const valorBase = billing?.valor_base_plano || (billing?.valor_plano - (billing?.addon_bot_valor || 0));
+  const valorAddon = billing?.addon_bot_valor || 0;
 
   return (
     <AdminLayout>
@@ -71,7 +114,7 @@ export default function Billing() {
         </div>
 
         {/* Banner Trial */}
-        {billing?.billing_status === "trial" && diasTrial > 0 && (
+        {isTrial && (
           <Card className="border-blue-500/30 bg-blue-500/10">
             <CardContent className="flex items-center gap-4 p-4">
               <Calendar className="h-6 w-6 text-blue-400 shrink-0" />
@@ -122,6 +165,11 @@ export default function Billing() {
                 R$ {billing?.valor_plano?.toFixed(2) || "0,00"}
               </div>
               <p className="text-xs text-[var(--text-muted)]">/{billing?.plano_ciclo === "YEARLY" ? "ano" : "mes"}</p>
+              {valorAddon > 0 && (
+                <p className="text-xs text-[var(--text-muted)] mt-1">
+                  Plano R${valorBase?.toFixed(2)} + Add-on R${valorAddon.toFixed(2)}
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -156,6 +204,51 @@ export default function Billing() {
                   </a>
                 </Button>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Add-ons */}
+        {showAddons && botAddon && (
+          <Card className="bg-[var(--bg-surface)] border-[var(--border-subtle)]">
+            <CardHeader>
+              <CardTitle className="text-[var(--text-primary)] flex items-center gap-2">
+                <Bot className="h-5 w-5" /> Add-ons
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between p-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-base)]">
+                <div className="flex items-center gap-4">
+                  <div className="h-10 w-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+                    <Bot className="h-5 w-5 text-green-400" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-[var(--text-primary)]">WhatsApp Humanoide</p>
+                    <p className="text-sm text-[var(--text-muted)]">
+                      Atendimento IA humanizado via WhatsApp
+                    </p>
+                    <p className="text-sm font-semibold text-[var(--cor-primaria)]">+R$99,45/mes</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {botAddon.active ? (
+                    <>
+                      <Badge className="bg-green-500/20 text-green-400">Ativo</Badge>
+                      <Button variant="outline" size="sm" onClick={() => setAddonDialog("desativar")}>
+                        <X className="h-4 w-4 mr-1" /> Desativar
+                      </Button>
+                    </>
+                  ) : botAddon.can_subscribe ? (
+                    <Button size="sm" onClick={() => setAddonDialog("ativar")}>
+                      <Plus className="h-4 w-4 mr-1" /> Ativar
+                    </Button>
+                  ) : (
+                    <Badge className="bg-amber-500/20 text-amber-400">
+                      Requer {botAddon.min_plano}+
+                    </Badge>
+                  )}
+                </div>
+              </div>
             </CardContent>
           </Card>
         )}
@@ -247,6 +340,77 @@ export default function Billing() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Ativar Add-on */}
+      <Dialog open={addonDialog === "ativar"} onOpenChange={() => setAddonDialog(null)}>
+        <DialogContent className="bg-[var(--bg-surface)]">
+          <DialogHeader>
+            <DialogTitle className="text-[var(--text-primary)]">Ativar WhatsApp Humanoide</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-[var(--text-secondary)]">
+              O add-on sera adicionado a sua fatura mensal:
+            </p>
+            <div className="p-4 rounded-lg bg-[var(--bg-base)] border border-[var(--border-subtle)] space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-secondary)]">Plano {billing?.plano}</span>
+                <span className="text-[var(--text-primary)]">R$ {valorBase?.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-secondary)]">WhatsApp Humanoide</span>
+                <span className="text-green-400">+ R$ 99,45</span>
+              </div>
+              <div className="border-t border-[var(--border-subtle)] pt-2 flex justify-between font-bold">
+                <span className="text-[var(--text-primary)]">Total mensal</span>
+                <span className="text-[var(--text-primary)]">R$ {((valorBase || 0) + 99.45).toFixed(2)}</span>
+              </div>
+            </div>
+            <p className="text-xs text-[var(--text-muted)]">
+              Voce pode desativar a qualquer momento. A proxima fatura ja refletira o novo valor.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddonDialog(null)}>Cancelar</Button>
+            <Button onClick={handleAtivarAddon} disabled={ativarAddon.isPending}>
+              {ativarAddon.isPending ? "Ativando..." : "Confirmar Ativacao"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Desativar Add-on */}
+      <Dialog open={addonDialog === "desativar"} onOpenChange={() => setAddonDialog(null)}>
+        <DialogContent className="bg-[var(--bg-surface)]">
+          <DialogHeader>
+            <DialogTitle className="text-[var(--text-primary)]">Desativar WhatsApp Humanoide</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-[var(--text-secondary)]">
+              Ao desativar, o bot sera desligado imediatamente e o valor sera removido da proxima fatura.
+            </p>
+            <div className="p-4 rounded-lg bg-[var(--bg-base)] border border-[var(--border-subtle)] space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-secondary)]">Valor atual</span>
+                <span className="text-[var(--text-primary)]">R$ {billing?.valor_plano?.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-[var(--text-secondary)]">WhatsApp Humanoide</span>
+                <span className="text-red-400">- R$ 99,45</span>
+              </div>
+              <div className="border-t border-[var(--border-subtle)] pt-2 flex justify-between font-bold">
+                <span className="text-[var(--text-primary)]">Novo valor mensal</span>
+                <span className="text-[var(--text-primary)]">R$ {valorBase?.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddonDialog(null)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDesativarAddon} disabled={desativarAddon.isPending}>
+              {desativarAddon.isPending ? "Desativando..." : "Confirmar Desativacao"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AdminLayout>

@@ -540,6 +540,22 @@ export async function getPlanosDisponiveis() {
   return data;
 }
 
+// ─── Add-ons ────────────────────────────────────────────
+export async function getAddons() {
+  const { data } = await adminApi.get("/painel/billing/addons");
+  return data;
+}
+
+export async function ativarAddonBot() {
+  const { data } = await adminApi.post("/painel/billing/addon/bot-whatsapp/ativar");
+  return data;
+}
+
+export async function desativarAddonBot() {
+  const { data } = await adminApi.post("/painel/billing/addon/bot-whatsapp/desativar");
+  return data;
+}
+
 // ─── Upload ────────────────────────────────────────────
 // ─── Integrações Marketplace ────────────────────────
 export async function getIntegracoes() {

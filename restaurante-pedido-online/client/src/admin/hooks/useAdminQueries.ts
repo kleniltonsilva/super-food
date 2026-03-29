@@ -58,6 +58,7 @@ export const ADMIN_QUERY_KEYS = {
   botRelatorioInativos: ["admin", "bot", "relatorio", "inativos"] as const,
   botRelatorioErros: ["admin", "bot", "relatorio", "erros"] as const,
   botRepescagemHistorico: ["admin", "bot", "repescagem", "historico"] as const,
+  addons: ["admin", "billing", "addons"] as const,
 };
 
 // ─── Dashboard ─────────────────────────────────────────
@@ -899,6 +900,37 @@ export function useSelecionarPlano() {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.billingStatus });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.faturas });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.planosDisponiveis });
+    },
+  });
+}
+
+// ─── Add-ons ────────────────────────────────────────────
+export function useAddons() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.addons,
+    queryFn: api.getAddons,
+    staleTime: 30_000,
+  });
+}
+
+export function useAtivarAddonBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.ativarAddonBot,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.addons });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.billingStatus });
+    },
+  });
+}
+
+export function useDesativarAddonBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.desativarAddonBot,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.addons });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.billingStatus });
     },
   });
 }

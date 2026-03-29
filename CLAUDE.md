@@ -76,24 +76,25 @@ MEMORY.md (hub — SEMPRE carregado)
 ## ESTADO ATUAL DO PROJETO
 
 - **Nome:** Derekh Food (anteriormente Super Food)
-- **Versão:** 4.0.6
+- **Versão:** 4.0.7
 - **Autor:** Klenilton Silva (@kleniltonsilva)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 28/03/2026
-- **Migrations em produção:** 001-036 + 039-040 (última: 040_pix_payment_link)
-- **Migrations implementadas (aguardando deploy):** 037 + 038 (Repescagem + Verificação Email + Reset Senha + campo pais)
+- **Última sessão:** 29/03/2026
+- **Migrations em produção:** 001-036 + 039-042 (última: 042_solicitacao_cadastro)
 - **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes
-- **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034
+- **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034 + sistema de add-ons (migration 041)
+- **Add-on Bot WhatsApp:** ✅ Implementado — R$99,45/mês, fatura única Asaas, 15 arquivos, 33 testes
 - **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 24 function calls (+ gerar_cobranca_pix, consultar_pagamento_pix), handoff com senha, STT/TTS, repescagem, testado E2E em produção
 - **Geocoding multi-país:** Reverse geocoding direto, normalização acentos, filtro relaxado para não-BR, migration 038+040
 - **Pix Online (Sprint 17):** Backend implementado (migration 040, paymentLinkUrl, bot Pix integrado, webhook notificação), aguardando WOOVI_APP_ID válido
 - **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
 - **Repescagem + Verificação Email + Reset Senha:** Migration 037, 25 arquivos, cupons exclusivos VOLTA-{NOME}-{código}
+- **Landing Page + Onboarding:** ✅ Migration 042, landing page `/onboarding`, formulário self-service, Super Admin review 1-click
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** Deploy migrations 037-038, configurar WOOVI_APP_ID real, Módulo 5 (Sales), domínio próprio, Resend prod
+- **Pendente:** Configurar WOOVI_APP_ID real, Módulo 5 (Sales), domínio próprio, Resend prod
 
 ---
 
@@ -283,6 +284,7 @@ super-food/
 | 23 | Overhaul Criação Restaurante | ✅ 24/03 (CNPJ lookup, validação DDD, email Resend, onboarding) |
 | 24 | Repescagem Avançada + Verificação Email + Reset Senha | ✅ 26/03 (migration 037, 25 arquivos, cupons exclusivos, OTP email) |
 | 25 | Security Hardening | ✅ 26/03 (8 vulnerabilidades, security headers, CORS, webhook auth, 36 testes) |
+| 26 | Landing Page + Onboarding Self-Service | ✅ 29/03 (migration 042, landing `/onboarding`, formulário self-service, Super Admin review 1-click) |
 
 ---
 
@@ -294,7 +296,7 @@ super-food/
 
 ### INFRAESTRUTURA PENDENTE
 
-- [ ] Comprar domínio + `fly certs add` + DNS
+- [x] Domínio `superfood.com.br` configurado e funcional
 - [ ] Configurar alertas downtime (Fly.io dashboard)
 - [ ] Deploy billing produção: testar sandbox completo → trocar `ASAAS_ENVIRONMENT=production`
 - [ ] Migração R2 (quando volume > 700MB) — código pronto em `storage.py`

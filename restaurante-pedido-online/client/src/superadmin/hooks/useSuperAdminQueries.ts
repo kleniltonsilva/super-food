@@ -42,6 +42,9 @@ import {
   atualizarBotInstancia,
   deletarBotInstancia,
   getBotTokenUsage,
+  getSolicitacoes,
+  atualizarSolicitacao,
+  criarRestauranteDeSolicitacao,
 } from "@/superadmin/lib/superAdminApiClient";
 
 // ─── Métricas ──────────────────────────────────────────
@@ -469,5 +472,38 @@ export function useBotTokenUsage(params?: { periodo?: string; restaurante_id?: n
     queryKey: ["superadmin", "bot", "token-usage", params] as const,
     queryFn: () => getBotTokenUsage(params),
     staleTime: 60_000,
+  });
+}
+
+// ─── Solicitações de Cadastro ──────────────────────────
+export function useSolicitacoes(status?: string) {
+  return useQuery({
+    queryKey: ["superadmin", "solicitacoes", status] as const,
+    queryFn: () => getSolicitacoes(status),
+    staleTime: 30_000,
+  });
+}
+
+export function useAtualizarSolicitacao() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: { status: string; motivo?: string } }) =>
+      atualizarSolicitacao(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "solicitacoes"] });
+    },
+  });
+}
+
+export function useCriarRestauranteDeSolicitacao() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: Record<string, unknown> }) =>
+      criarRestauranteDeSolicitacao(id, payload as any),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["superadmin", "solicitacoes"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "restaurantes"] });
+      qc.invalidateQueries({ queryKey: ["superadmin", "metricas"] });
+    },
   });
 }

@@ -85,6 +85,7 @@ from database.models import (
     AsaasPagamento,
     AsaasEventLog,
     BillingAuditLog,
+    AddonAuditLog,
 
     # KDS Cozinha
     Cozinheiro,
@@ -117,6 +118,9 @@ from database.models import (
     BotAvaliacao,
     BotProblema,
     BotRepescagem,
+
+    # Onboarding
+    SolicitacaoCadastro,
 )
 
 # Para compatibilidade com imports existentes
@@ -163,6 +167,7 @@ __all__ = [
     'AsaasPagamento',
     'AsaasEventLog',
     'BillingAuditLog',
+    'AddonAuditLog',
     'Cozinheiro',
     'CozinheiroProduto',
     'PedidoCozinha',
@@ -185,4 +190,5 @@ __all__ = [
     'BotAvaliacao',
     'BotProblema',
     'BotRepescagem',
+    'SolicitacaoCadastro',
 ]

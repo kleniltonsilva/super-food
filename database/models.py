@@ -71,6 +71,11 @@ class Restaurante(Base):
     plano_ciclo = Column(String(20), default='MONTHLY')  # MONTHLY, YEARLY
     plano_tier = Column(Integer, default=1)  # 1=Básico, 2=Essencial, 3=Avançado, 4=Premium
     features_override = Column(Text)  # JSON string para overrides do Super Admin
+    # Add-ons
+    addon_bot_whatsapp = Column(Boolean, default=False)
+    addon_bot_valor = Column(Float, default=0.0)
+    addon_bot_ativado_em = Column(DateTime)
+    addon_bot_desativado_em = Column(DateTime)
     # Relacionamentos
     config = relationship("ConfigRestaurante", back_populates="restaurante", uselist=False, cascade="all, delete-orphan")
     site_config = relationship("SiteConfig", back_populates="restaurante", uselist=False, cascade="all, delete-orphan")
@@ -1135,6 +1140,10 @@ class AsaasAssinatura(Base):
     trial_fim = Column(DateTime)
     criado_em = Column(DateTime, default=datetime.utcnow)
     atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Add-ons
+    valor_base_plano = Column(Float)
+    valor_addons = Column(Float, default=0.0)
+    addons_json = Column(Text)  # JSON: {"bot_whatsapp": 99.45}
     # Relacionamento
     restaurante = relationship("Restaurante")
     __table_args__ = (
@@ -1209,6 +1218,26 @@ class BillingAuditLog(Base):
     __table_args__ = (
         Index('idx_billing_audit_restaurante', 'restaurante_id', 'criado_em'),
         Index('idx_billing_audit_acao', 'acao', 'criado_em'),
+    )
+
+
+# ==================== ADDON AUDIT LOG ====================
+class AddonAuditLog(Base):
+    """Trilha de auditoria de ações de add-ons"""
+    __tablename__ = "addon_audit_log"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="SET NULL"))
+    addon = Column(String(50), nullable=False)
+    acao = Column(String(30), nullable=False)  # ativado, desativado, auto_desativado
+    valor_anterior = Column(Float)
+    valor_novo = Column(Float)
+    motivo = Column(Text)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamento
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_addon_audit_restaurante', 'restaurante_id', 'criado_em'),
+        Index('idx_addon_audit_addon', 'addon', 'criado_em'),
     )
 
 
@@ -1769,6 +1798,32 @@ class BotRepescagem(Base):
     promocao = relationship("Promocao")
     __table_args__ = (
         Index('idx_bot_repescagens_restaurante', 'restaurante_id'),
+    )
+
+
+class SolicitacaoCadastro(Base):
+    """Solicitação de cadastro via landing page (onboarding self-service)"""
+    __tablename__ = "solicitacoes_cadastro"
+    id = Column(Integer, primary_key=True, index=True)
+    nome_fantasia = Column(String(200), nullable=False)
+    nome_responsavel = Column(String(200), nullable=False)
+    email = Column(String(200), nullable=False)
+    telefone = Column(String(20), nullable=False)
+    cnpj = Column(String(20))
+    cidade = Column(String(100))
+    estado = Column(String(5))
+    tipo_restaurante = Column(String(50), default='geral')
+    mensagem = Column(Text)
+    status = Column(String(30), default='pendente')
+    motivo_rejeicao = Column(Text)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="SET NULL"))
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    ip_origem = Column(String(50))
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_solicitacao_status', 'status'),
+        Index('idx_solicitacao_email', 'email'),
     )
 
 

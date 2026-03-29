@@ -19,6 +19,7 @@ import MotoboyApp from "@/motoboy/MotoboyApp";
 import SuperAdminApp from "@/superadmin/SuperAdminApp";
 import KdsApp from "@/kds/KdsApp";
 import GarcomApp from "@/garcom/GarcomApp";
+import Landing from "@/pages/Landing";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { RestauranteProvider } from "./contexts/RestauranteContext";
@@ -55,6 +56,7 @@ function ClienteRouter() {
 function Router() {
   return (
     <Switch>
+      <Route path="/onboarding" component={Landing} />
       <Route path="/superadmin" nest component={SuperAdminApp} />
       <Route path="/admin" nest component={AdminApp} />
       <Route path="/cozinha" nest component={KdsApp} />
