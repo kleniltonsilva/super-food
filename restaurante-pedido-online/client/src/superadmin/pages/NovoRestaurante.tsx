@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import SuperAdminLayout from "@/superadmin/components/SuperAdminLayout";
-import { useCriarRestaurante, useConsultarCnpj, useBillingConfig } from "@/superadmin/hooks/useSuperAdminQueries";
+import { useCriarRestaurante, useConsultarCnpj, useBillingConfig, usePlanos } from "@/superadmin/hooks/useSuperAdminQueries";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,7 +15,7 @@ import {
 import { toast } from "sonner";
 import {
   Loader2, ArrowLeft, CheckCircle, Search, Copy, Mail, MailX,
-  ExternalLink, Clock,
+  ExternalLink, Clock, Check, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { tiposRestaurante } from "@/config/themeConfig";
@@ -31,12 +31,42 @@ import {
   validarTelefone,
 } from "@/superadmin/lib/validators";
 
-const PLANOS = [
-  { nome: "Básico", valor: 199.0, motoboys: 3, descricao: "Ideal para pequenos restaurantes - até 3 motoboys simultâneos" },
-  { nome: "Essencial", valor: 269.0, motoboys: 6, descricao: "Bom equilíbrio - até 6 motoboys simultâneos" },
-  { nome: "Avançado", valor: 360.0, motoboys: 12, descricao: "Para crescimento - até 12 motoboys simultâneos" },
-  { nome: "Premium", valor: 599.0, motoboys: 999, descricao: "Top: motoboys ilimitados + suporte prioritário" },
+interface PlanoFeature {
+  key: string;
+  label: string;
+  new: boolean;
+}
+
+interface PlanoData {
+  nome: string;
+  valor: number;
+  motoboys: number;
+  descricao: string;
+  tier: number;
+  features: PlanoFeature[];
+}
+
+// Fallback caso o endpoint de planos falhe ou ainda esteja carregando
+const PLANOS_FALLBACK: PlanoData[] = [
+  { nome: "Básico", valor: 169.90, motoboys: 2, descricao: "Ideal para pequenos restaurantes", tier: 1, features: [] },
+  { nome: "Essencial", valor: 279.90, motoboys: 5, descricao: "Para restaurantes em crescimento", tier: 2, features: [] },
+  { nome: "Avançado", valor: 329.90, motoboys: 10, descricao: "Para operações maiores", tier: 3, features: [] },
+  { nome: "Premium", valor: 527.00, motoboys: 999, descricao: "Sem limites + suporte prioritário", tier: 4, features: [] },
 ];
+
+const CORES_PLANOS: Record<string, string> = {
+  "Básico": "border-blue-500 bg-blue-500/10",
+  "Essencial": "border-green-500 bg-green-500/10",
+  "Avançado": "border-amber-500 bg-amber-500/10",
+  "Premium": "border-purple-500 bg-purple-500/10",
+};
+
+const CORES_PLANOS_INACTIVE: Record<string, string> = {
+  "Básico": "border-blue-500/20 hover:border-blue-500/50",
+  "Essencial": "border-green-500/20 hover:border-green-500/50",
+  "Avançado": "border-amber-500/20 hover:border-amber-500/50",
+  "Premium": "border-purple-500/20 hover:border-purple-500/50",
+};
 
 interface FormData {
   nome_fantasia: string;
@@ -72,8 +102,22 @@ export default function NovoRestaurante() {
   const criarMut = useCriarRestaurante();
   const cnpjMut = useConsultarCnpj();
   const { data: billingConfig } = useBillingConfig();
+  const { data: planosApi } = usePlanos();
 
   const trialDias = billingConfig?.trial_dias ?? 15;
+
+  // Planos vêm do banco via API (fonte única de verdade), com fallback
+  const PLANOS: PlanoData[] = useMemo(() => {
+    if (!planosApi || planosApi.length === 0) return PLANOS_FALLBACK;
+    return (planosApi as PlanoData[]).map((p) => ({
+      nome: p.nome,
+      valor: p.valor,
+      motoboys: p.motoboys,
+      descricao: p.descricao,
+      tier: p.tier,
+      features: p.features || [],
+    }));
+  }, [planosApi]);
 
   const [form, setForm] = useState<FormData>({
     nome_fantasia: "",
@@ -95,6 +139,7 @@ export default function NovoRestaurante() {
 
   const [resultado, setResultado] = useState<ResultadoCriacao | null>(null);
   const [cnpjStatus, setCnpjStatus] = useState<"idle" | "found" | "not_found">("idle");
+  const [expandedPlano, setExpandedPlano] = useState<string | null>(null);
 
   function updateField(field: keyof FormData, value: string | boolean) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -566,30 +611,72 @@ export default function NovoRestaurante() {
           <div className="rounded-xl border border-[var(--sa-border)] bg-[var(--sa-bg-surface)] p-6">
             <h3 className="mb-4 text-lg font-semibold text-[var(--sa-text-primary)] flex items-center gap-1.5">
               Plano de Assinatura
-              <InfoTooltip text="O plano define o valor mensal e o limite de motoboys simultâneos. Pode ser alterado depois." />
+              <InfoTooltip text="O plano define o valor mensal, limite de motoboys e funcionalidades disponíveis. Pode ser alterado depois." />
             </h3>
             <div className="grid gap-3 sm:grid-cols-2">
-              {PLANOS.map((p) => (
-                <button
-                  key={p.nome}
-                  type="button"
-                  onClick={() => updateField("plano", p.nome)}
-                  className={cn(
-                    "rounded-lg border p-4 text-left transition-all",
-                    form.plano === p.nome
-                      ? "border-amber-500 bg-amber-500/10"
-                      : "border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] hover:border-[var(--sa-border-input)]"
-                  )}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-[var(--sa-text-primary)]">{p.nome}</span>
-                    <span className="text-lg font-bold text-[var(--sa-accent-text)]">
-                      R$ {p.valor.toFixed(2)}
-                    </span>
+              {PLANOS.map((p) => {
+                const isSelected = form.plano === p.nome;
+                const isExpanded = expandedPlano === p.nome;
+                const newFeatures = p.features?.filter(f => f.new) || [];
+                return (
+                  <div
+                    key={p.nome}
+                    className={cn(
+                      "rounded-lg border p-4 text-left transition-all cursor-pointer",
+                      isSelected
+                        ? CORES_PLANOS[p.nome] || "border-amber-500 bg-amber-500/10"
+                        : cn("bg-[var(--sa-bg-hover)]", CORES_PLANOS_INACTIVE[p.nome] || "border-[var(--sa-border-input)]")
+                    )}
+                    onClick={() => updateField("plano", p.nome)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[var(--sa-text-primary)]">{p.nome}</span>
+                        <span className="text-[10px] text-[var(--sa-text-dimmed)]">Tier {p.tier}</span>
+                      </div>
+                      <span className="text-lg font-bold text-[var(--sa-accent-text)]">
+                        R$ {p.valor.toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-[var(--sa-text-muted)]">
+                      {p.motoboys === 999 ? "Motoboys ilimitados" : `Até ${p.motoboys} motoboys`} — {p.descricao}
+                    </p>
+
+                    {/* Features */}
+                    {p.features && p.features.length > 0 && (
+                      <div className="mt-3 border-t border-[var(--sa-border)] pt-2">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedPlano(isExpanded ? null : p.nome);
+                          }}
+                          className="flex w-full items-center justify-between text-[10px] font-medium text-[var(--sa-text-muted)] hover:text-[var(--sa-text-secondary)] transition-colors"
+                        >
+                          <span>{p.features.length} features ({newFeatures.length} exclusiva{newFeatures.length !== 1 ? "s" : ""})</span>
+                          {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </button>
+
+                        {isExpanded && (
+                          <ul className="mt-2 space-y-1">
+                            {p.features.map((f) => (
+                              <li key={f.key} className="flex items-center gap-1.5 text-[11px]">
+                                <Check className={cn("h-3 w-3 shrink-0", f.new ? "text-amber-400" : "text-green-400/60")} />
+                                <span className={f.new ? "text-[var(--sa-text-primary)] font-medium" : "text-[var(--sa-text-dimmed)]"}>
+                                  {f.label}
+                                </span>
+                                {f.new && (
+                                  <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1 rounded">novo</span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <p className="mt-1 text-xs text-[var(--sa-text-muted)]">{p.descricao}</p>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 

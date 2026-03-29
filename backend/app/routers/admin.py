@@ -466,6 +466,16 @@ async def criar_restaurante(
     # Gerar senha padrão (primeiros 6 dígitos do telefone)
     senha_padrao = telefone_limpo[:6] if len(telefone_limpo) >= 6 else "123456"
 
+    # Resolver valores do plano a partir do banco (fonte única de verdade)
+    planos_db = _get_planos_db(db)
+    plano_info = planos_db.get(dados.plano)
+    if plano_info:
+        valor_plano = plano_info["valor"]
+        limite_motoboys = plano_info["motoboys"]
+    else:
+        valor_plano = dados.valor_plano
+        limite_motoboys = dados.limite_motoboys
+
     # Criar restaurante
     restaurante = models.Restaurante(
         nome=dados.nome_fantasia.strip(),
@@ -479,8 +489,9 @@ async def criar_restaurante(
         estado=dados.estado.strip() if dados.estado else None,
         cep=dados.cep.strip() if dados.cep else None,
         plano=dados.plano,
-        valor_plano=dados.valor_plano,
-        limite_motoboys=dados.limite_motoboys,
+        valor_plano=valor_plano,
+        limite_motoboys=limite_motoboys,
+        plano_tier=get_tier(dados.plano),
         ativo=True,
         status='ativo',
         data_vencimento=datetime.utcnow() + timedelta(days=30)

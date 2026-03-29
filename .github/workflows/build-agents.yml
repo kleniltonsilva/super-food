@@ -1,0 +1,71 @@
+name: Build Windows Agents
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'printer_agent/**'
+      - 'bridge_agent/**'
+      - '.github/workflows/build-agents.yml'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller
+          pip install websockets requests pystray Pillow pywin32
+
+      - name: Build Printer Agent
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name "DerekhFood-Printer" printer_agent/main.py
+
+      - name: Build Bridge Agent
+        run: |
+          pyinstaller --noconfirm --onefile --windowed --name "DerekhFood-Bridge" --add-data "bridge_agent/ui;ui" --hidden-import win32print --hidden-import win32api --hidden-import pystray --hidden-import PIL bridge_agent/main.py
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: derekh-windows-agents
+          path: |
+            dist/DerekhFood-Printer.exe
+            dist/DerekhFood-Bridge.exe
+          retention-days: 90
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: derekh-windows-agents
+          path: agents
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Upload to Fly.io volume
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          # Create downloads dir on volume
+          flyctl ssh console --app superfood-api -C "mkdir -p /app/backend/static/uploads/downloads"
+
+          # Upload each exe via sftp
+          for exe in agents/*.exe; do
+            filename=$(basename "$exe")
+            echo "Uploading $filename..."
+            flyctl ssh sftp shell --app superfood-api <<EOF
+          put $exe /app/backend/static/uploads/downloads/$filename
+          EOF
+          done
+
+          # Verify
+          flyctl ssh console --app superfood-api -C "ls -la /app/backend/static/uploads/downloads/"

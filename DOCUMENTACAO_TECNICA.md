@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.6 | Última atualização: 29/03/2026
+> Versão 4.0.7 | Última atualização: 29/03/2026
 
 ---
 
@@ -53,7 +53,7 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 ━━ CONFIGURAÇÕES ━━             (colapsável)
   Restaurante | Motoboys | Mapa Entregadores | Cozinha Digital
   Garçons | Bridge Impressora | WhatsApp Humanoide
-  Bairros e Taxas | Integrações | Pagamento Pix | Assinatura
+  Bairros e Taxas | Integrações | Pagamento Pix | Downloads | Assinatura
 ```
 
 **Comportamento:**
@@ -246,7 +246,17 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 - **Saque automático:** configura valor mínimo para saque automático
 - **Fluxo:** cliente paga Pix → webhook confirma → saldo acumula → restaurante saca
 
-### 2.18 Assinatura/Billing (Asaas)
+### 2.18 Downloads (Agentes Windows)
+- **Rota:** `/admin/downloads`
+- **Página informativa** com 2 cards de download para software Windows:
+  1. **Impressora de Pedidos (Printer Agent):** imprime automaticamente pedidos via WebSocket em impressoras térmicas ESC/POS
+  2. **Bridge Impressora (Bridge Agent):** intercepta pedidos de iFood, Rappi e outras plataformas via spooler de impressão Windows
+- Cada card exibe: funcionalidades, requisitos (Windows 10+), botão de download (ou "Em breve"), guia de instalação expansível
+- **FAQ:** 3 perguntas frequentes (Mac/Linux?, preciso dos dois?, como atualizar?)
+- **Backend:** `GET /api/public/downloads` retorna lista de downloads com versão, URL e tamanho (verifica se `.exe` existe em `backend/static/downloads/`)
+- **Arquivos:** `Downloads.tsx`, endpoint em `main.py`
+
+### 2.19 Assinatura/Billing (Asaas)
 - **Trial:** 15 dias grátis com plano Premium completo (WhatsApp Humanoide não incluso no trial)
 - **Planos:** Básico (R$169,90), Essencial (R$279,90), Avançado (R$329,90), Premium (R$527,00) — valores configuráveis pelo Super Admin
 - **Pagamento:** Pix ou Boleto via Asaas

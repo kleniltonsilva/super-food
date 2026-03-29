@@ -26,6 +26,7 @@ import CozinhaDigital from "@/admin/pages/CozinhaDigital";
 import Garcons from "@/admin/pages/Garcons";
 import BridgePrinter from "@/admin/pages/BridgePrinter";
 import BotWhatsApp from "@/admin/pages/BotWhatsApp";
+import Downloads from "@/admin/pages/Downloads";
 import SelecionarPlano from "@/admin/pages/SelecionarPlano";
 import Onboarding from "@/admin/pages/Onboarding";
 import { Toaster } from "@/components/ui/sonner";
@@ -307,6 +308,10 @@ function AdminRouter() {
 
       <Route path="/inicio">
         <PrivateRoute><Onboarding /></PrivateRoute>
+      </Route>
+
+      <Route path="/downloads">
+        <PrivateRoute><Downloads /></PrivateRoute>
       </Route>
 
       <Route path="/billing/planos">

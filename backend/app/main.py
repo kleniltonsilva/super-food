@@ -365,6 +365,60 @@ app.include_router(garcom_router.router)
 app.include_router(bridge_router.router)
 app.include_router(bot_whatsapp_router.router)
 
+# ==================== Endpoint público — Downloads (agentes Windows) ====================
+@app.get("/api/public/downloads")
+def downloads_disponiveis():
+    """Retorna lista de downloads disponíveis com versão e URL. Sem autenticação."""
+    # Usa volume persistente em produção, fallback para static/downloads em dev
+    downloads_dir = Path("backend/static/uploads/downloads")
+    if not downloads_dir.exists():
+        downloads_dir = Path("backend/static/downloads")
+    items = [
+        {
+            "id": "printer_agent",
+            "nome": "Impressora de Pedidos",
+            "versao": "1.0.0",
+            "arquivo": "DerekhFood-Printer.exe",
+            "tamanho": "",
+        },
+        {
+            "id": "bridge_agent",
+            "nome": "Bridge Impressora",
+            "versao": "1.0.0",
+            "arquivo": "DerekhFood-Bridge.exe",
+            "tamanho": "",
+        },
+    ]
+    result = []
+    for item in items:
+        arquivo = downloads_dir / item["arquivo"]
+        disponivel = arquivo.exists()
+        tamanho = ""
+        if disponivel:
+            size_bytes = arquivo.stat().st_size
+            if size_bytes >= 1_048_576:
+                tamanho = f"{size_bytes / 1_048_576:.1f} MB"
+            else:
+                tamanho = f"{size_bytes / 1024:.0f} KB"
+        # Determinar URL relativa baseada em qual diretório contém o arquivo
+        if disponivel:
+            if "uploads/downloads" in str(arquivo):
+                url = f"/static/uploads/downloads/{item['arquivo']}"
+            else:
+                url = f"/static/downloads/{item['arquivo']}"
+        else:
+            url = ""
+        result.append({
+            "id": item["id"],
+            "nome": item["nome"],
+            "versao": item["versao"],
+            "url": url,
+            "tamanho": tamanho,
+            "disponivel": disponivel,
+        })
+    return result
+
+
 # ==================== Endpoint público — Planos (landing page) ====================
 @app.get("/api/public/planos")
 def planos_publicos(db: Session = Depends(get_db)):
