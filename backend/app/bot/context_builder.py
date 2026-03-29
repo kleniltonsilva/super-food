@@ -130,6 +130,7 @@ REGRAS ABSOLUTAS (NUNCA violar):
 6. Se não souber: "vou verificar com a equipe e já te retorno"
 7. Se precisar escalar: "vou chamar o responsável pra te ajudar"
 8. Confirme SEMPRE antes de finalizar pedido
+9. NUNCA invente produto_id — use EXATAMENTE os IDs do cardápio. Cada produto tem um ID único listado no cardápio.
 
 CARDÁPIO — como apresentar:
 - Se pedirem cardápio COMPLETO: envie POR CATEGORIA, uma de cada vez. Pergunte "quer ver mais?" entre cada.
@@ -166,10 +167,12 @@ REGRA CRÍTICA — CRIAR PEDIDO (OBRIGATÓRIO — MAIS IMPORTANTE QUE QUALQUER O
 - Se criar_pedido retornar erro: informar o problema ao cliente, NÃO dizer que criou.
 - NUNCA escreva "[número da comanda será inserido]" — o número REAL vem do retorno de criar_pedido.
 - Se você não tem todos os dados para criar_pedido (itens, endereço, pagamento), pergunte o que falta ANTES de confirmar.
+- Após criar_pedido retornar sucesso, SEMPRE informe ao cliente: o número da comanda (campo 'comanda'), o valor total, e o link de rastreamento.
 
 REGRA CRÍTICA — CADASTRAR CLIENTE (OBRIGATÓRIO):
 - Se buscar_cliente retornar "não encontrado" e o cliente informou o nome: CHAMAR cadastrar_cliente IMEDIATAMENTE.
 - NÃO continue a conversa sem cadastrar. Sem cadastro, criar_pedido vai falhar.
+- NUNCA tente criar pedido sem cliente cadastrado. Se buscar_cliente retornou 'não encontrado', PARE tudo e cadastre ANTES de continuar.
 
 UPSELL (natural, NUNCA forçado):
 - Se 1 pizza: "Quer uma bebida pra acompanhar?"
@@ -238,26 +241,73 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
         models.SiteConfig.restaurante_id == restaurante_id
     ).first()
 
-    # Horário
-    agora = datetime.utcnow() - timedelta(hours=3)  # UTC-3 (Brasília)
+    # Timezone dinâmico por país
+    pais_codigo_tz = getattr(rest, 'pais', None) or "BR"
+    TIMEZONE_MAP = {
+        "BR": -3, "PT": 0, "AO": 1, "MZ": 2, "CV": -1,
+        "US": -5, "ES": 1, "FR": 1, "IT": 1, "DE": 1, "GB": 0,
+    }
+    tz_offset = TIMEZONE_MAP.get(pais_codigo_tz, -3)
+    agora = datetime.utcnow() + timedelta(hours=tz_offset)
     hora_atual = agora.strftime("%H:%M")
-    dia_semana = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"][agora.weekday()]
+    dia_semana_nomes = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
+    dia_semana = dia_semana_nomes[agora.weekday()]
+
+    # Horários detalhados por dia da semana
+    horarios_por_dia = None
+    if config and config.horarios_por_dia:
+        try:
+            horarios_por_dia = json.loads(config.horarios_por_dia)
+        except Exception:
+            horarios_por_dia = None
 
     aberto = False
     horario_texto = "Não configurado"
-    if config:
+    horarios_todos_dias = []
+
+    if horarios_por_dia:
+        # Usar horários individuais por dia
+        for dia_nome in dia_semana_nomes:
+            dia_cfg = horarios_por_dia.get(dia_nome, {})
+            dia_ativo = dia_cfg.get("ativo", False)
+            dia_abertura = dia_cfg.get("abertura", "")
+            dia_fechamento = dia_cfg.get("fechamento", "")
+            if dia_ativo and dia_abertura and dia_fechamento:
+                horarios_todos_dias.append(f"- {dia_nome.capitalize()}: {dia_abertura} às {dia_fechamento}")
+            else:
+                horarios_todos_dias.append(f"- {dia_nome.capitalize()}: FECHADO")
+
+            if dia_nome == dia_semana and dia_ativo and dia_abertura and dia_fechamento:
+                horario_texto = f"{dia_abertura} às {dia_fechamento}"
+                if dia_abertura <= dia_fechamento:
+                    if dia_abertura <= hora_atual <= dia_fechamento:
+                        aberto = True
+                else:
+                    # Cruza meia-noite
+                    if hora_atual >= dia_abertura or hora_atual <= dia_fechamento:
+                        aberto = True
+    elif config:
+        # Fallback: horário único + dias da semana
         dias_abertos = (config.dias_semana_abertos or "").split(",")
+        abertura = config.horario_abertura or "18:00"
+        fechamento = config.horario_fechamento or "23:00"
+        for dia_nome in dia_semana_nomes:
+            if dia_nome in dias_abertos:
+                horarios_todos_dias.append(f"- {dia_nome.capitalize()}: {abertura} às {fechamento}")
+            else:
+                horarios_todos_dias.append(f"- {dia_nome.capitalize()}: FECHADO")
+
         if dia_semana in dias_abertos:
-            abertura = config.horario_abertura or "18:00"
-            fechamento = config.horario_fechamento or "23:00"
             horario_texto = f"{abertura} às {fechamento}"
-            if abertura <= hora_atual <= fechamento:
-                aberto = True
-            # Horário que cruza meia-noite
-            elif abertura > fechamento and (hora_atual >= abertura or hora_atual <= fechamento):
-                aberto = True
+            if abertura <= fechamento:
+                if abertura <= hora_atual <= fechamento:
+                    aberto = True
+            else:
+                if hora_atual >= abertura or hora_atual <= fechamento:
+                    aberto = True
 
     status_texto = "🟢 ABERTO" if aberto else "🔴 FECHADO"
+    horarios_completo = "\n".join(horarios_todos_dias) if horarios_todos_dias else "Não configurado"
 
     # Cardápio
     categorias = db.query(models.CategoriaMenu).filter(
@@ -359,15 +409,17 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
         ).first()
         if pix_config:
             pix_online_texto = (
-                "\n\nPIX ONLINE ATIVO: Quando forma_pagamento='pix', o sistema gera automaticamente "
-                "um link de pagamento Pix. Após criar o pedido, você receberá um link — envie ao cliente "
-                "para ele pagar. O pedido fica 'pendente' até o pagamento ser confirmado automaticamente. "
-                "NÃO diga que o pedido foi para a cozinha até o pagamento ser confirmado. "
-                "Use gerar_cobranca_pix se precisar gerar novo link (ex: expirou). "
-                "Use consultar_pagamento_pix para verificar se o cliente já pagou."
+                "\n\nPIX TEM DUAS OPÇÕES — SEMPRE pergunte ao cliente qual prefere:\n"
+                "1. **Pix Online** (link de pagamento) — pedido fica pendente até pagamento confirmado. "
+                "Para usar: forma_pagamento='pix_online'. O sistema gera link automaticamente.\n"
+                "2. **Pix na entrega** — como dinheiro/cartão, cliente paga na hora da entrega. "
+                "Para usar: forma_pagamento='pix'. Pedido vai direto para a cozinha.\n"
+                "Se cliente diz só 'pix' sem especificar, PERGUNTE: 'Quer pagar Pix agora pelo link ou na entrega?'\n"
+                "Use gerar_cobranca_pix se precisar gerar novo link (ex: expirou).\n"
+                "Use consultar_pagamento_pix para verificar se o cliente já pagou (só Pix Online)."
             )
-            if "Pix" not in pagamento_texto:
-                pagamento_texto += ", Pix Online"
+            if "Pix Online" not in pagamento_texto:
+                pagamento_texto += ", Pix Online (link)"
     except Exception:
         pass  # PixConfig table may not exist yet
 
@@ -425,8 +477,12 @@ ENDEREÇO: {rest.endereco_completo or 'Não informado'}
 {cidade_estado_linha}
 PAÍS: {pais_nome} ({pais_codigo})
 ÁREA DE ENTREGA: Somente dentro de {area_entrega}. Se o cliente informar endereço em outra cidade ou país, informe educadamente que não é possível entregar naquela região.
-HORÁRIO HOJE ({dia_semana}): {horario_texto} · {status_texto}
-HORA ATUAL: {hora_atual}
+
+HORÁRIOS DE FUNCIONAMENTO:
+{horarios_completo}
+AGORA: {dia_semana.capitalize()} {hora_atual} — {status_texto}
+HORÁRIO HOJE: {horario_texto}
+
 TEMPO MÉDIO ENTREGA: {tempo_min} min
 PEDIDO MÍNIMO: R${pedido_minimo:.2f}
 FORMAS DE PAGAMENTO: {pagamento_texto}

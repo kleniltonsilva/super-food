@@ -2156,6 +2156,7 @@ def get_config(
         db.refresh(config)
 
     import json as _json
+    from datetime import datetime as _dt, timedelta as _td
 
     # Parse horarios_por_dia JSON
     horarios_por_dia = None
@@ -2164,6 +2165,47 @@ def get_config(
             horarios_por_dia = _json.loads(config.horarios_por_dia)
         except Exception:
             horarios_por_dia = None
+
+    # Calcular aviso de horário
+    pais_codigo = getattr(rest, 'pais', None) or "BR"
+    _tz_map = {"BR": -3, "PT": 0, "AO": 1, "MZ": 2, "CV": -1, "US": -5, "ES": 1, "FR": 1, "IT": 1, "DE": 1, "GB": 0}
+    _offset = _tz_map.get(pais_codigo, -3)
+    _agora = _dt.utcnow() + _td(hours=_offset)
+    _hora_atual = _agora.strftime("%H:%M")
+    _dia_map = {0: "segunda", 1: "terca", 2: "quarta", 3: "quinta", 4: "sexta", 5: "sabado", 6: "domingo"}
+    _dia_atual = _dia_map[_agora.weekday()]
+
+    _dentro_horario = False
+    _horario_hoje_abertura = None
+    _horario_hoje_fechamento = None
+    _dia_ativo = False
+
+    if horarios_por_dia:
+        _dia_cfg = horarios_por_dia.get(_dia_atual, {})
+        _dia_ativo = _dia_cfg.get("ativo", False)
+        _horario_hoje_abertura = _dia_cfg.get("abertura", "")
+        _horario_hoje_fechamento = _dia_cfg.get("fechamento", "")
+    else:
+        _dias_abertos = (config.dias_semana_abertos or "").split(",")
+        _dia_ativo = _dia_atual in _dias_abertos
+        _horario_hoje_abertura = config.horario_abertura or "18:00"
+        _horario_hoje_fechamento = config.horario_fechamento or "23:00"
+
+    if _dia_ativo and _horario_hoje_abertura and _horario_hoje_fechamento:
+        if _horario_hoje_abertura <= _horario_hoje_fechamento:
+            _dentro_horario = _horario_hoje_abertura <= _hora_atual <= _horario_hoje_fechamento
+        else:
+            _dentro_horario = _hora_atual >= _horario_hoje_abertura or _hora_atual <= _horario_hoje_fechamento
+
+    _status_atual = config.status_atual or "fechado"
+    _aviso_horario = None
+    if _status_atual == "aberto" and not _dentro_horario:
+        if _dia_ativo and _horario_hoje_abertura and _horario_hoje_fechamento:
+            _aviso_horario = f"Restaurante aberto fora do horário configurado ({_horario_hoje_abertura} às {_horario_hoje_fechamento})"
+        else:
+            _aviso_horario = "Restaurante aberto, mas hoje não é dia de funcionamento configurado"
+    elif _status_atual == "fechado" and _dentro_horario:
+        _aviso_horario = f"Está no horário de funcionamento ({_horario_hoje_abertura} às {_horario_hoje_fechamento})! Deseja abrir?"
 
     return {
         "id": config.id, "status_atual": config.status_atual,
@@ -2198,6 +2240,10 @@ def get_config(
         "endereco_completo": rest.endereco_completo,
         "latitude": rest.latitude,
         "longitude": rest.longitude,
+        # Aviso de horário
+        "dentro_horario_configurado": _dentro_horario,
+        "horario_hoje": {"abertura": _horario_hoje_abertura, "fechamento": _horario_hoje_fechamento, "dia_ativo": _dia_ativo} if _dia_ativo else None,
+        "aviso_horario": _aviso_horario,
     }
 
 

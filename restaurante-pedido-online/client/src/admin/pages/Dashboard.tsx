@@ -177,6 +177,27 @@ export default function Dashboard() {
   }
 
   const [alertaCaixaAberto, setAlertaCaixaAberto] = useState(false);
+  const [avisoHorarioDismissed, setAvisoHorarioDismissed] = useState(false);
+  const avisoHorario = (config as Record<string, unknown>)?.aviso_horario as string | null;
+
+  // Som suave ao aparecer aviso de horário
+  useEffect(() => {
+    if (avisoHorario && !avisoHorarioDismissed) {
+      try {
+        const ctx = new AudioContext();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 660;
+        osc.type = "sine";
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 0.3);
+      } catch { /* sem audio */ }
+    }
+  }, [avisoHorario, avisoHorarioDismissed]);
 
   function toggleRestaurante() {
     // Se está fechando e o caixa está aberto, bloquear com alerta
@@ -225,6 +246,59 @@ export default function Dashboard() {
             >
               Ver Entregas
             </Button>
+          </div>
+        )}
+
+        {/* Banner aviso de horário */}
+        {avisoHorario && !avisoHorarioDismissed && (
+          <div className={`flex items-center justify-between rounded-lg border px-4 py-3 ${
+            restauranteAberto
+              ? "border-amber-500/30 bg-amber-500/10"
+              : "border-green-500/30 bg-green-500/10"
+          }`}>
+            <div className="flex items-center gap-3">
+              {restauranteAberto ? (
+                <AlertTriangle className="h-5 w-5 text-amber-400" />
+              ) : (
+                <Clock className="h-5 w-5 text-green-400" />
+              )}
+              <span className={`font-medium ${restauranteAberto ? "text-amber-400" : "text-green-400"}`}>
+                {avisoHorario}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant={restauranteAberto ? "outline" : "default"}
+                className={restauranteAberto
+                  ? "border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  : "bg-green-600 hover:bg-green-700 text-white"
+                }
+                onClick={() => {
+                  const novoStatus = restauranteAberto ? "fechado" : "aberto";
+                  atualizarConfig.mutate(
+                    { status_atual: novoStatus },
+                    {
+                      onSuccess: () => {
+                        toast.success(`Restaurante ${novoStatus}!`);
+                        setAvisoHorarioDismissed(true);
+                      },
+                      onError: () => toast.error("Erro ao alterar status"),
+                    }
+                  );
+                }}
+                disabled={atualizarConfig.isPending}
+              >
+                <Store className="mr-1 h-4 w-4" />
+                {restauranteAberto ? "Fechar Restaurante" : "Abrir Restaurante"}
+              </Button>
+              <button
+                onClick={() => setAvisoHorarioDismissed(true)}
+                className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1"
+              >
+                ✕
+              </button>
+            </div>
           </div>
         )}
 

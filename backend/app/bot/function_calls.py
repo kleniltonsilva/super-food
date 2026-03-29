@@ -103,7 +103,7 @@ TOOLS = [
                         },
                     },
                     "endereco_entrega": {"type": "string"},
-                    "forma_pagamento": {"type": "string", "enum": ["dinheiro", "cartao", "pix"]},
+                    "forma_pagamento": {"type": "string", "enum": ["dinheiro", "cartao", "pix", "pix_online", "vale_refeicao"], "description": "dinheiro, cartao, pix (na entrega), pix_online (link pagamento), vale_refeicao"},
                     "troco_para": {"type": "number", "description": "Valor para troco (se dinheiro)"},
                     "tipo_entrega": {"type": "string", "enum": ["entrega", "retirada"]},
                     "observacoes": {"type": "string"},
@@ -720,11 +720,12 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
 
     valor_total_final = valor_total + taxa_entrega
 
-    # Pix Online: verificar se restaurante aderiu E forma_pagamento = pix
+    # Pix Online: SOMENTE quando forma_pagamento='pix_online' explicitamente
+    # forma_pagamento='pix' = Pix na entrega (manual, como dinheiro)
     forma_pagamento = args.get("forma_pagamento", "dinheiro")
     pix_online = False
     pix_config = None
-    if forma_pagamento == "pix":
+    if forma_pagamento == "pix_online":
         try:
             pix_config = db.query(models.PixConfig).filter(
                 models.PixConfig.restaurante_id == restaurante_id,
@@ -732,8 +733,11 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
             ).first()
             if pix_config:
                 pix_online = True
+            else:
+                # Restaurante não tem Pix Online ativo — tratar como pix na entrega
+                forma_pagamento = "pix"
         except Exception:
-            pass
+            forma_pagamento = "pix"
 
     # Criar pedido — STATUS:
     # - Se Pix Online: pendente (aguarda pagamento)
@@ -766,7 +770,7 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
         valor_subtotal=valor_total,
         valor_taxa_entrega=taxa_entrega,
         valor_total=valor_total_final,
-        forma_pagamento=args.get("forma_pagamento", "dinheiro"),
+        forma_pagamento=forma_pagamento,
         troco_para=args.get("troco_para"),
         status=status_inicial,
         tipo_origem="whatsapp_bot",
@@ -859,11 +863,25 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
             logger.info(f"Cobrança Pix gerada para pedido #{comanda} via WhatsApp Bot")
         except Exception as e:
             logger.error(f"Erro ao gerar cobrança Pix para pedido #{comanda}: {e}")
-            resultado["pix_online"] = True
-            resultado["pix_erro"] = str(e)
+            # Fallback: mudar para Pix na entrega em vez de deixar pendente
+            pedido.status = "em_preparo" if bot_config.impressao_automatica_bot else "pendente"
+            pedido.forma_pagamento = "pix"
+            # Criar PedidoCozinha se KDS ativo e status em_preparo
+            if config_cozinha and config_cozinha.kds_ativo and pedido.status == "em_preparo":
+                pedido_cozinha_fallback = models.PedidoCozinha(
+                    restaurante_id=restaurante_id,
+                    pedido_id=pedido.id,
+                    status="NOVO",
+                )
+                db.add(pedido_cozinha_fallback)
+            db.commit()
+            resultado["pix_online"] = False
+            resultado["pix_fallback"] = True
+            resultado["status"] = pedido.status
             resultado["mensagem"] = (
                 f"Pedido #{comanda} criado! Valor: R${valor_total_final:.2f}. "
-                f"Não foi possível gerar o link Pix agora — use gerar_cobranca_pix para tentar novamente."
+                f"Não consegui gerar o link de pagamento, mas seu pedido foi criado! "
+                f"Você pode pagar Pix na entrega."
             )
 
     return json.dumps(resultado)
@@ -1098,22 +1116,71 @@ def _verificar_horario(db: Session, restaurante_id: int) -> str:
     if not config:
         return json.dumps({"erro": "Configuração não encontrada"})
 
-    agora = datetime.utcnow() - timedelta(hours=3)
+    # Timezone dinâmico por país
+    rest = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
+    pais = getattr(rest, 'pais', None) or "BR"
+    TIMEZONE_MAP = {
+        "BR": -3, "PT": 0, "AO": 1, "MZ": 2, "CV": -1,
+        "US": -5, "ES": 1, "FR": 1, "IT": 1, "DE": 1, "GB": 0,
+    }
+    offset = TIMEZONE_MAP.get(pais, -3)
+    agora = datetime.utcnow() + timedelta(hours=offset)
     hora_atual = agora.strftime("%H:%M")
-    dia = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"][agora.weekday()]
+    dia_semana_nomes = ["segunda", "terca", "quarta", "quinta", "sexta", "sabado", "domingo"]
+    dia = dia_semana_nomes[agora.weekday()]
 
-    dias_abertos = (config.dias_semana_abertos or "").split(",")
-    abertura = config.horario_abertura or "18:00"
-    fechamento = config.horario_fechamento or "23:00"
+    # Verificar horarios_por_dia primeiro
+    horarios_por_dia = None
+    if config.horarios_por_dia:
+        try:
+            horarios_por_dia = json.loads(config.horarios_por_dia)
+        except Exception:
+            horarios_por_dia = None
 
-    aberto = dia in dias_abertos and abertura <= hora_atual <= fechamento
+    aberto = False
+    horarios_semana = {}
+
+    if horarios_por_dia:
+        for dia_nome in dia_semana_nomes:
+            dia_cfg = horarios_por_dia.get(dia_nome, {})
+            dia_ativo = dia_cfg.get("ativo", False)
+            dia_abertura = dia_cfg.get("abertura", "")
+            dia_fechamento = dia_cfg.get("fechamento", "")
+            if dia_ativo and dia_abertura and dia_fechamento:
+                horarios_semana[dia_nome] = f"{dia_abertura} às {dia_fechamento}"
+            else:
+                horarios_semana[dia_nome] = "FECHADO"
+
+            if dia_nome == dia and dia_ativo and dia_abertura and dia_fechamento:
+                if dia_abertura <= dia_fechamento:
+                    if dia_abertura <= hora_atual <= dia_fechamento:
+                        aberto = True
+                else:
+                    if hora_atual >= dia_abertura or hora_atual <= dia_fechamento:
+                        aberto = True
+    else:
+        dias_abertos = (config.dias_semana_abertos or "").split(",")
+        abertura = config.horario_abertura or "18:00"
+        fechamento = config.horario_fechamento or "23:00"
+        for dia_nome in dia_semana_nomes:
+            if dia_nome in dias_abertos:
+                horarios_semana[dia_nome] = f"{abertura} às {fechamento}"
+            else:
+                horarios_semana[dia_nome] = "FECHADO"
+        if dia in dias_abertos:
+            if abertura <= fechamento:
+                if abertura <= hora_atual <= fechamento:
+                    aberto = True
+            else:
+                if hora_atual >= abertura or hora_atual <= fechamento:
+                    aberto = True
 
     return json.dumps({
         "aberto": aberto,
         "hora_atual": hora_atual,
         "dia_semana": dia,
-        "horario": f"{abertura} às {fechamento}",
-        "dias_abertos": dias_abertos,
+        "horario_hoje": horarios_semana.get(dia, "Não configurado"),
+        "horarios_semana": horarios_semana,
     })
 
 
