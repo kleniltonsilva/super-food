@@ -25,9 +25,11 @@ class TrayIcon:
         self,
         on_config: Optional[Callable] = None,
         on_quit: Optional[Callable] = None,
+        modo_teste: bool = False,
     ):
         self.on_config = on_config
         self.on_quit = on_quit
+        self.modo_teste = modo_teste
         self._status = "desconectado"
         self._icon = None
 
@@ -37,13 +39,15 @@ class TrayIcon:
             from PIL import Image, ImageDraw
             img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
             draw = ImageDraw.Draw(img)
-            # Fundo escuro
-            draw.rectangle([0, 0, 63, 63], fill=(40, 40, 40, 255))
+            # Fundo: azul em modo teste, cinza escuro normal
+            bg = (30, 30, 80, 255) if self.modo_teste else (40, 40, 40, 255)
+            draw.rectangle([0, 0, 63, 63], fill=bg)
             # Círculo de status
             draw.ellipse([16, 16, 48, 48], fill=color + (255,))
-            # Letra D
+            # Letra: T em modo teste, D normal
+            letter = "T" if self.modo_teste else "D"
             try:
-                draw.text((22, 18), "D", fill=(255, 255, 255, 255))
+                draw.text((22, 18), letter, fill=(255, 255, 255, 255))
             except Exception:
                 pass
             return img
@@ -56,6 +60,13 @@ class TrayIcon:
         """Cria menu de contexto."""
         import pystray
         items = []
+
+        if self.modo_teste:
+            items.append(pystray.MenuItem(
+                "*** MODO TESTE ***",
+                lambda: None,
+                enabled=False,
+            ))
 
         status_label = {
             "conectado": "Conectado",
@@ -70,6 +81,13 @@ class TrayIcon:
         ))
         items.append(pystray.Menu.SEPARATOR)
 
+        if self.modo_teste:
+            items.append(pystray.MenuItem(
+                "Abrir pasta de impressões",
+                lambda: self._abrir_pasta_teste(),
+            ))
+            items.append(pystray.Menu.SEPARATOR)
+
         if self.on_config:
             items.append(pystray.MenuItem("Configurações", lambda: self.on_config()))
 
@@ -79,6 +97,21 @@ class TrayIcon:
             items.append(pystray.MenuItem("Sair", lambda: self.on_quit()))
 
         return pystray.Menu(*items)
+
+    def _abrir_pasta_teste(self):
+        """Abre a pasta de impressões de teste no explorador."""
+        import os
+        import platform
+        if platform.system() == "Windows":
+            base = os.environ.get("APPDATA", os.path.expanduser("~"))
+        else:
+            base = os.path.join(os.path.expanduser("~"), ".config")
+        test_dir = os.path.join(base, "DerekhFood", "test_prints")
+        os.makedirs(test_dir, exist_ok=True)
+        if platform.system() == "Windows":
+            os.startfile(test_dir)
+        else:
+            logger.info(f"Pasta: {test_dir}")
 
     def iniciar(self):
         """Inicia o ícone na bandeja (bloqueante — rodar em thread)."""
@@ -91,10 +124,11 @@ class TrayIcon:
         color = self.STATUS_COLORS.get(self._status, (128, 128, 128))
         image = self._create_icon_image(color)
 
+        title = "Derekh Food - Impressora [TESTE]" if self.modo_teste else "Derekh Food - Impressora"
         self._icon = pystray.Icon(
             "derekh_food_printer",
             image,
-            "Derekh Food - Impressora",
+            title,
             menu=self._get_menu(),
         )
         self._icon.run()
@@ -111,7 +145,8 @@ class TrayIcon:
                 "desconectado": "Desconectado",
                 "imprimindo": "Imprimindo...",
             }
-            self._icon.title = f"Derekh Food - {status_label.get(status, status)}"
+            suffix = " [TESTE]" if self.modo_teste else ""
+            self._icon.title = f"Derekh Food - {status_label.get(status, status)}{suffix}"
             self._icon.menu = self._get_menu()
 
     def parar(self):

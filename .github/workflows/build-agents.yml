@@ -29,7 +29,7 @@ jobs:
 
       - name: Build Bridge Agent
         run: |
-          pyinstaller --noconfirm --onefile --windowed --name "DerekhFood-Bridge" --add-data "bridge_agent/ui;ui" --hidden-import win32print --hidden-import win32api --hidden-import pystray --hidden-import PIL bridge_agent/main.py
+          pyinstaller --noconfirm --onefile --windowed --name "DerekhFood-Bridge" --add-data "bridge_agent/ui;ui" --hidden-import win32print --hidden-import win32api --hidden-import pystray --hidden-import PIL --hidden-import bridge_agent.simulador bridge_agent/main.py
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -40,13 +40,16 @@ class BridgeClient:
                 return None
 
             # Detectar se é comanda do próprio Derekh Food (não enviar ao servidor)
-            if self._is_derekh_print(texto):
+            # Bypass para simulador no modo teste
+            if not impressora.startswith("Simulador_") and self._is_derekh_print(texto):
                 logger.info(f"[{impressora}] Comanda do Derekh Food detectada — ignorando")
                 return {"status": "ignorado", "motivo": "comanda_derekh"}
 
             # Anti-duplicata local: se já enviou texto idêntico, ignora
+            # (bypass para simulador no modo teste — cada simulação é única por design)
             texto_hash = hashlib.md5(texto.encode()).hexdigest()
-            if texto_hash in self._textos_enviados:
+            is_simulador = impressora.startswith("Simulador_")
+            if not is_simulador and texto_hash in self._textos_enviados:
                 logger.info(f"[{impressora}] Texto duplicado (reimpressão) — ignorando")
                 return {"status": "duplicata_local", "fonte": "cache"}
             self._textos_enviados.add(texto_hash)

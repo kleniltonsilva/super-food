@@ -31,7 +31,8 @@ from printer_agent.api_client import ApiClient
 from printer_agent.ws_client import WebSocketClient
 from printer_agent.print_queue import PrintQueue
 from printer_agent.print_formatter import format_full_receipt, format_sector_receipt
-from printer_agent.print_driver import imprimir_raw
+from printer_agent.print_driver import imprimir_raw, IMPRESSORA_VIRTUAL
+import printer_agent.print_driver as print_driver_mod
 
 
 # ─── Logging ────────────────────────────────────────
@@ -67,7 +68,10 @@ logger = logging.getLogger("printer_agent")
 class PrinterAgent:
     """Orquestrador principal do agente de impressão."""
 
-    def __init__(self):
+    def __init__(self, modo_teste: bool = False):
+        self.modo_teste = modo_teste
+        if modo_teste:
+            print_driver_mod.MODO_TESTE = True
         self.config = load_config()
         self.queue = PrintQueue()
         self.api: ApiClient = None  # type: ignore
@@ -80,7 +84,11 @@ class PrinterAgent:
         """Ponto de entrada principal."""
         setup_logging()
         logger.info("═" * 50)
-        logger.info("Derekh Food — Agente de Impressão iniciado")
+        if self.modo_teste:
+            logger.info("Derekh Food — Agente de Impressão [MODO TESTE]")
+            logger.info("Comandas serão salvas como .txt e abertas no Notepad")
+        else:
+            logger.info("Derekh Food — Agente de Impressão iniciado")
         logger.info("═" * 50)
 
         # Se não configurado, abrir config
@@ -91,6 +99,14 @@ class PrinterAgent:
             if not is_configured(self.config):
                 logger.error("Configuração cancelada — encerrando")
                 return
+
+        # Em modo teste, auto-configurar impressora virtual se necessário
+        if self.modo_teste:
+            impressoras = self.config.get("impressoras", {})
+            if not impressoras.get("geral"):
+                logger.info("[MODO TESTE] Auto-configurando impressora virtual")
+                self.config["impressoras"]["geral"] = IMPRESSORA_VIRTUAL
+                save_config(self.config)
 
         # Iniciar API client
         self.api = ApiClient(self.config["server_url"], self.config["token"])
@@ -138,6 +154,7 @@ class PrinterAgent:
             self._tray = TrayIcon(
                 on_config=lambda: threading.Thread(target=self._abrir_config, daemon=True).start(),
                 on_quit=self._encerrar,
+                modo_teste=self.modo_teste,
             )
             self._tray.iniciar()
         except Exception as e:
@@ -289,7 +306,15 @@ class PrinterAgent:
 
 
 def main():
-    agent = PrinterAgent()
+    modo_teste = "--modo-teste" in sys.argv or "--test" in sys.argv
+    if modo_teste:
+        print("\n" + "=" * 50)
+        print("  MODO TESTE ATIVADO")
+        print("  Comandas serão salvas como .txt")
+        print("  Não é necessário impressora térmica")
+        print("=" * 50 + "\n")
+
+    agent = PrinterAgent(modo_teste=modo_teste)
     agent.iniciar()
 
 
