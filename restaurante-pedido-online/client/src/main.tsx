@@ -79,3 +79,12 @@ if ("serviceWorker" in navigator && window.location.pathname.startsWith("/entreg
     });
   });
 }
+
+// Registrar Service Worker (PWA Site Cliente)
+if ("serviceWorker" in navigator && window.location.pathname.startsWith("/cliente/")) {
+  window.addEventListener("load", () => {
+    const parts = window.location.pathname.split("/");
+    const scope = "/" + parts.slice(1, 3).join("/") + "/";
+    navigator.serviceWorker.register("/sw-cliente.js", { scope }).catch(() => {});
+  });
+}

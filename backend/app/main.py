@@ -549,9 +549,126 @@ async def solicitar_cadastro(request: Request, db: Session = Depends(get_db)):
 
 
 # ==================== PWA files (manifest, service worker) ====================
+
+def _get_restaurante_pwa_info(codigo_acesso: str) -> Optional[Dict]:
+    """Busca info PWA do restaurante com cache Redis 5min. Retorna None se não encontrado."""
+    from .cache import cache_get, cache_set
+    cache_key = f"pwa:{codigo_acesso}"
+    cached = cache_get(cache_key)
+    if cached:
+        return cached
+
+    db = SessionLocal()
+    try:
+        restaurante = db.query(models.Restaurante).filter(
+            models.Restaurante.codigo_acesso == codigo_acesso
+        ).first()
+        if not restaurante:
+            return None
+
+        site_config = db.query(models.SiteConfig).filter(
+            models.SiteConfig.restaurante_id == restaurante.id
+        ).first()
+
+        info = {
+            "nome": restaurante.nome_fantasia,
+            "codigo": codigo_acesso,
+            "cor_primaria": site_config.tema_cor_primaria if site_config and site_config.tema_cor_primaria else "#FF6B35",
+            "logo_url": site_config.logo_url if site_config and site_config.logo_url else None,
+        }
+        cache_set(cache_key, info, ttl_seconds=300)
+        return info
+    except Exception as e:
+        logger.debug(f"PWA info erro ({codigo_acesso}): {e}")
+        return None
+    finally:
+        db.close()
+
+
+def _inject_pwa_meta(content: str, codigo_acesso: str) -> str:
+    """Injeta meta tags PWA dinâmicas no HTML para o site do cliente."""
+    info = _get_restaurante_pwa_info(codigo_acesso)
+
+    # Injeta window.RESTAURANTE_CODIGO
+    script = f'<script>window.RESTAURANTE_CODIGO="{codigo_acesso}";</script>'
+    content = content.replace('</head>', f'{script}</head>')
+
+    if not info:
+        return content
+
+    # Substituir manifest
+    content = content.replace(
+        '<link rel="manifest" href="/manifest.json" />',
+        f'<link rel="manifest" href="/cliente/{codigo_acesso}/manifest.json" />'
+    )
+
+    # Substituir theme-color
+    content = content.replace(
+        '<meta name="theme-color" content="#16a34a" />',
+        f'<meta name="theme-color" content="{info["cor_primaria"]}" />'
+    )
+
+    # Substituir apple-touch-icon
+    if info["logo_url"]:
+        content = content.replace(
+            '<link rel="apple-touch-icon" href="/icons/icon-192.png" />',
+            f'<link rel="apple-touch-icon" href="{info["logo_url"]}" />'
+        )
+
+    # Substituir título
+    content = content.replace(
+        '<title>Restaurante - Pedido Online</title>',
+        f'<title>{info["nome"]} - Pedido Online</title>'
+    )
+
+    return content
+
+
+@app.get("/cliente/{codigo_acesso}/manifest.json")
+async def serve_cliente_manifest(codigo_acesso: str):
+    """Manifest PWA dinâmico por restaurante — permite 'Instalar App' com logo e nome do restaurante"""
+    from fastapi.responses import Response
+
+    info = _get_restaurante_pwa_info(codigo_acesso)
+    if not info:
+        return JSONResponse(status_code=404, content={"detail": "Restaurante não encontrado"})
+
+    icons = []
+    if info["logo_url"]:
+        icons.append({"src": info["logo_url"], "sizes": "192x192", "type": "image/png", "purpose": "any"})
+        icons.append({"src": info["logo_url"], "sizes": "512x512", "type": "image/png", "purpose": "any"})
+    # Fallback icons padrão Derekh
+    icons.append({"src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"})
+    icons.append({"src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"})
+
+    nome = info["nome"]
+    short_name = nome[:12] if len(nome) > 12 else nome
+
+    manifest = {
+        "name": f"{nome} - Pedido Online",
+        "short_name": short_name,
+        "description": f"Faça seu pedido no {nome}",
+        "start_url": f"/cliente/{codigo_acesso}",
+        "scope": f"/cliente/{codigo_acesso}/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#ffffff",
+        "theme_color": info["cor_primaria"],
+        "icons": icons,
+        "categories": ["food"],
+        "lang": "pt-BR",
+    }
+
+    return Response(
+        content=json.dumps(manifest, ensure_ascii=False),
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
 @app.get("/manifest.json")
 async def serve_manifest():
-    """Serve manifest.json do PWA"""
+    """Serve manifest.json do PWA (Entregador)"""
     manifest_file = REACT_BUILD_DIR / "manifest.json"
     if manifest_file.exists():
         from fastapi.responses import Response
@@ -561,8 +678,18 @@ async def serve_manifest():
 
 @app.get("/sw.js")
 async def serve_sw():
-    """Serve service worker do PWA"""
+    """Serve service worker do PWA (Entregador)"""
     sw_file = REACT_BUILD_DIR / "sw.js"
+    if sw_file.exists():
+        from fastapi.responses import Response
+        return Response(content=sw_file.read_bytes(), media_type="application/javascript")
+    return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+
+@app.get("/sw-cliente.js")
+async def serve_sw_cliente():
+    """Serve service worker do PWA (Site Cliente)"""
+    sw_file = REACT_BUILD_DIR / "sw-cliente.js"
     if sw_file.exists():
         from fastapi.responses import Response
         return Response(content=sw_file.read_bytes(), media_type="application/javascript")
@@ -807,12 +934,10 @@ async def serve_garcom_catchall(path: str):
 # ==================== SPA React (cliente) ====================
 @app.get("/cliente/{codigo_acesso}", response_class=HTMLResponse)
 async def serve_react_app(codigo_acesso: str):
-    """Serve o React SPA e injeta o código do restaurante"""
+    """Serve o React SPA com meta tags PWA dinâmicas do restaurante"""
     index_file = REACT_BUILD_DIR / "index.html"
     if index_file.exists():
-        content = index_file.read_text()
-        script = f'<script>window.RESTAURANTE_CODIGO="{codigo_acesso}";</script>'
-        content = content.replace('</head>', f'{script}</head>')
+        content = _inject_pwa_meta(index_file.read_text(), codigo_acesso)
         return HTMLResponse(content=content)
     return HTMLResponse("<h1>Build do React não encontrado. Execute: cd restaurante-pedido-online && npm run build</h1>", status_code=500)
 
@@ -829,12 +954,10 @@ async def serve_react_app_catchall(codigo_acesso: str, path: str):
             from fastapi.responses import Response
             return Response(content=asset_file.read_bytes(), media_type=content_type)
 
-    # Para rotas do SPA, serve o index.html
+    # Para rotas do SPA, serve o index.html com PWA meta tags
     index_file = REACT_BUILD_DIR / "index.html"
     if index_file.exists():
-        content = index_file.read_text()
-        script = f'<script>window.RESTAURANTE_CODIGO="{codigo_acesso}";</script>'
-        content = content.replace('</head>', f'{script}</head>')
+        content = _inject_pwa_meta(index_file.read_text(), codigo_acesso)
         return HTMLResponse(content=content)
     return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)
 
@@ -947,9 +1070,7 @@ def _serve_tenant_site(restaurante_id: int):
 
     index_file = REACT_BUILD_DIR / "index.html"
     if index_file.exists():
-        content = index_file.read_text()
-        script = f'<script>window.RESTAURANTE_CODIGO="{codigo}";</script>'
-        content = content.replace('</head>', f'{script}</head>')
+        content = _inject_pwa_meta(index_file.read_text(), codigo)
         return HTMLResponse(content=content)
 
     return HTMLResponse("<h1>Build não encontrado</h1>", status_code=500)
