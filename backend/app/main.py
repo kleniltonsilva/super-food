@@ -847,6 +847,15 @@ async def serve_entregador_catchall(path: str):
 
 
 # ==================== SPA React (super admin) ====================
+@app.get("/onboarding", response_class=HTMLResponse)
+async def serve_onboarding():
+    """Serve a landing page de onboarding (React SPA)"""
+    index_file = REACT_BUILD_DIR / "index.html"
+    if index_file.exists():
+        return HTMLResponse(content=index_file.read_text())
+    return HTMLResponse("<h1>Build do React não encontrado</h1>", status_code=500)
+
+
 @app.get("/superadmin", response_class=HTMLResponse)
 async def serve_superadmin_root():
     """Serve o painel super admin React"""
