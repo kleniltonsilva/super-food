@@ -104,7 +104,8 @@ jobs:
           LOCAL_SIZE=$(stat -c%s apk/DerekhFood-Entregador.apk)
           echo "Local APK: ${LOCAL_SIZE} bytes"
 
-          flyctl ssh console --app superfood-api -C "mkdir -p /app/backend/static/uploads/downloads"
+          # Criar diretório + deletar APK antigo (flyctl sftp NÃO sobrescreve!)
+          flyctl ssh console --app superfood-api -C "mkdir -p /app/backend/static/uploads/downloads && rm -f /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk"
 
           # Upload via SFTP
           flyctl ssh sftp shell --app superfood-api << 'SFTP_EOF'
@@ -112,12 +113,10 @@ jobs:
           SFTP_EOF
 
           # Verificar upload — comparar tamanho
-          REMOTE_INFO=$(flyctl ssh console --app superfood-api -C "stat -c%s /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk" 2>&1 | tail -1)
-          echo "Remote APK: ${REMOTE_INFO} bytes"
-          if [ "$REMOTE_INFO" != "$LOCAL_SIZE" ]; then
-            echo "WARNING: Tamanhos diferentes! Tentando upload novamente..."
-            flyctl ssh sftp shell --app superfood-api << 'SFTP_RETRY'
-          put apk/DerekhFood-Entregador.apk /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk
-          SFTP_RETRY
-            flyctl ssh console --app superfood-api -C "ls -la /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk"
+          REMOTE_SIZE=$(flyctl ssh console --app superfood-api -C "stat -c%s /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk" 2>&1 | tail -1)
+          echo "Remote APK: ${REMOTE_SIZE} bytes"
+          if [ "$REMOTE_SIZE" != "$LOCAL_SIZE" ]; then
+            echo "ERROR: Upload falhou! Local=${LOCAL_SIZE} Remote=${REMOTE_SIZE}"
+            exit 1
           fi
+          echo "Upload verificado com sucesso!"
