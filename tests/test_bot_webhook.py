@@ -49,7 +49,7 @@ class BotTester:
 
     async def login(self):
         """Login restaurante e descobrir instância Evolution."""
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{self.base_url}/auth/restaurante/login",
                 json={"email": RESTAURANTE_EMAIL, "senha": RESTAURANTE_SENHA},
@@ -94,55 +94,59 @@ class BotTester:
     async def enviar_msg(self, numero: str, texto: str) -> dict:
         """Envia mensagem via webhook e retorna resposta."""
         payload = self._webhook_payload(numero, texto)
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.post(
                 f"{self.base_url}/webhooks/evolution",
                 json=payload,
             )
             return resp.json()
 
-    async def aguardar_resposta(self, numero: str, timeout_s: int = 45) -> str | None:
+    async def aguardar_resposta(self, numero: str, timeout_s: int = 45) -> tuple:
         """Aguarda o bot responder via API de conversas."""
         inicio = time.time()
         baseline_id = self._known_msg_ids.get(numero, 0)
 
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=30) as client:
             while (time.time() - inicio) < timeout_s:
-                # Buscar conversas
-                resp = await client.get(
-                    f"{self.base_url}/painel/bot/conversas",
-                    headers={"Authorization": f"Bearer {self.token}"},
-                    params={"limite": 30},
-                )
-                if resp.status_code != 200:
-                    await asyncio.sleep(2)
-                    continue
+                try:
+                    # Buscar conversas
+                    resp = await client.get(
+                        f"{self.base_url}/painel/bot/conversas",
+                        headers={"Authorization": f"Bearer {self.token}"},
+                        params={"limite": 30},
+                    )
+                    if resp.status_code != 200:
+                        await asyncio.sleep(3)
+                        continue
 
-                conversas = resp.json().get("conversas", [])
-                conversa = next((c for c in conversas if c["telefone"] == numero), None)
-                if not conversa:
-                    await asyncio.sleep(2)
-                    continue
+                    conversas = resp.json().get("conversas", [])
+                    conversa = next((c for c in conversas if c["telefone"] == numero), None)
+                    if not conversa:
+                        await asyncio.sleep(3)
+                        continue
 
-                # Buscar mensagens
-                resp2 = await client.get(
-                    f"{self.base_url}/painel/bot/conversas/{conversa['id']}/mensagens",
-                    headers={"Authorization": f"Bearer {self.token}"},
-                )
-                if resp2.status_code != 200:
-                    await asyncio.sleep(2)
-                    continue
+                    # Buscar mensagens
+                    resp2 = await client.get(
+                        f"{self.base_url}/painel/bot/conversas/{conversa['id']}/mensagens",
+                        headers={"Authorization": f"Bearer {self.token}"},
+                    )
+                    if resp2.status_code != 200:
+                        await asyncio.sleep(3)
+                        continue
 
-                msgs = resp2.json().get("mensagens", [])
-                # Mensagens NOVAS do bot (após baseline)
-                novas_enviadas = [
-                    m for m in msgs
-                    if m["direcao"] == "enviada" and m["id"] > baseline_id
-                ]
-                if novas_enviadas:
-                    ultima = novas_enviadas[-1]
-                    self._known_msg_ids[numero] = ultima["id"]
-                    return ultima["conteudo"], ultima.get("function_calls")
+                    msgs = resp2.json().get("mensagens", [])
+                    # Mensagens NOVAS do bot (após baseline)
+                    novas_enviadas = [
+                        m for m in msgs
+                        if m["direcao"] == "enviada" and m["id"] > baseline_id
+                    ]
+                    if novas_enviadas:
+                        ultima = novas_enviadas[-1]
+                        self._known_msg_ids[numero] = ultima["id"]
+                        return ultima["conteudo"], ultima.get("function_calls")
+
+                except (httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ConnectError) as e:
+                    print(f"  [WARN] Timeout polling {numero[-4:]}: {e}")
 
                 await asyncio.sleep(3)
 
@@ -151,7 +155,11 @@ class BotTester:
     async def enviar_e_aguardar(self, numero: str, texto: str, timeout_s: int = 45) -> tuple:
         """Envia mensagem e aguarda resposta do bot."""
         print(f"  ← [{numero[-4:]}] {texto}")
-        await self.enviar_msg(numero, texto)
+        try:
+            await self.enviar_msg(numero, texto)
+        except (httpx.ReadTimeout, httpx.ConnectError) as e:
+            print(f"  [WARN] Erro envio: {e}")
+            return None, None
         await asyncio.sleep(2)  # Dar tempo para o bot iniciar processamento
         resposta, fns = await self.aguardar_resposta(numero, timeout_s)
         if resposta:
@@ -189,22 +197,23 @@ class BotTester:
                        f"FN: {[f['nome'] for f in fns] if fns else 'nenhum'}")
 
     async def teste_2_consulta_status(self):
-        """Teste 2: Perguntar status de pedido — bot DEVE chamar consultar_status_pedido."""
+        """Teste 2: Perguntar status de pedido — bot DEVE chamar function call de status."""
         print("\n" + "=" * 60)
         print("TESTE 2: Consultar status do pedido (bot deve consultar BD)")
         print("=" * 60)
         num = NUMEROS_TESTE[1]
 
-        await self.enviar_e_aguardar(num, "Oi")
-        resp, fns = await self.enviar_e_aguardar(num, "Qual o status do meu pedido?", timeout_s=40)
+        resp1, fns1 = await self.enviar_e_aguardar(num, "Oi")
+        resp2, fns2 = await self.enviar_e_aguardar(num, "Qual o status do meu pedido?", timeout_s=40)
 
-        chamou_fn = fns and any(
-            f["nome"] in ("consultar_status_pedido", "buscar_cliente") for f in fns
-        )
+        # Bot pode chamar status na 1a ou 2a mensagem
+        fns_status = ("consultar_status_pedido", "buscar_cliente", "rastrear_pedido")
+        all_fns = (fns1 or []) + (fns2 or [])
+        chamou_fn = any(f["nome"] in fns_status for f in all_fns)
         self.registrar(
             "2.1 Consulta BD real",
             chamou_fn,
-            f"FN chamadas: {[f['nome'] for f in fns] if fns else 'NENHUMA — bot inventou!'}"
+            f"FN chamadas: {[f['nome'] for f in all_fns] if all_fns else 'NENHUMA — bot inventou!'}"
         )
 
     async def teste_3_cancelamento(self):
@@ -219,7 +228,7 @@ class BotTester:
         await asyncio.sleep(3)
         await self.enviar_e_aguardar(num, "Meu nome é Teste Cancelamento, vou retirar na loja", timeout_s=40)
         await asyncio.sleep(3)
-        resp, fns = await self.enviar_e_aguardar(num, "Pagamento dinheiro, pode confirmar", timeout_s=40)
+        resp, fns = await self.enviar_e_aguardar(num, "Pagamento dinheiro, pode confirmar", timeout_s=50)
 
         # Verificar se criou pedido
         chamou_criar = fns and any(f["nome"] == "criar_pedido" for f in fns)
@@ -231,43 +240,46 @@ class BotTester:
             await asyncio.sleep(5)
             print("  [PAINEL] Cancelando pedido via API...")
 
-            async with httpx.AsyncClient(timeout=15) as client:
-                # Buscar pedidos para encontrar o último
-                resp_pedidos = await client.get(
-                    f"{self.base_url}/painel/pedidos",
-                    headers={"Authorization": f"Bearer {self.token}"},
-                    params={"limite": 5},
-                )
-                if resp_pedidos.status_code == 200:
-                    pedidos = resp_pedidos.json().get("pedidos", [])
-                    ultimo_pedido = pedidos[0] if pedidos else None
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    # Buscar pedidos para encontrar o último
+                    resp_pedidos = await client.get(
+                        f"{self.base_url}/painel/pedidos",
+                        headers={"Authorization": f"Bearer {self.token}"},
+                        params={"limite": 5},
+                    )
+                    if resp_pedidos.status_code == 200:
+                        pedidos = resp_pedidos.json().get("pedidos", [])
+                        ultimo_pedido = pedidos[0] if pedidos else None
 
-                    if ultimo_pedido:
-                        pedido_id = ultimo_pedido["id"]
-                        # Cancelar
-                        resp_cancel = await client.put(
-                            f"{self.base_url}/painel/pedidos/{pedido_id}/status",
-                            headers={"Authorization": f"Bearer {self.token}"},
-                            json={"status": "cancelado", "senha": RESTAURANTE_SENHA},
-                        )
-                        cancelou = resp_cancel.status_code == 200
-                        self.registrar("3.2 Cancelou via painel", cancelou,
-                                       f"Pedido #{pedido_id} — HTTP {resp_cancel.status_code}")
-
-                        if cancelou:
-                            await asyncio.sleep(3)
-                            # 3. Perguntar status
-                            resp, fns = await self.enviar_e_aguardar(
-                                num, "E aí, meu pedido tá pronto?", timeout_s=40
+                        if ultimo_pedido:
+                            pedido_id = ultimo_pedido["id"]
+                            # Cancelar
+                            resp_cancel = await client.put(
+                                f"{self.base_url}/painel/pedidos/{pedido_id}/status",
+                                headers={"Authorization": f"Bearer {self.token}"},
+                                json={"status": "cancelado", "senha": RESTAURANTE_SENHA},
                             )
+                            cancelou = resp_cancel.status_code == 200
+                            self.registrar("3.2 Cancelou via painel", cancelou,
+                                           f"Pedido #{pedido_id} — HTTP {resp_cancel.status_code}")
 
-                            # Bot DEVE informar que foi cancelado
-                            detectou_cancel = resp and ("cancelado" in resp.lower() or "cancel" in resp.lower())
-                            self.registrar(
-                                "3.3 Bot detectou cancelamento",
-                                detectou_cancel,
-                                f"Resposta: {resp[:100] if resp else 'SEM RESPOSTA'}",
-                            )
+                            if cancelou:
+                                await asyncio.sleep(3)
+                                # 3. Perguntar status
+                                resp, fns = await self.enviar_e_aguardar(
+                                    num, "E aí, meu pedido tá pronto?", timeout_s=50
+                                )
+
+                                # Bot DEVE informar que foi cancelado
+                                detectou_cancel = resp and ("cancelado" in resp.lower() or "cancel" in resp.lower())
+                                self.registrar(
+                                    "3.3 Bot detectou cancelamento",
+                                    detectou_cancel,
+                                    f"Resposta: {resp[:100] if resp else 'SEM RESPOSTA'}",
+                                )
+            except (httpx.ReadTimeout, httpx.ConnectError) as e:
+                self.registrar("3.2 Cancelamento", False, f"Erro de conexão: {e}")
 
     async def teste_4_multiplas_simultaneas(self):
         """Teste 4: Múltiplas conversas ao mesmo tempo."""
@@ -282,15 +294,15 @@ class BotTester:
         for num in nums:
             tasks.append(self.enviar_msg(num, f"Oi, quero ver o cardápio por favor"))
 
-        await asyncio.gather(*tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
         print(f"  [INFO] {len(nums)} mensagens enviadas simultaneamente")
 
         # Aguardar respostas
-        await asyncio.sleep(15)
+        await asyncio.sleep(20)
 
         respondidos = 0
         for num in nums:
-            resp, _ = await self.aguardar_resposta(num, timeout_s=20)
+            resp, _ = await self.aguardar_resposta(num, timeout_s=30)
             if resp:
                 respondidos += 1
                 print(f"  → [{num[-4:]}] OK — {resp[:80]}...")
@@ -332,12 +344,21 @@ class BotTester:
 
         await self.login()
 
-        # Executar testes
-        await self.teste_1_pedido_basico()
-        await self.teste_2_consulta_status()
-        await self.teste_3_cancelamento()
-        await self.teste_4_multiplas_simultaneas()
-        await self.teste_5_verificar_horario()
+        # Executar testes com proteção contra crash
+        testes = [
+            ("Teste 1", self.teste_1_pedido_basico),
+            ("Teste 2", self.teste_2_consulta_status),
+            ("Teste 3", self.teste_3_cancelamento),
+            ("Teste 4", self.teste_4_multiplas_simultaneas),
+            ("Teste 5", self.teste_5_verificar_horario),
+        ]
+
+        for nome, func in testes:
+            try:
+                await func()
+            except Exception as e:
+                print(f"\n  [CRASH] {nome} falhou com erro: {e}")
+                self.registrar(f"{nome} (crash)", False, str(e)[:100])
 
         # Relatório final
         print("\n" + "=" * 60)

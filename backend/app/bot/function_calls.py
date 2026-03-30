@@ -1481,10 +1481,19 @@ def _rastrear_pedido(db: Session, restaurante_id: int, args: dict) -> str:
         ).first()
     elif args.get("telefone"):
         tel = "".join(c for c in args["telefone"] if c.isdigit())
+        # Buscar pedido ativo OU cancelado/entregue nas últimas 2h
+        from datetime import timedelta
+        limite_recente = datetime.utcnow() - timedelta(hours=2)
         pedido = db.query(models.Pedido).filter(
             models.Pedido.restaurante_id == restaurante_id,
             models.Pedido.cliente_telefone.like(f"%{tel[-8:]}"),
-            models.Pedido.status.notin_(["entregue", "cancelado", "finalizado"]),
+            (
+                models.Pedido.status.notin_(["entregue", "cancelado", "finalizado"])
+                | (
+                    models.Pedido.status.in_(["cancelado", "entregue", "finalizado"])
+                    & (models.Pedido.atualizado_em >= limite_recente)
+                )
+            ),
         ).order_by(models.Pedido.data_criacao.desc()).first()
 
     if not pedido:
