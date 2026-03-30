@@ -325,7 +325,7 @@ super-food/
 │   ├── mapbox_api.py           # Integracao Mapbox (geocoding, rotas)
 │   ├── haversine.py            # Calculo de distancia offline (fallback)
 │   ├── calculos.py             # Taxas de entrega e ganhos de motoboy
-│   ├── motoboy_selector.py     # Selecao justa de motoboys (GPS 50m, rotacao)
+│   ├── motoboy_selector.py     # Selecao justa de motoboys (GPS 300m, rotacao)
 │   └── tsp_optimizer.py        # Otimizacao de rotas (Nearest Neighbor)
 │
 ├── infra/                      # Infraestrutura Docker/Cloud
@@ -507,7 +507,7 @@ O dono do restaurante controla tudo pelo painel:
 - Login com codigo do restaurante + usuario + senha
 - Fluxo completo: em_rota → no_destino → pagamento → finalizar
 - GPS em tempo real (watchPosition + envio 10s)
-- Antifraude: finalizacao apenas a 50m do destino (configuravel)
+- Antifraude: finalizacao apenas a 300m do destino (configuravel)
 - Notificacoes sonoras (Web Push API)
 - Visualizacao de ganhos (base + extra) e historico
 - Service Worker + manifest.json (instalavel como app)
@@ -536,7 +536,7 @@ O algoritmo de selecao (`motoboy_selector.py`) garante distribuicao justa:
 
 ### Antifraude GPS
 
-- Motoboy so pode finalizar entrega a **50m do endereco de destino** (configuravel via `permitir_finalizar_fora_raio`)
+- Motoboy so pode finalizar entrega a **300m do endereco de destino** (configuravel via `permitir_finalizar_fora_raio`)
 - Calculo de distancia via Haversine entre GPS do motoboy e coordenadas do pedido
 - Configuracao no painel: ativar/desativar por restaurante
 
@@ -668,7 +668,7 @@ Todas as configuracoes do painel restaurante possuem tooltips (icone ℹ️) com
 | Raio Entrega | Distancia maxima aceita (recusa no checkout) |
 | Taxa Base / Dist. Base / KM Extra | Calculo de frete do cliente |
 | Permitir Ver Saldo | Motoboy pode ver ganhos no app |
-| Permitir Finalizar Fora Raio | Antifraude GPS (50m) |
+| Permitir Finalizar Fora Raio | Antifraude GPS (300m) |
 | Aceitar Pedidos Auto | Pedidos do site aceitos automaticamente |
 | Valor Base / KM Extra Motoboy | Pagamento do motoboy por entrega |
 | Taxa Diaria / Valor Lanche | Beneficios fixos diarios |
@@ -950,7 +950,7 @@ services:
 - **App Motoboy PWA** — React + Service Worker + GPS background + Push API
 - **Super Admin React** — Dashboard com analytics globais completos
 - **8 Layouts Tematicos** — Pizzaria, Hamburgueria, Acai, Bebidas, Esfiharia, Restaurante, Salgados, Sushi
-- **Sistema de Entregas Inteligente** — 3 modos despacho, GPS 50m antifraude, selecao justa, timeline, diagnostico
+- **Sistema de Entregas Inteligente** — 3 modos despacho, GPS 300m antifraude, selecao justa, timeline, diagnostico
 - **Analytics Super Admin** — Faturamento real, top 5 restaurantes, saude por restaurante, tendencias
 - **Relatorios Avancados** — Aba Analytics protegida por senha, projecoes, analise horario/dia
 - **32 Tooltips** — Todas configuracoes documentadas com icone ℹ️
@@ -970,7 +970,7 @@ services:
 - Hooks centralizados com React Query
 
 ### v2.8.3 (07/02/2026)
-- Ranking antifraude: config para permitir/bloquear finalizacao fora do raio de 50m
+- Ranking antifraude: config para permitir/bloquear finalizacao fora do raio de 300m
 
 ### v2.8.2 (03/02/2026)
 - Correcoes: status de entregas, permissao GPS, notificacoes com som

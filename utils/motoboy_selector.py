@@ -9,7 +9,7 @@ Critérios de Seleção (filtro rígido, sem fallback):
 2. Motoboy NÃO pode estar em rota (em_rota == False)
 3. entregas_pendentes < capacidade_entregas (multi-drop: até 5 pedidos por rota)
 4. GPS atualizado obrigatório
-5. Distância até restaurante ≤ 50 metros (haversine)
+5. Distância até restaurante ≤ 300 metros (haversine)
 6. Score: entregas_hoje × 1000 + pendentes × 500 + hierarquia + distância × 10
    Distribui carga uniforme entre motoboys, preenchendo rotas gradualmente.
 
@@ -51,7 +51,8 @@ def contar_entregas_dia(motoboy_id: int, session) -> int:
 
 # ==================== SELEÇÃO PRINCIPAL ====================
 
-RAIO_MAXIMO_METROS = 50  # Motoboy deve estar a no máximo 50m do restaurante
+RAIO_MAXIMO_METROS = 300  # Motoboy deve estar a no máximo 300m do restaurante
+RAIO_FINALIZACAO_METROS = 300  # Raio antifraude: motoboy deve estar a no máximo 300m do destino para finalizar
 
 def selecionar_motoboy_para_rota(
     restaurante_id: int,
@@ -66,7 +67,7 @@ def selecionar_motoboy_para_rota(
     2. em_rota == False (não iniciou rota ainda)
     3. entregas_pendentes < capacidade_entregas (multi-drop)
     4. GPS atualizado obrigatório (latitude_atual e longitude_atual)
-    5. Distância até restaurante ≤ 50 metros
+    5. Distância até restaurante ≤ 300 metros
 
     Score (menor é melhor):
     - entregas_hoje × 1000 + pendentes × 500 + hierarquia + distância × 10
@@ -127,7 +128,7 @@ def selecionar_motoboy_para_rota(
                 (restaurante.latitude, restaurante.longitude)
             )
 
-            # Filtro de proximidade: ≤ 50 metros (0.05 km)
+            # Filtro de proximidade: ≤ 300 metros (0.3 km)
             distancia_metros = distancia_km * 1000
             if distancia_metros > RAIO_MAXIMO_METROS:
                 continue
@@ -163,7 +164,7 @@ def selecionar_motoboy_para_rota(
 
         # Determinar motivo da seleção
         if len(candidatos) == 1:
-            motivo = "Único motoboy elegível no raio de 50m"
+            motivo = "Único motoboy elegível no raio de 300m"
         elif selecionado['entregas_hoje'] == 0:
             motivo = "Sem entregas no dia, menor hierarquia"
         else:
@@ -360,7 +361,7 @@ def finalizar_entrega_motoboy(
             Pedido.id == entrega.pedido_id
         ).first()
 
-        # Validar raio de 50m se coordenadas fornecidas
+        # Validar raio antifraude se coordenadas fornecidas
         fora_do_raio = False
         if lat_atual is not None and lon_atual is not None and pedido:
             from utils.haversine import haversine
@@ -369,7 +370,7 @@ def finalizar_entrega_motoboy(
 
             if lat_destino and lon_destino:
                 distancia_metros = haversine((lat_atual, lon_atual), (lat_destino, lon_destino)) * 1000
-                fora_do_raio = distancia_metros > 50
+                fora_do_raio = distancia_metros > RAIO_FINALIZACAO_METROS
 
                 if fora_do_raio:
                     # Verificar configuração do restaurante
@@ -380,7 +381,7 @@ def finalizar_entrega_motoboy(
                     if config and not config.permitir_finalizar_fora_raio:
                         return {
                             'sucesso': False,
-                            'erro': 'Você está fora do raio de 50m do endereço de entrega. Aproxime-se do destino para finalizar.',
+                            'erro': f'Você está fora do raio de {RAIO_FINALIZACAO_METROS}m do endereço de entrega. Aproxime-se do destino para finalizar.',
                             'distancia_metros': distancia_metros
                         }
 

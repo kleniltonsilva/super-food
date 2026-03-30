@@ -592,7 +592,7 @@ async def despachar_pedido(
         if not resultado:
             raise HTTPException(
                 400,
-                "Nenhum motoboy elegível (verificar: ativo, disponível, GPS atualizado, dentro de 50m do restaurante, sem entregas pendentes)"
+                "Nenhum motoboy elegível (verificar: ativo, disponível, GPS atualizado, dentro de 300m do restaurante, sem entregas pendentes)"
             )
         motoboy = db.query(models.Motoboy).filter(
             models.Motoboy.id == resultado['motoboy_id']

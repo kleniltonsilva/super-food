@@ -634,7 +634,7 @@ export default function Motoboys() {
                   <div className="flex items-center justify-between gap-2 sm:justify-start">
                     <label className="text-sm text-[var(--text-secondary)] flex items-center gap-1.5">
                       Finalizar Fora do Raio
-                      <InfoTooltip text="Antifraude GPS. Quando desativado, motoboy só finaliza a menos de 50m do destino." />
+                      <InfoTooltip text="Antifraude GPS. Quando desativado, motoboy só finaliza a menos de 300m do destino." />
                     </label>
                     <Switch checked={!!configPag.permitir_finalizar_fora_raio} onCheckedChange={(v) => setConfigPag({ ...configPag, permitir_finalizar_fora_raio: v })} />
                   </div>

@@ -339,14 +339,14 @@ Um motoboy só é elegível se TODOS os critérios forem atendidos:
 1. **Status ativo** (não pendente, inativo ou excluído)
 2. **Disponível** (online, flag disponivel=True)
 3. **GPS atualizado** (latitude/longitude não nulos)
-4. **Dentro de 50m do restaurante** (verificação GPS)
+4. **Dentro de 300m do restaurante** (verificação GPS)
 5. **Sem entregas pendentes** (entregas_pendentes = 0)
 
 ### 3.6 EXEMPLO PRÁTICO
 
 **Cenário: Pizzaria Bella Napoli — 5 motoboys, 3 pedidos prontos**
 
-| # | Nome | Hierarquia | Entregas Hoje | GPS (50m) | Disponível | Em Rota |
+| # | Nome | Hierarquia | Entregas Hoje | GPS (300m) | Disponível | Em Rota |
 |---|------|-----------|---------------|-----------|------------|---------|
 | 1 | João | 1 | 2 | Sim | Sim | Não |
 | 2 | Maria | 2 | 0 | Sim | Sim | Não |
@@ -486,7 +486,7 @@ Admin escolhe:
 - Mapa com rota até o cliente
 - Botão "Abrir no Waze/Google Maps"
 - Registro de pagamento na entrega: dinheiro, cartão, misto
-- Botão "Finalizar Entrega" com validação GPS (50m do endereço)
+- Botão "Finalizar Entrega" com validação GPS (300m do endereço)
 - Registro de ocorrência: cliente ausente, cancelamento
 
 ### 5.4 Ganhos

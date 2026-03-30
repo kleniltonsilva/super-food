@@ -391,7 +391,7 @@ class ConfigRestaurante(Base):
     max_pedidos_por_rota = Column(Integer, default=5)   # Máximo de pedidos por rota
     permitir_ver_saldo_motoboy = Column(Boolean, default=True)  # Motoboy pode ver seu saldo
 
-    # Validação antifraude por localização (raio de 50m)
+    # Validação antifraude por localização (raio de 300m)
     permitir_finalizar_fora_raio = Column(Boolean, default=False)  # Se True, ranking não é antifraude
     distancia_base_motoboy_km = Column(Float, default=3.0)  # Km incluídos no valor base do motoboy
     # Pedidos do site — aceitar automaticamente após 1º pedido concluído
@@ -629,7 +629,7 @@ class Entrega(Base):
     # Timestamps de entrega (para ranking)
     delivery_started_at = Column(DateTime)              # Início da entrega
     delivery_finished_at = Column(DateTime)             # Fim da entrega
-    finalizado_fora_raio = Column(Boolean, default=False)  # Finalizou fora do raio de 50m
+    finalizado_fora_raio = Column(Boolean, default=False)  # Finalizou fora do raio de 300m
 
     status = Column(String(50), default='pendente')
     # Motivo de finalização (para entregas canceladas/cliente ausente)
