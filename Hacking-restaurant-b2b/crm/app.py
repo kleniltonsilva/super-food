@@ -1095,9 +1095,8 @@ async def api_start_scan(
     job_id = criar_scan_job(cidades_list, etapas_list, is_headless)
     print(f"[SCANNER] Job #{job_id} criado: {len(cidades_list)} cidades, etapas={etapas_list}")
 
-    # Iniciar em background
-    from crm.scanner import iniciar_scan_background
-    iniciar_scan_background(job_id, cidades_list, etapas_list, is_headless)
+    # Scan será executado pelo scanner_agent.py local (polling PostgreSQL)
+    # Job fica como 'pendente' até o agent capturar
 
     return RedirectResponse(f"/scanner/job/{job_id}", status_code=303)
 
@@ -1149,12 +1148,14 @@ async def api_scan_logs(job_id: int, after: int = 0):
 
 @app.post("/api/scan/{job_id}/cancel")
 async def api_cancel_scan(job_id: int):
-    """Cancela scan ativo."""
-    from crm.scanner import cancelar_scan
-    if cancelar_scan(job_id):
-        return JSONResponse({"ok": True, "msg": "Scan cancelado"})
-    atualizar_scan_job(job_id, status="cancelado")
-    return JSONResponse({"ok": True, "msg": "Scan marcado como cancelado"})
+    """Cancela scan — marca como 'cancelando' para o agent local detectar."""
+    job = obter_scan_job(job_id)
+    if not job:
+        return JSONResponse({"erro": "Job não encontrado"}, status_code=404)
+    if job["status"] in ("pendente", "executando"):
+        atualizar_scan_job(job_id, status="cancelando")
+        return JSONResponse({"ok": True, "msg": "Cancelamento solicitado"})
+    return JSONResponse({"ok": True, "msg": "Job já finalizado"})
 
 
 # ============================================================

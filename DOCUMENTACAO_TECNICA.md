@@ -2189,6 +2189,104 @@ Para atualizar a versão: editar `motoboy-app/version.json`:
 
 ---
 
+## 21. Scanner Remoto — Agent Local com PostgreSQL Direto
+
+### 21.1 Visão Geral
+
+O CRM Derekh (`derekh-crm.fly.dev`) possui funcionalidade de Scanner que localiza restaurantes via Google Maps e verifica presença em plataformas de delivery (iFood, Rappi, 99Food). Como o container Docker no Fly.io não tem Playwright/Chromium, a execução real do scan é delegada a um **agent local** na máquina do usuário.
+
+**Arquitetura:**
+- O CRM apenas **cria scan jobs** (status `pendente`) no PostgreSQL
+- Um **scanner agent local** monitora jobs pendentes via fly proxy (PostgreSQL direto)
+- O agent executa o scan usando Playwright local e reporta progresso no banco
+- O CRM exibe logs e progresso em tempo real (polling)
+
+### 21.2 Fluxo
+
+```
+Usuário (CRM browser)         CRM (Fly.io)              Máquina Local
+─────────────────             ──────────                ─────────────
+Clica "Iniciar Scan"        POST /api/scan/start       scanner_agent.py
+  → cria scan_job              status = 'pendente'        │ fly proxy 15432:5432
+  → redireciona /job/{id}                                 │
+                                                          ├─ Poll a cada 10s
+Vê status/logs               GET /api/scan/{id}          ├─ Claim job (executando)
+  (polling automático)        GET /api/scan/{id}/logs     ├─ Executa scan (Playwright)
+                                                          ├─ Escreve logs no PostgreSQL
+Clica "Cancelar"            POST /api/scan/{id}/cancel   ├─ Verifica cancelamento
+  → status = 'cancelando'                                 │  entre cidades/etapas
+                                                          └─ Finaliza: concluído/erro
+```
+
+### 21.3 Arquivos
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `Hacking-restaurant-b2b/scanner_agent.py` | Agent local — poll, claim, execução, recovery órfãos |
+| `Hacking-restaurant-b2b/start_scanner.sh` | Script helper — fly proxy + venv + agent |
+| `Hacking-restaurant-b2b/crm/scanner.py` | Orquestrador de scan (executar_scan, etapas maps/delivery) |
+| `Hacking-restaurant-b2b/crm/app.py` | Rotas CRM (criar job, ver status, cancelar) |
+| `Hacking-restaurant-b2b/db_pg.py` | Funções PostgreSQL (scan_jobs, scan_logs, leads) |
+
+### 21.4 Endpoints CRM (Scanner)
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/scanner` | Página principal (cidades, jobs recentes) |
+| POST | `/api/scan/start` | Cria scan job (status pendente) |
+| GET | `/scanner/job/{id}` | Página detalhe com logs |
+| GET | `/api/scan/{id}` | Status do job (polling JSON) |
+| GET | `/api/scan/{id}/logs` | Logs do job (polling, offset) |
+| POST | `/api/scan/{id}/cancel` | Marca job como 'cancelando' |
+
+### 21.5 Status do Scan Job
+
+| Status | Significado |
+|--------|-------------|
+| `pendente` | Criado pelo CRM, aguardando agent local |
+| `executando` | Agent capturou e está executando |
+| `cancelando` | Usuário solicitou cancelamento, agent ainda não parou |
+| `cancelado` | Cancelamento confirmado pelo agent |
+| `concluido` | Scan finalizado com sucesso |
+| `erro` | Falha na execução |
+
+### 21.6 Cancelamento Cooperativo
+
+1. Usuário clica "Cancelar" no CRM → status muda para `cancelando`
+2. `crm/scanner.py` verifica `_check_cancelled(job_id)` antes de cada cidade e etapa
+3. Se cancelado, levanta `asyncio.CancelledError` → status final `cancelado`
+
+### 21.7 Tratamento de Falhas
+
+| Cenário | Comportamento |
+|---------|--------------|
+| Agent cai durante scan | Job fica 'executando' — ao reiniciar, recovery marca como 'erro' (>2h) |
+| Fly proxy desconecta | Agent detecta erro de conexão, encerra |
+| Dois agents simultâneos | `claim_job()` usa UPDATE WHERE status='pendente' — apenas 1 ganha |
+| Job pendente sem agent | Fica 'pendente' — CRM mostra "Aguardando scanner agent" |
+
+### 21.8 Como Usar
+
+```bash
+# Terminal local
+cd ~/Hacking-restaurant-b2b
+./start_scanner.sh
+# → Informa senha PostgreSQL → Conecta fly proxy → Aguarda jobs
+
+# Browser
+# → Abrir https://derekh-crm.fly.dev/scanner
+# → Selecionar cidades + etapas → Iniciar Scan
+# → Agent captura em ~10s → Progresso em tempo real
+```
+
+**Pré-requisitos:**
+- fly CLI instalado (`~/.fly/bin/fly`)
+- Playwright instalado (`playwright install chromium`)
+- `.venv` com dependências do projeto
+- Acesso ao app PostgreSQL do Fly.io
+
+---
+
 *Documento gerado automaticamente pelo sistema Derekh Food v4.0.7*
 *Última atualização: 30/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
