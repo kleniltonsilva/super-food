@@ -1241,10 +1241,87 @@ bridge_agent/
 ├── text_extractor.py    — ESC/POS → texto limpo
 ├── bridge_client.py     — REST client → backend
 ├── config.py            — Config JSON persistente
+├── simulador.py         — Simulador de recibos (texto puro, modo teste)
 ├── ui/config_window.py  — Tkinter login + settings
 ├── requirements.txt     — requests, pywin32, pystray, Pillow
 └── build.bat            — PyInstaller → .exe
 ```
+
+### 14.1 Impressora Térmica Virtual (Teste E2E sem hardware)
+
+Ferramenta que cria uma impressora virtual no Windows para testar Bridge Agent e Printer Agent **sem impressora física**. A "Termica Virtual 80mm" aparece no Windows como uma impressora real — os agentes não sabem que é virtual.
+
+#### Arquitetura
+
+```
+┌─────────────────────┐
+│  receipt_printer.py  │  ← Gera recibos ESC/POS reais (iFood, Rappi, 99Food, Uber Eats)
+│  win32print API      │
+└────────┬────────────┘
+         │ WritePrinter() → doc name: "iFood_Pedido_XXXX"
+         v
+┌─────────────────────┐
+│  Windows Spooler     │ ◄── Bridge Agent SpoolerMonitor detecta jobs AQUI
+│  "Termica Virtual"   │
+│  TCP/IP Port 9100    │
+└────────┬────────────┘
+         │ RAW TCP
+         v
+┌─────────────────────┐
+│  tcp_server.py       │  ← Recebe bytes, decodifica ESC/POS, salva .bin + .txt
+│  localhost:9100      │
+└─────────────────────┘
+```
+
+#### Componentes
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `escpos_decoder.py` | Decodificador ESC/POS → texto + anotações de estilo (3 modos: text_only, annotated, hex_dump) |
+| `tcp_server.py` | Servidor TCP porta 9100 — recebe bytes do spooler, decodifica, exibe no console, salva .bin + .txt |
+| `receipt_printer.py` | Gera recibos ESC/POS reais (4 plataformas) e envia via win32print pelo spooler |
+| `main.py` | CLI com 8 subcomandos (install, uninstall, server, simulate, decode, list-printers, test-bridge, test-printer) |
+| `install.ps1` | PowerShell Admin: cria porta TCP 127.0.0.1:9100 + impressora "Generic / Text Only" |
+| `uninstall.ps1` | PowerShell Admin: remove impressora + porta |
+
+#### Uso
+
+```bash
+python -m virtual_printer install                         # Instala impressora (Admin)
+python -m virtual_printer server                          # Inicia servidor TCP 9100
+python -m virtual_printer simulate                        # 1 recibo por plataforma
+python -m virtual_printer simulate --platform ifood -n 5  # 5 recibos iFood
+python -m virtual_printer decode output/job_0001.bin      # Decodifica arquivo raw
+python -m virtual_printer list-printers                   # Lista impressoras Windows
+```
+
+#### Fluxo de Teste E2E (Bridge Agent)
+
+1. `SERVIDOR.bat` — liga TCP 9100 (deixar rodando)
+2. `BRIDGE.bat` — liga Bridge Agent monitorando "Termica Virtual 80mm"
+3. `SIMULAR.bat` — envia recibos iFood/Rappi/99Food/Uber Eats pelo spooler
+4. Bridge detecta jobs no spooler → extrai texto → POST /painel/bridge/parse → backend parseia
+
+#### Pacote Windows para Pendrive
+
+Pasta `DerekhFood-Windows/` contém os 3 programas prontos para copiar em pendrive:
+
+```
+DerekhFood-Windows/
+├── LEIA-ME.txt          ← Instruções completas
+├── INSTALAR.bat         ← Instala Python deps + impressora virtual
+├── SERVIDOR.bat         ← Liga impressora virtual (TCP 9100)
+├── SIMULAR.bat          ← Menu interativo: envia pedidos falsos
+├── BRIDGE.bat           ← Interceptador de pedidos
+├── IMPRESSAO.bat        ← Impressão de pedidos Derekh
+├── DESINSTALAR.bat      ← Remove impressora virtual
+├── virtual_printer/     ← Impressora térmica virtual
+├── bridge_agent/        ← Interceptador de plataformas
+└── printer_agent/       ← Impressão de pedidos
+```
+
+**Compatibilidade:** Windows 10 e 11 (Windows 8.1 funciona, Windows 7 não).
+**Requisito:** Python 3.10+ com `pywin32`.
 
 ---
 

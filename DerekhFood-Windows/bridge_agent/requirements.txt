@@ -1,0 +1,5 @@
+# Bridge Agent — Dependencies (Windows)
+requests>=2.31.0
+pywin32>=306
+pystray>=0.19.5
+Pillow>=10.0.0

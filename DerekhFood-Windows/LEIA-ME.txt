@@ -1,0 +1,145 @@
+╔══════════════════════════════════════════════════════════════╗
+║            DEREKH FOOD — Pacote Windows                     ║
+║            Impressora Virtual + Agentes                     ║
+╚══════════════════════════════════════════════════════════════╝
+
+COMPATIBILIDADE:
+  Windows 10 — OK
+  Windows 11 — OK
+  Windows 8.1 — Funciona (Python 3.9+)
+  Windows 7 — NAO FUNCIONA (Python moderno nao suporta)
+
+═══════════════════════════════════════════════════════════════
+  INSTALACAO (fazer apenas 1 vez)
+═══════════════════════════════════════════════════════════════
+
+  1. Instale Python 3.12 de https://www.python.org/downloads/
+     IMPORTANTE: Marque "Add Python to PATH" na instalacao!
+
+  2. Clique duas vezes em INSTALAR.bat
+     (Ele instala dependencias e cria a impressora virtual)
+
+
+═══════════════════════════════════════════════════════════════
+  O QUE TEM NESTA PASTA
+═══════════════════════════════════════════════════════════════
+
+  INSTALAR.bat      → Instala tudo (Python deps + impressora virtual)
+  DESINSTALAR.bat   → Remove a impressora virtual
+
+  SERVIDOR.bat      → Liga a impressora virtual (TCP porta 9100)
+  SIMULAR.bat       → Envia pedidos falsos pelo spooler do Windows
+  BRIDGE.bat        → Interceptador — detecta pedidos de plataformas
+  IMPRESSAO.bat     → Impressao — recebe pedidos do Derekh e imprime
+
+  virtual_printer/  → Codigo da impressora termica virtual
+  bridge_agent/     → Codigo do agente interceptador
+  printer_agent/    → Codigo do agente de impressao
+
+
+═══════════════════════════════════════════════════════════════
+  COMO FUNCIONA (Resumo)
+═══════════════════════════════════════════════════════════════
+
+  A "Termica Virtual 80mm" e uma impressora que aparece no Windows
+  como se fosse uma termica real de 80mm. Mas ao inves de imprimir
+  em papel, ela envia os dados pela rede (TCP porta 9100) para o
+  SERVIDOR.bat que roda no mesmo computador.
+
+  Isso permite testar os agentes sem impressora fisica:
+
+  ┌──────────────┐     ┌───────────────┐     ┌──────────────┐
+  │ SIMULAR.bat  │────>│ Spooler       │────>│ SERVIDOR.bat │
+  │ (pedidos)    │     │ Windows       │     │ (TCP 9100)   │
+  └──────────────┘     │ "Termica      │     └──────────────┘
+                       │  Virtual 80mm"│
+                       └───────┬───────┘
+                               │
+                       ┌───────┴───────┐
+                       │ BRIDGE.bat    │
+                       │ (intercepta!) │
+                       └───────────────┘
+
+
+═══════════════════════════════════════════════════════════════
+  TESTE 1 — Testar Bridge Agent (Interceptador)
+═══════════════════════════════════════════════════════════════
+
+  Abre 3 janelas do Prompt de Comando:
+
+  Janela 1: Clique em SERVIDOR.bat (deixe rodando)
+  Janela 2: Clique em BRIDGE.bat (configure na primeira vez)
+  Janela 3: Clique em SIMULAR.bat (escolha opcao 1)
+
+  O que acontece:
+  - SIMULAR envia recibos falsos do iFood, Rappi, etc
+  - Os recibos passam pelo spooler do Windows (como se fossem reais)
+  - O SERVIDOR recebe e exibe os recibos no console
+  - O BRIDGE detecta os recibos no spooler e envia para o backend
+
+  Se o Bridge detectou e processou = FUNCIONA!
+
+
+═══════════════════════════════════════════════════════════════
+  TESTE 2 — Testar Printer Agent (Impressao)
+═══════════════════════════════════════════════════════════════
+
+  Janela 1: Clique em SERVIDOR.bat (deixe rodando)
+  Janela 2: Clique em IMPRESSAO.bat (configure na primeira vez)
+            Na config, selecione "Termica Virtual 80mm" como impressora
+
+  Depois, crie um pedido pelo site do restaurante.
+  O Printer Agent recebe o pedido via WebSocket, formata em ESC/POS,
+  e envia para a impressora virtual. O SERVIDOR exibe o recibo.
+
+
+═══════════════════════════════════════════════════════════════
+  CONFIGURACAO DO BRIDGE (primeira vez)
+═══════════════════════════════════════════════════════════════
+
+  Ao abrir BRIDGE.bat pela primeira vez, aparece uma janela pedindo:
+  - URL do servidor: https://superfood-api.fly.dev
+  - Email e senha do restaurante
+  - Selecionar "Termica Virtual 80mm" na lista de impressoras
+  - Marcar "Criar pedido automaticamente" se quiser teste completo
+
+
+═══════════════════════════════════════════════════════════════
+  CONFIGURACAO DA IMPRESSAO (primeira vez)
+═══════════════════════════════════════════════════════════════
+
+  Ao abrir IMPRESSAO.bat pela primeira vez, aparece uma janela pedindo:
+  - URL do servidor: https://superfood-api.fly.dev
+  - Email e senha do restaurante
+  - Selecionar "Termica Virtual 80mm" como impressora geral
+
+
+═══════════════════════════════════════════════════════════════
+  PROBLEMAS COMUNS
+═══════════════════════════════════════════════════════════════
+
+  "python nao encontrado"
+  → Instale Python e marque "Add Python to PATH"
+  → Ou reinstale Python marcando essa opcao
+
+  "pywin32 nao instalado"
+  → Abra Prompt de Comando e digite: pip install pywin32
+
+  "Impressora nao encontrada"
+  → Rode INSTALAR.bat como Administrador
+  → Ou: Painel de Controle > Impressoras > verifique se existe
+
+  "Conexao recusada na porta 9100"
+  → O SERVIDOR.bat precisa estar rodando primeiro!
+
+  "Bridge nao detecta os pedidos"
+  → Verifique se selecionou "Termica Virtual 80mm" na config
+  → Verifique se SERVIDOR.bat esta rodando
+
+
+═══════════════════════════════════════════════════════════════
+  SUPORTE
+═══════════════════════════════════════════════════════════════
+
+  Derekh Food — SaaS de Delivery
+  Autor: Klenilton Silva (@kleniltonsilva)

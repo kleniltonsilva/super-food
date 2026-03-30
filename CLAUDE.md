@@ -102,6 +102,7 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Repescagem + Verificação Email + Reset Senha:** Migration 037, 25 arquivos, cupons exclusivos VOLTA-{NOME}-{código}
 - **Landing Page + Onboarding:** ✅ Migration 042, landing page `/onboarding`, formulário self-service, Super Admin review 1-click
 - **App Motoboy Nativo (Sprint 27):** ✅ Capacitor Android — GPS background, auto-update, CI/CD GitHub Actions, página download entregador
+- **Impressora Virtual (Teste E2E):** ✅ `virtual_printer/` + `DerekhFood-Windows/` pacote pendrive (TCP 9100, 4 plataformas, 8 subcomandos CLI)
 - **Bugs conhecidos:** Nenhum crítico
 - **Pendente:** Configurar WOOVI_APP_ID real, keystore Android (secrets GitHub), Módulo 5 (Sales), Resend prod
 
@@ -230,6 +231,8 @@ super-food/
 ├── database/models.py         # SQLAlchemy ORM models (source of truth, 28+ modelos)
 ├── printer_agent/             # Agent impressão Windows (ESC/POS)
 ├── bridge_agent/              # Agent Bridge Windows (spooler + ESC/POS + REST)
+├── virtual_printer/           # Impressora térmica virtual (TCP 9100, teste E2E)
+├── DerekhFood-Windows/        # Pacote pendrive: 3 programas + .bat + LEIA-ME
 ├── motoboy-app/               # App Android nativo (CapacitorJS)
 │   ├── capacitor.config.ts    # Config: food.derekh.entregador
 │   ├── vite.config.ts         # Build separado (~490KB JS)
@@ -264,8 +267,9 @@ super-food/
 | 7 | App Garçom | React PWA | /garcom | Implementado |
 | 8 | WhatsApp Humanoide (Bot IA) | Integrado backend | /webhooks/evolution | Implementado |
 | 9 | Sales Autopilot | FastAPI | derekh-crm.fly.dev | Em deploy |
-| 10 | Printer Agent | Windows Service | localhost:8765 | Planejado |
+| 10 | Printer Agent | Windows Service | localhost:8765 | Implementado |
 | 11 | App Motoboy (Android) | Capacitor APK | food.derekh.entregador | Implementado |
+| 12 | Impressora Virtual | Python TCP 9100 | DerekhFood-Windows/ | Implementado |
 
 ---
 
