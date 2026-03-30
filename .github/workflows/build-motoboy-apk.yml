@@ -33,7 +33,16 @@ jobs:
 
       - name: Build web assets
         working-directory: motoboy-app
-        run: npm run build
+        run: |
+          npm run build
+          # Verificar que o CSS tem tamanho correto (Tailwind escaneou monorepo)
+          CSS_FILE=$(ls -1 dist/assets/*.css | head -1)
+          CSS_SIZE=$(stat -c%s "$CSS_FILE")
+          echo "CSS size: ${CSS_SIZE} bytes"
+          if [ "$CSS_SIZE" -lt 100000 ]; then
+            echo "ERROR: CSS muito pequeno (${CSS_SIZE} bytes) — Tailwind não escaneou monorepo!"
+            exit 1
+          fi
 
       - name: Capacitor sync
         working-directory: motoboy-app
@@ -92,8 +101,23 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
+          LOCAL_SIZE=$(stat -c%s apk/DerekhFood-Entregador.apk)
+          echo "Local APK: ${LOCAL_SIZE} bytes"
+
           flyctl ssh console --app superfood-api -C "mkdir -p /app/backend/static/uploads/downloads"
+
+          # Upload via SFTP
           flyctl ssh sftp shell --app superfood-api << 'SFTP_EOF'
           put apk/DerekhFood-Entregador.apk /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk
           SFTP_EOF
-          flyctl ssh console --app superfood-api -C "ls -la /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk"
+
+          # Verificar upload — comparar tamanho
+          REMOTE_INFO=$(flyctl ssh console --app superfood-api -C "stat -c%s /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk" 2>&1 | tail -1)
+          echo "Remote APK: ${REMOTE_INFO} bytes"
+          if [ "$REMOTE_INFO" != "$LOCAL_SIZE" ]; then
+            echo "WARNING: Tamanhos diferentes! Tentando upload novamente..."
+            flyctl ssh sftp shell --app superfood-api << 'SFTP_RETRY'
+          put apk/DerekhFood-Entregador.apk /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk
+          SFTP_RETRY
+            flyctl ssh console --app superfood-api -C "ls -la /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk"
+          fi
