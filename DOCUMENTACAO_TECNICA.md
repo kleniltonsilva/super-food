@@ -2138,7 +2138,7 @@ O plugin `@capacitor-community/background-geolocation` cria um **foreground serv
 **Trigger:** Push em `motoboy-app/**` ou `restaurante-pedido-online/client/src/motoboy/**`
 
 **Steps:**
-1. Setup JDK 17 + Node 20
+1. Setup JDK 21 + Node 20
 2. `npm ci` (monorepo + motoboy-app)
 3. `npx cap add android` (se necessário)
 4. `npm run build` → `npx cap copy android` → `npx cap sync android`
