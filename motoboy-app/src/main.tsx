@@ -10,8 +10,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-// CSS do monorepo (Tailwind + temas)
-import "@/index.css";
+// CSS local com @source para escanear monorepo (fix Tailwind v4)
+import "./app.css";
 
 // Registro GPS nativo (solicita permissões ao iniciar)
 import { registerNativeGPS } from "./native/gps-native";

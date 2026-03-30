@@ -1,0 +1,14 @@
+/**
+ * CSS entry point do app nativo motoboy.
+ *
+ * Importa o CSS do monorepo (Tailwind + tema + fontes) e adiciona
+ * @source para que o @tailwindcss/vite escaneie os arquivos do monorepo
+ * que são importados via alias Vite (@/).
+ *
+ * Sem o @source, o Tailwind v4 só escaneia arquivos dentro de motoboy-app/
+ * e ignora os arquivos do monorepo — causando classes CSS ausentes (tela preta).
+ */
+@source "../../restaurante-pedido-online/client/src";
+
+/* Importa todo o CSS do monorepo (fontes, Tailwind, tema, variáveis) */
+@import "../../restaurante-pedido-online/client/src/index.css";

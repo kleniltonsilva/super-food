@@ -254,6 +254,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # Vite dev
         "http://localhost:3000",  # React dev
+        "https://localhost",      # Capacitor Android (androidScheme: https)
+        "capacitor://localhost",  # Capacitor iOS (fallback)
         "https://superfood-api.fly.dev",
         "https://derekhfood.com.br",
         "https://www.derekhfood.com.br",

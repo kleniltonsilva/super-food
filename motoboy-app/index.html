@@ -8,12 +8,35 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Derekh Entregador</title>
     <style>
-      body { margin: 0; background: #0a0a0a; }
+      body { margin: 0; background: #0a0a0a; color: #fff; font-family: system-ui, sans-serif; }
       #root { min-height: 100vh; }
+      #app-loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+      #app-loading p { color: #9ca3af; font-size: 14px; }
+      #app-error { display: none; padding: 20px; color: #f87171; font-size: 12px; word-break: break-all; }
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="app-loading"><p>Carregando...</p></div>
+    </div>
+    <div id="app-error"></div>
+    <script>
+      // Captura erros JavaScript que impedem o React de montar
+      window.onerror = function(msg, src, line, col, err) {
+        var el = document.getElementById('app-error');
+        if (el) {
+          el.style.display = 'block';
+          el.innerHTML = '<b>Erro:</b> ' + msg + '<br><b>Arquivo:</b> ' + src + ':' + line + ':' + col;
+        }
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        var el = document.getElementById('app-error');
+        if (el) {
+          el.style.display = 'block';
+          el.innerHTML += '<br><b>Promise:</b> ' + (e.reason ? e.reason.message || e.reason : 'unknown');
+        }
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
