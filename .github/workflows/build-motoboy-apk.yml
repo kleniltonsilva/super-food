@@ -105,7 +105,7 @@ jobs:
           echo "Local APK: ${LOCAL_SIZE} bytes"
 
           # Criar diretório + deletar APK antigo (flyctl sftp NÃO sobrescreve!)
-          flyctl ssh console --app superfood-api -C "mkdir -p /app/backend/static/uploads/downloads && rm -f /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk"
+          flyctl ssh console --app superfood-api -C "sh -c 'mkdir -p /app/backend/static/uploads/downloads && rm -f /app/backend/static/uploads/downloads/DerekhFood-Entregador.apk'"
 
           # Upload via SFTP
           flyctl ssh sftp shell --app superfood-api << 'SFTP_EOF'
