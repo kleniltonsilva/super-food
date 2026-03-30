@@ -21,6 +21,12 @@ logger = logging.getLogger("superfood.pix")
 router = APIRouter(tags=["Pix Webhooks"])
 
 
+@router.get("/webhooks/woovi")
+async def webhook_woovi_verificacao():
+    """Verificação da Woovi — retorna 200 para confirmar endpoint ativo."""
+    return {"status": "ok", "service": "derekh-food-pix"}
+
+
 @router.post("/webhooks/woovi")
 async def webhook_woovi(request: Request):
     """Recebe eventos da Woovi/OpenPix (pagamentos Pix)."""
