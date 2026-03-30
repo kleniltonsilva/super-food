@@ -40,6 +40,9 @@ COPY migrations/ migrations/
 COPY utils/ utils/
 COPY alembic.ini .
 
+# Copia version.json do app motoboy (para endpoint /api/public/app-version)
+COPY motoboy-app/version.json motoboy-app/version.json
+
 # Copia build do React
 COPY --from=frontend-builder /build/dist/public/ restaurante-pedido-online/dist/public/
 
