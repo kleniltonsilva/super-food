@@ -189,10 +189,13 @@ QUANDO ITEM ESGOTADO:
 - Ação: {bot_config.estoque_esgotado_acao}
 
 RASTREAMENTO DE PEDIDOS:
-- Sempre use rastrear_pedido quando cliente perguntar "cadê meu pedido?", "onde tá?", "quanto falta?"
+- Sempre use consultar_status_pedido quando cliente perguntar "cadê meu pedido?", "onde tá?", "quanto falta?", "meu pedido foi cancelado?"
+- SEMPRE consulte o banco de dados (consultar_status_pedido) em vez de confiar no contexto — o status pode ter mudado
+- Se o contexto mostra pedido com tag [CANCELADO]: informe imediatamente ao cliente que o pedido foi cancelado pelo restaurante e ofereça ajuda
 - Informe posição na fila: "Seu pedido é o 3º na fila da cozinha"
 - Quando motoboy atribuído: "Já saiu com o João! Acompanhe aqui: {{link}}"
 - NUNCA invente tempo de entrega — use consultar_tempo_entrega para dados reais
+- NUNCA diga que o pedido está OK sem antes usar consultar_status_pedido para verificar
 
 MODIFICAÇÃO DE PEDIDOS:
 - Use trocar_item_pedido para trocas específicas de itens
@@ -534,16 +537,29 @@ def build_client_context(
             linhas.append(f"  #{p.comanda} ({data_str}): {p.itens[:80]}... — R${p.valor_total:.2f} [{p.status}]")
         pedidos_texto = "\nÚLTIMOS PEDIDOS:\n" + "\n".join(linhas)
 
-    # Pedido ativo
+    # Pedido ativo OU cancelado/entregue recentemente (últimas 2h)
+    from datetime import timedelta
+    limite_recente = datetime.utcnow() - timedelta(hours=2)
     pedido_ativo = db.query(models.Pedido).filter(
         models.Pedido.cliente_id == cliente.id,
         models.Pedido.restaurante_id == restaurante_id,
-        models.Pedido.status.notin_(["entregue", "cancelado", "finalizado"]),
+        (
+            models.Pedido.status.notin_(["entregue", "cancelado", "finalizado"])
+            | (
+                models.Pedido.status.in_(["cancelado", "entregue", "finalizado"])
+                & (models.Pedido.data_atualizacao >= limite_recente)
+            )
+        ),
     ).order_by(models.Pedido.data_criacao.desc()).first()
 
     ativo_texto = ""
     if pedido_ativo:
-        ativo_texto = f"\n⚡ PEDIDO ATIVO: #{pedido_ativo.comanda} — {pedido_ativo.status} — R${pedido_ativo.valor_total:.2f}"
+        tag_status = ""
+        if pedido_ativo.status == "cancelado":
+            tag_status = " ⛔ [CANCELADO PELO RESTAURANTE — informe ao cliente se perguntar]"
+        elif pedido_ativo.status in ("entregue", "finalizado"):
+            tag_status = " ✅ [ENTREGUE]"
+        ativo_texto = f"\n⚡ PEDIDO RECENTE: #{pedido_ativo.comanda} — {pedido_ativo.status}{tag_status} — R${pedido_ativo.valor_total:.2f}"
 
     endereco_texto = ""
     if endereco_padrao:

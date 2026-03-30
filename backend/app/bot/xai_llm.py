@@ -2,6 +2,7 @@
 xAI Grok LLM — Chat completions com function calling.
 Modelo: grok-3-fast (rápido, barato, bom em português).
 """
+import asyncio
 import httpx
 import json
 import logging
@@ -62,28 +63,41 @@ async def chat_completion(
     }
 
     inicio = time.time()
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(XAI_CHAT_URL, json=payload, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
+    max_retries = 2
+    erro_fallback = {"content": "Opa, me dá um segundo que tive um probleminha aqui. Já volto!", "tool_calls": None, "tokens_input": 0, "tokens_output": 0, "tempo_ms": 0}
 
-        tempo_ms = int((time.time() - inicio) * 1000)
-        choice = data.get("choices", [{}])[0]
-        message = choice.get("message", {})
-        usage = data.get("usage", {})
+    for tentativa in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                resp = await client.post(XAI_CHAT_URL, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
 
-        return {
-            "content": message.get("content"),
-            "tool_calls": message.get("tool_calls"),
-            "tokens_input": usage.get("prompt_tokens", 0),
-            "tokens_output": usage.get("completion_tokens", 0),
-            "tempo_ms": tempo_ms,
-        }
+            tempo_ms = int((time.time() - inicio) * 1000)
+            choice = data.get("choices", [{}])[0]
+            message = choice.get("message", {})
+            usage = data.get("usage", {})
 
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Erro LLM xAI {e.response.status_code}: {e.response.text[:200]}")
-        return {"content": "Opa, me dá um segundo que tive um probleminha aqui. Já volto!", "tool_calls": None, "tokens_input": 0, "tokens_output": 0, "tempo_ms": 0}
-    except Exception as e:
-        logger.error(f"Erro LLM xAI: {e}")
-        return {"content": "Opa, me dá um segundo que tive um probleminha aqui. Já volto!", "tool_calls": None, "tokens_input": 0, "tokens_output": 0, "tempo_ms": 0}
+            return {
+                "content": message.get("content"),
+                "tool_calls": message.get("tool_calls"),
+                "tokens_input": usage.get("prompt_tokens", 0),
+                "tokens_output": usage.get("completion_tokens", 0),
+                "tempo_ms": tempo_ms,
+            }
+
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            logger.warning(f"xAI timeout tentativa {tentativa+1}/{max_retries}: {e}")
+            if tentativa < max_retries - 1:
+                await asyncio.sleep(2)
+                continue
+            logger.error(f"xAI falhou após {max_retries} tentativas (timeout)")
+            return erro_fallback
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Erro LLM xAI {e.response.status_code}: {e.response.text[:200]}")
+            return erro_fallback
+        except Exception as e:
+            logger.error(f"Erro LLM xAI: {e}")
+            return erro_fallback
+
+    return erro_fallback

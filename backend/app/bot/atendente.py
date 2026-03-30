@@ -332,7 +332,8 @@ async def _processar_mensagem(
                 })
 
         if not resposta_final:
-            resposta_final = "Opa, me dá um segundo que estou verificando aqui..."
+            logger.warning(f"Loop function calling esgotou 5 iterações sem resposta final (tel={numero})")
+            resposta_final = "Desculpa a demora! Estou aqui sim. Em que posso te ajudar?"
 
         # 8.5 SAFETY NET: Detectar "confirmação fantasma" — LLM diz confirmado sem chamar criar_pedido
         # Skip safety net se criar_pedido retornou pix_online (pedido aguardando pagamento, não vai pra cozinha)
