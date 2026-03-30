@@ -550,7 +550,7 @@ def build_client_context(
             models.Pedido.status.notin_(["entregue", "cancelado", "finalizado"])
             | (
                 models.Pedido.status.in_(["cancelado", "entregue", "finalizado"])
-                & (models.Pedido.data_atualizacao >= limite_recente)
+                & (models.Pedido.atualizado_em >= limite_recente)
             )
         ),
     ).order_by(models.Pedido.data_criacao.desc()).first()
