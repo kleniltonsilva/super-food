@@ -151,9 +151,20 @@ export function useMotoboyWebSocket({ restauranteId, motoboyId }: UseMotoboyWebS
     if (!restauranteId) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const protocolo = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host;
-    const url = `${protocolo}//${host}/ws/${restauranteId}`;
+    // Detecta Capacitor nativo → usa produção diretamente
+    let url: string;
+    try {
+      const w = window as unknown as Record<string, unknown>;
+      if (w.Capacitor && (w.Capacitor as { isNativePlatform?: () => boolean }).isNativePlatform?.()) {
+        url = `wss://superfood-api.fly.dev/ws/${restauranteId}`;
+      } else {
+        const protocolo = window.location.protocol === "https:" ? "wss:" : "ws:";
+        url = `${protocolo}//${window.location.host}/ws/${restauranteId}`;
+      }
+    } catch {
+      const protocolo = window.location.protocol === "https:" ? "wss:" : "ws:";
+      url = `${protocolo}//${window.location.host}/ws/${restauranteId}`;
+    }
 
     const ws = new WebSocket(url);
     wsRef.current = ws;

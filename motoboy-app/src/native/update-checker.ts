@@ -27,9 +27,15 @@ export interface UpdateStatus {
 }
 
 const API_BASE = (() => {
+  // No Capacitor nativo, sempre usar produção (não há servidor local)
+  try {
+    if (Capacitor.isNativePlatform()) {
+      return "https://superfood-api.fly.dev";
+    }
+  } catch { /* não é nativo */ }
+
   if (typeof window !== "undefined" && window.location) {
     const { protocol, host } = window.location;
-    // Em produção no Capacitor, usa URL absoluta
     if (host.includes("superfood-api.fly.dev")) {
       return "https://superfood-api.fly.dev";
     }

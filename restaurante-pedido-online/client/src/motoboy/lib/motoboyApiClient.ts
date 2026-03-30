@@ -1,8 +1,19 @@
 import axios from "axios";
 import { sentryBreadcrumbFromAxiosError } from "@/lib/sentry";
 
+/** Detecta Capacitor nativo e retorna URL base da API de produção */
+function getApiBaseUrl(): string {
+  try {
+    const w = window as unknown as Record<string, unknown>;
+    if (w.Capacitor && (w.Capacitor as { isNativePlatform?: () => boolean }).isNativePlatform?.()) {
+      return "https://superfood-api.fly.dev";
+    }
+  } catch { /* browser normal */ }
+  return "/";
+}
+
 const motoboyApi = axios.create({
-  baseURL: "/",
+  baseURL: getApiBaseUrl(),
   headers: { "Content-Type": "application/json" },
 });
 
