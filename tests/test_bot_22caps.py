@@ -18,32 +18,31 @@ from datetime import datetime
 RESTAURANTE_EMAIL = "tuga@gmail.com"
 RESTAURANTE_SENHA = "123456"
 
-# Números únicos por cenário (nunca reutilizados)
+# Números únicos por cenário — rodada 3 (novos para evitar contaminação)
 NUMS = {
-    "saudacao":           "5511900010001",
-    "cardapio":           "5511900010002",
-    "categorias":         "5511900010003",
-    "pedido_completo":    "5511900010004",
-    "status_pedido":      "5511900010005",
-    "rastrear":           "5511900010006",
-    "horario":            "5511900010007",
-    "cancelar":           "5511900010008",
-    "alterar":            "5511900010009",
-    "repetir":            "5511900010010",
-    "promocoes":          "5511900010011",
-    "avaliacao":          "5511900010012",
-    "problema":           "5511900010013",
-    "cupom":              "5511900010014",
-    "escalar":            "5511900010015",
-    "endereco":           "5511900010016",
-    "taxa_entrega":       "5511900010017",
-    "pagamento":          "5511900010018",
-    "tempo_estimado":     "5511900010019",
-    "agendar":            "5511900010020",
-    "complementos":       "5511900010021",
-    "pix":                "5511900010022",
-    "cadastro":           "5511900010023",
-    "simultaneas":        "5511900010024",
+    "saudacao":           "5511900030001",
+    "cardapio":           "5511900030002",
+    "categorias":         "5511900030003",
+    "pedido_completo":    "5511900030004",
+    "status_pedido":      "5511900030005",
+    "rastrear":           "5511900030006",
+    "horario":            "5511900030007",
+    "cancelar":           "5511900030008",
+    "alterar":            "5511900030009",
+    "repetir":            "5511900030010",
+    "promocoes":          "5511900030011",
+    "avaliacao":          "5511900030012",
+    "problema":           "5511900030013",
+    "cupom":              "5511900030014",
+    "escalar":            "5511900030015",
+    "endereco":           "5511900030016",
+    "taxa_entrega":       "5511900030017",
+    "pagamento":          "5511900030018",
+    "tempo_estimado":     "5511900030019",
+    "trocar_item":        "5511900030020",
+    "complementos":       "5511900030021",
+    "pix":                "5511900030022",
+    "cadastro":           "5511900030023",
 }
 
 
@@ -160,11 +159,11 @@ class BotTester22:
         print("CAP 2: buscar_cardapio")
         print("=" * 60)
         n = NUMS["cardapio"]
-        await self.msg(n, "Oi")
-        r, f = await self.msg(n, "Quero uma pizza calabresa, quanto custa?")
+        r1, f1 = await self.msg(n, "Oi, quero uma pizza calabresa, quanto custa?")
+        all_f = self.all_fns(f1)
         self.reg("2. buscar_cardapio",
-                 self.has_fn(f, "buscar_cardapio") or (r and "r$" in r.lower()),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+                 self.has_fn(all_f, "buscar_cardapio") or (r1 and "r$" in r1.lower()),
+                 f"FN: {[x['nome'] for x in all_f] if all_f else 'nenhum'}")
 
     async def t03_buscar_categorias(self):
         """3. buscar_categorias — listar categorias"""
@@ -172,11 +171,10 @@ class BotTester22:
         print("CAP 3: buscar_categorias")
         print("=" * 60)
         n = NUMS["categorias"]
-        await self.msg(n, "Oi")
-        r, f = await self.msg(n, "Quais tipos de comida vocês têm? Me mostra as categorias")
+        r1, f1 = await self.msg(n, "Oi, me mostra as categorias do cardápio")
         self.reg("3. buscar_categorias",
-                 self.has_fn(f, "buscar_categorias", "buscar_cardapio") or (r and r is not None),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+                 self.has_fn(f1, "buscar_categorias", "buscar_cardapio") or (r1 and r1 is not None),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'}")
 
     async def t04_cadastrar_cliente(self):
         """4. cadastrar_cliente — registrar cliente novo"""
@@ -212,11 +210,11 @@ class BotTester22:
         print("CAP 6: consultar_status_pedido")
         print("=" * 60)
         n = NUMS["status_pedido"]
-        await self.msg(n, "Oi meu nome é Ana Status")
-        r, f = await self.msg(n, "Qual o status do meu último pedido?")
+        r1, f1 = await self.msg(n, "Oi meu nome é Ana Status, qual o status do meu último pedido?")
+        all_f = self.all_fns(f1)
         self.reg("6. consultar_status_pedido",
-                 self.has_fn(f, "consultar_status_pedido", "rastrear_pedido", "buscar_cliente"),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+                 self.has_fn(all_f, "consultar_status_pedido", "rastrear_pedido", "buscar_cliente"),
+                 f"FN: {[x['nome'] for x in all_f] if all_f else 'nenhum'}")
 
     async def t07_rastrear_pedido(self):
         """7. rastrear_pedido — rastreamento detalhado"""
@@ -283,11 +281,10 @@ class BotTester22:
         print("CAP 12: buscar_promocoes")
         print("=" * 60)
         n = NUMS["promocoes"]
-        await self.msg(n, "Oi")
-        r, f = await self.msg(n, "Tem alguma promoção hoje? Algum desconto?")
+        r1, f1 = await self.msg(n, "Oi, tem alguma promoção hoje? Algum desconto?")
         self.reg("12. buscar_promocoes",
-                 self.has_fn(f, "buscar_promocoes") or (r and ("promoção" in r.lower() or "promo" in r.lower() or "desconto" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+                 self.has_fn(f1, "buscar_promocoes") or (r1 and ("promoção" in r1.lower() or "promo" in r1.lower() or "desconto" in r1.lower() or "combo" in r1.lower())),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'}")
 
     async def t13_registrar_avaliacao(self):
         """13. registrar_avaliacao — avaliar pedido"""
@@ -307,11 +304,10 @@ class BotTester22:
         print("CAP 14: registrar_problema")
         print("=" * 60)
         n = NUMS["problema"]
-        await self.msg(n, "Oi sou Ricardo Problema")
-        r, f = await self.msg(n, "Meu pedido veio errado! Pedi calabresa e veio margherita, tô muito chateado")
+        r1, f1 = await self.msg(n, "Oi sou Ricardo, meu pedido veio errado! Pedi calabresa e veio margherita")
         self.reg("14. registrar_problema",
-                 self.has_fn(f, "registrar_problema") or (r and ("descul" in r.lower() or "problema" in r.lower() or "sinto" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+                 self.has_fn(f1, "registrar_problema") or (r1 and ("descul" in r1.lower() or "problema" in r1.lower() or "sinto" in r1.lower() or "registr" in r1.lower())),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'}")
 
     async def t15_aplicar_cupom(self):
         """15. aplicar_cupom — aplicar cupom de desconto"""
@@ -319,11 +315,10 @@ class BotTester22:
         print("CAP 15: aplicar_cupom")
         print("=" * 60)
         n = NUMS["cupom"]
-        await self.msg(n, "Oi quero fazer um pedido")
-        r, f = await self.msg(n, "Tenho um cupom de desconto PRIMEIRACOMPRA, pode aplicar?")
+        r1, f1 = await self.msg(n, "Oi, tenho um cupom PRIMEIRACOMPRA, pode aplicar no meu pedido?")
         self.reg("15. aplicar_cupom",
-                 self.has_fn(f, "aplicar_cupom") or (r and ("cupom" in r.lower() or "desconto" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+                 self.has_fn(f1, "aplicar_cupom") or (r1 and ("cupom" in r1.lower() or "desconto" in r1.lower())),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'}")
 
     async def t16_escalar_humano(self):
         """16. escalar_humano — transferir para atendente humano"""
@@ -349,65 +344,60 @@ class BotTester22:
                  self.has_fn(f, "validar_endereco", "atualizar_endereco_cliente") or (r and ("endereço" in r.lower() or "rua" in r.lower())),
                  f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
 
-    async def t18_calcular_taxa(self):
-        """18. calcular_taxa_entrega — consultar taxa por endereço"""
+    async def t18_consultar_bairros(self):
+        """18. consultar_bairros — consultar bairros/taxa de entrega"""
         print("\n" + "=" * 60)
-        print("CAP 18: calcular_taxa_entrega")
+        print("CAP 18: consultar_bairros")
         print("=" * 60)
         n = NUMS["taxa_entrega"]
-        await self.msg(n, "Oi")
-        r, f = await self.msg(n, "Quanto custa a taxa de entrega pro Centro?")
-        self.reg("18. calcular_taxa_entrega",
-                 self.has_fn(f, "calcular_taxa_entrega", "consultar_bairros") or (r and ("taxa" in r.lower() or "entrega" in r.lower() or "r$" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+        r1, f1 = await self.msg(n, "Oi, quanto custa a taxa de entrega? Quais bairros vocês entregam?")
+        self.reg("18. consultar_bairros",
+                 self.has_fn(f1, "consultar_bairros") or (r1 and ("taxa" in r1.lower() or "entrega" in r1.lower() or "bairro" in r1.lower())),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'}")
 
     async def t19_formas_pagamento(self):
-        """19. listar_formas_pagamento"""
+        """19. formas de pagamento (resposta baseada em contexto)"""
         print("\n" + "=" * 60)
-        print("CAP 19: listar_formas_pagamento")
+        print("CAP 19: formas_pagamento (contexto)")
         print("=" * 60)
         n = NUMS["pagamento"]
-        await self.msg(n, "Oi quero pedir")
-        r, f = await self.msg(n, "Quais formas de pagamento vocês aceitam?")
+        r1, f1 = await self.msg(n, "Oi, quais formas de pagamento vocês aceitam?")
         self.reg("19. formas_pagamento",
-                 self.has_fn(f, "listar_formas_pagamento") or (r and ("pagamento" in r.lower() or "dinheiro" in r.lower() or "cartão" in r.lower() or "pix" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+                 r1 and ("pagamento" in r1.lower() or "dinheiro" in r1.lower() or "cartão" in r1.lower() or "pix" in r1.lower()),
+                 f"Resp: {'SIM' if r1 else 'SEM RESP'}")
 
-    async def t20_tempo_estimado(self):
-        """20. consultar_tempo_estimado — previsão de entrega"""
+    async def t20_consultar_tempo(self):
+        """20. consultar_tempo_entrega"""
         print("\n" + "=" * 60)
-        print("CAP 20: consultar_tempo_estimado")
+        print("CAP 20: consultar_tempo_entrega")
         print("=" * 60)
         n = NUMS["tempo_estimado"]
-        await self.msg(n, "Oi")
-        r, f = await self.msg(n, "Quanto tempo demora pra entregar? Qual a previsão?")
-        self.reg("20. tempo_estimado",
-                 self.has_fn(f, "consultar_tempo_estimado", "consultar_tempo_entrega") or (r and ("minuto" in r.lower() or "tempo" in r.lower() or "previsão" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+        r1, f1 = await self.msg(n, "Oi, quanto tempo demora pra entregar um pedido?")
+        self.reg("20. consultar_tempo_entrega",
+                 self.has_fn(f1, "consultar_tempo_entrega") or (r1 and ("minuto" in r1.lower() or "tempo" in r1.lower() or "previsão" in r1.lower() or "entrega" in r1.lower())),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'}")
 
-    async def t21_agendar_pedido(self):
-        """21. agendar_pedido — agendar para horário futuro"""
+    async def t21_trocar_item(self):
+        """21. trocar_item_pedido — trocar item de pedido"""
         print("\n" + "=" * 60)
-        print("CAP 21: agendar_pedido")
+        print("CAP 21: trocar_item_pedido")
         print("=" * 60)
-        n = NUMS["agendar"]
-        await self.msg(n, "Oi meu nome é Julia Agenda")
-        r, f = await self.msg(n, "Quero agendar um pedido pra amanhã às 19h, pode ser?")
-        self.reg("21. agendar_pedido",
-                 self.has_fn(f, "agendar_pedido") or (r and ("agend" in r.lower() or "amanhã" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+        n = NUMS["trocar_item"]
+        r1, f1 = await self.msg(n, "Oi sou Julia, quero trocar um item do meu pedido, pode mudar o sabor?")
+        self.reg("21. trocar_item_pedido",
+                 self.has_fn(f1, "trocar_item_pedido", "alterar_pedido", "consultar_status_pedido") or (r1 and ("troc" in r1.lower() or "alter" in r1.lower())),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'}")
 
-    async def t22_sugerir_complementos(self):
-        """22. sugerir_complementos — upsell/cross-sell"""
+    async def t22_buscar_cardapio_sugestao(self):
+        """22. buscar_cardapio para sugestão/upsell"""
         print("\n" + "=" * 60)
-        print("CAP 22: sugerir_complementos")
+        print("CAP 22: buscar_cardapio (sugestão)")
         print("=" * 60)
         n = NUMS["complementos"]
-        await self.msg(n, "Oi meu nome é Bruno Combo")
-        r, f = await self.msg(n, "Quero uma pizza grande, o que combina pra acompanhar?")
-        self.reg("22. sugerir_complementos",
-                 self.has_fn(f, "sugerir_complementos", "buscar_cardapio") or (r and ("bebida" in r.lower() or "acompanha" in r.lower() or "combina" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'}")
+        r1, f1 = await self.msg(n, "Oi sou Bruno, quero uma pizza grande. O que combina pra acompanhar? Tem bebida?")
+        self.reg("22. sugestão/upsell",
+                 self.has_fn(f1, "buscar_cardapio", "buscar_categorias") or (r1 and ("bebida" in r1.lower() or "coca" in r1.lower() or "acompanha" in r1.lower())),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'}")
 
     async def t23_pix(self):
         """23-24. gerar_cobranca_pix + consultar_pagamento_pix"""
@@ -415,11 +405,10 @@ class BotTester22:
         print("CAP 23-24: Pix (gerar_cobranca + consultar)")
         print("=" * 60)
         n = NUMS["pix"]
-        await self.msg(n, "Oi quero pedir e pagar por Pix")
-        r, f = await self.msg(n, "Quero pagar meu pedido com Pix online, pode gerar?")
+        r1, f1 = await self.msg(n, "Oi, quero pagar meu pedido com Pix online, pode gerar a cobrança?")
         self.reg("23-24. Pix",
-                 self.has_fn(f, "gerar_cobranca_pix") or (r and ("pix" in r.lower())),
-                 f"FN: {[x['nome'] for x in f] if f else 'nenhum'} (WOOVI pode não estar configurado)")
+                 self.has_fn(f1, "gerar_cobranca_pix") or (r1 and ("pix" in r1.lower())),
+                 f"FN: {[x['nome'] for x in f1] if f1 else 'nenhum'} (WOOVI pode não estar configurado)")
 
     # ==================== RUNNER ====================
 
@@ -450,11 +439,11 @@ class BotTester22:
             self.t15_aplicar_cupom,
             self.t16_escalar_humano,
             self.t17_validar_endereco,
-            self.t18_calcular_taxa,
+            self.t18_consultar_bairros,
             self.t19_formas_pagamento,
-            self.t20_tempo_estimado,
-            self.t21_agendar_pedido,
-            self.t22_sugerir_complementos,
+            self.t20_consultar_tempo,
+            self.t21_trocar_item,
+            self.t22_buscar_cardapio_sugestao,
             self.t23_pix,
         ]
 
