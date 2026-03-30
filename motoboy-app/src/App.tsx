@@ -1,9 +1,10 @@
 /**
- * App wrapper Capacitor — adiciona update checker + background GPS sobre o MotoboyApp
+ * App wrapper Capacitor — adiciona update checker + GPS gate + background GPS sobre o MotoboyApp
  */
 import { useEffect, useState } from "react";
 import MotoboyApp from "@/motoboy/MotoboyApp";
 import NativeUpdateBanner from "./native/NativeUpdateBanner";
+import LocationGate from "./native/LocationGate";
 import {
   checkForUpdates,
   openDownloadUrl,
@@ -95,7 +96,7 @@ export default function App() {
     (updateStatus.updateAvailable || updateStatus.updateRequired);
 
   return (
-    <>
+    <LocationGate>
       <MotoboyApp />
       {showBanner && (
         <NativeUpdateBanner
@@ -106,6 +107,6 @@ export default function App() {
           }
         />
       )}
-    </>
+    </LocationGate>
   );
 }

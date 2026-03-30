@@ -33,13 +33,31 @@ export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform();
 }
 
-/** Solicita permissões de localização */
+/** Verifica se permissão de localização já foi concedida (sem pedir) */
+export async function checkLocationPermissions(): Promise<"granted" | "denied" | "prompt"> {
+  if (!isNativePlatform()) return "granted";
+
+  try {
+    const status = await Geolocation.checkPermissions();
+    if (status.location === "granted" || status.coarseLocation === "granted") {
+      return "granted";
+    }
+    if (status.location === "denied") {
+      return "denied";
+    }
+    return "prompt";
+  } catch {
+    return "prompt";
+  }
+}
+
+/** Solicita permissões de localização (mostra dialog Android) */
 export async function requestLocationPermissions(): Promise<boolean> {
   if (!isNativePlatform()) return true;
 
   try {
-    const status = await Geolocation.requestPermissions();
-    return status.location === "granted";
+    const status = await Geolocation.requestPermissions({ permissions: ["location", "coarseLocation"] });
+    return status.location === "granted" || status.coarseLocation === "granted";
   } catch {
     return false;
   }
@@ -139,5 +157,8 @@ export async function getCurrentNativePosition(): Promise<NativePosition | null>
 /** Registra GPS nativo — chamado uma vez na inicialização do app */
 export function registerNativeGPS(): void {
   if (!isNativePlatform()) return;
-  requestLocationPermissions().catch(() => {});
+  // Solicita permissão ao iniciar; resultado tratado no App.tsx
+  requestLocationPermissions().catch((err) => {
+    console.warn("GPS: falha ao solicitar permissão na inicialização:", err);
+  });
 }
