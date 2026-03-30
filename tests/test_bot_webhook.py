@@ -43,10 +43,12 @@ class BotTester:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
         self.token = None
+        self.evolution_instance = "derekh-whatsapp"
         self.resultados = []
+        self._known_msg_ids: dict[str, int] = {}  # numero -> last known msg id
 
     async def login(self):
-        """Login restaurante para consultar conversas."""
+        """Login restaurante e descobrir instância Evolution."""
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.post(
                 f"{self.base_url}/auth/restaurante/login",
@@ -56,13 +58,24 @@ class BotTester:
             self.token = resp.json()["access_token"]
             print(f"[OK] Login restaurante: {RESTAURANTE_EMAIL}")
 
+            # Descobrir instância Evolution do bot
+            resp2 = await client.get(
+                f"{self.base_url}/painel/bot/config",
+                headers={"Authorization": f"Bearer {self.token}"},
+            )
+            if resp2.status_code == 200:
+                config = resp2.json()
+                if config.get("evolution_instance"):
+                    self.evolution_instance = config["evolution_instance"]
+                    print(f"[OK] Instância Evolution: {self.evolution_instance}")
+
     def _webhook_payload(self, numero: str, texto: str, msg_id: str = None) -> dict:
         """Monta payload igual ao que a Evolution API envia."""
         if not msg_id:
             msg_id = f"test_{uuid.uuid4().hex[:12]}"
         return {
             "event": "messages.upsert",
-            "instance": "teste-bot",
+            "instance": self.evolution_instance,
             "data": {
                 "key": {
                     "remoteJid": f"{numero}@s.whatsapp.net",
@@ -88,32 +101,27 @@ class BotTester:
             )
             return resp.json()
 
-    async def aguardar_resposta(self, numero: str, timeout_s: int = 30) -> str | None:
+    async def aguardar_resposta(self, numero: str, timeout_s: int = 45) -> str | None:
         """Aguarda o bot responder via API de conversas."""
         inicio = time.time()
-        ultima_msg_id = 0
+        baseline_id = self._known_msg_ids.get(numero, 0)
 
-        # Pegar conversa do número
         async with httpx.AsyncClient(timeout=15) as client:
             while (time.time() - inicio) < timeout_s:
+                # Buscar conversas
                 resp = await client.get(
                     f"{self.base_url}/painel/bot/conversas",
                     headers={"Authorization": f"Bearer {self.token}"},
-                    params={"limite": 20},
+                    params={"limite": 30},
                 )
                 if resp.status_code != 200:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)
                     continue
 
                 conversas = resp.json().get("conversas", [])
-                conversa = None
-                for c in conversas:
-                    if c["telefone"] == numero:
-                        conversa = c
-                        break
-
+                conversa = next((c for c in conversas if c["telefone"] == numero), None)
                 if not conversa:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)
                     continue
 
                 # Buscar mensagens
@@ -122,32 +130,36 @@ class BotTester:
                     headers={"Authorization": f"Bearer {self.token}"},
                 )
                 if resp2.status_code != 200:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)
                     continue
 
                 msgs = resp2.json().get("mensagens", [])
-                # Última mensagem enviada (do bot)
-                enviadas = [m for m in msgs if m["direcao"] == "enviada"]
-                if enviadas:
-                    ultima = enviadas[-1]
-                    if ultima["id"] > ultima_msg_id:
-                        ultima_msg_id = ultima["id"]
-                        return ultima["conteudo"], ultima.get("function_calls")
+                # Mensagens NOVAS do bot (após baseline)
+                novas_enviadas = [
+                    m for m in msgs
+                    if m["direcao"] == "enviada" and m["id"] > baseline_id
+                ]
+                if novas_enviadas:
+                    ultima = novas_enviadas[-1]
+                    self._known_msg_ids[numero] = ultima["id"]
+                    return ultima["conteudo"], ultima.get("function_calls")
 
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)
 
         return None, None
 
-    async def enviar_e_aguardar(self, numero: str, texto: str, timeout_s: int = 30) -> tuple:
+    async def enviar_e_aguardar(self, numero: str, texto: str, timeout_s: int = 45) -> tuple:
         """Envia mensagem e aguarda resposta do bot."""
         print(f"  ← [{numero[-4:]}] {texto}")
         await self.enviar_msg(numero, texto)
+        await asyncio.sleep(2)  # Dar tempo para o bot iniciar processamento
         resposta, fns = await self.aguardar_resposta(numero, timeout_s)
         if resposta:
             fn_str = ""
             if fns:
                 fn_str = f" [FN: {', '.join(f['nome'] for f in fns)}]"
-            print(f"  → [{numero[-4:]}] {resposta[:120]}...{fn_str}")
+            preview = resposta[:120].replace("\n", " ")
+            print(f"  → [{numero[-4:]}] {preview}...{fn_str}")
         else:
             print(f"  → [{numero[-4:]}] (SEM RESPOSTA em {timeout_s}s)")
         return resposta, fns

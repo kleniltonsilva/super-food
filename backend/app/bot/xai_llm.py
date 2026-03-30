@@ -1,6 +1,7 @@
 """
 xAI Grok LLM — Chat completions com function calling.
-Modelo: grok-3-fast (rápido, barato, bom em português).
+Modelo padrão: grok-3-mini-fast (econômico, bom em português).
+Modelo premium (CRM Sales): grok-3-fast (+ Fish Audio S2 TTS).
 """
 import asyncio
 import httpx
@@ -13,7 +14,7 @@ from typing import Optional
 logger = logging.getLogger("superfood.bot.llm")
 
 XAI_CHAT_URL = "https://api.x.ai/v1/chat/completions"
-MODELO_PADRAO = "grok-3-fast"
+MODELO_PADRAO = "grok-3-mini-fast"
 
 
 async def chat_completion(

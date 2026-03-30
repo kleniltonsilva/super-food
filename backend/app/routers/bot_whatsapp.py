@@ -1266,8 +1266,8 @@ def token_usage_dashboard(
     tokens_in = int(totais.tokens_input or 0)
     tokens_out = int(totais.tokens_output or 0)
 
-    # Pricing xAI Grok-3-fast: $5/1M input, $25/1M output
-    custo_usd = (tokens_in * 5 / 1_000_000) + (tokens_out * 25 / 1_000_000)
+    # Pricing xAI Grok-3-mini-fast: $0.30/1M input, $0.50/1M output
+    custo_usd = (tokens_in * 0.30 / 1_000_000) + (tokens_out * 0.50 / 1_000_000)
     custo_brl = custo_usd * 5.7  # taxa aproximada
 
     # Restaurantes ativos no período
@@ -1318,7 +1318,7 @@ def token_usage_dashboard(
         rest = db.query(models.Restaurante).filter(models.Restaurante.id == row.restaurante_id).first()
         ti = int(row.tokens_in or 0)
         to_ = int(row.tokens_out or 0)
-        custo_r = (ti * 5 / 1_000_000) + (to_ * 25 / 1_000_000)
+        custo_r = (ti * 0.30 / 1_000_000) + (to_ * 0.50 / 1_000_000)
         por_restaurante.append({
             "restaurante_id": row.restaurante_id,
             "nome": rest.nome_fantasia if rest else "?",
@@ -1356,7 +1356,7 @@ def token_usage_dashboard(
             "tokens_input": ti,
             "tokens_output": to_,
             "mensagens": row.mensagens,
-            "custo_usd": round((ti * 5 / 1_000_000) + (to_ * 25 / 1_000_000), 4),
+            "custo_usd": round((ti * 0.30 / 1_000_000) + (to_ * 0.50 / 1_000_000), 4),
         })
 
     return {
