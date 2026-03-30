@@ -65,7 +65,8 @@ def _build_avaliacao_prompt(bot_config: models.BotConfig) -> str:
         "- Se nota >= 4: agradeça com entusiasmo",
     ]
     if bot_config.avaliacao_pedir_google_review and bot_config.google_maps_url:
-        linhas.append(f"- Se nota >= 4: peça review no Google Maps: {bot_config.google_maps_url}")
+        linhas.append(f"- Se nota = 5 estrelas: peça review no Google Maps: {bot_config.google_maps_url}")
+        linhas.append("- Se nota < 5: agradeça normalmente, NÃO peça review no Maps")
     linhas.append("- Se nota <= 2: peça desculpas, use registrar_problema se não registrou ainda")
     return "\n".join(linhas)
 

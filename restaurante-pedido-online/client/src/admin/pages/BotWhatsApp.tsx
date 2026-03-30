@@ -842,8 +842,8 @@ export default function BotWhatsApp() {
                   onChange={(v) => updateLocal("avaliacao_perguntar_problemas", v)}
                 />
                 <ToggleRow
-                  label="Pedir review no Google Maps (nota ≥ 4)"
-                  desc="Envia link do Google Maps quando cliente dá nota alta"
+                  label="Pedir review no Google Maps (5 estrelas)"
+                  desc="Quando cliente dá nota máxima, sugere avaliar no Google Maps"
                   icon={MapPin}
                   checked={!!cfg.avaliacao_pedir_google_review}
                   onChange={(v) => updateLocal("avaliacao_pedir_google_review", v)}

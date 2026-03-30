@@ -1325,16 +1325,17 @@ def _registrar_avaliacao(db: Session, restaurante_id: int, args: dict, conversa:
     resultado = {"sucesso": True, "nota": nota}
 
     if nota >= 4:
-        resultado["mensagem"] = "Obrigado pela avaliação! 😊"
-        # Verificar se deve pedir Google Maps review
-        bot_config = db.query(models.BotConfig).filter(
-            models.BotConfig.restaurante_id == restaurante_id
-        ).first()
-        if bot_config and bot_config.avaliacao_pedir_google_review and bot_config.google_maps_url:
-            avaliacao.avaliou_maps = True
-            db.commit()
-            resultado["google_maps_url"] = bot_config.google_maps_url
-            resultado["mensagem"] = f"Obrigado pela nota {nota}! 😊 Se puder, deixa uma avaliação pra gente no Google Maps: {bot_config.google_maps_url}"
+        resultado["mensagem"] = f"Obrigado pela nota {nota}! 😊"
+        # Pedir Google Maps review APENAS se nota = 5
+        if nota == 5:
+            bot_config = db.query(models.BotConfig).filter(
+                models.BotConfig.restaurante_id == restaurante_id
+            ).first()
+            if bot_config and bot_config.avaliacao_pedir_google_review and bot_config.google_maps_url:
+                avaliacao.avaliou_maps = True
+                db.commit()
+                resultado["google_maps_url"] = bot_config.google_maps_url
+                resultado["mensagem"] = f"Obrigado pela nota máxima! 😊 Se puder, deixa uma avaliação pra gente no Google Maps: {bot_config.google_maps_url}"
     else:
         resultado["mensagem"] = "Sentimos muito pela experiência. Já registrei o problema e o responsável vai entrar em contato."
 
