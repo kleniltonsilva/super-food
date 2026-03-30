@@ -99,7 +99,7 @@ TOOLS = [
                                 "preco_unitario": {"type": "number"},
                                 "observacoes": {"type": "string"},
                             },
-                            "required": ["produto_id", "nome", "quantidade", "preco_unitario"],
+                            "required": ["nome", "quantidade", "preco_unitario"],
                         },
                     },
                     "endereco_entrega": {"type": "string"},
@@ -145,14 +145,14 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "cancelar_pedido",
-            "description": "Cancela um pedido. Só funciona se bot tem permissão e status permite.",
+            "description": "Cancela um pedido. Se pedido_id não informado, usa o último pedido ativo do cliente. Só funciona se bot tem permissão e status permite.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pedido_id": {"type": "integer"},
+                    "pedido_id": {"type": "integer", "description": "Opcional — se omitido, cancela último pedido do cliente"},
                     "motivo": {"type": "string"},
                 },
-                "required": ["pedido_id", "motivo"],
+                "required": ["motivo"],
             },
         },
     },
@@ -204,16 +204,16 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "registrar_avaliacao",
-            "description": "Registra avaliação do cliente sobre pedido/entrega.",
+            "description": "Registra avaliação do cliente sobre pedido/entrega. Se pedido_id não informado, usa o último pedido do cliente automaticamente.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pedido_id": {"type": "integer"},
+                    "pedido_id": {"type": "integer", "description": "Opcional — se omitido, usa último pedido do cliente"},
                     "nota": {"type": "integer", "minimum": 1, "maximum": 5},
                     "categoria": {"type": "string", "enum": ["entrega", "comida", "atendimento"]},
                     "detalhe": {"type": "string"},
                 },
-                "required": ["pedido_id", "nota"],
+                "required": ["nota"],
             },
         },
     },
@@ -436,7 +436,7 @@ async def executar_funcao(
         elif nome == "alterar_pedido":
             result = _alterar_pedido(db, restaurante_id, bot_config, args)
         elif nome == "cancelar_pedido":
-            result = _cancelar_pedido(db, restaurante_id, bot_config, args)
+            result = _cancelar_pedido(db, restaurante_id, bot_config, args, conversa)
         elif nome == "repetir_ultimo_pedido":
             result = _repetir_ultimo_pedido(db, restaurante_id, bot_config, args, conversa)
         elif nome == "consultar_status_pedido":
@@ -456,7 +456,7 @@ async def executar_funcao(
         elif nome == "rastrear_pedido":
             result = _rastrear_pedido(db, restaurante_id, args)
         elif nome == "trocar_item_pedido":
-            result = _trocar_item_pedido(db, restaurante_id, bot_config, args)
+            result = _trocar_item_pedido(db, restaurante_id, bot_config, args, conversa)
         elif nome == "consultar_tempo_entrega":
             result = _consultar_tempo_entrega(db, restaurante_id, args)
         elif nome == "consultar_bairros":
@@ -635,14 +635,28 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
     itens_detalhados = []
 
     for item in itens:
-        produto = db.query(models.Produto).filter(
-            models.Produto.id == item["produto_id"],
-            models.Produto.restaurante_id == restaurante_id,
-            models.Produto.disponivel == True,
-        ).first()
+        produto = None
+        produto_id = item.get("produto_id")
+        nome_item = item.get("nome", "")
+
+        # Tentar por ID primeiro
+        if produto_id:
+            produto = db.query(models.Produto).filter(
+                models.Produto.id == produto_id,
+                models.Produto.restaurante_id == restaurante_id,
+                models.Produto.disponivel == True,
+            ).first()
+
+        # Fallback: buscar por nome (LLM pode não acertar o ID)
+        if not produto and nome_item:
+            produto = db.query(models.Produto).filter(
+                models.Produto.restaurante_id == restaurante_id,
+                models.Produto.disponivel == True,
+                models.Produto.nome.ilike(f"%{nome_item}%"),
+            ).first()
 
         if not produto:
-            return json.dumps({"erro": f"Produto '{item.get('nome', '?')}' não disponível"})
+            return json.dumps({"erro": f"Produto '{nome_item or produto_id}' não encontrado ou indisponível. Use buscar_cardapio para verificar itens disponíveis."})
 
         preco_real = produto.preco_promocional if produto.promocao and produto.preco_promocional else produto.preco
         qtd = item.get("quantidade", 1)
@@ -652,6 +666,7 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
         itens_texto.append(f"{qtd}x {produto.nome} (R${preco_real:.2f})")
         itens_detalhados.append({
             "produto_id": produto.id,
+            "nome": produto.nome,
             "quantidade": qtd,
             "preco_unitario": preco_real,
             "observacoes": item.get("observacoes", ""),
@@ -766,11 +781,11 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
         itens=", ".join(itens_texto),
         carrinho_json=[{
             "produto_id": i["produto_id"],
-            "nome": itens[idx].get("nome", ""),
+            "nome": i.get("nome", ""),
             "quantidade": i["quantidade"],
             "preco_unitario": i["preco_unitario"],
             "subtotal": i["preco_unitario"] * i["quantidade"],
-        } for idx, i in enumerate(itens_detalhados)],
+        } for i in itens_detalhados],
         observacoes=args.get("observacoes", ""),
         valor_subtotal=valor_total,
         valor_taxa_entrega=taxa_entrega,
@@ -961,14 +976,28 @@ def _alterar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConf
     return json.dumps({"sucesso": True, "pedido_id": pedido.id, "novo_total": pedido.valor_total, "mensagem": f"Pedido #{pedido.comanda} alterado. Novo total: R${pedido.valor_total:.2f}"})
 
 
-def _cancelar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig, args: dict) -> str:
+def _cancelar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig, args: dict, conversa: Optional[models.BotConversa] = None) -> str:
     if not bot_config.pode_cancelar_pedido:
         return json.dumps({"erro": "Bot não tem permissão para cancelar pedidos. Vou chamar o responsável."})
 
-    pedido = db.query(models.Pedido).filter(
-        models.Pedido.id == args["pedido_id"],
-        models.Pedido.restaurante_id == restaurante_id,
-    ).first()
+    pedido = None
+    if args.get("pedido_id"):
+        pedido = db.query(models.Pedido).filter(
+            models.Pedido.id == args["pedido_id"],
+            models.Pedido.restaurante_id == restaurante_id,
+        ).first()
+    elif conversa and conversa.pedido_ativo_id:
+        pedido = db.query(models.Pedido).filter(
+            models.Pedido.id == conversa.pedido_ativo_id,
+            models.Pedido.restaurante_id == restaurante_id,
+        ).first()
+    elif conversa and conversa.cliente_telefone:
+        tel = conversa.cliente_telefone
+        pedido = db.query(models.Pedido).filter(
+            models.Pedido.restaurante_id == restaurante_id,
+            models.Pedido.cliente_telefone.like(f"%{tel[-8:]}"),
+            models.Pedido.status.notin_(["cancelado", "entregue", "finalizado"]),
+        ).order_by(models.Pedido.data_criacao.desc()).first()
 
     if not pedido:
         return json.dumps({"erro": "Pedido não encontrado"})
@@ -1247,11 +1276,24 @@ def _buscar_promocoes(db: Session, restaurante_id: int, conversa: Optional[model
 
 
 def _registrar_avaliacao(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa]) -> str:
+    # Se pedido_id não informado, buscar último pedido do cliente
+    pedido_id = args.get("pedido_id")
+    if not pedido_id and conversa:
+        if conversa.pedido_ativo_id:
+            pedido_id = conversa.pedido_ativo_id
+        elif conversa.cliente_telefone:
+            ultimo = db.query(models.Pedido).filter(
+                models.Pedido.restaurante_id == restaurante_id,
+                models.Pedido.cliente_telefone.like(f"%{conversa.cliente_telefone[-8:]}"),
+            ).order_by(models.Pedido.data_criacao.desc()).first()
+            if ultimo:
+                pedido_id = ultimo.id
+
     # Verificar se já existe avaliação pendente para o pedido (criada pelo worker)
     avaliacao = None
-    if args.get("pedido_id"):
+    if pedido_id:
         avaliacao = db.query(models.BotAvaliacao).filter(
-            models.BotAvaliacao.pedido_id == args["pedido_id"],
+            models.BotAvaliacao.pedido_id == pedido_id,
             models.BotAvaliacao.restaurante_id == restaurante_id,
             models.BotAvaliacao.status == "pendente",
         ).first()
@@ -1266,7 +1308,7 @@ def _registrar_avaliacao(db: Session, restaurante_id: int, args: dict, conversa:
     else:
         avaliacao = models.BotAvaliacao(
             restaurante_id=restaurante_id,
-            pedido_id=args.get("pedido_id"),
+            pedido_id=pedido_id,
             cliente_id=conversa.cliente_id if conversa else None,
             conversa_id=conversa.id if conversa else None,
             nota=args["nota"],
@@ -1573,18 +1615,32 @@ def _rastrear_pedido(db: Session, restaurante_id: int, args: dict) -> str:
     return json.dumps(resultado)
 
 
-def _trocar_item_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig, args: dict) -> str:
+def _trocar_item_pedido(db: Session, restaurante_id: int, bot_config: models.BotConfig, args: dict, conversa: Optional[models.BotConversa] = None) -> str:
     """Troca item do pedido por outro do cardápio, respeitando status da cozinha."""
     if not bot_config.pode_alterar_pedido:
         return json.dumps({"erro": "Bot não tem permissão para alterar pedidos"})
 
-    pedido = db.query(models.Pedido).filter(
-        models.Pedido.id == args["pedido_id"],
-        models.Pedido.restaurante_id == restaurante_id,
-    ).first()
+    pedido = None
+    if args.get("pedido_id"):
+        pedido = db.query(models.Pedido).filter(
+            models.Pedido.id == args["pedido_id"],
+            models.Pedido.restaurante_id == restaurante_id,
+        ).first()
+    elif conversa and conversa.pedido_ativo_id:
+        pedido = db.query(models.Pedido).filter(
+            models.Pedido.id == conversa.pedido_ativo_id,
+            models.Pedido.restaurante_id == restaurante_id,
+        ).first()
+    elif conversa and conversa.cliente_telefone:
+        tel = conversa.cliente_telefone
+        pedido = db.query(models.Pedido).filter(
+            models.Pedido.restaurante_id == restaurante_id,
+            models.Pedido.cliente_telefone.like(f"%{tel[-8:]}"),
+            models.Pedido.status.in_(["pendente", "em_preparo"]),
+        ).order_by(models.Pedido.data_criacao.desc()).first()
 
     if not pedido:
-        return json.dumps({"erro": "Pedido não encontrado"})
+        return json.dumps({"erro": "Nenhum pedido encontrado para alterar. O cliente precisa ter um pedido ativo."})
 
     if pedido.status not in ("pendente", "em_preparo"):
         return json.dumps({"erro": f"Pedido #{pedido.comanda} não pode ser alterado (status: {pedido.status})"})
