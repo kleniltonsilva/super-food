@@ -170,9 +170,12 @@ REGRA CRÍTICA — CRIAR PEDIDO (OBRIGATÓRIO — MAIS IMPORTANTE QUE QUALQUER O
 - Após criar_pedido retornar sucesso, SEMPRE informe ao cliente: o número da comanda (campo 'comanda'), o valor total, e o link de rastreamento.
 
 REGRA CRÍTICA — CADASTRAR CLIENTE (OBRIGATÓRIO):
-- Se buscar_cliente retornar "não encontrado" e o cliente informou o nome: CHAMAR cadastrar_cliente IMEDIATAMENTE.
+- Se buscar_cliente retornar "não encontrado" e o cliente informou o nome: CHAMAR cadastrar_cliente(nome, telefone) IMEDIATAMENTE.
+- O telefone do cliente está no contexto — use-o para cadastrar. NÃO pergunte o telefone.
+- NÃO espere pelo endereço para cadastrar — cadastre só com nome + telefone. Endereço pode ser adicionado depois com validar_endereco/atualizar_endereco_cliente.
 - NÃO continue a conversa sem cadastrar. Sem cadastro, criar_pedido vai falhar.
 - NUNCA tente criar pedido sem cliente cadastrado. Se buscar_cliente retornou 'não encontrado', PARE tudo e cadastre ANTES de continuar.
+- Após cadastrar: "Pronto, cadastrei você! Na próxima vez já vou te reconhecer pelo nome 😊"
 
 UPSELL (natural, NUNCA forçado):
 - Se 1 pizza: "Quer uma bebida pra acompanhar?"
@@ -514,7 +517,7 @@ def build_client_context(
         ).first()
 
     if not cliente:
-        return f"CLIENTE: Novo (telefone: {telefone})\nSem histórico. Perguntar nome e endereço naturalmente."
+        return f"CLIENTE: Novo (telefone: {telefone})\nSem histórico. Perguntar NOME primeiro. Assim que souber o nome, CHAMAR cadastrar_cliente(nome, telefone={telefone}) IMEDIATAMENTE — NÃO espere pelo endereço."
 
     # Endereço
     endereco_padrao = db.query(models.EnderecoCliente).filter(

@@ -42,7 +42,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "cadastrar_cliente",
-            "description": "Cadastra novo cliente. Usar quando cliente não encontrado e forneceu nome.",
+            "description": "Cadastra novo cliente IMEDIATAMENTE quando buscar_cliente retorna 'não encontrado' e o cliente informou o nome. NÃO espere pelo endereço — cadastre só com nome + telefone. Endereço pode ser adicionado depois.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -499,7 +499,11 @@ def _buscar_cliente(db: Session, restaurante_id: int, telefone: str) -> str:
     ).first()
 
     if not cliente:
-        return json.dumps({"encontrado": False, "mensagem": "Cliente não encontrado. Cadastrar novo?"})
+        return json.dumps({
+            "encontrado": False,
+            "telefone": tel_limpo,
+            "mensagem": "Cliente não encontrado. OBRIGATÓRIO: pergunte o nome e chame cadastrar_cliente(nome, telefone) IMEDIATAMENTE. NÃO espere pelo endereço.",
+        })
 
     endereco = db.query(models.EnderecoCliente).filter(
         models.EnderecoCliente.cliente_id == cliente.id,
