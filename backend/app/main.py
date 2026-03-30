@@ -401,7 +401,8 @@ def app_version():
             "version": version,
             "version_code": version_code,
             "min_version": min_version,
-            "download_url": download_url,
+            "download_url": "/entregador/download",
+            "apk_url": download_url,
             "force_update": True,
         }
     }

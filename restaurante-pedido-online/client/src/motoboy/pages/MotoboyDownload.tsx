@@ -22,6 +22,7 @@ import {
 interface AppVersionInfo {
   version: string;
   download_url: string;
+  apk_url?: string;
 }
 
 function StepBadge({ n }: { n: number }) {
@@ -49,7 +50,8 @@ export default function MotoboyDownload() {
   }, []);
 
   const downloadUrl = useMemo(() => {
-    if (appInfo?.download_url) return appInfo.download_url;
+    // Usar apk_url (binário direto) para o botão de download na página
+    if (appInfo?.apk_url) return appInfo.apk_url;
     return "/static/uploads/downloads/DerekhFood-Entregador.apk";
   }, [appInfo]);
 

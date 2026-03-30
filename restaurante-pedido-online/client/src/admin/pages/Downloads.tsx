@@ -250,7 +250,7 @@ export default function Downloads() {
               {/* Coluna direita — QR Code + Download + Link */}
               <div className="flex flex-col items-center gap-6">
                 {/* QR Code */}
-                <QRCodeImage url={apkDownloadUrl} size={180} />
+                <QRCodeImage url={entregadorPageUrl} size={180} />
 
                 {/* Botão download direto */}
                 {loading ? (

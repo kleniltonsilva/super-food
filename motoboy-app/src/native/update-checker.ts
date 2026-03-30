@@ -140,8 +140,11 @@ export async function checkForUpdates(): Promise<UpdateStatus> {
   }
 }
 
-/** Abre URL de download no browser nativo */
+/** Abre página de download no browser nativo */
 export async function openDownloadUrl(url: string): Promise<void> {
-  // window.open funciona tanto no browser quanto no Capacitor WebView
-  window.open(url, "_blank");
+  // Garante que abre a página /entregador/download (não o binário)
+  const downloadPage = url.includes("/entregador/download")
+    ? url
+    : `${API_BASE}/entregador/download`;
+  window.open(downloadPage, "_blank");
 }
