@@ -16,6 +16,7 @@ from datetime import datetime, timedelta, date
 from .. import models, database, auth
 from ..cache import invalidate_cardapio
 from ..feature_guard import verificar_feature
+from ..utils.origem_helper import normalizar_origem, get_plataforma_label
 
 router = APIRouter(prefix="/painel", tags=["Painel Restaurante"])
 
@@ -127,6 +128,32 @@ def dashboard(
         models.Motoboy.em_rota == True
     ).count()
 
+    # Breakdown por plataforma (pedidos de hoje)
+    pedidos_hoje_lista = db.query(models.Pedido).filter(
+        models.Pedido.restaurante_id == rest.id,
+        models.Pedido.data_criacao >= inicio_dia,
+        models.Pedido.data_criacao <= fim_dia,
+        models.Pedido.status.notin_(['cancelado', 'recusado'])
+    ).all()
+
+    plataforma_map: dict = {}
+    for p in pedidos_hoje_lista:
+        plat = normalizar_origem(p.origem, p.marketplace_source)
+        if plat not in plataforma_map:
+            plataforma_map[plat] = {"pedidos": 0, "faturamento": 0.0}
+        plataforma_map[plat]["pedidos"] += 1
+        plataforma_map[plat]["faturamento"] += float(p.valor_total or 0)
+
+    pedidos_por_plataforma = [
+        {
+            "plataforma": plat,
+            "label": get_plataforma_label(plat),
+            "pedidos": info["pedidos"],
+            "faturamento": round(info["faturamento"], 2),
+        }
+        for plat, info in sorted(plataforma_map.items(), key=lambda x: x[1]["pedidos"], reverse=True)
+    ]
+
     return {
         "pedidos_hoje": total_pedidos,
         "pedidos_pendentes": pedidos_pendentes,
@@ -134,6 +161,7 @@ def dashboard(
         "faturamento_hoje": round(float(faturamento), 2),
         "motoboys_online": motoboys_online,
         "motoboys_em_rota": motoboys_em_rota,
+        "pedidos_por_plataforma": pedidos_por_plataforma,
     }
 
 
@@ -167,6 +195,7 @@ def listar_pedidos(
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
     tipo: Optional[str] = None,
+    plataforma: Optional[str] = None,
     busca: Optional[str] = None,
     limite: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -178,6 +207,8 @@ def listar_pedidos(
         q = q.filter(models.Pedido.status == status)
     if tipo:
         q = q.filter(models.Pedido.tipo_entrega == tipo)
+    if plataforma:
+        q = q.filter(models.Pedido.marketplace_source == plataforma)
     if busca:
         q = q.filter(or_(
             models.Pedido.cliente_nome.ilike(f"%{busca}%"),
@@ -204,6 +235,8 @@ def listar_pedidos(
             "data_criacao": p.data_criacao.isoformat() if p.data_criacao else None,
             "marketplace_source": p.marketplace_source,
             "marketplace_display_id": p.marketplace_display_id,
+            "plataforma_normalizada": normalizar_origem(p.origem, p.marketplace_source),
+            "plataforma_label": get_plataforma_label(normalizar_origem(p.origem, p.marketplace_source)),
         } for p in pedidos]
     }
 
@@ -354,6 +387,7 @@ async def criar_pedido_manual(
         comanda=str(proxima_comanda),
         tipo=dados.tipo_entrega.capitalize(),
         origem="manual",
+        marketplace_source="derekh_manual",
         tipo_entrega=dados.tipo_entrega,
         cliente_nome=dados.cliente_nome,
         cliente_telefone=dados.cliente_telefone,
@@ -2685,14 +2719,37 @@ def relatorio_vendas(
     pedidos = q.order_by(desc(models.Pedido.data_criacao)).all()
     total = sum(p.valor_total or 0 for p in pedidos)
 
+    # Resumo por plataforma
+    plat_map: dict = {}
+    for p in pedidos:
+        plat = normalizar_origem(p.origem, p.marketplace_source)
+        if plat not in plat_map:
+            plat_map[plat] = {"pedidos": 0, "faturamento": 0.0}
+        plat_map[plat]["pedidos"] += 1
+        plat_map[plat]["faturamento"] += float(p.valor_total or 0)
+
+    resumo_por_plataforma = [
+        {
+            "plataforma": plat,
+            "label": get_plataforma_label(plat),
+            "pedidos": info["pedidos"],
+            "faturamento": round(info["faturamento"], 2),
+            "percentual": round((info["pedidos"] / len(pedidos) * 100), 1) if pedidos else 0,
+        }
+        for plat, info in sorted(plat_map.items(), key=lambda x: x[1]["pedidos"], reverse=True)
+    ]
+
     return {
         "total_pedidos": len(pedidos),
         "faturamento_total": round(total, 2),
+        "resumo_por_plataforma": resumo_por_plataforma,
         "pedidos": [{
             "id": p.id, "comanda": p.comanda, "cliente_nome": p.cliente_nome,
             "valor_total": p.valor_total, "forma_pagamento": p.forma_pagamento,
             "status": p.status,
             "data_criacao": p.data_criacao.isoformat() if p.data_criacao else None,
+            "plataforma_normalizada": normalizar_origem(p.origem, p.marketplace_source),
+            "plataforma_label": get_plataforma_label(normalizar_origem(p.origem, p.marketplace_source)),
         } for p in pedidos]
     }
 
@@ -3470,6 +3527,32 @@ def relatorio_analytics(
         })
 
     # =============================
+    # DISTRIBUIÇÃO POR PLATAFORMA
+    # =============================
+
+    plat_map: dict = {}
+    for p in todos_pedidos_periodo:
+        if p.status in ('cancelado', 'recusado'):
+            continue
+        plat = normalizar_origem(p.origem, p.marketplace_source)
+        if plat not in plat_map:
+            plat_map[plat] = {"pedidos": 0, "faturamento": 0.0}
+        plat_map[plat]["pedidos"] += 1
+        plat_map[plat]["faturamento"] += float(p.valor_total or 0)
+
+    total_plat = sum(v["pedidos"] for v in plat_map.values())
+    distribuicao_plataforma = [
+        {
+            "plataforma": plat,
+            "label": get_plataforma_label(plat),
+            "pedidos": info["pedidos"],
+            "faturamento": round(info["faturamento"], 2),
+            "percentual": round((info["pedidos"] / total_plat * 100), 1) if total_plat > 0 else 0,
+        }
+        for plat, info in sorted(plat_map.items(), key=lambda x: x[1]["pedidos"], reverse=True)
+    ]
+
+    # =============================
     # RESPOSTA FINAL
     # =============================
 
@@ -3518,6 +3601,9 @@ def relatorio_analytics(
 
         # Previsão
         "previsao_proximos_3_meses": previsao_proximos_3_meses,
+
+        # Distribuição por plataforma
+        "distribuicao_plataforma": distribuicao_plataforma,
     }
 
 
@@ -3772,6 +3858,7 @@ async def adicionar_pedido_mesa(
         comanda=str(proxima_comanda),
         tipo='Mesa',
         origem='manual',
+        marketplace_source="derekh_mesa",
         tipo_entrega='mesa',
         cliente_nome=f"Mesa {mesa}",
         numero_mesa=mesa,
@@ -4204,7 +4291,7 @@ async def pedido_rapido_mesa(
     pedido = models.Pedido(
         restaurante_id=rest.id,
         comanda=str(proxima_comanda),
-        tipo='Mesa', origem='mesa', tipo_entrega='mesa',
+        tipo='Mesa', origem='mesa', marketplace_source="derekh_mesa", tipo_entrega='mesa',
         cliente_nome=f"Mesa {mesa}", numero_mesa=mesa,
         itens="\n".join(linhas_itens),
         valor_total=round(valor_total, 2),

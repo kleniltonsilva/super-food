@@ -569,6 +569,35 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Breakdown por Plataforma */}
+        {(data?.pedidos_por_plataforma?.length ?? 0) > 1 && (
+          <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+            <CardContent className="pt-4 pb-3">
+              <p className="text-xs text-[var(--text-muted)] mb-2 uppercase tracking-wider">Pedidos por Plataforma</p>
+              <div className="flex flex-wrap gap-2">
+                {(data.pedidos_por_plataforma as { plataforma: string; label: string; pedidos: number; faturamento: number }[]).map((item) => {
+                  const colorMap: Record<string, string> = {
+                    derekh_site: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+                    derekh_whatsapp: "bg-green-500/20 text-green-400 border-green-500/30",
+                    derekh_manual: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+                    derekh_garcom: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+                    derekh_mesa: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+                    ifood: "bg-red-500/20 text-red-400 border-red-500/30",
+                    rappi: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+                    "99food": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+                    keeta: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+                  };
+                  return (
+                    <Badge key={item.plataforma} variant="outline" className={`text-xs px-2 py-1 ${colorMap[item.plataforma] || "bg-cyan-500/20 text-cyan-400 border-cyan-500/30"}`}>
+                      {item.label}: {item.pedidos} — R$ {item.faturamento.toFixed(2)}
+                    </Badge>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Gráfico e Pedidos Recentes */}
         <div className="grid gap-4 lg:grid-cols-2">
           <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">

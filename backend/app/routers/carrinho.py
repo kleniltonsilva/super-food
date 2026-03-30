@@ -516,6 +516,7 @@ async def finalizar_carrinho(
         comanda=proxima_comanda,
         tipo="Entrega" if finalizacao.tipo_entrega == "entrega" else "Retirada na loja",
         origem="site",
+        marketplace_source="derekh_site",
         tipo_entrega=finalizacao.tipo_entrega,
         cliente_nome=finalizacao.cliente_nome if finalizacao.cliente_nome else (cliente.nome if cliente else ""),
         cliente_telefone=finalizacao.cliente_telefone if finalizacao.cliente_telefone else (cliente.telefone if cliente else ""),

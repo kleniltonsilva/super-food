@@ -369,6 +369,7 @@ async def criar_pedido_sessao(
         comanda=comanda,
         tipo="mesa",
         origem="garcom",
+        marketplace_source="derekh_garcom",
         tipo_origem="garcom",
         label_origem=f"Mesa {sessao.mesa_id} - {garcom.nome}",
         course=course_principal,

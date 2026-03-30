@@ -96,10 +96,11 @@ export default function Relatorios() {
 
   function exportVendas() {
     if (!vendas?.pedidos) return;
-    const headers = ["#", "Cliente", "Valor", "Pagamento", "Status", "Data"];
+    const headers = ["#", "Cliente", "Plataforma", "Valor", "Pagamento", "Status", "Data"];
     const rows = vendas.pedidos.map((p: Record<string, unknown>) => [
       String(p.comanda || p.id),
       (p.cliente_nome as string) || "",
+      (p.plataforma_label as string) || "",
       Number(p.valor_total).toFixed(2).replace(".", ","),
       (p.forma_pagamento as string) || "",
       p.status as string,
@@ -201,12 +202,27 @@ export default function Relatorios() {
                         </CardContent>
                       </Card>
                     </div>
+                    {/* Resumo por plataforma */}
+                    {vendas.resumo_por_plataforma && (vendas.resumo_por_plataforma as Record<string, unknown>[]).length > 1 && (
+                      <div className="mb-4 grid gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                        {(vendas.resumo_por_plataforma as { label: string; pedidos: number; faturamento: number; percentual: number }[]).map((item) => (
+                          <Card key={item.label} className="border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+                            <CardContent className="p-3">
+                              <p className="text-xs text-[var(--text-muted)]">{item.label}</p>
+                              <p className="text-lg font-bold text-[var(--text-primary)]">{item.pedidos} <span className="text-xs font-normal text-[var(--text-muted)]">({item.percentual}%)</span></p>
+                              <p className="text-xs text-[var(--cor-primaria)]">{fmt(item.faturamento)}</p>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    )}
                     <div className="overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow className="border-[var(--border-subtle)]">
                             <TableHead className="text-[var(--text-muted)]">#</TableHead>
                             <TableHead className="text-[var(--text-muted)]">Cliente</TableHead>
+                            <TableHead className="text-[var(--text-muted)]">Plataforma</TableHead>
                             <TableHead className="text-[var(--text-muted)]">Valor</TableHead>
                             <TableHead className="text-[var(--text-muted)]">Pagamento</TableHead>
                             <TableHead className="text-[var(--text-muted)]">Data</TableHead>
@@ -217,6 +233,7 @@ export default function Relatorios() {
                             <TableRow key={p.id as number} className="border-[var(--border-subtle)]">
                               <TableCell className="font-mono text-[var(--text-primary)]">#{String(p.comanda || p.id)}</TableCell>
                               <TableCell className="text-[var(--text-secondary)]">{(p.cliente_nome as string) || "—"}</TableCell>
+                              <TableCell className="text-xs text-[var(--text-secondary)]">{(p.plataforma_label as string) || "—"}</TableCell>
                               <TableCell className="font-medium text-[var(--text-primary)]">R$ {Number(p.valor_total).toFixed(2)}</TableCell>
                               <TableCell className="text-[var(--text-secondary)]">{(p.forma_pagamento as string) || "—"}</TableCell>
                               <TableCell className="text-sm text-[var(--text-muted)]">
@@ -658,6 +675,70 @@ export default function Relatorios() {
                     </CardContent>
                   </Card>
                 </div>
+
+                {/* De Onde Vem os Pedidos */}
+                {(an.distribuicao_plataforma?.length ?? 0) > 0 && (
+                  <div>
+                    <h3 className="mb-3 text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider flex items-center gap-1.5">
+                      <ShoppingBag className="h-4 w-4" /> De Onde Vem os Pedidos
+                    </h3>
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                        <CardContent className="p-4">
+                          <ResponsiveContainer width="100%" height={220}>
+                            <PieChart>
+                              <Pie
+                                data={an.distribuicao_plataforma}
+                                dataKey="pedidos"
+                                nameKey="label"
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={80}
+                                label={({ label, percentual }: { label: string; percentual: number }) => `${label} ${percentual}%`}
+                              >
+                                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                                {(an.distribuicao_plataforma as any[]).map((_: unknown, i: number) => (
+                                  <Cell key={i} fill={CORES[i % CORES.length]} />
+                                ))}
+                              </Pie>
+                              <Tooltip contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: "8px" }} />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </CardContent>
+                      </Card>
+                      <Card className="border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                        <CardContent className="p-4">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="border-[var(--border-subtle)]">
+                                <TableHead className="text-[var(--text-muted)]">Plataforma</TableHead>
+                                <TableHead className="text-[var(--text-muted)] text-right">Pedidos</TableHead>
+                                <TableHead className="text-[var(--text-muted)] text-right">Faturamento</TableHead>
+                                <TableHead className="text-[var(--text-muted)] text-right">%</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                              {(an.distribuicao_plataforma as any[]).map((item: any, i: number) => (
+                                <TableRow key={item.plataforma} className="border-[var(--border-subtle)]">
+                                  <TableCell className="text-[var(--text-primary)]">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: CORES[i % CORES.length] }} />
+                                      {item.label}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-right text-[var(--text-primary)]">{item.pedidos}</TableCell>
+                                  <TableCell className="text-right text-[var(--cor-primaria)]">{fmt(item.faturamento)}</TableCell>
+                                  <TableCell className="text-right text-[var(--text-muted)]">{item.percentual}%</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                )}
 
                 {/* Previsão */}
                 {(an.previsao_proximos_3_meses?.length ?? 0) > 0 && (

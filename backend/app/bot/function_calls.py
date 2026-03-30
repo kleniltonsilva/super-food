@@ -754,6 +754,7 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
         comanda=comanda,
         tipo="delivery" if tipo_entrega == "entrega" else "retirada",
         origem="whatsapp_bot",
+        marketplace_source="derekh_whatsapp",
         tipo_entrega=tipo_entrega,
         cliente_nome=args.get("cliente_nome", cliente.nome if cliente else "Cliente WhatsApp"),
         cliente_telefone=tel_limpo,

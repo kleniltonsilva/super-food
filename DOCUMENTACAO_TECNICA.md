@@ -69,13 +69,14 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 ### 2.1 Dashboard
 - **Quick Actions:** 3 cards de ação rápida no topo — Pedidos (badge pendentes), Caixa (aberto/fechado), WhatsApp Bot (ativo/inativo)
 - Métricas em tempo real: pedidos hoje, faturamento, ticket médio, pedidos por hora
+- **Breakdown por plataforma:** badges coloridos mostrando pedidos + faturamento por origem (Site, WhatsApp, Manual, Garçom, iFood, Rappi, etc.) — aparece quando há mais de 1 plataforma
 - Gráficos: vendas por dia (últimos 7 dias), vendas por forma de pagamento
 - Alertas: restaurante aberto/fechado, caixa aberto/fechado
 - Cards de status: pedidos pendentes, em preparo, prontos, em entrega
 - Atualização automática via WebSocket (sem refresh manual)
 
 ### 2.2 Pedidos
-- **Listagem em tempo real** com filtros por status e busca por nome/comanda
+- **Listagem em tempo real** com filtros por status, **plataforma** e busca por nome/comanda
 - **Aba Ativos:** pedidos em andamento com timer visual (verde < 15min, amarelo < 30min, vermelho > 30min)
 - **Aba Mesas:** pedidos de mesa com grid visual de mesas
 - **Aba Histórico:** pedidos entregues/cancelados com filtro por data e total de receita
@@ -216,11 +217,13 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 - Alternativa ao cálculo por distância (km)
 
 ### 2.14 Relatórios
-- **Vendas:** gráfico de barras por período, total de pedidos, faturamento
+- **Vendas:** gráfico de barras por período, total de pedidos, faturamento, **resumo por plataforma** (cards + percentuais)
+- **Análise Avançada:** seção "De Onde Vem os Pedidos" com gráfico pizza + tabela detalhada por plataforma
 - **Motoboys:** ranking por entregas realizadas, tempo médio, km percorridos
 - **Produtos:** mais vendidos, receita por produto
 - Filtros por período (hoje, 7 dias, 30 dias, personalizado)
 - Gráficos interativos (Recharts)
+- **Export CSV:** inclui coluna Plataforma
 
 ### 2.15 Histórico de Atrasos
 - Monitoramento automático de atrasos em pedidos
@@ -2135,17 +2138,29 @@ O plugin `@capacitor-community/background-geolocation` cria um **foreground serv
 
 **Workflow:** `.github/workflows/build-motoboy-apk.yml`
 
-**Trigger:** Push em `motoboy-app/**` ou `restaurante-pedido-online/client/src/motoboy/**`
+**Trigger:** Push em `motoboy-app/**`, `restaurante-pedido-online/client/src/motoboy/**` ou workflow_dispatch
 
-**Steps:**
+**Steps — Job `build`:**
 1. Setup JDK 21 + Node 20
 2. `npm ci` (monorepo + motoboy-app)
-3. `npx cap add android` (se necessário)
-4. `npm run build` → `npx cap copy android` → `npx cap sync android`
-5. Configurar permissões no AndroidManifest.xml
-6. Decodificar keystore (secret `MOTOBOY_KEYSTORE_BASE64`)
-7. `./gradlew assembleRelease` (ou debug sem keystore)
-8. Upload APK → Fly.io volume `/app/backend/static/uploads/downloads/`
+3. `npm run build` + **verificação CSS** (deve ser >100KB — garante Tailwind escaneou monorepo)
+4. `npx cap copy android` + `npx cap sync android`
+5. Decodificar keystore (secret `MOTOBOY_KEYSTORE_BASE64`)
+6. `./gradlew assembleRelease` (ou debug sem keystore)
+7. Upload artifact `derekh-entregador-apk` (90 dias retenção)
+
+**Steps — Job `deploy`:**
+1. Download artifact
+2. **Deletar APK antigo** no volume (`rm -f`) — `flyctl ssh sftp` NÃO sobrescreve!
+3. Upload via `flyctl ssh sftp shell` (`put`)
+4. **Verificação de tamanho** — compara bytes local vs remoto
+
+**Gotchas CI/CD resolvidos (30/03):**
+- `flyctl ssh sftp put` não sobrescreve arquivos existentes → sempre `rm -f` antes
+- `flyctl ssh console -C` não interpreta `&&` como shell → envolver em `sh -c '...'`
+- Tailwind CSS incompleto no APK → verificação de tamanho mínimo (100KB) no build
+- React duplicado (monorepo vs motoboy-app) → aliases explícitos no `vite.config.ts`
+- Google Fonts `@import` bloqueava renderização → movido para `<link>` no HTML
 
 **Secrets necessários (GitHub):**
 - `MOTOBOY_KEYSTORE_BASE64` — keystore JKS em base64
@@ -2284,6 +2299,59 @@ cd ~/Hacking-restaurant-b2b
 - Playwright instalado (`playwright install chromium`)
 - `.venv` com dependências do projeto
 - Acesso ao app PostgreSQL do Fly.io
+
+---
+
+## 22. Rastreamento por Plataforma (Origem dos Pedidos)
+
+### 22.1 Visão Geral
+
+Sistema unificado de rastreamento de origem dos pedidos, permitindo ao restaurante visualizar de onde vêm seus pedidos (Site, WhatsApp, Manual, Garçom, iFood, Rappi, etc.).
+
+**Arquivo central:** `backend/app/utils/origem_helper.py`
+
+### 22.2 Plataformas Suportadas
+
+| Código | Label | Tipo | Cor |
+|--------|-------|------|-----|
+| `derekh_site` | Site | Interna | Azul |
+| `derekh_whatsapp` | WhatsApp | Interna | Verde |
+| `derekh_manual` | Manual | Interna | Laranja |
+| `derekh_garcom` | Garçom | Interna | Âmbar |
+| `derekh_mesa` | Mesa | Interna | Âmbar |
+| `ifood` | iFood | Externa | Vermelho |
+| `rappi` | Rappi | Externa | Laranja |
+| `99food` | 99Food | Externa | Amarelo |
+| `keeta` | Keeta | Externa | Azul |
+| `ubereats` | Uber Eats | Externa | Esmeralda |
+| `aiqfome` | AiQFome | Externa | Roxo |
+
+### 22.3 Como Funciona
+
+Cada ponto de criação de pedido define `marketplace_source`:
+- `carrinho.py` → `derekh_site`
+- `painel.py` (pedido manual) → `derekh_manual`
+- `garcom.py` → `derekh_garcom`
+- `function_calls.py` (bot WhatsApp) → `derekh_whatsapp`
+- `bridge.py` → plataforma detectada (iFood, Rappi, etc.)
+
+A função `normalizar_origem()` unifica origens legadas (`site`, `web`, `manual`) para o formato canônico.
+
+### 22.4 Frontend
+
+- **Dashboard:** Breakdown por plataforma com badges coloridos (pedidos + faturamento)
+- **Pedidos:** Filtro por plataforma + badges de origem em cada pedido
+- **Relatórios Vendas:** Resumo por plataforma (cards com percentuais)
+- **Relatórios Análise:** Seção "De Onde Vem os Pedidos" (gráfico pizza + tabela)
+- **Export CSV:** Coluna "Plataforma" incluída
+
+### 22.5 Endpoints Afetados
+
+| Endpoint | Campo adicionado |
+|----------|-----------------|
+| `GET /painel/dashboard` | `pedidos_por_plataforma[]` |
+| `GET /painel/pedidos` | `plataforma_normalizada`, `plataforma_label`, filtro `?plataforma=` |
+| `GET /painel/relatorios/vendas` | `resumo_por_plataforma[]` |
 
 ---
 

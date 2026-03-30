@@ -19,6 +19,7 @@ import httpx
 
 from .. import models, database, auth
 from ..feature_guard import verificar_feature
+from ..utils.origem_helper import normalizar_origem
 
 logger = logging.getLogger("superfood.bridge")
 
@@ -526,12 +527,41 @@ async def criar_pedido_from_bridge(
 
     plataforma = intercepted.plataforma_detectada or "bridge"
     origem = f"bridge_{plataforma}"
+    marketplace = normalizar_origem(origem)
+
+    # Auto-criar cliente se tem telefone e não encontrou match
+    if not cliente_id and cliente_telefone:
+        tel_limpo = re.sub(r"\D", "", cliente_telefone)
+        if tel_limpo:
+            novo_cliente = models.Cliente(
+                restaurante_id=rest.id,
+                nome=cliente_nome,
+                telefone=tel_limpo,
+                ativo=True,
+            )
+            db.add(novo_cliente)
+            db.flush()
+            cliente_id = novo_cliente.id
+            # Criar endereço se disponível
+            if endereco:
+                novo_endereco = models.EnderecoCliente(
+                    cliente_id=novo_cliente.id,
+                    endereco=endereco,
+                    principal=True,
+                )
+                db.add(novo_endereco)
+
+    from ..utils.origem_helper import get_plataforma_label
+    label = f"{get_plataforma_label(marketplace)} (Bridge)"
 
     pedido = models.Pedido(
         restaurante_id=rest.id,
         comanda=proxima,
         tipo="Entrega" if endereco else "Retirada",
         origem=origem,
+        marketplace_source=marketplace,
+        tipo_origem="bridge",
+        label_origem=label,
         tipo_entrega="entrega" if endereco else "retirada",
         cliente_nome=cliente_nome,
         cliente_telefone=cliente_telefone,
@@ -558,6 +588,7 @@ async def criar_pedido_from_bridge(
         "cliente_nome": pedido.cliente_nome,
         "cliente_vinculado": cliente_id is not None,
         "origem": origem,
+        "marketplace_source": marketplace,
         "valor_total": pedido.valor_total,
     }
 

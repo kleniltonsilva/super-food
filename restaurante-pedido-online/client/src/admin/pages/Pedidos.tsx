@@ -105,6 +105,7 @@ function tempoColor(min: number): string {
 export default function Pedidos() {
   const [, navigate] = useLocation();
   const [statusFilter, setStatusFilter] = useState<string>("todos");
+  const [plataformaFilter, setPlataformaFilter] = useState<string>("todas");
   const [busca, setBusca] = useState("");
   const [cancelarId, setCancelarId] = useState<number | null>(null);
   const [cancelarSenha, setCancelarSenha] = useState("");
@@ -116,6 +117,7 @@ export default function Pedidos() {
   // Params para pedidos ativos
   const ativosParams: Record<string, unknown> = {};
   if (statusFilter !== "todos") ativosParams.status = statusFilter;
+  if (plataformaFilter !== "todas") ativosParams.plataforma = plataformaFilter;
   if (busca.trim()) ativosParams.busca = busca.trim();
 
   // Params para histórico
@@ -245,29 +247,30 @@ export default function Pedidos() {
     return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   }
 
+  const PLATAFORMA_BADGES: Record<string, { label: string; color: string }> = {
+    derekh_site: { label: "Site", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+    derekh_whatsapp: { label: "WhatsApp", color: "bg-green-500/20 text-green-400 border-green-500/30" },
+    derekh_manual: { label: "Manual", color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
+    derekh_garcom: { label: "Garçom", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+    derekh_mesa: { label: "Mesa", color: "bg-amber-500/20 text-amber-400 border-amber-500/30" },
+    ifood: { label: "iFood", color: "bg-red-500/20 text-red-400 border-red-500/30" },
+    rappi: { label: "Rappi", color: "bg-orange-500/20 text-orange-400 border-orange-500/30" },
+    "99food": { label: "99Food", color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" },
+    keeta: { label: "Keeta", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
+    ubereats: { label: "Uber Eats", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+    aiqfome: { label: "AiQFome", color: "bg-purple-500/20 text-purple-400 border-purple-500/30" },
+  };
+
   function getOrigemBadge(p: Record<string, unknown>) {
-    const marketplace = p.marketplace_source as string | undefined;
-    if (marketplace) {
-      const colors: Record<string, string> = {
-        ifood: "bg-red-500/20 text-red-400 border-red-500/30",
-        "99food": "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-        rappi: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-        keeta: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-      };
-      const labels: Record<string, string> = {
-        ifood: "iFood", "99food": "99Food", rappi: "Rappi", keeta: "Keeta",
-      };
-      return (
-        <Badge variant="outline" className={`text-[10px] px-1 py-0 ${colors[marketplace] || ""}`}>
-          {labels[marketplace] || marketplace}
-        </Badge>
-      );
-    }
-    const origem = p.origem as string;
-    if (origem === "site" || origem === "web") {
-      return <span title="Site"><Globe className="h-4 w-4 text-blue-400" /></span>;
-    }
-    return <span title="Manual"><Smartphone className="h-4 w-4 text-orange-400" /></span>;
+    const plat = (p.plataforma_normalizada || p.marketplace_source || p.origem || "desconhecido") as string;
+    const info = PLATAFORMA_BADGES[plat];
+    const label = (p.plataforma_label as string) || info?.label || plat.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+    const color = info?.color || "bg-cyan-500/20 text-cyan-400 border-cyan-500/30";
+    return (
+      <Badge variant="outline" className={`text-[10px] px-1 py-0 ${color}`}>
+        {label}
+      </Badge>
+    );
   }
 
   function getTempoDesde(iso: string | null): number {
@@ -416,7 +419,7 @@ export default function Pedidos() {
                   />
                 </div>
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full sm:w-48 dark-input">
+                  <SelectTrigger className="w-full sm:w-40 dark-input">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -428,6 +431,22 @@ export default function Pedidos() {
                     <SelectItem value="em_entrega">Em Entrega</SelectItem>
                     <SelectItem value="entregue">Entregue</SelectItem>
                     <SelectItem value="cancelado">Cancelado</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={plataformaFilter} onValueChange={setPlataformaFilter}>
+                  <SelectTrigger className="w-full sm:w-40 dark-input">
+                    <SelectValue placeholder="Plataforma" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todas">Todas</SelectItem>
+                    <SelectItem value="derekh_site">Site</SelectItem>
+                    <SelectItem value="derekh_whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="derekh_manual">Manual</SelectItem>
+                    <SelectItem value="derekh_garcom">Garçom</SelectItem>
+                    <SelectItem value="ifood">iFood</SelectItem>
+                    <SelectItem value="rappi">Rappi</SelectItem>
+                    <SelectItem value="99food">99Food</SelectItem>
+                    <SelectItem value="keeta">Keeta</SelectItem>
                   </SelectContent>
                 </Select>
               </CardContent>
