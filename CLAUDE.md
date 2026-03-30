@@ -38,6 +38,14 @@
     - Regra geral: atualizar memória quando a informação será útil em sessões FUTURAS
 9. **REGRA CRÍTICA — CHECKBOXES:** Ao concluir qualquer etapa do Plano Mestre, marcar `[x]` IMEDIATAMENTE neste arquivo. Nunca deixar para depois.
 10. **REGRA INQUEBRÁVEL — DOCUMENTAÇÃO TÉCNICA:** Ao criar novas funcionalidades, endpoints, páginas ou alterações significativas no projeto, **ATUALIZAR `DOCUMENTACAO_TECNICA.md` IMEDIATAMENTE** (de forma simultânea ao desenvolvimento, se possível). Esta regra **NUNCA pode ser quebrada**. A documentação deve sempre refletir o estado real do sistema.
+11. **REGRA CRÍTICA — APK MOTOBOY (App Nativo Android):** Quando qualquer alteração no projeto afetar o app motoboy (código em `restaurante-pedido-online/client/src/motoboy/`, `motoboy-app/`, endpoints usados pelo motoboy, ou dependências compartilhadas), é **OBRIGATÓRIO** executar o ciclo completo de atualização do APK:
+    1. **Incrementar versão** em `motoboy-app/version.json` (`version` + `versionCode`)
+    2. **Commit e push** para `main` — o GitHub Actions (`build-motoboy-apk.yml`) gera e deploya o APK automaticamente
+    3. **Aguardar build success** — verificar com `gh run list --limit 1`
+    4. **Deploy backend** (`fly deploy`) — para que o site do cliente (`/entregador/download`) e a página de Downloads do painel admin sirvam o APK atualizado
+    5. **O app nativo detecta automaticamente** — ao abrir, o `update-checker.ts` compara a versão local com `/api/public/app-version` e exibe modal "Atualizar" para o motoboy
+    - **Arquivos-chave:** `motoboy-app/version.json`, `.github/workflows/build-motoboy-apk.yml`, `motoboy-app/src/native/update-checker.ts`
+    - **NUNCA** alterar código que afeta o motoboy sem gerar novo APK — o app nativo usa assets locais e NÃO atualiza sozinho
 
 ---
 
