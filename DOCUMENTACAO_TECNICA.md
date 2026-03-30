@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.7 | Última atualização: 29/03/2026
+> Versão 4.0.8 | Última atualização: 30/03/2026
 
 ---
 
@@ -1520,13 +1520,16 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 
 ### 17.6 LLM — xAI Grok
 
-- **Modelo:** `grok-3-fast` (rápido, bom em português)
+- **Modelo padrão (restaurante):** `grok-3-mini-fast` — econômico, $0.30/1M input, $0.50/1M output
+- **Modelo premium (CRM Sales):** `grok-3-fast` — premium, + Fish Audio S2 TTS
 - **API:** `POST https://api.x.ai/v1/chat/completions`
-- **Temperature:** 0.6 (precisão com naturalidade)
-- **Max tokens:** 400 (mensagens curtas como WhatsApp real)
+- **Temperature:** 0.4 (precisão em pedidos)
+- **Max tokens:** 1000
+- **Timeout:** 60s + retry (2 tentativas com backoff 2s)
 - **Function calling:** `tool_choice: "auto"`
 - **Loop:** Até 5 iterações (para chains de function calls)
-- **Fallback:** Se LLM falhar, responde "me dá um segundo..."
+- **Fallback:** Se LLM falhar após retries, responde "Desculpa a demora! Estou aqui sim."
+- **Custo dashboard:** Cálculo preciso $0.30/$0.50 por M tokens (3 locais em bot_whatsapp.py)
 
 ### 17.7 STT — Groq Whisper
 
@@ -1865,6 +1868,53 @@ Pipeline 9 etapas com detecção de contexto emocional:
 - Retorno JSON agora inclui `bairro_entrega` e `distancia_km`
 - LLM usa esses dados para incluir na confirmação final: "Taxa R$X,XX (Bairro tal, X.Xkm)"
 
+### 17.20 Otimização Modelo + Correções Críticas (30/03)
+
+**Modelo grok-3-fast → grok-3-mini-fast:**
+- 16x mais barato ($0.30/$0.50 vs $5/$25 por M tokens)
+- Respostas humanizadas e corretas em português
+- Custo dashboard corrigido em 3 locais (`bot_whatsapp.py`)
+- CRM Sales Bot mantém `grok-3-fast` + Fish Audio S2 TTS
+
+**Bug crítico: `data_atualizacao` → `atualizado_em`**
+- `context_builder.py` usava campo inexistente `models.Pedido.data_atualizacao`
+- Causava `AttributeError` em TODA mensagem quando cliente tinha cadastro
+- Corrigido para `models.Pedido.atualizado_em` (campo real do ORM)
+
+**Fix `rastrear_pedido` — cancelados invisíveis:**
+- Function call excluía pedidos cancelados: `status.notin_(["cancelado", ...])`
+- Bot ignorava cancelamento e retornava pedido antigo em_preparo
+- Fix: inclui pedidos cancelados/entregues das últimas 2h (igual context_builder)
+
+**Fix `cadastrar_cliente` — registro imediato:**
+- Bot esperava endereço antes de criar cadastro → agora registra só com nome + telefone
+- `buscar_cliente` retorna instrução explícita para cadastrar se não encontrado
+- Context builder: "CHAMAR cadastrar_cliente(nome, telefone) IMEDIATAMENTE"
+
+**`xai_llm.py` — Retry + timeout:**
+- Timeout: 30s → 60s
+- Retry: 2 tentativas com backoff 2s
+- Fallback melhorado: "Desculpa a demora! Estou aqui sim."
+
+### 17.21 Suite de Testes E2E (30/03)
+
+**Arquivo:** `tests/test_bot_webhook.py`
+
+Suite automatizada que envia webhooks Evolution e verifica respostas:
+
+| Teste | Descrição | Status |
+|-------|-----------|--------|
+| 1.1 | Saudação — bot responde | ✅ |
+| 1.2 | Pedido — busca cardápio | ✅ |
+| 2.1 | Status pedido — chama rastrear_pedido | ✅ |
+| 3.1 | Cancelamento — cria pedido via function call | ✅ |
+| 3.2 | Cancelamento — cancela via API painel | ✅ |
+| 3.3 | Cancelamento — bot detecta status cancelado | Em ajuste |
+| 4.1 | Conversas simultâneas (2+ clientes) | ✅ |
+| 5.1 | Verifica horário — usa verificar_horario | ✅ |
+
+**Uso:** `python tests/test_bot_webhook.py [--prod]`
+
 ---
 
 ## 18. Repescagem Avançada + Verificação Email + Reset Senha (Migration 037)
@@ -2118,21 +2168,26 @@ O plugin `@capacitor-community/background-geolocation` cria um **foreground serv
 ```json
 {
   "motoboy_app": {
-    "version": "1.0.2",
+    "version": "1.0.1",
     "version_code": 2,
     "min_version": "1.0.0",
-    "download_url": "/static/uploads/downloads/DerekhFood-Entregador.apk",
+    "download_url": "/entregador/download",
+    "apk_url": "/static/uploads/downloads/DerekhFood-Entregador.apk",
     "force_update": true
   }
 }
 ```
+
+- `download_url` → página de download (QR code, instruções)
+- `apk_url` → link direto do APK binário (usado no botão "Baixar APK")
 
 **Fluxo:**
 1. App abre → `App.getInfo()` → versão local
 2. Fetch `/api/public/app-version` → versão remota
 3. Se `local < min_version` → modal bloqueante obrigatório
 4. Se `local < version` → modal com "Atualizar Agora" (pode fechar)
-5. Botão abre URL do APK no browser nativo
+5. Botão abre `/entregador/download` (página com instruções), NÃO o APK direto
+6. CI/CD sincroniza `version.json → build.gradle` automaticamente
 
 ### 20.5 CI/CD — GitHub Actions
 
@@ -2191,6 +2246,25 @@ ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, ACCESS_BACKGROUND_LOCATION
 FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION
 INTERNET, VIBRATE, WAKE_LOCK, REQUEST_INSTALL_PACKAGES
 ```
+
+### 20.8.1 GPS Permission Gate (LocationGate)
+
+**Arquivo:** `motoboy-app/src/native/LocationGate.tsx`
+
+Tela bloqueante que exige permissão de localização antes de permitir uso do app:
+
+- **Na abertura:** Verifica `Geolocation.checkPermissions()` — se não concedida, bloqueia
+- **Ao voltar ao foreground:** Re-verifica via `appStateChange` listener
+- **Status "prompt":** Mostra botão verde "Permitir Localização" → `requestPermissions()`
+- **Status "denied":** Mostra instruções passo-a-passo para ativar manualmente nas Configurações + botão "Já ativei, verificar"
+- **Status "granted":** Renderiza o app normalmente (`children`)
+
+**Fluxo:** `App.tsx` → `<LocationGate>` → `<MotoboyApp />`
+
+**Funções em `gps-native.ts`:**
+- `checkLocationPermissions()` — verifica sem pedir (retorna "granted" | "denied" | "prompt")
+- `requestLocationPermissions()` — mostra dialog Android (retorna boolean)
+- `registerNativeGPS()` — chamada no startup, solicita permissão proativamente
 
 ### 20.9 Versão do APK
 
