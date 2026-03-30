@@ -365,7 +365,47 @@ app.include_router(garcom_router.router)
 app.include_router(bridge_router.router)
 app.include_router(bot_whatsapp_router.router)
 
-# ==================== Endpoint público — Downloads (agentes Windows) ====================
+# ==================== Endpoint público — Versão do App Motoboy ====================
+@app.get("/api/public/app-version")
+def app_version():
+    """Retorna versão atual do app motoboy para auto-update. Sem autenticação."""
+    import json as _json
+    version_file = Path("motoboy-app/version.json")
+    version = "1.0.0"
+    min_version = "1.0.0"
+    version_code = 1
+    if version_file.exists():
+        try:
+            data = _json.loads(version_file.read_text())
+            version = data.get("version", version)
+            min_version = data.get("minVersion", min_version)
+            version_code = data.get("versionCode", version_code)
+        except Exception:
+            pass
+    # Verifica se APK existe
+    downloads_dir = Path("backend/static/uploads/downloads")
+    if not downloads_dir.exists():
+        downloads_dir = Path("backend/static/downloads")
+    apk_file = downloads_dir / "DerekhFood-Entregador.apk"
+    if apk_file.exists():
+        if "uploads/downloads" in str(apk_file):
+            download_url = "/static/uploads/downloads/DerekhFood-Entregador.apk"
+        else:
+            download_url = "/static/downloads/DerekhFood-Entregador.apk"
+    else:
+        download_url = "/static/uploads/downloads/DerekhFood-Entregador.apk"
+    return {
+        "motoboy_app": {
+            "version": version,
+            "version_code": version_code,
+            "min_version": min_version,
+            "download_url": download_url,
+            "force_update": True,
+        }
+    }
+
+
+# ==================== Endpoint público — Downloads (agentes + app motoboy) ====================
 @app.get("/api/public/downloads")
 def downloads_disponiveis():
     """Retorna lista de downloads disponíveis com versão e URL. Sem autenticação."""
@@ -373,20 +413,42 @@ def downloads_disponiveis():
     downloads_dir = Path("backend/static/uploads/downloads")
     if not downloads_dir.exists():
         downloads_dir = Path("backend/static/downloads")
+    # Ler versão do app motoboy
+    import json as _json
+    motoboy_version = "1.0.0"
+    version_file = Path("motoboy-app/version.json")
+    if version_file.exists():
+        try:
+            motoboy_version = _json.loads(version_file.read_text()).get("version", "1.0.0")
+        except Exception:
+            pass
     items = [
+        {
+            "id": "motoboy_app",
+            "nome": "Derekh Entregador",
+            "descricao": "App Android para entregadores com GPS em tempo real",
+            "versao": motoboy_version,
+            "arquivo": "DerekhFood-Entregador.apk",
+            "tamanho": "",
+            "plataforma": "android",
+        },
         {
             "id": "printer_agent",
             "nome": "Impressora de Pedidos",
+            "descricao": "Agente de impressão automática de pedidos",
             "versao": "1.0.0",
             "arquivo": "DerekhFood-Printer.exe",
             "tamanho": "",
+            "plataforma": "windows",
         },
         {
             "id": "bridge_agent",
             "nome": "Bridge Impressora",
+            "descricao": "Agente bridge para interceptar impressões de plataformas",
             "versao": "1.0.0",
             "arquivo": "DerekhFood-Bridge.exe",
             "tamanho": "",
+            "plataforma": "windows",
         },
     ]
     result = []
@@ -411,10 +473,12 @@ def downloads_disponiveis():
         result.append({
             "id": item["id"],
             "nome": item["nome"],
+            "descricao": item.get("descricao", ""),
             "versao": item["versao"],
             "url": url,
             "tamanho": tamanho,
             "disponivel": disponivel,
+            "plataforma": item.get("plataforma", ""),
         })
     return result
 

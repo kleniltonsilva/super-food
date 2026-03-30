@@ -72,7 +72,8 @@ export function useGPS(ativo: boolean) {
       return;
     }
 
-    // watchPosition dispara a cada movimento detectado pelo SO (quase instantâneo)
+    // navigator.geolocation.watchPosition funciona tanto no browser quanto no Capacitor WebView
+    // (Capacitor proxia automaticamente para o GPS nativo do dispositivo)
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         lastPositionRef.current = pos;

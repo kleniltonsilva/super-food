@@ -3,6 +3,7 @@ import { MotoboyAuthProvider, useMotoboyAuth } from "@/motoboy/contexts/MotoboyA
 import MotoboyPrivateRoute from "@/motoboy/components/MotoboyPrivateRoute";
 import MotoboyLogin from "@/motoboy/pages/MotoboyLogin";
 import MotoboyCadastro from "@/motoboy/pages/MotoboyCadastro";
+import MotoboyDownload from "@/motoboy/pages/MotoboyDownload";
 import MotoboyHome from "@/motoboy/pages/MotoboyHome";
 import MotoboyEntrega from "@/motoboy/pages/MotoboyEntrega";
 import MotoboyGanhos from "@/motoboy/pages/MotoboyGanhos";
@@ -16,6 +17,7 @@ function MotoboyRouter() {
     <Switch>
       <Route path="/login" component={MotoboyLogin} />
       <Route path="/cadastro" component={MotoboyCadastro} />
+      <Route path="/download" component={MotoboyDownload} />
 
       <Route path="/">
         <MotoboyPrivateRoute><MotoboyHome /></MotoboyPrivateRoute>

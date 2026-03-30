@@ -2060,7 +2060,136 @@ fly secrets set EVOLUTION_WEBHOOK_SECRET="<apikey-da-evolution>" --app superfood
 
 ---
 
+## 20 — App Nativo Android Motoboy (CapacitorJS)
+
+### 20.1 Arquitetura
+
+O app motoboy (`/entregador`) é empacotado como APK Android nativo usando **CapacitorJS**, mantendo 100% do código React existente com camada nativa adicionada.
+
+**Projeto:** `motoboy-app/` (raiz do repo, separado do monorepo React)
+
+| Componente | Tecnologia |
+|-----------|-----------|
+| WebView | Capacitor 7.x + Android WebView |
+| GPS foreground | `@capacitor/geolocation` |
+| GPS background | `@capacitor-community/background-geolocation` (foreground service) |
+| Auto-update | Endpoint `/api/public/app-version` + modal bloqueante |
+| Build CI/CD | GitHub Actions (`build-motoboy-apk.yml`) |
+| Distribuição | APK direto (sem Play Store), banner no `/entregador/login` |
+
+### 20.2 Estrutura de Arquivos
+
+```
+motoboy-app/
+├── package.json              # Deps Capacitor + React (subset do monorepo)
+├── capacitor.config.ts       # appId: food.derekh.entregador
+├── vite.config.ts            # Alias @ → monorepo, build ~490KB JS
+├── tsconfig.json             # Paths para monorepo
+├── index.html                # Entry point HTML
+├── version.json              # {"version": "1.0.0", "versionCode": 1, "minVersion": "1.0.0"}
+├── src/
+│   ├── main.tsx              # React render + registra GPS nativo
+│   ├── App.tsx               # Wrapper: update checker + background GPS
+│   └── native/
+│       ├── gps-native.ts     # Bridge GPS nativo (foreground + background)
+│       ├── update-checker.ts # Verifica versão + compara semver
+│       └── NativeUpdateBanner.tsx  # Modal bloqueante de atualização
+└── android/                  # Gerado pelo Capacitor
+    └── app/src/main/
+        ├── AndroidManifest.xml  # Permissões GPS, foreground service, etc.
+        └── res/              # Ícones (logo robô), splash, cores, strings
+```
+
+### 20.3 GPS Background
+
+O plugin `@capacitor-community/background-geolocation` cria um **foreground service** Android com notificação persistente:
+- Título: "Rastreamento de Entrega"
+- Mensagem: "Derekh Entregador — Rastreamento ativo"
+- Continua com tela desligada ou app minimizado
+- Distance filter: 5 metros
+- Envia posição para `POST /api/gps/update-auth` (mesmo endpoint do PWA)
+
+### 20.4 Auto-Update
+
+**Endpoint:** `GET /api/public/app-version`
+```json
+{
+  "motoboy_app": {
+    "version": "1.0.2",
+    "version_code": 2,
+    "min_version": "1.0.0",
+    "download_url": "/static/uploads/downloads/DerekhFood-Entregador.apk",
+    "force_update": true
+  }
+}
+```
+
+**Fluxo:**
+1. App abre → `App.getInfo()` → versão local
+2. Fetch `/api/public/app-version` → versão remota
+3. Se `local < min_version` → modal bloqueante obrigatório
+4. Se `local < version` → modal com "Atualizar Agora" (pode fechar)
+5. Botão abre URL do APK no browser nativo
+
+### 20.5 CI/CD — GitHub Actions
+
+**Workflow:** `.github/workflows/build-motoboy-apk.yml`
+
+**Trigger:** Push em `motoboy-app/**` ou `restaurante-pedido-online/client/src/motoboy/**`
+
+**Steps:**
+1. Setup JDK 17 + Node 20
+2. `npm ci` (monorepo + motoboy-app)
+3. `npx cap add android` (se necessário)
+4. `npm run build` → `npx cap copy android` → `npx cap sync android`
+5. Configurar permissões no AndroidManifest.xml
+6. Decodificar keystore (secret `MOTOBOY_KEYSTORE_BASE64`)
+7. `./gradlew assembleRelease` (ou debug sem keystore)
+8. Upload APK → Fly.io volume `/app/backend/static/uploads/downloads/`
+
+**Secrets necessários (GitHub):**
+- `MOTOBOY_KEYSTORE_BASE64` — keystore JKS em base64
+- `MOTOBOY_KEYSTORE_PASSWORD`
+- `MOTOBOY_KEY_ALIAS`
+- `MOTOBOY_KEY_PASSWORD`
+- `FLY_API_TOKEN` (já existente)
+
+### 20.6 Endpoints
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/api/public/app-version` | Versão atual do app motoboy |
+| GET | `/api/public/downloads` | Lista downloads (inclui motoboy_app) |
+
+### 20.7 Frontend
+
+| Página | Rota | Descrição |
+|--------|------|-----------|
+| Downloads (admin) | `/admin/downloads` | Seção destaque com QR code, instruções, link |
+| Download (entregador) | `/entregador/download` | Página pública elegante para entregadores |
+| Banner login | `/entregador/login` | Banner "Instale o app nativo" no browser |
+
+### 20.8 Permissões Android
+
+```xml
+ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, ACCESS_BACKGROUND_LOCATION
+FOREGROUND_SERVICE, FOREGROUND_SERVICE_LOCATION
+INTERNET, VIBRATE, WAKE_LOCK, REQUEST_INSTALL_PACKAGES
+```
+
+### 20.9 Versão do APK
+
+Para atualizar a versão: editar `motoboy-app/version.json`:
+```json
+{"version": "1.0.1", "versionCode": 2, "minVersion": "1.0.0"}
+```
+- `version`: semver exibida ao usuário
+- `versionCode`: inteiro incremental (Android)
+- `minVersion`: versão mínima aceita (abaixo disso → update obrigatório)
+
+---
+
 *Documento gerado automaticamente pelo sistema Derekh Food v4.0.7*
-*Última atualização: 29/03/2026*
+*Última atualização: 30/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
 *WhatsApp comercial: +1 555-900-4563*

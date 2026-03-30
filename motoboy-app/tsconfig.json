@@ -1,0 +1,22 @@
+{
+  "include": ["src/**/*", "../restaurante-pedido-online/client/src/motoboy/**/*", "../restaurante-pedido-online/client/src/components/**/*", "../restaurante-pedido-online/client/src/lib/**/*"],
+  "exclude": ["node_modules", "dist", "android"],
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
+    "noEmit": true,
+    "module": "ESNext",
+    "strict": true,
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "moduleResolution": "bundler",
+    "baseUrl": ".",
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@/*": ["../restaurante-pedido-online/client/src/*"]
+    }
+  }
+}

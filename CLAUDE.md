@@ -81,7 +81,7 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 29/03/2026
+- **Última sessão:** 30/03/2026
 - **Migrations em produção:** 001-036 + 039-042 (última: 042_solicitacao_cadastro)
 - **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034 + sistema de add-ons (migration 041)
@@ -93,8 +93,9 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Overhaul Criação Restaurante:** CNPJ lookup (BrasilAPI), validação DDD, email Resend, onboarding
 - **Repescagem + Verificação Email + Reset Senha:** Migration 037, 25 arquivos, cupons exclusivos VOLTA-{NOME}-{código}
 - **Landing Page + Onboarding:** ✅ Migration 042, landing page `/onboarding`, formulário self-service, Super Admin review 1-click
+- **App Motoboy Nativo (Sprint 27):** ✅ Capacitor Android — GPS background, auto-update, CI/CD GitHub Actions, página download entregador
 - **Bugs conhecidos:** Nenhum crítico
-- **Pendente:** Configurar WOOVI_APP_ID real, Módulo 5 (Sales), domínio próprio, Resend prod
+- **Pendente:** Configurar WOOVI_APP_ID real, keystore Android (secrets GitHub), Módulo 5 (Sales), Resend prod
 
 ---
 
@@ -221,6 +222,12 @@ super-food/
 ├── database/models.py         # SQLAlchemy ORM models (source of truth, 28+ modelos)
 ├── printer_agent/             # Agent impressão Windows (ESC/POS)
 ├── bridge_agent/              # Agent Bridge Windows (spooler + ESC/POS + REST)
+├── motoboy-app/               # App Android nativo (CapacitorJS)
+│   ├── capacitor.config.ts    # Config: food.derekh.entregador
+│   ├── vite.config.ts         # Build separado (~490KB JS)
+│   ├── version.json           # Versão para auto-update
+│   ├── src/native/            # GPS background, update checker
+│   └── android/               # Projeto Android (gerado)
 ├── migrations/versions/       # Alembic 001-037
 ├── requirements.txt           # Dependencies Python
 ├── Dockerfile                 # Multi-stage build (Node + Python)
@@ -250,6 +257,7 @@ super-food/
 | 8 | WhatsApp Humanoide (Bot IA) | Integrado backend | /webhooks/evolution | Implementado |
 | 9 | Sales Autopilot | FastAPI | derekh-crm.fly.dev | Em deploy |
 | 10 | Printer Agent | Windows Service | localhost:8765 | Planejado |
+| 11 | App Motoboy (Android) | Capacitor APK | food.derekh.entregador | Implementado |
 
 ---
 
@@ -285,6 +293,7 @@ super-food/
 | 24 | Repescagem Avançada + Verificação Email + Reset Senha | ✅ 26/03 (migration 037, 25 arquivos, cupons exclusivos, OTP email) |
 | 25 | Security Hardening | ✅ 26/03 (8 vulnerabilidades, security headers, CORS, webhook auth, 36 testes) |
 | 26 | Landing Page + Onboarding Self-Service | ✅ 29/03 (migration 042, landing `/onboarding`, formulário self-service, Super Admin review 1-click) |
+| 27 | App Nativo Android Motoboy (CapacitorJS) | ✅ 30/03 (GPS background, auto-update, CI/CD APK, página download, banner install) |
 
 ---
 
