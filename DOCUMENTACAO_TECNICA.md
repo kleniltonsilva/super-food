@@ -1414,17 +1414,20 @@ Bot de vendas WhatsApp para prospecção B2B de restaurantes, integrado ao CRM S
 
 - **Arquivo principal:** `Hacking-restaurant-b2b/crm/wa_sales_bot.py`
 - **Webhook:** `Hacking-restaurant-b2b/crm/app.py`
-- **LLM:** Grok 3 Fast (xAI) — temperature 0.8 (conversa) / 0.85 (inbound)
+- **LLM:** Grok 3 Mini Fast (xAI) — temperature 0.8 (conversa) / 0.85 (inbound), $0.30/$0.50 por M tokens
 - **Envio:** Evolution API (prioritário) → WhatsApp Cloud API Meta (fallback)
-- **TTS:** Grok 3 Fast TTS (voz "ara") — áudio personalizado com dados iFood
+- **TTS:** Fish Audio S2-Pro (voz "putinha 1" — ID `1573caa3d6444e16a28eab1f094e1416`) com emoção contextual
+- **STT:** Groq Whisper (whisper-large-v3-turbo)
 
 ### 16.3 Prompts Humanizados
 
-O bot se apresenta como "Klenilton, vendedor humano da Derekh Food". Características:
-- Tom oral com gírias brasileiras ("show", "massa", "kkk"), abreviações ("vc", "tbm", "qdo")
-- Frases curtas (2-3 por mensagem), sem emojis corporativos, sem bullet points
-- Táticas de venda integradas: espelhamento, dor específica, escassez real, prova social, micro-compromissos
+O bot se apresenta como "Ana, vendedora humana da Derekh Food". Características:
+- Português correto, profissional mas acolhedor (sem abreviações de internet)
+- Frases curtas (max 2 parágrafos de 2 frases), sem emojis corporativos, sem bullet points
+- Táticas de venda integradas: espelhamento, dor específica, escassez real, prova social, micro-compromissos, fechamento agressivo
 - Dois prompts separados: `_build_system_prompt_conversa()` (conversas em andamento) e `_build_system_prompt_inbound()` (primeiro contato)
+- **Regra inquebrável:** Ana APENAS convence/vende — NUNCA dá detalhes técnicos de implementação. Perguntas técnicas são redirecionadas para trial ("isso a gente resolve no setup")
+- Detalhes técnicos são para pós-contratação via handoff para time técnico
 
 ### 16.4 Intent Scoring Contextual
 
@@ -1995,6 +1998,30 @@ Suite automatizada que envia webhooks Evolution e verifica respostas:
 | 5.1 | Verifica horário — usa verificar_horario | ✅ |
 
 **Uso:** `python tests/test_bot_webhook.py [--prod]`
+
+### 17.22 Ana v2.2 — Áudio sob demanda + Foco vendas (31/03)
+
+**`_deve_enviar_audio()` — Critério 1 (prioritário): cliente pediu áudio**
+- 25+ variações de pedido explícito: "áudio", "por voz", "manda áudio", "quero ouvir", "prefiro áudio"
+- Quando cliente pede áudio, o sistema envia áudio automaticamente via Fish Audio S2-Pro
+- Outros critérios mantidos: reciprocidade, 3+ explicações, conversa longa
+
+**Prompt — "Seu trabalho é APENAS convencer e vender":**
+- Nova seção no system prompt (conversa + inbound): Ana NUNCA dá detalhes técnicos de implementação
+- Perguntas sobre integração, API, banco de dados, como configurar → "Isso a gente resolve no setup, o time técnico configura tudo em 48h"
+- Ana explica BENEFÍCIOS e RESULTADOS, nunca o "como funciona por dentro"
+- Detalhes técnicos são para pós-contratação via handoff
+
+**Prompt — Áudio:**
+- Removidas todas as instruções de desculpa/esquiva ("escritório", "barulhento", "melhor por escrito")
+- Ana nunca menciona áudio, voz, gravação, ligação ou videochamada
+- Sistema de áudio é totalmente autônomo e transparente para o LLM
+
+**Stress test v5 — 100 conversas simultâneas (grok-3-mini-fast):**
+- 99% taxa de conversão (98 trial + 1 demo + 1 opt-out)
+- Qualidade média 4.8/5 avaliada pelo agente simulador
+- P95 resposta: 9.0s | Custo total: $0.44 (100 conversas)
+- 10 categorias × 10 perfis: desconfiado, ja_tem_ifood, sem_dinheiro, ja_tem_sistema, interessado, apressado, técnico, indeciso, agressivo, perfeito
 
 ---
 
