@@ -499,8 +499,8 @@ async def finalizar_carrinho(
                 from ..cache import cache_get, cache_set
                 dist_cache_key = _cache_key_dist(restaurante.id, lat_entrega, lng_entrega)
                 cached_dist = cache_get(dist_cache_key)
-                if cached_dist and cached_dist.get("dentro_zona"):
-                    taxa_entrega = cached_dist["taxa_entrega"]
+                if cached_dist is not None:
+                    taxa_entrega = cached_dist.get("taxa_entrega", 0.0)
                 else:
                     from utils.mapbox_api import check_coverage_zone
                     resultado = check_coverage_zone(

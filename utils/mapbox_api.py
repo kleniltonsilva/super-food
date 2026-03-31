@@ -35,10 +35,13 @@ def _cache_key_dist(restaurante_id: int, lat: float, lng: float) -> str:
     return f"dist:{restaurante_id}:{lat:.4f}:{lng:.4f}"
 
 
-def _cache_key_geo(address: str) -> str:
-    """Chave cache de geocoding: hash MD5 do endereço normalizado."""
+def _cache_key_geo(address: str, country: Optional[str] = None) -> str:
+    """Chave cache de geocoding: hash MD5 do endereço + país normalizado."""
     import hashlib
-    h = hashlib.md5(address.strip().lower().encode()).hexdigest()[:12]
+    key_input = address.strip().lower()
+    if country:
+        key_input = f"{key_input}:{country.upper()}"
+    h = hashlib.md5(key_input.encode()).hexdigest()[:12]
     return f"geo:{h}"
 
 
@@ -55,7 +58,7 @@ def geocode_address(address: str, country: Optional[str] = None) -> Optional[Tup
 
     # Cache: verificar antes de chamar API
     from backend.app.cache import cache_get, cache_set
-    cache_key = _cache_key_geo(address)
+    cache_key = _cache_key_geo(address, country)
     cached = cache_get(cache_key)
     if cached:
         return tuple(cached)  # [lat, lng] → (lat, lng)
