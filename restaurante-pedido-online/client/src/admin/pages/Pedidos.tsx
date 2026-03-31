@@ -657,7 +657,21 @@ function PedidosTabela({
                       </Badge>
                     </TableCell>
                     <TableCell className="font-medium text-[var(--text-primary)]">
-                      R$ {Number(p.valor_total).toFixed(2)}
+                      <div className="flex items-center gap-1.5">
+                        R$ {Number(p.valor_total).toFixed(2)}
+                        {String(p.forma_pagamento || "").toLowerCase() === "pix" && (
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] px-1 py-0 ${
+                              p.status === "pendente"
+                                ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                                : "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                            }`}
+                          >
+                            {p.status === "pendente" ? "Pix Pendente" : "PIX"}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge className={`${st.color} border`}>{st.label}</Badge>

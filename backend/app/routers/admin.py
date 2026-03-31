@@ -646,6 +646,10 @@ def atualizar_restaurante(
         if campos["billing_status"] not in validos:
             raise HTTPException(status_code=400, detail=f"billing_status deve ser um de: {', '.join(validos)}")
 
+    # Capturar coordenadas antes para detectar mudança
+    lat_antes = restaurante.latitude
+    lng_antes = restaurante.longitude
+
     for campo, valor in campos.items():
         setattr(restaurante, campo, valor)
 
@@ -655,6 +659,11 @@ def atualizar_restaurante(
 
     db.commit()
     db.refresh(restaurante)
+
+    # Invalidar cache de distâncias se endereço/coordenadas mudou
+    if restaurante.latitude != lat_antes or restaurante.longitude != lng_antes:
+        from ..cache import invalidate_distancias
+        invalidate_distancias(restaurante_id)
 
     return restaurante
 

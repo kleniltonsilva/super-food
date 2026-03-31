@@ -1927,21 +1927,42 @@ def _validar_endereco(db: Session, restaurante_id: int, args: dict, conversa: Op
         })
 
     # Processar sugestões (max 3 para o cliente)
+    from utils.mapbox_api import _cache_key_dist
+    from backend.app.cache import cache_get, cache_set
+
     sugestoes = []
     for s in sugestoes_raw[:5]:
         lat, lng = s["coordinates"]
         distancia = 0.0
         dentro_zona = True
+        taxa = taxa_base
 
-        if rest_lat and rest_lng:
-            distancia = haversine((rest_lat, rest_lng), (lat, lng))
-            dentro_zona = distancia <= raio_km
+        # Cache: verificar distância/taxa cacheada
+        dist_cache_key = _cache_key_dist(restaurante_id, lat, lng) if rest_lat and rest_lng else None
+        cached_dist = cache_get(dist_cache_key) if dist_cache_key else None
 
-        # Calcular taxa por distância
-        if distancia <= distancia_base_km:
-            taxa = taxa_base
+        if cached_dist:
+            distancia = cached_dist["distancia_km"]
+            dentro_zona = cached_dist["dentro_zona"]
+            taxa = cached_dist["taxa_entrega"]
         else:
-            taxa = round(taxa_base + (distancia - distancia_base_km) * taxa_km_extra, 2)
+            if rest_lat and rest_lng:
+                distancia = haversine((rest_lat, rest_lng), (lat, lng))
+                dentro_zona = distancia <= raio_km
+
+            # Calcular taxa por distância
+            if distancia <= distancia_base_km:
+                taxa = taxa_base
+            else:
+                taxa = round(taxa_base + (distancia - distancia_base_km) * taxa_km_extra, 2)
+
+            # Cache: salvar resultado (30 dias)
+            if dist_cache_key:
+                cache_set(dist_cache_key, {
+                    "dentro_zona": dentro_zona,
+                    "distancia_km": round(distancia, 2),
+                    "taxa_entrega": taxa,
+                }, ttl_seconds=2592000)
 
         sugestoes.append({
             "place_name": s["place_name"],

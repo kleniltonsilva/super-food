@@ -31,7 +31,9 @@ class WooviClient:
         self.app_id = os.getenv("WOOVI_APP_ID", "")
         env = os.getenv("WOOVI_ENVIRONMENT", "production")
         self.base_url = WOOVI_URLS.get(env, WOOVI_URLS["production"])
-        self.webhook_secret = os.getenv("WOOVI_WEBHOOK_SECRET", "")
+        # Suporta múltiplos secrets separados por vírgula (cada webhook Woovi tem o seu)
+        raw_secret = os.getenv("WOOVI_WEBHOOK_SECRET", "")
+        self.webhook_secrets = [s.strip() for s in raw_secret.split(",") if s.strip()]
         self.vault_pix_key = os.getenv("WOOVI_VAULT_PIX_KEY", "")
         self._client: Optional[httpx.AsyncClient] = None
 
@@ -165,15 +167,18 @@ class WooviClient:
     # --- Webhook --------------------------------------------------
 
     def validar_webhook(self, payload: bytes, signature: str) -> bool:
-        """Valida HMAC-SHA256 do webhook Woovi."""
-        if not self.webhook_secret:
-            # Sem secret configurado — aceitar com warning (até configurar WOOVI_WEBHOOK_SECRET)
+        """Valida HMAC-SHA256 do webhook Woovi. Tenta todos os secrets conhecidos."""
+        if not self.webhook_secrets:
             logger.warning("WOOVI_WEBHOOK_SECRET não configurado — aceitando webhook sem validação HMAC")
             return True
-        expected = hmac.new(
-            self.webhook_secret.encode(), payload, hashlib.sha256
-        ).hexdigest()
-        return hmac.compare_digest(expected, signature)
+        for secret in self.webhook_secrets:
+            expected = hmac.new(
+                secret.encode(), payload, hashlib.sha256
+            ).hexdigest()
+            if hmac.compare_digest(expected, signature):
+                return True
+        logger.warning("Webhook Woovi: assinatura não corresponde a nenhum secret conhecido")
+        return False
 
 
 # Singleton

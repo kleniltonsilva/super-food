@@ -494,18 +494,33 @@ async def finalizar_carrinho(
                 models.ConfigRestaurante.restaurante_id == carrinho.restaurante_id
             ).first()
             if restaurante and restaurante.latitude and restaurante.longitude and config:
-                from utils.mapbox_api import check_coverage_zone
-                resultado = check_coverage_zone(
-                    (restaurante.latitude, restaurante.longitude),
-                    (lat_entrega, lng_entrega),
-                    config.raio_entrega_km or 10.0
-                )
-                if resultado['dentro_zona']:
-                    distancia = resultado['distancia_km']
-                    if distancia <= config.distancia_base_km:
-                        taxa_entrega = config.taxa_entrega_base
-                    else:
-                        taxa_entrega = config.taxa_entrega_base + (distancia - config.distancia_base_km) * config.taxa_km_extra
+                # Cache: verificar distância/taxa cacheada
+                from utils.mapbox_api import _cache_key_dist
+                from ..cache import cache_get, cache_set
+                dist_cache_key = _cache_key_dist(restaurante.id, lat_entrega, lng_entrega)
+                cached_dist = cache_get(dist_cache_key)
+                if cached_dist and cached_dist.get("dentro_zona"):
+                    taxa_entrega = cached_dist["taxa_entrega"]
+                else:
+                    from utils.mapbox_api import check_coverage_zone
+                    resultado = check_coverage_zone(
+                        (restaurante.latitude, restaurante.longitude),
+                        (lat_entrega, lng_entrega),
+                        config.raio_entrega_km or 10.0
+                    )
+                    if resultado['dentro_zona']:
+                        distancia = resultado['distancia_km']
+                        if distancia <= config.distancia_base_km:
+                            taxa_entrega = config.taxa_entrega_base
+                        else:
+                            taxa_entrega = config.taxa_entrega_base + (distancia - config.distancia_base_km) * config.taxa_km_extra
+                        taxa_entrega = round(taxa_entrega, 2)
+                    # Cache: salvar resultado (30 dias)
+                    cache_set(dist_cache_key, {
+                        "dentro_zona": resultado['dentro_zona'],
+                        "distancia_km": resultado['distancia_km'],
+                        "taxa_entrega": round(taxa_entrega, 2),
+                    }, ttl_seconds=2592000)
 
     valor_total_final = carrinho.valor_subtotal + taxa_entrega - carrinho.valor_desconto
 

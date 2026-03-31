@@ -15,7 +15,7 @@ import os
 from .. import models, database
 from ..schemas import site_schemas
 from ..cache import cache_get, cache_set
-from utils.mapbox_api import autocomplete_address, check_coverage_zone
+from utils.mapbox_api import autocomplete_address, check_coverage_zone, _cache_key_dist
 from .auth_cliente import get_cliente_atual, get_cliente_opcional
 
 
@@ -505,16 +505,28 @@ def validar_endereco_entrega(
         if not coords:
             raise HTTPException(status_code=400, detail="Endereço não encontrado")
         validacao.latitude, validacao.longitude = coords
-    
+
+    # Cache: verificar distância/taxa cacheada (30 dias TTL)
+    dist_cache_key = _cache_key_dist(restaurante.id, validacao.latitude, validacao.longitude)
+    cached_dist = cache_get(dist_cache_key)
+    if cached_dist:
+        return {
+            "dentro_zona": cached_dist["dentro_zona"],
+            "distancia_km": cached_dist["distancia_km"],
+            "tempo_estimado_min": site_config.tempo_entrega_estimado if site_config else 50,
+            "taxa_entrega": cached_dist["taxa_entrega"],
+            "mensagem": cached_dist.get("mensagem", ""),
+        }
+
     # Valida zona de cobertura
     raio_km = config.raio_entrega_km if config else 10.0
-    
+
     resultado = check_coverage_zone(
         (restaurante.latitude, restaurante.longitude),
         (validacao.latitude, validacao.longitude),
         raio_km
     )
-    
+
     # Calcula taxa de entrega
     taxa_entrega = 0.0
     if resultado['dentro_zona'] and config:
@@ -523,12 +535,22 @@ def validar_endereco_entrega(
             taxa_entrega = config.taxa_entrega_base
         else:
             taxa_entrega = config.taxa_entrega_base + (distancia - config.distancia_base_km) * config.taxa_km_extra
-    
+
+    taxa_entrega = round(taxa_entrega, 2)
+
+    # Cache: salvar resultado (30 dias)
+    cache_set(dist_cache_key, {
+        "dentro_zona": resultado['dentro_zona'],
+        "distancia_km": resultado['distancia_km'],
+        "taxa_entrega": taxa_entrega,
+        "mensagem": resultado['mensagem'],
+    }, ttl_seconds=2592000)
+
     return {
         "dentro_zona": resultado['dentro_zona'],
         "distancia_km": resultado['distancia_km'],
         "tempo_estimado_min": site_config.tempo_entrega_estimado if site_config else 50,
-        "taxa_entrega": round(taxa_entrega, 2),
+        "taxa_entrega": taxa_entrega,
         "mensagem": resultado['mensagem']
     }
 

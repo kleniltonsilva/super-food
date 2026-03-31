@@ -2337,8 +2337,13 @@ async def atualizar_config(
     db.commit()
 
     # Invalidar cache do site para que mudanças reflitam imediatamente
-    from ..cache import cache_delete_pattern
+    from ..cache import cache_delete_pattern, invalidate_distancias
     cache_delete_pattern(f"site:{rest.codigo_acesso}:*")
+
+    # Invalidar cache de distâncias se config de entrega mudou
+    campos_entrega = {'taxa_entrega_base', 'distancia_base_km', 'taxa_km_extra', 'raio_entrega_km'}
+    if campos_entrega & dados.keys():
+        invalidate_distancias(rest.id)
 
     # Broadcast WebSocket para o site cliente atualizar em tempo real
     mudou_status = dados.get('status_atual') and dados['status_atual'] != status_anterior

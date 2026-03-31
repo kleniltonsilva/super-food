@@ -106,3 +106,9 @@ def invalidate_cardapio(restaurante_id: int):
     cache_delete_pattern(f"site:{restaurante_id}:*")
     cache_delete_pattern(f"cardapio:{restaurante_id}:*")
     logger.info(f"Cache invalidado: restaurante {restaurante_id}")
+
+
+def invalidate_distancias(restaurante_id: int):
+    """Invalida todo cache de distâncias de um restaurante (ex: mudou endereço ou config entrega)."""
+    cache_delete_pattern(f"dist:{restaurante_id}:*")
+    logger.info(f"Cache distâncias invalidado: restaurante {restaurante_id}")

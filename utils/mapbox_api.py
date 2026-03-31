@@ -29,6 +29,19 @@ if not MAPBOX_TOKEN:
     print("[WARNING] MAPBOX_TOKEN não configurado. API Mapbox não funcionará.")
 
 
+# ==================== CACHE HELPERS ====================
+def _cache_key_dist(restaurante_id: int, lat: float, lng: float) -> str:
+    """Chave cache de distância: arredonda 4 casas decimais (~11m precisão)."""
+    return f"dist:{restaurante_id}:{lat:.4f}:{lng:.4f}"
+
+
+def _cache_key_geo(address: str) -> str:
+    """Chave cache de geocoding: hash MD5 do endereço normalizado."""
+    import hashlib
+    h = hashlib.md5(address.strip().lower().encode()).hexdigest()[:12]
+    return f"geo:{h}"
+
+
 # ==================== GEOCODING ====================
 def geocode_address(address: str, country: Optional[str] = None) -> Optional[Tuple[float, float]]:
     """
@@ -39,6 +52,13 @@ def geocode_address(address: str, country: Optional[str] = None) -> Optional[Tup
     if not address or not MAPBOX_TOKEN:
         print(f"[ERRO] Endereço vazio ou MAPBOX_TOKEN não configurado: {address}")
         return None
+
+    # Cache: verificar antes de chamar API
+    from backend.app.cache import cache_get, cache_set
+    cache_key = _cache_key_geo(address)
+    cached = cache_get(cache_key)
+    if cached:
+        return tuple(cached)  # [lat, lng] → (lat, lng)
 
     url = f"https://api.mapbox.com/geocoding/v5/mapbox.places/{quote(address)}.json"
     params = {
@@ -57,6 +77,8 @@ def geocode_address(address: str, country: Optional[str] = None) -> Optional[Tup
 
         if features:
             lng, lat = features[0]["center"]
+            # Cache: salvar resultado (7 dias)
+            cache_set(cache_key, [lat, lng], ttl_seconds=604800)
             return lat, lng
         else:
             print(f"[ERRO] Nenhuma coordenada encontrada para: {address}")

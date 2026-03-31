@@ -248,6 +248,10 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 - **Saque manual:** com preview de taxa (grátis para saques >= R$500)
 - **Saque automático:** configura valor mínimo para saque automático
 - **Fluxo:** cliente paga Pix → webhook confirma → saldo acumula → restaurante saca
+- **Badge nos pedidos:** no painel admin (Pedidos.tsx), pedidos com forma_pagamento PIX exibem badge visual:
+  - "Pix Pendente" (amarelo) — pedido pendente aguardando confirmação de pagamento
+  - "PIX" (verde) — pedido com pagamento Pix confirmado
+- **WhatsApp Humanoide:** bot gera cobrança Pix via function call `gerar_cobranca_pix` e envia link de pagamento ao cliente
 
 ### 2.18 Downloads (Agentes Windows)
 - **Rota:** `/admin/downloads`
@@ -1589,8 +1593,8 @@ Salvar mensagem no BD + notificar painel via WebSocket
 | `trocar_item_pedido` | Troca item específico do pedido |
 | `buscar_endereco` | Endereço salvo do cliente |
 | `calcular_entrega` | Busca taxa de entrega por bairro |
-| `gerar_pix` | Gera cobrança Pix (futuro — Módulo 1) |
-| `verificar_pagamento` | Verifica status pagamento Pix (futuro) |
+| `gerar_cobranca_pix` | Gera cobrança Pix com link de pagamento (Woovi) |
+| `consultar_pagamento_pix` | Verifica status do pagamento Pix |
 | `consultar_pedido` | Consulta pedido por ID ou telefone |
 
 Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_bot"` e vão direto para a cozinha (quando KDS ativo).
