@@ -516,6 +516,60 @@ def _deve_enviar_audio(conversa: dict, mensagem_atual: str) -> bool:
     return resultado
 
 
+def _inferir_emocao_contexto(intencao: str, resposta: str, mensagem_cliente: str) -> str:
+    """Infere a emoção S2-Pro baseada no contexto da conversa.
+
+    Mapeia intenção do lead + conteúdo da resposta → tag de emoção Fish Audio.
+    As tags são usadas pelo modelo S2-Pro para modular tom de voz.
+    """
+    resp_lower = resposta.lower()
+    msg_lower = mensagem_cliente.lower()
+
+    # 1. Detectar pelo conteúdo da RESPOSTA da Ana
+    if any(w in resp_lower for w in ["teste grátis", "15 dias", "vou ativar", "vou liberar", "vou configurar"]):
+        return "trial"
+    if any(w in resp_lower for w in ["perfeito!", "ótimo!", "maravilha", "show!"]):
+        return "fechamento"
+    if any(w in resp_lower for w in ["entendo", "compreendo", "faz sentido", "com razão"]):
+        return "objecao"
+    if any(w in resp_lower for w in ["r$", "plano", "preço", "investimento", "valor"]):
+        return "preco"
+    if any(w in resp_lower for w in ["imagina", "funcionalidade", "o sistema", "bridge", "kds", "despacho"]):
+        return "beneficio"
+    if any(w in resp_lower for w in ["urgente", "vagas", "agenda", "essa semana"]):
+        return "urgencia"
+    if any(w in resp_lower for w in ["sucesso", "até mais", "qualquer coisa", "é só chamar"]):
+        return "despedida"
+
+    # 2. Detectar pela INTENÇÃO do lead
+    mapa_intencao = {
+        "interesse": "empolgado",
+        "curiosidade": "amigavel",
+        "objecao_preco": "objecao",
+        "objecao_concorrente": "profissional",
+        "objecao": "objecao",
+        "duvida_tecnica": "profissional",
+        "pediu_demo": "empolgado",
+        "pediu_trial": "trial",
+        "satisfeito": "fechamento",
+        "hard_no": "despedida",
+        "soft_no": "amigavel",
+    }
+    if intencao in mapa_intencao:
+        return mapa_intencao[intencao]
+
+    # 3. Detectar pela mensagem do CLIENTE
+    if any(w in msg_lower for w in ["golpe", "confi", "quem é", "cnpj"]):
+        return "profissional"
+    if any(w in msg_lower for w in ["obrigad", "valeu", "agradeç"]):
+        return "amigavel"
+    if any(w in msg_lower for w in ["caro", "dinheiro", "grana", "preço"]):
+        return "objecao"
+
+    # 4. Default: abertura (amigável + sorriso)
+    return "abertura"
+
+
 def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
                                     conversa_id: int, instance: str = "",
                                     emocao: str = "") -> dict:
@@ -1850,8 +1904,12 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         if _deve_enviar_audio(conversa_full, mensagem):
             # ÁUDIO: transformar português correto → dicção falada brasileira
             resposta_audio = _preparar_texto_para_audio(resposta_crua)
+            # Inferir emoção S2-Pro pelo contexto da conversa
+            emocao_ctx = _inferir_emocao_contexto(intencao, resposta_crua, mensagem)
+            log.info(f"Emoção S2-Pro inferida: {emocao_ctx} (intenção={intencao})")
             audio_result = _gerar_e_enviar_audio_resposta(
-                numero_envio, resposta_audio, conversa_id, instance=instance)
+                numero_envio, resposta_audio, conversa_id,
+                instance=instance, emocao=emocao_ctx)
             if audio_result.get("erro"):
                 # Fallback para texto (enviar direto — LLM já escreve correto)
                 log.warning(f"Fallback texto (áudio falhou): {audio_result['erro']}")
