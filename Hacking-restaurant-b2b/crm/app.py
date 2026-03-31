@@ -2129,3 +2129,48 @@ async def api_brain_chat(request: Request):
         import traceback
         traceback.print_exc()
         return JSONResponse({"erro": str(e)}, status_code=500)
+
+
+# ============================================================
+# AUDIO CACHE + TTS STATUS — Endpoints Admin
+# ============================================================
+
+@app.get("/api/audio-cache")
+async def api_listar_audio_cache(limite: int = 50, offset: int = 0):
+    """Lista cache de áudios TTS (paginado, ordenado por vezes_usado DESC)."""
+    from crm.audio_cache import listar_cache
+    return JSONResponse(listar_cache(limite, offset))
+
+
+@app.get("/api/audio-cache/stats")
+async def api_stats_audio_cache():
+    """Estatísticas do cache: total, hits, economia estimada."""
+    from crm.audio_cache import stats_cache
+    from crm.tts_queue import tts_queue
+    cache_stats = stats_cache()
+    queue_status = tts_queue.status
+    cache_stats["tts_queue"] = queue_status.get("metrics", {})
+    return JSONResponse(cache_stats)
+
+
+@app.delete("/api/audio-cache")
+async def api_limpar_audio_cache():
+    """Limpa todo o cache de áudios."""
+    from crm.audio_cache import invalidar_cache
+    count = invalidar_cache()
+    return JSONResponse({"invalidados": count})
+
+
+@app.delete("/api/audio-cache/{intent_key}")
+async def api_limpar_audio_cache_intent(intent_key: str):
+    """Limpa cache de áudios por intent_key específica."""
+    from crm.audio_cache import invalidar_cache
+    count = invalidar_cache(intent_key)
+    return JSONResponse({"intent_key": intent_key, "invalidados": count})
+
+
+@app.get("/api/tts/status")
+async def api_tts_status():
+    """Status da fila TTS: slots ativos, métricas, provider."""
+    from crm.tts_queue import tts_queue
+    return JSONResponse(tts_queue.status)

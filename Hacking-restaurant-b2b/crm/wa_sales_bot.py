@@ -517,39 +517,59 @@ def _deve_enviar_audio(conversa: dict, mensagem_atual: str) -> bool:
 
 
 def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
-                                    conversa_id: int, instance: str = "") -> dict:
+                                    conversa_id: int, instance: str = "",
+                                    emocao: str = "") -> dict:
     """Gera TTS do texto da resposta e envia via Evolution API.
+
+    Se tts_provider="fish": usa _gerar_audio_com_cache (fila + cache inteligente).
+    Senão: usa gerar_audio_tts (Grok TTS legado).
+
     Retorna sucesso/erro."""
+    tts_provider = (obter_configuracao("tts_provider") or "grok").lower().strip()
     voz = obter_configuracao("audio_voz") or "rex"
-    audio_path = gerar_audio_tts(texto_resposta, voz=voz)
-    if not audio_path:
-        return {"erro": "Falha ao gerar áudio TTS"}
+
+    audio_bytes = None
+    audio_path = None
+
+    # --- Fish Audio com cache + fila ---
+    if tts_provider == "fish":
+        audio_bytes = _gerar_audio_com_cache(texto_resposta, conversa_id, emocao=emocao)
+        if not audio_bytes:
+            return {"erro": "Fish Audio falhou — fallback texto"}
+    else:
+        # --- Grok TTS legado ---
+        audio_path = gerar_audio_tts(texto_resposta, voz=voz, emocao=emocao)
+        if not audio_path:
+            return {"erro": "Falha ao gerar áudio TTS"}
+        try:
+            with open(audio_path, "rb") as f:
+                audio_bytes = f.read()
+        except Exception as e:
+            return {"erro": f"Erro leitura áudio: {e}"}
 
     try:
-        # Ler áudio e converter para base64
-        with open(audio_path, "rb") as f:
-            audio_bytes = f.read()
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
         # Enviar via Evolution
         resultado = _enviar_audio_evolution(numero, audio_b64, instance=instance)
 
         if resultado.get("sucesso"):
-            # Registrar no histórico
             registrar_msg_wa(conversa_id, "enviada",
                              f"[ÁUDIO] {texto_resposta[:100]}...", tipo="audio")
-            atualizar_conversa_wa(conversa_id, usou_audio=True, voz_usada=voz)
-            log.info(f"Áudio TTS enviado para conversa {conversa_id} (voz={voz})")
+            provider_label = "fish" if tts_provider == "fish" else f"grok/{voz}"
+            atualizar_conversa_wa(conversa_id, usou_audio=True, voz_usada=provider_label)
+            log.info(f"Áudio TTS enviado para conversa {conversa_id} (provider={provider_label})")
         return resultado
 
     except Exception as e:
         log.error(f"Erro gerar/enviar áudio TTS: {e}")
         return {"erro": str(e)}
     finally:
-        try:
-            os.unlink(audio_path)
-        except Exception:
-            pass
+        if audio_path:
+            try:
+                os.unlink(audio_path)
+            except Exception:
+                pass
 
 
 def gerar_script_audio(lead: dict) -> str:
@@ -868,7 +888,7 @@ def gerar_audio_tts(texto: str, voz: str = "rex", emocao: str = "") -> Optional[
     """Gera áudio TTS. Dual-mode: Fish Audio (se configurado) ou Grok (padrão).
 
     Provider controlado por config 'tts_provider':
-      - "fish": usa Fish Audio S2-Pro (requer FISH_API_KEY)
+      - "fish": usa Fish Audio S2-Pro (requer FISH_API_KEY) + fila
       - "grok" ou vazio: usa xAI Grok TTS (padrão, sem breaking changes)
 
     Args:
@@ -889,14 +909,17 @@ def gerar_audio_tts(texto: str, voz: str = "rex", emocao: str = "") -> Optional[
             resultado = gerar_audio_fish(texto, emocao=emocao)
             if resultado:
                 return resultado
-            # Fish falhou — fallback para Grok
-            log.warning("Fish Audio falhou, fallback para Grok TTS")
+            # Fish falhou — fallback para texto puro (sem Grok — economia)
+            log.warning("Fish Audio falhou — fallback texto puro")
+            return None
         except ImportError:
-            log.warning("fish_tts.py não encontrado, fallback para Grok TTS")
+            log.warning("fish_tts.py não encontrado — fallback texto puro")
+            return None
         except Exception as e:
-            log.warning(f"Fish Audio erro ({e}), fallback para Grok TTS")
+            log.warning(f"Fish Audio erro ({e}) — fallback texto puro")
+            return None
 
-    # --- Grok TTS (padrão) ---
+    # --- Grok TTS (padrão — quando tts_provider != "fish") ---
     texto = _preparar_texto_tts(texto)
     xai_key = _get_xai_key()
     if not xai_key:
@@ -931,6 +954,122 @@ def gerar_audio_tts(texto: str, voz: str = "rex", emocao: str = "") -> Optional[
     except Exception as e:
         log.error(f"Erro Grok TTS: {e}")
         return None
+
+
+def _gerar_audio_com_cache(texto_resposta: str, conversa_id: int,
+                           emocao: str = "") -> bytes | None:
+    """Gera áudio TTS com sistema de cache inteligente + fila.
+
+    Fluxo:
+    1. Classificar resposta (cacheável? intent_key?)
+    2. Se cacheável: buscar cache (respeitar regras de não-repetição)
+    3. Se MISS ou não-cacheável: gerar via fila TTS (Fish Audio)
+    4. Se cacheável e MISS: salvar no cache
+    5. Se TTS falhar: retorna None (caller envia texto)
+
+    Returns:
+        bytes do MP3 ou None.
+    """
+    import asyncio
+
+    try:
+        from crm.audio_cache import (
+            classificar_para_cache, buscar_audio_cache, salvar_audio_cache,
+            verificar_pergunta_repetida,
+        )
+        from crm.tts_queue import tts_queue
+    except ImportError as e:
+        log.warning(f"Cache/fila não disponível: {e}")
+        return None
+
+    # Carregar dados da conversa para regras de cache
+    conversa = obter_conversa_wa(conversa_id)
+    cache_ids_usados = []
+    intents_usadas = []
+    if conversa:
+        try:
+            cache_ids_usados = json.loads(conversa.get("cache_ids_usados") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            cache_ids_usados = []
+        try:
+            intents_usadas = json.loads(conversa.get("intents_usadas") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            intents_usadas = []
+
+    # 1. Classificar resposta
+    classificacao = classificar_para_cache(texto_resposta)
+    cacheavel = classificacao.get("cacheavel", False)
+    intent_key = classificacao.get("intent_key", "")
+
+    log.info(f"Classificação cache: cacheavel={cacheavel}, intent={intent_key}, "
+             f"motivo={classificacao.get('motivo', '')}")
+
+    # 2. Verificar pergunta repetida → forçar detalhado
+    if cacheavel and intent_key and verificar_pergunta_repetida(intents_usadas, intent_key):
+        log.info(f"Pergunta repetida detectada (intent={intent_key}) — forçar nova geração")
+        cacheavel = False  # Forçar geração nova (sem cache)
+        # intent_key detalhado será tratado na próxima versão
+
+    # 3. Se cacheável, tentar buscar cache
+    audio_bytes = None
+    cache_id = None
+    if cacheavel and intent_key:
+        resultado = buscar_audio_cache(
+            texto_resposta, intent_key, cache_ids_usados, emocao
+        )
+        if resultado:
+            cache_id, audio_bytes = resultado
+            log.info(f"Cache HIT: id={cache_id}, intent={intent_key}")
+            # Registrar uso na conversa
+            cache_ids_usados.append(cache_id)
+            if intent_key not in intents_usadas:
+                intents_usadas.append(intent_key)
+            atualizar_conversa_wa(
+                conversa_id,
+                cache_ids_usados=json.dumps(cache_ids_usados),
+                intents_usadas=json.dumps(intents_usadas),
+            )
+            return audio_bytes
+
+    # 4. Cache MISS ou não-cacheável — gerar via fila TTS
+    log.info(f"Gerando áudio via fila TTS (cacheavel={cacheavel}, intent={intent_key})")
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            audio_bytes = pool.submit(
+                asyncio.run, tts_queue.gerar_audio(texto_resposta, emocao)
+            ).result(timeout=20)
+    else:
+        audio_bytes = asyncio.run(tts_queue.gerar_audio(texto_resposta, emocao))
+
+    if not audio_bytes:
+        return None
+
+    # 5. Salvar no cache se cacheável
+    if cacheavel and intent_key:
+        new_cache_id = salvar_audio_cache(
+            texto_resposta, audio_bytes, intent_key, emocao
+        )
+        if new_cache_id:
+            cache_ids_usados.append(new_cache_id)
+
+    # Registrar intents usadas
+    if intent_key and intent_key not in intents_usadas:
+        intents_usadas.append(intent_key)
+
+    atualizar_conversa_wa(
+        conversa_id,
+        cache_ids_usados=json.dumps(cache_ids_usados),
+        intents_usadas=json.dumps(intents_usadas),
+    )
+
+    return audio_bytes
 
 
 def _upload_media_wa(audio_path: str) -> Optional[str]:
@@ -1418,9 +1557,9 @@ def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
             "https://api.x.ai/v1/chat/completions",
             headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
             json={
-                "model": "grok-3-fast",
+                "model": "grok-3-mini-fast",
                 "messages": [{"role": "system", "content": system_prompt}] + historico,
-                "max_tokens": 250,
+                "max_tokens": 300,
                 "temperature": 0.8,
             },
             timeout=20,
@@ -1736,12 +1875,12 @@ def _responder_inbound(conversa_id: int, mensagem: str) -> dict:
             "https://api.x.ai/v1/chat/completions",
             headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
             json={
-                "model": "grok-3-fast",
+                "model": "grok-3-mini-fast",
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": mensagem},
                 ],
-                "max_tokens": 100,
+                "max_tokens": 120,
                 "temperature": 0.85,
             },
             timeout=20,

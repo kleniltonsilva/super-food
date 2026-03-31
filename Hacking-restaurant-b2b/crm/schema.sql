@@ -602,3 +602,29 @@ CREATE INDEX IF NOT EXISTS idx_email_threads_remetente ON email_threads(email_re
 CREATE INDEX IF NOT EXISTS idx_email_threads_lead ON email_threads(lead_id) WHERE lead_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_emails_inbox_thread ON emails_inbox(thread_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_emails_inbox_resend ON emails_inbox(resend_email_id) WHERE resend_email_id IS NOT NULL;
+
+-- ============================================================
+-- AUDIO CACHE — Cache inteligente de áudios TTS reutilizáveis
+-- ============================================================
+CREATE TABLE IF NOT EXISTS audio_cache (
+    id SERIAL PRIMARY KEY,
+    intent_key TEXT NOT NULL,              -- ex: "preco_planos", "teste_gratis"
+    texto_hash TEXT NOT NULL UNIQUE,       -- SHA256 do texto normalizado
+    texto_original TEXT NOT NULL,          -- texto completo (para debug)
+    pergunta_exemplo TEXT,                 -- pergunta que gerou este cache
+    audio_data BYTEA NOT NULL,            -- bytes do MP3
+    emocao TEXT DEFAULT '',               -- emotion tag usada na geração
+    duracao_estimada_s FLOAT,             -- estimativa em segundos
+    vezes_usado INTEGER DEFAULT 1,
+    ultimo_uso TIMESTAMPTZ DEFAULT NOW(),
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    ativo BOOLEAN DEFAULT TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_audio_cache_intent ON audio_cache(intent_key) WHERE ativo = TRUE;
+CREATE INDEX IF NOT EXISTS idx_audio_cache_hash ON audio_cache(texto_hash) WHERE ativo = TRUE;
+CREATE INDEX IF NOT EXISTS idx_audio_cache_uso ON audio_cache(vezes_usado DESC, ultimo_uso DESC);
+
+-- Campos novos em wa_conversas para rastrear áudios cache
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS cache_ids_usados JSONB DEFAULT '[]';
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS intents_usadas JSONB DEFAULT '[]';

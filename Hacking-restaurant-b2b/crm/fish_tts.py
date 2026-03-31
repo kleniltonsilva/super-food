@@ -1,41 +1,27 @@
 """
 fish_tts.py — Fish Audio S2-Pro TTS para o Sales Bot (Benjamim).
-Módulo dual-mode: funciona quando FISH_API_KEY está configurada,
-caso contrário retorna None e o caller faz fallback para Grok.
 
-Usa SDK oficial: pip install fish-audio-sdk
-Fallback para API raw (httpx) se SDK não estiver instalado.
-
-Tags de emoção S2-Pro: [amigável], [empolgado], [profissional], etc.
-São tags livres (linguagem natural em colchetes), sem vocabulário fixo.
+TTS PRINCIPAL (async). Quando FISH_API_KEY não está configurada, retorna None
+e o caller envia texto puro (sem fallback para Grok — economia).
 
 API Reference:
   - POST https://api.fish.audio/v1/tts
   - Header: Authorization: Bearer {key}
-  - Header: model: s2-pro (obrigatório como header, NÃO no body)
-  - Body JSON: {text, reference_id, format, latency, ...}
+  - Header: model: s2-pro
+  - Body JSON: {text, reference_id, format, latency, mp3_bitrate, ...}
   - Response: chunked binary audio stream
+
+Emotion tags S2-Pro: tags livres em colchetes — [amigável], [empolgado], etc.
 """
 import os
-import tempfile
 import logging
 
 logger = logging.getLogger("fish_tts")
-
-# Tentar importar SDK oficial
-try:
-    from fishaudio import FishAudio
-    _HAS_SDK = True
-    logger.info("fish-audio-sdk importado com sucesso")
-except ImportError:
-    _HAS_SDK = False
-    logger.info("fish-audio-sdk não instalado — usando API raw (httpx)")
 
 try:
     import httpx as _httpx
 except ImportError:
     _httpx = None
-
 
 # ============================================================
 # CONFIG
@@ -44,17 +30,19 @@ FISH_API_URL = "https://api.fish.audio/v1/tts"
 FISH_MODEL = "s2-pro"
 
 # Mapeamento de emoções por contexto de venda (S2-Pro tags livres)
-# Tags em português (lingua natural do áudio) — Fish Audio S2 suporta tags livres
 EMOTION_TAGS = {
-    "abertura": "[amigável]",
+    "abertura": "[amigável] [sorriso]",
     "apresentacao": "[profissional]",
     "beneficio": "[empolgado]",
-    "objecao": "[compreensivo]",
-    "urgencia": "[empolgado]",
-    "fechamento": "[empolgado]",
+    "objecao": "[compreensivo] [calmo]",
+    "urgencia": "[empolgado] [confiante]",
+    "fechamento": "[empolgado] [sorriso]",
     "followup": "[amigável]",
-    "suporte": "[calmo]",
-    # Novos contextos alinhados com Engenharia de Fala Natural
+    "suporte": "[calmo] [paciente]",
+    "preco": "[profissional] [confiante]",
+    "trial": "[empolgado] [animado]",
+    "despedida": "[amigável] [caloroso]",
+    # Contextos genéricos
     "serio": "[sério]",
     "profissional": "[profissional]",
     "amigavel": "[amigável]",
@@ -64,9 +52,21 @@ EMOTION_TAGS = {
     "risinhos": "[risinhos]",
 }
 
+# Emoções compatíveis (para verificar se cache é reutilizável)
+EMOCOES_COMPATIVEIS = {
+    "abertura": {"amigavel", "followup", "despedida"},
+    "amigavel": {"abertura", "followup", "despedida"},
+    "empolgado": {"beneficio", "urgencia", "fechamento", "trial"},
+    "beneficio": {"empolgado", "urgencia", "trial"},
+    "objecao": {"suporte", "calmo"},
+    "suporte": {"objecao", "calmo"},
+    "profissional": {"preco", "apresentacao", "serio"},
+    "preco": {"profissional", "apresentacao"},
+}
+
 
 # ============================================================
-# PRONÚNCIA (mesmas regras do Grok TTS)
+# PRONÚNCIA
 # ============================================================
 _TTS_PRONUNCIA = [
     ("Derekh Food", "Dérikh Food"),
@@ -81,13 +81,10 @@ _TTS_PRONUNCIA = [
 
 
 def _preparar_texto_fish(texto: str, emocao: str = "") -> str:
-    """Prepara texto para Fish Audio: pronúncia + tag de emoção opcional.
-    Se emocao não fornecida, não adiciona tag (voz natural sem emoção forçada)."""
-    # Pronúncia
+    """Prepara texto para Fish Audio: pronúncia + tag de emoção."""
     for escrita, pronuncia in _TTS_PRONUNCIA:
         texto = texto.replace(escrita, pronuncia)
 
-    # Tag de emoção (S2-Pro suporta tags livres em colchetes)
     if emocao:
         tag = EMOTION_TAGS.get(emocao, f"[{emocao}]")
         texto = f"{tag} {texto}"
@@ -95,137 +92,136 @@ def _preparar_texto_fish(texto: str, emocao: str = "") -> str:
     return texto
 
 
+def emocoes_sao_compativeis(emocao_cache: str, emocao_contexto: str) -> bool:
+    """Verifica se duas emoções são compatíveis para reutilização de cache."""
+    if not emocao_cache and not emocao_contexto:
+        return True
+    if emocao_cache == emocao_contexto:
+        return True
+    if not emocao_cache or not emocao_contexto:
+        return False
+    compativeis = EMOCOES_COMPATIVEIS.get(emocao_contexto, set())
+    return emocao_cache in compativeis
+
+
 def _get_fish_key() -> str:
-    """Retorna FISH_API_KEY do ambiente."""
-    return os.environ.get("FISH_API_KEY", "")
+    """Retorna FISH_API_KEY do ambiente ou config DB."""
+    key = os.environ.get("FISH_API_KEY", "")
+    if not key:
+        try:
+            from crm.database import obter_configuracao
+            key = obter_configuracao("fish_api_key") or ""
+        except Exception:
+            pass
+    return key
 
 
 def _get_fish_voice() -> str:
-    """Retorna voice/reference_id do Fish Audio.
-    Pode ser um ID de voz clonada ou voz stock."""
-    return os.environ.get("FISH_VOICE_ID", "")
+    """Retorna voice/reference_id do Fish Audio."""
+    voice = os.environ.get("FISH_VOICE_ID", "")
+    if not voice:
+        try:
+            from crm.database import obter_configuracao
+            voice = obter_configuracao("fish_voice_id") or ""
+        except Exception:
+            pass
+    return voice
 
 
 # ============================================================
-# GERAÇÃO TTS — SDK (convert retorna bytes diretamente)
+# GERAÇÃO TTS — ASYNC (principal)
 # ============================================================
-def _gerar_via_sdk(texto: str, voice_id: str) -> bytes | None:
-    """Gera áudio via SDK oficial fish-audio-sdk.
-    SDK: client.tts.convert() retorna bytes diretamente."""
-    if not _HAS_SDK:
-        return None
-
-    try:
-        client = FishAudio(api_key=_get_fish_key())
-
-        kwargs = {"text": texto, "format": "mp3"}
-        if voice_id:
-            kwargs["reference_id"] = voice_id
-
-        result = client.tts.convert(**kwargs)
-
-        # convert() retorna bytes; stream() retorna iterator
-        if isinstance(result, (bytes, bytearray)):
-            return bytes(result)
-
-        # Fallback: se a API mudar e retornar iterator
-        if hasattr(result, '__iter__'):
-            chunks = []
-            for chunk in result:
-                if isinstance(chunk, (bytes, bytearray)):
-                    chunks.append(chunk)
-            audio = b"".join(chunks)
-            return audio if audio else None
-
-        return None
-
-    except Exception as e:
-        logger.error(f"Erro Fish Audio SDK: {e}")
-        return None
-
-
-# ============================================================
-# GERAÇÃO TTS — API RAW (fallback se SDK não instalado)
-# ============================================================
-def _gerar_via_api(texto: str, voice_id: str) -> bytes | None:
-    """Gera áudio via API REST direta (httpx).
-    IMPORTANTE: 'model' é header, NÃO campo do body."""
-    if _httpx is None:
-        logger.error("httpx não instalado para Fish Audio API raw")
-        return None
-
-    fish_key = _get_fish_key()
-    if not fish_key:
-        return None
-
-    try:
-        payload = {
-            "text": texto,
-            "format": "mp3",
-            "latency": "balanced",
-        }
-        if voice_id:
-            payload["reference_id"] = voice_id
-
-        resp = _httpx.post(
-            FISH_API_URL,
-            headers={
-                "Authorization": f"Bearer {fish_key}",
-                "Content-Type": "application/json",
-                "model": FISH_MODEL,
-            },
-            json=payload,
-            timeout=30,
-        )
-        resp.raise_for_status()
-        return resp.content
-
-    except Exception as e:
-        logger.error(f"Erro Fish Audio API raw: {e}")
-        return None
-
-
-# ============================================================
-# FUNÇÃO PRINCIPAL — mesmo contrato do gerar_audio_tts()
-# ============================================================
-def gerar_audio_fish(texto: str, emocao: str = "") -> str | None:
-    """Gera áudio via Fish Audio S2-Pro.
+async def gerar_audio_fish_async(texto: str, emocao: str = "") -> bytes | None:
+    """Gera áudio via Fish Audio S2-Pro (async).
 
     Args:
-        texto: Texto para converter em áudio
+        texto: Texto para converter em áudio (já com _preparar_texto_para_audio aplicado)
         emocao: Contexto emocional (chave de EMOTION_TAGS ou texto livre)
 
     Returns:
-        Path do arquivo .mp3 temporário ou None em caso de erro/sem API key.
-        Caller é responsável por deletar o arquivo após uso.
+        bytes do MP3 ou None em caso de erro/sem API key.
     """
     fish_key = _get_fish_key()
     if not fish_key:
-        logger.debug("FISH_API_KEY não configurada — fallback para provider padrão")
+        logger.debug("FISH_API_KEY não configurada — fallback texto puro")
         return None
 
-    # Preparar texto com pronúncia + emoção
+    if _httpx is None:
+        logger.error("httpx não instalado para Fish Audio")
+        return None
+
     texto_preparado = _preparar_texto_fish(texto, emocao)
     voice_id = _get_fish_voice()
 
-    # Tentar SDK primeiro, fallback para API raw
-    audio_bytes = None
-    if _HAS_SDK:
-        audio_bytes = _gerar_via_sdk(texto_preparado, voice_id)
-    if audio_bytes is None:
-        audio_bytes = _gerar_via_api(texto_preparado, voice_id)
+    payload = {
+        "text": texto_preparado,
+        "format": "mp3",
+        "latency": "balanced",
+        "mp3_bitrate": 128,
+    }
+    if voice_id:
+        payload["reference_id"] = voice_id
 
-    if not audio_bytes:
-        logger.warning("Fish Audio: nenhum áudio gerado")
+    try:
+        async with _httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(
+                FISH_API_URL,
+                headers={
+                    "Authorization": f"Bearer {fish_key}",
+                    "Content-Type": "application/json",
+                    "model": FISH_MODEL,
+                },
+                json=payload,
+            )
+            resp.raise_for_status()
+            audio_bytes = resp.content
+
+            if audio_bytes and len(audio_bytes) > 100:
+                logger.info(f"Fish Audio TTS: {len(audio_bytes)} bytes, emocao={emocao or 'nenhuma'}")
+                return audio_bytes
+            else:
+                logger.warning(f"Fish Audio: resposta muito pequena ({len(audio_bytes)} bytes)")
+                return None
+
+    except _httpx.TimeoutException:
+        logger.warning("Fish Audio timeout (30s)")
+        return None
+    except Exception as e:
+        logger.error(f"Erro Fish Audio: {e}")
         return None
 
-    # Salvar em arquivo temporário (mesmo padrão do Grok TTS)
+
+# ============================================================
+# GERAÇÃO TTS — SYNC (compatibilidade com fluxo existente)
+# ============================================================
+def gerar_audio_fish(texto: str, emocao: str = "") -> str | None:
+    """Gera áudio via Fish Audio S2-Pro (sync — compatibilidade).
+    Retorna path do arquivo .mp3 temporário ou None."""
+    import tempfile
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # Já dentro de event loop — criar task
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            audio_bytes = pool.submit(
+                asyncio.run, gerar_audio_fish_async(texto, emocao)
+            ).result(timeout=35)
+    else:
+        audio_bytes = asyncio.run(gerar_audio_fish_async(texto, emocao))
+
+    if not audio_bytes:
+        return None
+
     try:
         tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
         tmp.write(audio_bytes)
         tmp.close()
-        logger.info(f"Fish Audio TTS: {tmp.name} ({len(audio_bytes)} bytes, "
-                     f"emocao={emocao or 'nenhuma'})")
         return tmp.name
     except Exception as e:
         logger.error(f"Erro ao salvar áudio Fish: {e}")

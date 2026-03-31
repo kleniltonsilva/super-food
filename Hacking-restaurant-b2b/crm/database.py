@@ -1443,7 +1443,8 @@ def obter_conversa_wa_por_lead(lead_id: int) -> Optional[dict]:
 def atualizar_conversa_wa(conversa_id: int, **kwargs) -> bool:
     """Atualiza campos da conversa WA."""
     campos_validos = {"status", "intencao_detectada", "handoff_at", "handoff_motivo",
-                      "voz_usada", "tom_usado", "usou_audio"}
+                      "voz_usada", "tom_usado", "usou_audio",
+                      "cache_ids_usados", "intents_usadas"}
     sets = []
     params = []
     for k, v in kwargs.items():
