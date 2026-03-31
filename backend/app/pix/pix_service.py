@@ -235,7 +235,7 @@ async def criar_cobranca_pedido(pedido_id: int, db: Session) -> dict:
     Gera cobranca Pix (QR Code) para um pedido.
 
     - Busca pedido e config Pix do restaurante
-    - Cria cobranca na Woovi com split 100% para subconta do restaurante
+    - Cria cobranca na Woovi com split para subconta do restaurante (valor - taxa 0,80%)
     - Registra PixCobranca no BD
     - Retorna QR code, br_code e dados da cobranca
     """

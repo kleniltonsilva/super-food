@@ -4,7 +4,7 @@ Cliente HTTP assincrono para a API Woovi/OpenPix.
 Suporta sandbox e producao via WOOVI_ENVIRONMENT.
 
 Auth: header Authorization com APP_ID (sem Bearer).
-Split de pagamentos 100% para subconta do restaurante.
+Split de pagamentos para subconta do restaurante (valor - taxa Woovi 0,80%).
 Saque parcial via vault workaround (API so suporta saque total).
 """
 
@@ -64,7 +64,11 @@ class WooviClient:
         client = await self._get_client()
         resp = await client.request(method, path, **kwargs)
         if resp.status_code >= 400:
-            logger.error(f"Woovi {method} {path} -> {resp.status_code}: {resp.text[:500]}")
+            payload_sent = kwargs.get("json", {})
+            logger.error(
+                f"Woovi {method} {path} -> {resp.status_code}: {resp.text[:500]} "
+                f"| payload: {payload_sent}"
+            )
             resp.raise_for_status()
         try:
             return resp.json()
@@ -97,7 +101,17 @@ class WooviClient:
         pix_chave_restaurante: str,
         descricao: str = "",
     ) -> dict:
-        """POST /api/v1/charge - Cobranca com split 100% para subconta do restaurante."""
+        """
+        POST /api/v1/charge - Cobranca com split para subconta do restaurante.
+
+        Woovi exige que o valor do split seja MENOR que o valor da cobranca
+        (a conta principal precisa reter pelo menos a taxa de 0,80%).
+        O split vai para o restaurante; o restante (taxa Woovi) fica na conta Derekh.
+        """
+        # Taxa Woovi: 0,80% do valor, minimo 1 centavo
+        taxa_woovi = max(1, int(valor_centavos * 0.008))
+        split_value = valor_centavos - taxa_woovi
+
         payload = {
             "correlationID": correlation_id,
             "value": valor_centavos,
@@ -105,7 +119,7 @@ class WooviClient:
             "splits": [
                 {
                     "pixKey": pix_chave_restaurante,
-                    "value": valor_centavos,
+                    "value": split_value,
                     "splitType": "SPLIT_SUB_ACCOUNT",
                 }
             ],
