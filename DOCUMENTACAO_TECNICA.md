@@ -243,11 +243,16 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 ### 2.17 Pagamento Pix Online (Woovi/OpenPix)
 - **Adesão com consentimento:** formulário com chave Pix + tipo + aceite de termos
 - **Custo:** 0,80% sobre o valor de cada transação Pix (cobrado pela Woovi) — Derekh não cobra nada
+- **Split de pagamento:** cobrança = valor total; split restaurante = valor - 0,80% (taxa Woovi); restante fica na conta Derekh
 - **Subconta virtual:** restaurante não precisa criar conta Woovi
 - **Dashboard financeiro:** saldo em tempo real, histórico de saques
 - **Saque manual:** com preview de taxa (grátis para saques >= R$500)
 - **Saque automático:** configura valor mínimo para saque automático
 - **Fluxo:** cliente paga Pix → webhook confirma → saldo acumula → restaurante saca
+- **Notificações pós-pagamento (3 canais):**
+  1. **Cliente WhatsApp:** mensagem "Pix confirmado! Pedido #X já foi pra cozinha" via `whatsapp_client` unificado (Meta + Evolution)
+  2. **Admin painel:** WebSocket `pix_confirmado` → queries invalidadas + som "ka-ching" + toast + notificação OS
+  3. **Motoboy:** WebSocket `pix_confirmado` → queries invalidadas + badge verde "PAGO" no card (campo `pix_pago` na API)
 - **Badge nos pedidos:** no painel admin (Pedidos.tsx), pedidos com forma_pagamento PIX exibem badge visual:
   - "Pix Pendente" (amarelo) — pedido pendente aguardando confirmação de pagamento
   - "PIX" (verde) — pedido com pagamento Pix confirmado
