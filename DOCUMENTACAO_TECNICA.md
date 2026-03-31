@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.8 | Última atualização: 30/03/2026
+> Versão 4.0.9 | Última atualização: 31/03/2026
 
 ---
 
@@ -1506,10 +1506,12 @@ O bot roda **integrado ao backend principal** (`superfood-api.fly.dev`), não co
 
 ```
 backend/app/bot/
-├── atendente.py          — Lógica principal (webhook → LLM → resposta)
+├── atendente.py          — Lógica principal (webhook → LLM → resposta) [Evolution + Meta]
+├── whatsapp_client.py    — Cliente unificado Meta/Evolution (despacho por provider)
 ├── context_builder.py    — Prompt em 3 camadas (sistema + restaurante + cliente)
-├── function_calls.py     — 22 funções que o LLM pode chamar
+├── function_calls.py     — 24 funções que o LLM pode chamar
 ├── evolution_client.py   — Client Evolution API (texto/áudio/presença/digitando)
+├── meta_cloud_client.py  — Client Meta Cloud API (templates, redirect, verificação webhook)
 ├── xai_llm.py            — Client xAI Grok (chat completion + function calling)
 ├── xai_tts.py            — Client xAI TTS (gerar áudio com voz)
 ├── groq_stt.py           — Client Groq Whisper STT (transcrever áudio)
@@ -2022,6 +2024,81 @@ Suite automatizada que envia webhooks Evolution e verifica respostas:
 - Qualidade média 4.8/5 avaliada pelo agente simulador
 - P95 resposta: 9.0s | Custo total: $0.44 (100 conversas)
 - 10 categorias × 10 perfis: desconfiado, ja_tem_ifood, sem_dinheiro, ja_tem_sistema, interessado, apressado, técnico, indeciso, agressivo, perfeito
+
+### 17.23 Migração Meta Cloud API — Dual Provider (31/03)
+
+**Decisão:** Migrar o bot humanoide restaurante da Evolution API (Baileys — protocolo não oficial, risco de ban) para Meta Cloud API (API oficial WhatsApp Business). A Evolution permanece funcional para quem ainda usa.
+
+**Arquitetura Dual-Provider:**
+- Campo `whatsapp_provider` no BotConfig: `'meta'` (API oficial) ou `'evolution'` (Baileys)
+- **whatsapp_client.py** — cliente unificado que despacha para Meta ou Evolution automaticamente
+- Restaurantes existentes continuam em `'evolution'` (default) — migração gradual
+
+**Migration 045 — Campos Meta no `bot_config`:**
+
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `whatsapp_provider` | VARCHAR(20) | `'meta'` ou `'evolution'` (default) |
+| `meta_phone_number_id` | VARCHAR(100) | ID do número na Meta |
+| `meta_access_token` | TEXT | System User Token (Bearer) |
+| `meta_waba_id` | VARCHAR(100) | WhatsApp Business Account ID |
+| `meta_app_secret` | VARCHAR(200) | App Secret para validar webhooks |
+| `meta_webhook_verify_token` | VARCHAR(100) | Token verificação GET |
+| Índice: `idx_bot_config_meta_phone` | | Lookup rápido por phone_number_id |
+
+**Arquivos criados/modificados:**
+
+| Arquivo | Ação |
+|---------|------|
+| `backend/app/bot/whatsapp_client.py` | **NOVO** — Cliente unificado Meta/Evolution (~320 linhas) |
+| `migrations/versions/045_bot_meta_provider.py` | **NOVO** — 6 colunas + índice |
+| `tests/test_meta_migration.py` | **NOVO** — 21 testes (envio, áudio, webhook, signature, dual-provider) |
+| `database/models.py` | +6 campos BotConfig |
+| `backend/app/bot/atendente.py` | +`processar_webhook_meta()` (Evolution intocado) |
+| `backend/app/bot/workers.py` | Workers usam `whatsapp_client` unificado |
+| `backend/app/routers/bot_whatsapp.py` | Webhook Meta completo + config campos Meta |
+| `Dockerfile` | +ffmpeg (conversão áudio MP3→OGG/Opus) |
+
+**Fluxo Meta Cloud API:**
+```
+Mensagem WhatsApp → Meta Cloud API webhook
+    |
+    v
+POST /webhooks/meta-whatsapp (valida X-Hub-Signature-256)
+    |
+    v
+Identifica restaurante por meta_phone_number_id
+    |
+    v
+processar_webhook_meta(payload) → mark as read → STT/texto → LLM loop → TTS
+    |
+    v
+Resposta via Graph API v21.0:
+  - Texto: POST /{phone_number_id}/messages type=text
+  - Áudio PTT: MP3→OGG/Opus (ffmpeg) → upload media → send voice:true
+  - Typing: POST type=typing_indicator (25s)
+```
+
+**Conversão Áudio PTT (Meta):**
+- xAI TTS gera MP3 → `_mp3_to_ogg_opus()` converte via ffmpeg subprocess (stdin/stdout, timeout 15s)
+- Meta exige OGG/Opus para bolinha verde (`voice: true`)
+- Se ffmpeg falhar: graceful fallback para texto
+
+**Webhook Dual-Mode:**
+- Mesmo endpoint `/webhooks/meta-whatsapp` serve 2 modos:
+  - **Humanoide**: BotConfig com `whatsapp_provider='meta'` → processamento completo via `processar_webhook_meta()`
+  - **Legacy redirect**: BotMetaGateway (migration 044) → redireciona para Evolution
+
+**Workers:**
+- Todos os 6 workers usam `whatsapp_client` unificado (despacha automaticamente)
+- Worker 6 (Health Monitor): skip para restaurantes Meta (API oficial = 99.9% uptime)
+- Helper `_config_pode_enviar(config)`: valida credenciais antes de enviar
+
+**Testes (21 cenários):**
+- Despacho Meta/Evolution, áudio PTT com conversão OGG, typing, mark read, download 2-step
+- Webhook: texto, áudio, status updates (ignorados), sem mensagens
+- Validação signature HMAC-SHA256, migration 045, dual-provider simultâneo
+- Graceful: ffmpeg não disponível → skip áudio, audio fallback → texto
 
 ---
 

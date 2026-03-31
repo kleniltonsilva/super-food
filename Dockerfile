@@ -26,7 +26,7 @@ WORKDIR /app
 
 # Instala dependencias do sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev curl && \
+    libpq-dev curl ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Copia e instala dependencias Python

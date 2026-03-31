@@ -25,7 +25,9 @@ if not EVOLUTION_WEBHOOK_SECRET:
 # Campos que o Super Admin pode alterar via PUT /api/admin/bot/instancia/{id}
 ADMIN_BOT_CAMPOS_PERMITIDOS = {
     "bot_ativo", "nome_atendente", "tom_personalidade", "voz_tts", "idioma",
-    "whatsapp_numero", "evolution_instance", "evolution_api_url", "evolution_api_key",
+    "whatsapp_numero", "whatsapp_provider",
+    "evolution_instance", "evolution_api_url", "evolution_api_key",
+    "meta_phone_number_id", "meta_access_token", "meta_waba_id", "meta_app_secret", "meta_webhook_verify_token",
     "pode_criar_pedido", "pode_alterar_pedido", "pode_cancelar_pedido",
     "pode_dar_desconto", "desconto_maximo_pct",
     "pode_reembolsar", "reembolso_maximo_valor",
@@ -66,6 +68,215 @@ async def webhook_evolution(request: Request):
     return JSONResponse({"status": "ok", **resultado})
 
 
+# ==================== WEBHOOK META CLOUD API (público) ====================
+
+META_APP_SECRET = os.getenv("META_APP_SECRET", "")
+
+@router.get("/webhooks/meta-whatsapp")
+async def webhook_meta_verify(request: Request):
+    """Verificação de webhook Meta (challenge/response).
+    Verifica token contra BotConfig (provider=meta) e BotMetaGateway (legado)."""
+    mode = request.query_params.get("hub.mode", "")
+    token = request.query_params.get("hub.verify_token", "")
+    challenge = request.query_params.get("hub.challenge", "")
+
+    if not mode or not token or not challenge:
+        return JSONResponse(status_code=400, content={"error": "missing params"})
+
+    from ..bot.meta_cloud_client import verificar_webhook
+
+    db = database.SessionLocal()
+    try:
+        # 1. Verificar BotConfig com provider='meta' (nova arquitetura)
+        meta_configs = db.query(models.BotConfig).filter(
+            models.BotConfig.whatsapp_provider == "meta",
+            models.BotConfig.bot_ativo == True,
+            models.BotConfig.meta_webhook_verify_token.isnot(None),
+        ).all()
+        for cfg in meta_configs:
+            result = verificar_webhook(mode, token, challenge, cfg.meta_webhook_verify_token)
+            if result:
+                return JSONResponse(content=int(result), media_type="text/plain")
+
+        # 2. Verificar BotMetaGateway (legado — redirect mode)
+        gateways = db.query(models.BotMetaGateway).filter(
+            models.BotMetaGateway.ativo == True,
+        ).all()
+        for gw in gateways:
+            result = verificar_webhook(mode, token, challenge, gw.webhook_verify_token)
+            if result:
+                return JSONResponse(content=int(result), media_type="text/plain")
+    finally:
+        db.close()
+
+    return JSONResponse(status_code=403, content={"error": "verification failed"})
+
+
+@router.post("/webhooks/meta-whatsapp")
+async def webhook_meta_receive(request: Request):
+    """Recebe mensagens via Meta Cloud API.
+    Identifica restaurante por phone_number_id:
+    - Se BotConfig com provider='meta' → processa como humanoide (IA responde)
+    - Se BotMetaGateway → redirect para número ativo (legado)
+    """
+    body = await request.body()
+
+    # Validar assinatura HMAC-SHA256 (busca app_secret do BotConfig ou env)
+    sig = request.headers.get("X-Hub-Signature-256", "")
+    if sig:
+        # Tentar validar contra BotConfigs Meta
+        assinatura_valida = False
+        db_check = database.SessionLocal()
+        try:
+            meta_configs = db_check.query(models.BotConfig).filter(
+                models.BotConfig.whatsapp_provider == "meta",
+                models.BotConfig.meta_app_secret.isnot(None),
+            ).all()
+            from ..bot.meta_cloud_client import validar_webhook_signature
+            for cfg in meta_configs:
+                if validar_webhook_signature(body, sig, cfg.meta_app_secret):
+                    assinatura_valida = True
+                    break
+            # Fallback: env var global
+            if not assinatura_valida and META_APP_SECRET:
+                assinatura_valida = validar_webhook_signature(body, sig, META_APP_SECRET)
+        finally:
+            db_check.close()
+
+        if not assinatura_valida:
+            return JSONResponse(status_code=401, content={"error": "invalid signature"})
+    elif META_APP_SECRET:
+        # Sem header de assinatura mas APP_SECRET configurado → rejeitar em prod
+        logger.warning("Meta webhook sem X-Hub-Signature-256")
+
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"status": "ok"})
+
+    # Determinar modo: humanoide (BotConfig meta) ou redirect (BotMetaGateway legado)
+    import asyncio
+    phone_number_id = _extrair_phone_number_id(payload)
+
+    if phone_number_id:
+        db_route = database.SessionLocal()
+        try:
+            # Verificar se é humanoide (BotConfig com provider='meta')
+            bot_meta = db_route.query(models.BotConfig).filter(
+                models.BotConfig.meta_phone_number_id == phone_number_id,
+                models.BotConfig.whatsapp_provider == "meta",
+                models.BotConfig.bot_ativo == True,
+            ).first()
+
+            if bot_meta:
+                # Processar como humanoide IA
+                from ..bot.atendente import processar_webhook_meta
+                asyncio.create_task(processar_webhook_meta(payload))
+                return JSONResponse({"status": "ok"})
+        finally:
+            db_route.close()
+
+    # Fallback: redirect via BotMetaGateway (legado)
+    asyncio.create_task(_processar_meta_webhook_legado(payload))
+    return JSONResponse({"status": "ok"})
+
+
+def _extrair_phone_number_id(payload: dict) -> Optional[str]:
+    """Extrai phone_number_id do payload Meta webhook."""
+    entries = payload.get("entry", [])
+    for entry in entries:
+        changes = entry.get("changes", [])
+        for change in changes:
+            value = change.get("value", {})
+            metadata = value.get("metadata", {})
+            pid = metadata.get("phone_number_id")
+            if pid:
+                return pid
+    return None
+
+
+async def _processar_meta_webhook_legado(payload: dict):
+    """Processa webhook Meta legado: identifica restaurante via BotMetaGateway → responde com redirect."""
+    try:
+        entry = payload.get("entry", [])
+        if not entry:
+            return
+
+        for e in entry:
+            changes = e.get("changes", [])
+            for change in changes:
+                value = change.get("value", {})
+                if value.get("messaging_product") != "whatsapp":
+                    continue
+
+                messages = value.get("messages", [])
+                metadata = value.get("metadata", {})
+                phone_number_id = metadata.get("phone_number_id", "")
+
+                if not phone_number_id or not messages:
+                    continue
+
+                db = database.SessionLocal()
+                try:
+                    gateway = db.query(models.BotMetaGateway).filter(
+                        models.BotMetaGateway.phone_number_id == phone_number_id,
+                        models.BotMetaGateway.ativo == True,
+                    ).first()
+
+                    if not gateway:
+                        logger.debug(f"Meta webhook legado: gateway não encontrado para {phone_number_id}")
+                        continue
+
+                    rest_id = gateway.restaurante_id
+
+                    restaurante = db.query(models.Restaurante).filter(
+                        models.Restaurante.id == rest_id,
+                    ).first()
+
+                    from ..bot.phone_pool import get_active_number
+                    pool_entry = get_active_number(db, rest_id)
+
+                    bot_config = db.query(models.BotConfig).filter(
+                        models.BotConfig.restaurante_id == rest_id,
+                        models.BotConfig.bot_ativo == True,
+                    ).first()
+
+                    numero_ativo = None
+                    if pool_entry:
+                        numero_ativo = pool_entry.whatsapp_numero
+                    elif bot_config:
+                        numero_ativo = bot_config.whatsapp_numero
+
+                    if not numero_ativo:
+                        logger.warning(f"Meta webhook legado: nenhum número ativo para rest={rest_id}")
+                        continue
+
+                    nome_rest = restaurante.nome_fantasia if restaurante else "Restaurante"
+
+                    from ..bot import meta_cloud_client
+                    for msg in messages:
+                        numero_cliente = msg.get("from", "")
+                        if not numero_cliente:
+                            continue
+
+                        try:
+                            await meta_cloud_client.enviar_redirect(
+                                numero_cliente=numero_cliente,
+                                phone_number_id=phone_number_id,
+                                access_token=gateway.access_token,
+                                nome_restaurante=nome_rest,
+                                numero_ativo=numero_ativo,
+                                template_name=gateway.template_redirect_nome or "redirect_atendimento",
+                            )
+                        except Exception as send_err:
+                            logger.error(f"Meta redirect falhou para {numero_cliente[:8]}***: {send_err}")
+                finally:
+                    db.close()
+
+    except Exception as e:
+        logger.error(f"Erro processando Meta webhook legado: {e}", exc_info=True)
+
+
 # ==================== ENDPOINTS PAINEL RESTAURANTE ====================
 
 @router.get("/painel/bot/config")
@@ -85,12 +296,15 @@ def get_bot_config(
     return {
         "configurado": True,
         "bot_ativo": config.bot_ativo,
+        "whatsapp_provider": getattr(config, "whatsapp_provider", "evolution") or "evolution",
         "nome_atendente": config.nome_atendente,
         "tom_personalidade": config.tom_personalidade,
         "voz_tts": config.voz_tts,
         "idioma": config.idioma,
         "whatsapp_numero": config.whatsapp_numero,
         "evolution_instance": config.evolution_instance,
+        # Meta Cloud API (só visível se provider='meta')
+        "meta_phone_number_id": getattr(config, "meta_phone_number_id", None),
         # Capacidades
         "pode_criar_pedido": config.pode_criar_pedido,
         "pode_alterar_pedido": config.pode_alterar_pedido,
@@ -196,8 +410,13 @@ def ativar_bot(
     if not config:
         raise HTTPException(status_code=400, detail="Bot não configurado. Solicite ativação pelo Super Admin.")
 
-    if not config.evolution_instance or not config.evolution_api_url:
-        raise HTTPException(status_code=400, detail="Instância Evolution não configurada. Contate o suporte.")
+    provider = getattr(config, "whatsapp_provider", "") or "evolution"
+    if provider == "meta":
+        if not config.meta_phone_number_id or not config.meta_access_token:
+            raise HTTPException(status_code=400, detail="Meta Cloud API não configurada. Contate o suporte.")
+    else:
+        if not config.evolution_instance or not config.evolution_api_url:
+            raise HTTPException(status_code=400, detail="Instância Evolution não configurada. Contate o suporte.")
 
     config.bot_ativo = True
     config.atualizado_em = datetime.utcnow()
@@ -355,18 +574,21 @@ async def enviar_mensagem_manual(
     config = db.query(models.BotConfig).filter(
         models.BotConfig.restaurante_id == restaurante.id,
     ).first()
-    if not config or not config.evolution_instance:
-        raise HTTPException(status_code=400, detail="Bot não configurado com Evolution API")
+    if not config:
+        raise HTTPException(status_code=400, detail="Bot não configurado")
 
-    # Enviar via Evolution
-    from ..bot.evolution_client import enviar_texto
+    provider = getattr(config, "whatsapp_provider", "") or "evolution"
+    if provider == "meta":
+        if not config.meta_phone_number_id or not config.meta_access_token:
+            raise HTTPException(status_code=400, detail="Meta Cloud API não configurada")
+    else:
+        if not config.evolution_instance:
+            raise HTTPException(status_code=400, detail="Instância Evolution não configurada")
+
+    # Enviar via cliente unificado (Meta ou Evolution)
+    from ..bot import whatsapp_client as wa
     try:
-        await enviar_texto(
-            conversa.telefone, texto,
-            config.evolution_instance,
-            config.evolution_api_url,
-            config.evolution_api_key,
-        )
+        await wa.enviar_texto(conversa.telefone, texto, config)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao enviar: {e}")
 
@@ -441,7 +663,16 @@ async def recusar_handoff(
         models.BotConfig.restaurante_id == restaurante.id,
     ).first()
 
-    if config and config.evolution_instance:
+    # Verificar se config tem provider configurado
+    can_send = False
+    if config:
+        provider = getattr(config, "whatsapp_provider", "") or "evolution"
+        if provider == "meta":
+            can_send = bool(config.meta_phone_number_id and config.meta_access_token)
+        else:
+            can_send = bool(config.evolution_instance)
+
+    if config and can_send:
         telefone_rest = restaurante.telefone or ""
         nome_atendente = config.nome_atendente or "assistente"
         mensagem = (
@@ -452,14 +683,9 @@ async def recusar_handoff(
             mensagem += f": {telefone_rest}"
         mensagem += ". Enquanto isso, posso continuar te ajudando por aqui!"
 
-        from ..bot.evolution_client import enviar_texto
+        from ..bot import whatsapp_client as wa
         try:
-            await enviar_texto(
-                conversa.telefone, mensagem,
-                config.evolution_instance,
-                config.evolution_api_url,
-                config.evolution_api_key,
-            )
+            await wa.enviar_texto(conversa.telefone, mensagem, config)
             # Registrar mensagem
             msg = models.BotMensagem(
                 conversa_id=conversa.id,
@@ -950,16 +1176,14 @@ async def criar_repescagem_em_massa(
 
         status_envio = "cupom_criado"
 
-        # Enviar via WhatsApp
+        # Enviar via WhatsApp (unificado: Meta ou Evolution)
         if canal in ("whatsapp", "ambos") and config and config.bot_ativo and cliente.telefone:
             try:
-                from ..bot.evolution_client import enviar_texto
-                await enviar_texto(
+                from ..bot import whatsapp_client as wa
+                await wa.enviar_texto(
                     numero=cliente.telefone,
                     texto=mensagem,
-                    instance=config.evolution_instance,
-                    api_url=config.evolution_api_url,
-                    api_key=config.evolution_api_key,
+                    bot_config=config,
                 )
                 status_envio = "whatsapp_enviado"
             except Exception as e:
@@ -1142,8 +1366,10 @@ def listar_instancias_bot(
             "restaurante_id": c.restaurante_id,
             "restaurante_nome": rest.nome_fantasia if rest else "?",
             "bot_ativo": c.bot_ativo,
+            "whatsapp_provider": getattr(c, "whatsapp_provider", "evolution") or "evolution",
             "whatsapp_numero": c.whatsapp_numero,
             "evolution_instance": c.evolution_instance,
+            "meta_phone_number_id": getattr(c, "meta_phone_number_id", None),
             "nome_atendente": c.nome_atendente,
             "tokens_usados_hoje": c.tokens_usados_hoje,
             "criado_em": c.criado_em.isoformat() if c.criado_em else None,
@@ -1172,11 +1398,16 @@ async def criar_instancia_bot(
     ).first()
 
     if existente:
-        # Atualizar Evolution config
+        # Atualizar config (Evolution ou Meta)
+        existente.whatsapp_provider = body.get("whatsapp_provider", existente.whatsapp_provider or "evolution")
         existente.evolution_instance = body.get("evolution_instance", existente.evolution_instance)
         existente.evolution_api_url = body.get("evolution_api_url", existente.evolution_api_url)
         existente.evolution_api_key = body.get("evolution_api_key", existente.evolution_api_key)
         existente.whatsapp_numero = body.get("whatsapp_numero", existente.whatsapp_numero)
+        # Meta Cloud API fields
+        for meta_field in ("meta_phone_number_id", "meta_access_token", "meta_waba_id", "meta_app_secret", "meta_webhook_verify_token"):
+            if meta_field in body:
+                setattr(existente, meta_field, body[meta_field])
         existente.atualizado_em = datetime.utcnow()
         db.commit()
         return {"sucesso": True, "id": existente.id, "mensagem": "Instância atualizada"}
@@ -1185,6 +1416,7 @@ async def criar_instancia_bot(
     config = models.BotConfig(
         restaurante_id=restaurante_id,
         bot_ativo=body.get("bot_ativo", False),
+        whatsapp_provider=body.get("whatsapp_provider", "evolution"),
         nome_atendente=body.get("nome_atendente", "Bia"),
         tom_personalidade=body.get("tom_personalidade", "informal amigável"),
         voz_tts=body.get("voz_tts", "ara"),
@@ -1192,6 +1424,12 @@ async def criar_instancia_bot(
         evolution_api_url=body.get("evolution_api_url"),
         evolution_api_key=body.get("evolution_api_key"),
         whatsapp_numero=body.get("whatsapp_numero"),
+        # Meta Cloud API
+        meta_phone_number_id=body.get("meta_phone_number_id"),
+        meta_access_token=body.get("meta_access_token"),
+        meta_waba_id=body.get("meta_waba_id"),
+        meta_app_secret=body.get("meta_app_secret"),
+        meta_webhook_verify_token=body.get("meta_webhook_verify_token"),
     )
     db.add(config)
     db.commit()
@@ -1391,3 +1629,319 @@ def deletar_instancia_bot(
     db.commit()
 
     return {"sucesso": True, "mensagem": "Instância deletada"}
+
+
+# ==================== POOL DE NÚMEROS — SUPER ADMIN ====================
+
+@router.get("/api/admin/bot/{rest_id}/pool")
+def listar_pool(
+    rest_id: int,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Lista pool de números WhatsApp de um restaurante (Super Admin)."""
+    from ..bot.phone_pool import get_pool_status
+    return get_pool_status(db, rest_id)
+
+
+@router.post("/api/admin/bot/{rest_id}/pool")
+async def adicionar_numero_pool(
+    rest_id: int,
+    request: Request,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Adiciona número ao pool de um restaurante (Super Admin)."""
+    data = await request.json()
+
+    # Validações
+    if not data.get("evolution_instance"):
+        raise HTTPException(400, "evolution_instance é obrigatório")
+    if not data.get("whatsapp_numero"):
+        raise HTTPException(400, "whatsapp_numero é obrigatório")
+    if not data.get("evolution_api_url"):
+        raise HTTPException(400, "evolution_api_url é obrigatório")
+    if not data.get("evolution_api_key"):
+        raise HTTPException(400, "evolution_api_key é obrigatório")
+
+    # Verificar se instance já existe
+    existe = db.query(models.BotPhonePool).filter(
+        models.BotPhonePool.evolution_instance == data["evolution_instance"],
+    ).first()
+    if existe:
+        raise HTTPException(400, f"Instância '{data['evolution_instance']}' já existe no pool")
+
+    # Calcular próxima posição na fila
+    max_pos = db.query(func.max(models.BotPhonePool.posicao_fila)).filter(
+        models.BotPhonePool.restaurante_id == rest_id,
+    ).scalar() or -1
+
+    status = data.get("status", "em_aquecimento")
+    if status not in ("standby", "em_aquecimento", "ativo"):
+        status = "em_aquecimento"
+
+    entry = models.BotPhonePool(
+        restaurante_id=rest_id,
+        evolution_instance=data["evolution_instance"],
+        evolution_api_url=data["evolution_api_url"],
+        evolution_api_key=data["evolution_api_key"],
+        whatsapp_numero=data["whatsapp_numero"],
+        status=status,
+        posicao_fila=max_pos + 1,
+        aquecimento_inicio=datetime.utcnow() if status == "em_aquecimento" else None,
+        ativado_em=datetime.utcnow() if status == "ativo" else None,
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+
+    return {
+        "sucesso": True,
+        "id": entry.id,
+        "status": entry.status,
+        "posicao_fila": entry.posicao_fila,
+    }
+
+
+@router.put("/api/admin/bot/pool/{pool_id}")
+async def atualizar_pool_entry(
+    pool_id: int,
+    request: Request,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Atualiza entry do pool (Super Admin)."""
+    entry = db.query(models.BotPhonePool).filter(models.BotPhonePool.id == pool_id).first()
+    if not entry:
+        raise HTTPException(404, "Entry não encontrada")
+
+    data = await request.json()
+    campos_permitidos = {
+        "evolution_instance", "evolution_api_url", "evolution_api_key",
+        "whatsapp_numero", "status", "posicao_fila",
+    }
+    for campo, valor in data.items():
+        if campo in campos_permitidos:
+            if campo == "status" and valor == "ativo":
+                entry.ativado_em = datetime.utcnow()
+            elif campo == "status" and valor == "em_aquecimento":
+                entry.aquecimento_inicio = datetime.utcnow()
+                entry.aquecimento_msgs_hoje = 0
+            setattr(entry, campo, valor)
+
+    entry.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {"sucesso": True, "id": entry.id, "status": entry.status}
+
+
+@router.delete("/api/admin/bot/pool/{pool_id}")
+def deletar_pool_entry(
+    pool_id: int,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Remove número do pool (Super Admin)."""
+    entry = db.query(models.BotPhonePool).filter(models.BotPhonePool.id == pool_id).first()
+    if not entry:
+        raise HTTPException(404, "Entry não encontrada")
+    if entry.status == "ativo":
+        raise HTTPException(400, "Não é possível remover o número ativo. Rotacione primeiro.")
+
+    db.delete(entry)
+    db.commit()
+    return {"sucesso": True}
+
+
+@router.post("/api/admin/bot/{rest_id}/pool/rotacionar")
+async def rotacionar_numero_manual(
+    rest_id: int,
+    request: Request,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Rotação manual de número (Super Admin)."""
+    data = await request.json()
+    motivo = data.get("motivo", "rotacao_manual")
+
+    from ..bot.phone_pool import rotate_number, recover_conversations
+    new_entry = rotate_number(db, rest_id, motivo, data.get("detalhes", ""))
+
+    if not new_entry:
+        raise HTTPException(400, "Sem números standby disponíveis no pool")
+
+    # Recuperar conversas afetadas
+    bot_config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == rest_id,
+    ).first()
+    notificados = 0
+    if bot_config and data.get("notificar_clientes", True):
+        old_number = data.get("numero_anterior") or ""
+        notificados = await recover_conversations(db, rest_id, old_number, new_entry, bot_config)
+
+    return {
+        "sucesso": True,
+        "numero_novo": new_entry.whatsapp_numero,
+        "instance_nova": new_entry.evolution_instance,
+        "clientes_notificados": notificados,
+    }
+
+
+@router.get("/api/admin/bot/{rest_id}/pool/log")
+def listar_log_rotacoes(
+    rest_id: int,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+    limit: int = 50,
+):
+    """Histórico de rotações de número (Super Admin)."""
+    logs = db.query(models.BotRotacaoLog).filter(
+        models.BotRotacaoLog.restaurante_id == rest_id,
+    ).order_by(models.BotRotacaoLog.criado_em.desc()).limit(limit).all()
+
+    return [{
+        "id": log.id,
+        "numero_anterior": log.numero_anterior,
+        "numero_novo": log.numero_novo,
+        "instance_anterior": log.instance_anterior,
+        "instance_nova": log.instance_nova,
+        "motivo": log.motivo,
+        "detalhes": log.detalhes,
+        "conversas_afetadas": log.conversas_afetadas,
+        "criado_em": log.criado_em.isoformat() if log.criado_em else None,
+    } for log in logs]
+
+
+# ==================== POOL DE NÚMEROS — RESTAURANTE (read-only) ====================
+
+@router.get("/painel/bot/pool/status")
+def get_pool_status_restaurante(
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Status do pool de números para o restaurante (read-only)."""
+    from ..bot.phone_pool import get_pool_status
+    status = get_pool_status(db, restaurante.id)
+
+    # Sanitizar: restaurante não deve ver api_keys
+    for numero in status.get("numeros", []):
+        numero.pop("evolution_api_key", None)
+        numero.pop("evolution_api_url", None)
+        numero.pop("evolution_instance", None)
+
+    return status
+
+
+# ==================== META GATEWAY — SUPER ADMIN ====================
+
+@router.get("/api/admin/bot/{rest_id}/meta-gateway")
+def get_meta_gateway(
+    rest_id: int,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Retorna configuração do gateway Meta de um restaurante (Super Admin)."""
+    gw = db.query(models.BotMetaGateway).filter(
+        models.BotMetaGateway.restaurante_id == rest_id,
+    ).first()
+    if not gw:
+        return {"configurado": False}
+
+    return {
+        "configurado": True,
+        "id": gw.id,
+        "phone_number_id": gw.phone_number_id,
+        "waba_id": gw.waba_id,
+        "whatsapp_numero": gw.whatsapp_numero,
+        "template_redirect_nome": gw.template_redirect_nome,
+        "template_recovery_nome": gw.template_recovery_nome,
+        "ativo": gw.ativo,
+        "criado_em": gw.criado_em.isoformat() if gw.criado_em else None,
+    }
+
+
+@router.post("/api/admin/bot/{rest_id}/meta-gateway")
+async def criar_meta_gateway(
+    rest_id: int,
+    request: Request,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Configura gateway Meta para um restaurante (Super Admin)."""
+    data = await request.json()
+
+    required = ["phone_number_id", "access_token", "whatsapp_numero", "webhook_verify_token"]
+    for field in required:
+        if not data.get(field):
+            raise HTTPException(400, f"{field} é obrigatório")
+
+    # Verificar se já existe
+    existing = db.query(models.BotMetaGateway).filter(
+        models.BotMetaGateway.restaurante_id == rest_id,
+    ).first()
+    if existing:
+        raise HTTPException(400, "Gateway Meta já configurado para este restaurante. Use PUT para atualizar.")
+
+    gw = models.BotMetaGateway(
+        restaurante_id=rest_id,
+        phone_number_id=data["phone_number_id"],
+        access_token=data["access_token"],
+        waba_id=data.get("waba_id"),
+        whatsapp_numero=data["whatsapp_numero"],
+        webhook_verify_token=data["webhook_verify_token"],
+        template_redirect_nome=data.get("template_redirect_nome", "redirect_atendimento"),
+        template_recovery_nome=data.get("template_recovery_nome", "numero_atualizado"),
+    )
+    db.add(gw)
+    db.commit()
+    db.refresh(gw)
+
+    return {"sucesso": True, "id": gw.id}
+
+
+@router.put("/api/admin/bot/{rest_id}/meta-gateway")
+async def atualizar_meta_gateway(
+    rest_id: int,
+    request: Request,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Atualiza gateway Meta (Super Admin)."""
+    gw = db.query(models.BotMetaGateway).filter(
+        models.BotMetaGateway.restaurante_id == rest_id,
+    ).first()
+    if not gw:
+        raise HTTPException(404, "Gateway Meta não encontrado")
+
+    data = await request.json()
+    campos_permitidos = {
+        "phone_number_id", "access_token", "waba_id", "whatsapp_numero",
+        "webhook_verify_token", "template_redirect_nome", "template_recovery_nome", "ativo",
+    }
+    for campo, valor in data.items():
+        if campo in campos_permitidos:
+            setattr(gw, campo, valor)
+
+    gw.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {"sucesso": True}
+
+
+@router.delete("/api/admin/bot/{rest_id}/meta-gateway")
+def deletar_meta_gateway(
+    rest_id: int,
+    admin: models.SuperAdmin = Depends(get_current_admin),
+    db: Session = Depends(database.get_db),
+):
+    """Remove gateway Meta (Super Admin)."""
+    gw = db.query(models.BotMetaGateway).filter(
+        models.BotMetaGateway.restaurante_id == rest_id,
+    ).first()
+    if not gw:
+        raise HTTPException(404, "Gateway Meta não encontrado")
+
+    db.delete(gw)
+    db.commit()
+    return {"sucesso": True}

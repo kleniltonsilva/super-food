@@ -14,12 +14,14 @@ from sqlalchemy.orm import Session
 from .. import models
 from ..database import SessionLocal
 from . import evolution_client, groq_stt, xai_tts, xai_llm
+from . import whatsapp_client as _wa
 try:
     from . import fish_tts as _fish_tts
 except ImportError:
     _fish_tts = None
 from .context_builder import build_system_prompt, build_restaurant_context, build_client_context, build_conversation_history
 from .function_calls import TOOLS, executar_funcao
+from . import phone_pool as _phone_pool
 
 logger = logging.getLogger("superfood.bot.atendente")
 
@@ -171,6 +173,399 @@ async def processar_webhook(payload: dict) -> dict:
     return {"status": "processing"}
 
 
+async def processar_webhook_meta(payload: dict) -> dict:
+    """Processa webhook da Meta Cloud API. Ponto de entrada para provider 'meta'.
+    Extrai mensagens do payload Meta e despacha para _processar_mensagem_meta()."""
+    entries = payload.get("entry", [])
+    if not entries:
+        return {"status": "ignored", "reason": "no_entry"}
+
+    for entry in entries:
+        changes = entry.get("changes", [])
+        for change in changes:
+            value = change.get("value", {})
+            if value.get("messaging_product") != "whatsapp":
+                continue
+
+            # Ignorar status updates (delivered, read, etc.)
+            statuses = value.get("statuses")
+            if statuses:
+                continue
+
+            messages = value.get("messages", [])
+            metadata = value.get("metadata", {})
+            phone_number_id = metadata.get("phone_number_id", "")
+
+            if not phone_number_id or not messages:
+                continue
+
+            for msg in messages:
+                numero = msg.get("from", "")
+                msg_id = msg.get("id", "")
+                msg_type = msg.get("type", "")
+
+                if not numero or not msg_id:
+                    continue
+
+                # Dedup
+                if msg_id in _processed_msg_ids:
+                    continue
+                _processed_msg_ids[msg_id] = time.time()
+                _limpar_cache_dedup()
+                _limpar_cache_locks()
+
+                # Extrair texto ou áudio
+                texto = ""
+                audio_meta = None
+
+                if msg_type == "text":
+                    texto = msg.get("text", {}).get("body", "")
+                elif msg_type == "interactive":
+                    # Botão interativo ou lista
+                    interactive = msg.get("interactive", {})
+                    btn_reply = interactive.get("button_reply", {})
+                    list_reply = interactive.get("list_reply", {})
+                    texto = btn_reply.get("title", "") or list_reply.get("title", "")
+                elif msg_type == "audio":
+                    audio_meta = msg.get("audio", {})
+                else:
+                    # image, video, document, location, etc. → ignorar
+                    continue
+
+                if not texto and not audio_meta:
+                    continue
+
+                # Processar em background
+                asyncio.create_task(
+                    _processar_mensagem_meta(numero, texto, audio_meta, msg_id, phone_number_id)
+                )
+
+    return {"status": "processing"}
+
+
+async def _processar_mensagem_meta(
+    numero: str,
+    texto: str,
+    audio_meta: dict | None,
+    msg_id: str,
+    phone_number_id: str,
+):
+    """Processa mensagem Meta em background. Identifica restaurante por phone_number_id."""
+    # Anti-spam lock
+    agora = time.time()
+    if numero in _processing_locks and (agora - _processing_locks[numero]) < _LOCK_TIMEOUT:
+        logger.debug(f"Lock ativo para {numero[:8]}***, ignorando (Meta)")
+        return
+    _processing_locks[numero] = agora
+
+    db = SessionLocal()
+    try:
+        # 1. Identificar restaurante pelo meta_phone_number_id
+        bot_config = db.query(models.BotConfig).filter(
+            models.BotConfig.meta_phone_number_id == phone_number_id,
+            models.BotConfig.bot_ativo == True,
+        ).first()
+
+        if not bot_config:
+            logger.debug(f"Bot Meta não encontrado para phone_number_id={phone_number_id}")
+            return
+
+        restaurante_id = bot_config.restaurante_id
+
+        # 1.5. Mark as read imediatamente
+        await _wa.marcar_lida(msg_id, bot_config)
+
+        # 2. Transcrever áudio se necessário
+        if audio_meta and bot_config.stt_ativo:
+            media_id = audio_meta.get("id", "")
+            if media_id:
+                audio_data = await _wa.baixar_audio(media_id, bot_config)
+                if audio_data:
+                    resultado_stt = await groq_stt.transcrever_audio(
+                        audio_data["base64"],
+                        bot_config.idioma[:2] if bot_config.idioma else "pt",
+                    )
+                    texto = resultado_stt.get("texto", "")
+                    duracao = resultado_stt.get("duracao_seg", 5)
+                    await asyncio.sleep(min(duracao / 1.5, 10))
+
+        if not texto:
+            return
+
+        # 3. Buscar ou criar conversa (pool_entry=None para Meta — sem pool)
+        conversa = _get_or_create_conversa(db, restaurante_id, numero, pool_entry=None, bot_config=bot_config)
+
+        # 3.5 Se conversa em handoff, apenas registrar
+        if conversa.status == "handoff":
+            msg_recebida = models.BotMensagem(
+                conversa_id=conversa.id,
+                direcao="recebida",
+                tipo="audio" if audio_meta else "texto",
+                conteudo=texto,
+                duracao_audio_seg=audio_meta.get("duration") if audio_meta else None,
+            )
+            db.add(msg_recebida)
+            conversa.msgs_recebidas = (conversa.msgs_recebidas or 0) + 1
+            conversa.atualizado_em = datetime.utcnow()
+            db.commit()
+            logger.info(f"Conversa {conversa.id} em handoff (Meta) — msg registrada, bot não responde")
+            return
+
+        # 4. Registrar mensagem recebida
+        msg_recebida = models.BotMensagem(
+            conversa_id=conversa.id,
+            direcao="recebida",
+            tipo="audio" if audio_meta else "texto",
+            conteudo=texto,
+            duracao_audio_seg=audio_meta.get("duration") if audio_meta else None,
+        )
+        db.add(msg_recebida)
+        conversa.msgs_recebidas = (conversa.msgs_recebidas or 0) + 1
+        if audio_meta:
+            conversa.usou_audio = True
+        db.flush()
+
+        # 5. Buscar cliente
+        cliente = db.query(models.Cliente).filter(
+            models.Cliente.restaurante_id == restaurante_id,
+            models.Cliente.telefone.like(f"%{numero[-8:]}"),
+        ).first()
+        if cliente:
+            conversa.cliente_id = cliente.id
+            conversa.nome_cliente = cliente.nome
+
+        # 6. Montar contexto 3 camadas
+        system_prompt = build_system_prompt(bot_config)
+        restaurant_context = build_restaurant_context(db, restaurante_id)
+        client_context = build_client_context(db, restaurante_id, numero, conversa, cliente)
+
+        # 7. Montar mensagens para o LLM
+        messages = [
+            {"role": "system", "content": f"{system_prompt}\n\n{restaurant_context}\n\n{client_context}"},
+        ]
+        history = build_conversation_history(db, conversa.id, limit=15)
+        messages.extend(history)
+        messages.append({"role": "user", "content": texto})
+
+        # 7.5. Typing indicator
+        await _wa.enviar_typing(numero, bot_config)
+
+        # 8. Chamar LLM com function calling (loop até 5 iterações)
+        resposta_final = None
+        total_tokens_in = 0
+        total_tokens_out = 0
+        function_calls_log = []
+
+        for iteracao in range(5):
+            resultado = await xai_llm.chat_completion(
+                messages=messages,
+                tools=TOOLS,
+                temperature=0.4,
+                max_tokens=1000,
+            )
+
+            total_tokens_in += resultado.get("tokens_input", 0)
+            total_tokens_out += resultado.get("tokens_output", 0)
+
+            tool_calls = resultado.get("tool_calls")
+            content = resultado.get("content")
+
+            if not tool_calls:
+                resposta_final = content
+                break
+
+            messages.append({"role": "assistant", "content": content, "tool_calls": tool_calls})
+
+            for tc in tool_calls:
+                fn_name = tc["function"]["name"]
+                fn_args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"]
+
+                logger.info(f"Function call (Meta): {fn_name}({json.dumps(fn_args, ensure_ascii=False)[:100]})")
+
+                resultado_fn = await executar_funcao(
+                    fn_name, fn_args, db, restaurante_id, bot_config, conversa
+                )
+
+                function_calls_log.append({"nome": fn_name, "args": fn_args, "resultado": resultado_fn[:200]})
+
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc["id"],
+                    "content": resultado_fn,
+                })
+
+        if not resposta_final:
+            logger.warning(f"Loop function calling esgotou 5 iterações (Meta, tel={numero})")
+            resposta_final = "Desculpa a demora! Estou aqui sim. Em que posso te ajudar?"
+
+        # 8.5 SAFETY NET (mesma lógica do Evolution)
+        chamou_criar_pedido = any(fc["nome"] == "criar_pedido" for fc in function_calls_log)
+        criou_pedido_pix = any(
+            fc["nome"] == "criar_pedido" and "pix_online" in fc.get("resultado", "")
+            for fc in function_calls_log
+        )
+        if resposta_final and not chamou_criar_pedido and not criou_pedido_pix and bot_config.pode_criar_pedido:
+            _PHANTOM_PATTERNS = [
+                "pedido confirmado", "pedido criado", "seu pedido já",
+                "comanda #", "comanda wa", "já vou preparar",
+                "encaminhei pra cozinha", "mandei pra cozinha",
+                "enviei pra cozinha", "anotei seu pedido",
+                "tá feito", "pedido registrado", "confirmei seu pedido",
+                "pedido foi criado", "seu pedido foi", "pedido anotado",
+            ]
+            texto_lower = resposta_final.lower()
+            phantom = any(p in texto_lower for p in _PHANTOM_PATTERNS)
+
+            has_order_context = False
+            if conversa and conversa.session_data:
+                has_order_context = bool(conversa.session_data.get("endereco_validado"))
+            if not has_order_context:
+                has_order_context = any(
+                    fc["nome"] in ("validar_endereco", "confirmar_endereco_validado")
+                    for fc in function_calls_log
+                )
+
+            if phantom and has_order_context:
+                logger.warning(f"SAFETY NET (Meta): LLM disse 'confirmado' sem chamar criar_pedido")
+
+                messages.append({"role": "assistant", "content": resposta_final})
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "SISTEMA INTERNO: Você disse que o pedido foi confirmado/criado, mas NÃO chamou a função criar_pedido. "
+                        "O pedido NÃO existe no sistema. Chame criar_pedido AGORA com os dados desta conversa. "
+                        "Use produto_id do cardápio fornecido no contexto do restaurante."
+                    ),
+                })
+
+                try:
+                    resultado_force = await xai_llm.chat_completion(
+                        messages=messages,
+                        tools=TOOLS,
+                        temperature=0.3,
+                        max_tokens=1000,
+                        tool_choice={"type": "function", "function": {"name": "criar_pedido"}},
+                    )
+
+                    total_tokens_in += resultado_force.get("tokens_input", 0)
+                    total_tokens_out += resultado_force.get("tokens_output", 0)
+
+                    force_tool_calls = resultado_force.get("tool_calls")
+                    if force_tool_calls:
+                        messages.append({
+                            "role": "assistant",
+                            "content": resultado_force.get("content"),
+                            "tool_calls": force_tool_calls,
+                        })
+
+                        for tc in force_tool_calls:
+                            fn_name = tc["function"]["name"]
+                            fn_args = json.loads(tc["function"]["arguments"]) if isinstance(tc["function"]["arguments"], str) else tc["function"]["arguments"]
+
+                            logger.info(f"SAFETY NET FC (Meta): {fn_name}({json.dumps(fn_args, ensure_ascii=False)[:200]})")
+
+                            resultado_fn = await executar_funcao(fn_name, fn_args, db, restaurante_id, bot_config, conversa)
+                            function_calls_log.append({"nome": fn_name, "args": fn_args, "resultado": resultado_fn[:200]})
+
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": tc["id"],
+                                "content": resultado_fn,
+                            })
+
+                        resultado_final2 = await xai_llm.chat_completion(
+                            messages=messages,
+                            tools=TOOLS,
+                            temperature=0.4,
+                            max_tokens=1000,
+                        )
+                        total_tokens_in += resultado_final2.get("tokens_input", 0)
+                        total_tokens_out += resultado_final2.get("tokens_output", 0)
+
+                        if resultado_final2.get("content"):
+                            resposta_final = resultado_final2["content"]
+                            logger.info("SAFETY NET (Meta): criar_pedido forçado com sucesso")
+
+                except Exception as e:
+                    logger.error(f"SAFETY NET (Meta) erro: {e}", exc_info=True)
+
+        # 9. Delay humanizado
+        delay = _calcular_delay_humano(len(resposta_final))
+        await asyncio.sleep(delay)
+
+        # 10. Enviar resposta (texto ou áudio)
+        enviar_audio = _deve_enviar_audio(conversa, bot_config)
+
+        envio_ok = False
+        try:
+            if enviar_audio and bot_config.tts_autonomo:
+                resposta_audio = _preparar_texto_para_audio(resposta_final)
+
+                audio_b64 = None
+                tts_provider = getattr(bot_config, "tts_provider", "") or ""
+                if tts_provider.lower() == "fish" and _fish_tts:
+                    audio_b64 = await _fish_tts.gerar_audio(
+                        resposta_audio,
+                        voz=bot_config.voz_tts or "",
+                        idioma=bot_config.idioma or "pt-BR",
+                    )
+                    if audio_b64:
+                        logger.info("TTS via Fish Audio S2-Pro (Meta)")
+                if not audio_b64:
+                    audio_b64 = await xai_tts.gerar_audio(resposta_audio, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
+                if audio_b64:
+                    try:
+                        await _wa.enviar_presenca_conversa(numero, bot_config, presenca="recording", delay_ms=3000)
+                        await _wa.enviar_audio_ptt(numero, audio_b64, bot_config)
+                    except Exception as audio_err:
+                        logger.warning(f"Áudio Meta falhou, enviando texto: {audio_err}")
+                        await _wa.enviar_texto(numero, resposta_final, bot_config)
+                else:
+                    await _wa.enviar_texto(numero, resposta_final, bot_config)
+            else:
+                await _wa.enviar_texto(numero, resposta_final, bot_config)
+            envio_ok = True
+
+        except Exception as e:
+            logger.error(f"Erro ao enviar mensagem Meta para {numero[:8]}***: {e}")
+
+        # 11. Registrar mensagem enviada
+        msg_enviada = models.BotMensagem(
+            conversa_id=conversa.id,
+            direcao="enviada",
+            tipo="audio" if enviar_audio else "texto",
+            conteudo=resposta_final,
+            tokens_input=total_tokens_in,
+            tokens_output=total_tokens_out,
+            modelo_usado=xai_llm.MODELO_PADRAO,
+            function_calls=function_calls_log if function_calls_log else None,
+            tempo_resposta_ms=resultado.get("tempo_ms", 0),
+        )
+        db.add(msg_enviada)
+        conversa.msgs_enviadas = (conversa.msgs_enviadas or 0) + 1
+        conversa.atualizado_em = datetime.utcnow()
+
+        bot_config.tokens_usados_hoje = (bot_config.tokens_usados_hoje or 0) + total_tokens_in + total_tokens_out
+
+        try:
+            db.commit()
+        except Exception as commit_err:
+            logger.error(f"Commit final falhou (Meta msg/tokens): {commit_err}")
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
+        # 12. Notificar painel via WebSocket
+        await _notificar_painel(restaurante_id, conversa, resposta_final, function_calls_log)
+
+    except Exception as e:
+        logger.error(f"Erro processando mensagem Meta de {numero[:8]}***: {e}", exc_info=True)
+    finally:
+        db.close()
+        _processing_locks.pop(numero, None)
+
+
 async def _processar_mensagem(
     numero: str,
     texto: str,
@@ -196,6 +591,9 @@ async def _processar_mensagem(
 
         restaurante_id = bot_config.restaurante_id
 
+        # 1.5. Verificar pool de números (retorna entry ativa ou None → usa BotConfig direto)
+        pool_entry = _phone_pool.get_active_number(db, restaurante_id)
+
         # 2. Transcrever áudio se necessário
         if audio_msg and bot_config.stt_ativo:
             audio_data = await evolution_client.baixar_audio(
@@ -217,8 +615,8 @@ async def _processar_mensagem(
         if not texto:
             return
 
-        # 3. Buscar ou criar conversa
-        conversa = _get_or_create_conversa(db, restaurante_id, numero)
+        # 3. Buscar ou criar conversa (grava numero_bot + phone_pool_id)
+        conversa = _get_or_create_conversa(db, restaurante_id, numero, pool_entry, bot_config)
 
         # 3.5 Se conversa em handoff (admin controlando), NÃO responder — apenas registrar msg
         if conversa.status == "handoff":
@@ -277,11 +675,12 @@ async def _processar_mensagem(
         messages.append({"role": "user", "content": texto})
 
         # 7.5. Presença: ficar "online" + "digitando..." enquanto processa
-        await evolution_client.definir_presenca(
-            bot_config.evolution_instance, bot_config.evolution_api_url, bot_config.evolution_api_key, "available"
-        )
+        _pres_instance = pool_entry.evolution_instance if pool_entry else bot_config.evolution_instance
+        _pres_url = pool_entry.evolution_api_url if pool_entry else bot_config.evolution_api_url
+        _pres_key = pool_entry.evolution_api_key if pool_entry else bot_config.evolution_api_key
+        await evolution_client.definir_presenca(_pres_instance, _pres_url, _pres_key, "available")
         await evolution_client.enviar_presenca_conversa(
-            numero, bot_config.evolution_instance, bot_config.evolution_api_url, bot_config.evolution_api_key,
+            numero, _pres_instance, _pres_url, _pres_key,
             presenca="composing", delay_ms=15000,
         )
 
@@ -441,6 +840,11 @@ async def _processar_mensagem(
         # 10. Decidir se envia áudio ou texto
         enviar_audio = _deve_enviar_audio(conversa, bot_config)
 
+        # Resolver credenciais de envio: pool_entry (se ativo) ou bot_config
+        _send_instance = pool_entry.evolution_instance if pool_entry else bot_config.evolution_instance
+        _send_url = pool_entry.evolution_api_url if pool_entry else bot_config.evolution_api_url
+        _send_key = pool_entry.evolution_api_key if pool_entry else bot_config.evolution_api_key
+
         envio_ok = False
         try:
             if enviar_audio and bot_config.tts_autonomo:
@@ -462,50 +866,57 @@ async def _processar_mensagem(
                     audio_b64 = await xai_tts.gerar_audio(resposta_audio, bot_config.voz_tts or "ara", bot_config.idioma or "pt-BR")
                 if audio_b64:
                     try:
-                        # Mostrar indicador de gravação antes de enviar áudio
                         await evolution_client.enviar_presenca_conversa(
-                            numero, bot_config.evolution_instance,
-                            bot_config.evolution_api_url, bot_config.evolution_api_key,
+                            numero, _send_instance, _send_url, _send_key,
                             presenca="recording", delay_ms=3000,
                         )
                         await evolution_client.enviar_audio_ptt(
-                            numero, audio_b64,
-                            bot_config.evolution_instance,
-                            bot_config.evolution_api_url,
-                            bot_config.evolution_api_key,
+                            numero, audio_b64, _send_instance, _send_url, _send_key,
                             delay_ms=3000,
                         )
                     except Exception as audio_err:
-                        # Fallback: enviar texto direto (LLM já escreve correto)
                         logger.warning(f"Áudio falhou, enviando texto: {audio_err}")
                         await evolution_client.enviar_texto(
-                            numero, resposta_final,
-                            bot_config.evolution_instance,
-                            bot_config.evolution_api_url,
-                            bot_config.evolution_api_key,
+                            numero, resposta_final, _send_instance, _send_url, _send_key,
                             delay_ms=1500,
                         )
                 else:
-                    # TTS falhou: enviar texto direto (LLM já escreve correto)
                     await evolution_client.enviar_texto(
-                        numero, resposta_final,
-                        bot_config.evolution_instance,
-                        bot_config.evolution_api_url,
-                        bot_config.evolution_api_key,
+                        numero, resposta_final, _send_instance, _send_url, _send_key,
                         delay_ms=1500,
                     )
             else:
-                # TEXTO: enviar direto — LLM já gera português correto
                 await evolution_client.enviar_texto(
-                    numero, resposta_final,
-                    bot_config.evolution_instance,
-                    bot_config.evolution_api_url,
-                    bot_config.evolution_api_key,
+                    numero, resposta_final, _send_instance, _send_url, _send_key,
                     delay_ms=1500,
                 )
             envio_ok = True
+
+            # Incrementar contador de msgs no pool entry
+            if pool_entry:
+                pool_entry.mensagens_enviadas = (pool_entry.mensagens_enviadas or 0) + 1
+                pool_entry.ultima_mensagem_em = datetime.utcnow()
+
         except Exception as e:
             logger.error(f"Erro ao enviar mensagem para {numero[:8]}***: {e}")
+            # Retry com rotação automática se pool disponível
+            if pool_entry:
+                try:
+                    new_entry = _phone_pool.rotate_number(db, restaurante_id, "envio_falhou", str(e))
+                    if new_entry:
+                        logger.info(f"Rotação por falha de envio → {new_entry.whatsapp_numero}")
+                        await evolution_client.enviar_texto(
+                            numero, resposta_final,
+                            new_entry.evolution_instance,
+                            new_entry.evolution_api_url,
+                            new_entry.evolution_api_key,
+                            delay_ms=1500,
+                        )
+                        conversa.numero_bot = new_entry.whatsapp_numero
+                        conversa.phone_pool_id = new_entry.id
+                        envio_ok = True
+                except Exception as retry_err:
+                    logger.error(f"Retry pós-rotação também falhou: {retry_err}")
 
         # 11. Registrar mensagem enviada (salva mesmo se envio falhou)
         msg_enviada = models.BotMensagem(
@@ -546,15 +957,41 @@ async def _processar_mensagem(
 
 
 def _identificar_restaurante(db: Session, instance: str) -> Optional[models.BotConfig]:
-    """Identifica restaurante pela instância Evolution."""
-    return db.query(models.BotConfig).filter(
+    """Identifica restaurante pela instância Evolution (provider='evolution').
+    Procura primeiro em BotConfig, depois em BotPhonePool (rotação de números).
+    Nota: provider='meta' usa processar_webhook_meta() com lookup por meta_phone_number_id."""
+    config = db.query(models.BotConfig).filter(
         models.BotConfig.evolution_instance == instance,
         models.BotConfig.bot_ativo == True,
     ).first()
+    if config:
+        return config
+
+    # Fallback: procurar em BotPhonePool (número pode ter sido rotacionado mas
+    # BotConfig já aponta para outro — ou instance pertence ao pool)
+    pool_entry = db.query(models.BotPhonePool).filter(
+        models.BotPhonePool.evolution_instance == instance,
+        models.BotPhonePool.status == "ativo",
+    ).first()
+    if pool_entry:
+        config = db.query(models.BotConfig).filter(
+            models.BotConfig.restaurante_id == pool_entry.restaurante_id,
+            models.BotConfig.bot_ativo == True,
+        ).first()
+        if config:
+            return config
+
+    return None
 
 
-def _get_or_create_conversa(db: Session, restaurante_id: int, telefone: str) -> models.BotConversa:
-    """Busca conversa ativa ou cria nova."""
+def _get_or_create_conversa(
+    db: Session,
+    restaurante_id: int,
+    telefone: str,
+    pool_entry: Optional[models.BotPhonePool] = None,
+    bot_config: Optional[models.BotConfig] = None,
+) -> models.BotConversa:
+    """Busca conversa ativa ou cria nova. Grava numero_bot e phone_pool_id."""
     # Buscar conversa ativa recente (últimas 2h)
     limite = datetime.utcnow() - timedelta(hours=2)
     conversa = db.query(models.BotConversa).filter(
@@ -565,13 +1002,21 @@ def _get_or_create_conversa(db: Session, restaurante_id: int, telefone: str) -> 
     ).first()
 
     if conversa:
+        # Atualizar numero_bot se mudou (rotação)
+        numero_atual = pool_entry.whatsapp_numero if pool_entry else (bot_config.whatsapp_numero if bot_config else None)
+        if numero_atual and conversa.numero_bot != numero_atual:
+            conversa.numero_bot = numero_atual
+            conversa.phone_pool_id = pool_entry.id if pool_entry else None
         return conversa
 
     # Criar nova conversa
+    numero_bot = pool_entry.whatsapp_numero if pool_entry else (bot_config.whatsapp_numero if bot_config else None)
     conversa = models.BotConversa(
         restaurante_id=restaurante_id,
         telefone=telefone,
         status="ativa",
+        numero_bot=numero_bot,
+        phone_pool_id=pool_entry.id if pool_entry else None,
     )
     db.add(conversa)
     db.flush()

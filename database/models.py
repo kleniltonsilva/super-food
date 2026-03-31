@@ -1591,11 +1591,19 @@ class BotConfig(Base):
     tom_personalidade = Column(String(200), default='informal amigável')
     voz_tts = Column(String(20), default='ara')  # ara, eve, leo, rex, sal, una
     idioma = Column(String(10), default='pt-BR')
+    # Provider: 'meta' (API oficial) ou 'evolution' (Baileys)
+    whatsapp_provider = Column(String(20), default="evolution")
     # Evolution API
     evolution_instance = Column(String(100))
     evolution_api_url = Column(String(500))
     evolution_api_key = Column(String(500))
     whatsapp_numero = Column(String(20))
+    # Meta Cloud API (API oficial WhatsApp Business)
+    meta_phone_number_id = Column(String(100))
+    meta_access_token = Column(Text)
+    meta_waba_id = Column(String(100))
+    meta_app_secret = Column(String(200))
+    meta_webhook_verify_token = Column(String(100))
     # Capacidades (permissões do dono)
     pode_criar_pedido = Column(Boolean, default=True)
     pode_alterar_pedido = Column(Boolean, default=True)
@@ -1652,6 +1660,7 @@ class BotConfig(Base):
     __table_args__ = (
         Index('idx_bot_config_restaurante', 'restaurante_id'),
         Index('idx_bot_config_numero', 'whatsapp_numero'),
+        Index('idx_bot_config_meta_phone', 'meta_phone_number_id'),
     )
 
 
@@ -1677,6 +1686,9 @@ class BotConversa(Base):
     # Handoff
     handoff_em = Column(DateTime)
     handoff_motivo = Column(Text)
+    # Pool de números
+    numero_bot = Column(String(20))  # Número do bot que atendeu esta conversa
+    phone_pool_id = Column(Integer, ForeignKey("bot_phone_pool.id", ondelete="SET NULL"))
     # Sessão
     session_data = Column(JSON)
     # Timestamps
@@ -1688,6 +1700,7 @@ class BotConversa(Base):
     cliente = relationship("Cliente")
     pedido_ativo = relationship("Pedido", foreign_keys=[pedido_ativo_id])
     mensagens = relationship("BotMensagem", back_populates="conversa", cascade="all, delete-orphan")
+    phone_pool_entry = relationship("BotPhonePool", foreign_keys=[phone_pool_id])
     __table_args__ = (
         Index('idx_bot_conversas_restaurante', 'restaurante_id', 'status'),
         Index('idx_bot_conversas_telefone', 'restaurante_id', 'telefone'),
@@ -1798,6 +1811,80 @@ class BotRepescagem(Base):
     promocao = relationship("Promocao")
     __table_args__ = (
         Index('idx_bot_repescagens_restaurante', 'restaurante_id'),
+    )
+
+
+class BotPhonePool(Base):
+    """Pool de números WhatsApp para rotação automática em caso de ban"""
+    __tablename__ = "bot_phone_pool"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    evolution_instance = Column(String(100), unique=True, nullable=False)
+    evolution_api_url = Column(String(500), nullable=False)
+    evolution_api_key = Column(String(500), nullable=False)
+    whatsapp_numero = Column(String(20), nullable=False)
+    status = Column(String(20), default='standby', nullable=False)  # ativo | standby | banido | em_aquecimento | desconectado
+    posicao_fila = Column(Integer, default=0, nullable=False)
+    banido_em = Column(DateTime)
+    banido_motivo = Column(Text)
+    total_bans = Column(Integer, default=0, nullable=False)
+    mensagens_enviadas = Column(Integer, default=0, nullable=False)
+    ultima_mensagem_em = Column(DateTime)
+    ativado_em = Column(DateTime)
+    ultimo_health_check = Column(DateTime)
+    ultimo_health_status = Column(String(20))  # open | close | connecting
+    health_falhas_consecutivas = Column(Integer, default=0, nullable=False)
+    aquecimento_inicio = Column(DateTime)
+    aquecimento_msgs_hoje = Column(Integer, default=0, nullable=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_bot_phone_pool_rest_status', 'restaurante_id', 'status'),
+        Index('idx_bot_phone_pool_numero', 'whatsapp_numero'),
+    )
+
+
+class BotRotacaoLog(Base):
+    """Log imutável de rotações de número WhatsApp"""
+    __tablename__ = "bot_rotacao_log"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    numero_anterior = Column(String(20))
+    numero_novo = Column(String(20))
+    instance_anterior = Column(String(100))
+    instance_nova = Column(String(100))
+    motivo = Column(String(50), nullable=False)
+    detalhes = Column(Text)
+    conversas_afetadas = Column(Integer, default=0, nullable=False)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_bot_rotacao_log_rest', 'restaurante_id', 'criado_em'),
+    )
+
+
+class BotMetaGateway(Base):
+    """Gateway Meta Cloud API — número oficial que nunca é banido"""
+    __tablename__ = "bot_meta_gateway"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), unique=True, nullable=False)
+    phone_number_id = Column(String(100), nullable=False)
+    access_token = Column(Text, nullable=False)
+    waba_id = Column(String(100))
+    whatsapp_numero = Column(String(20), nullable=False)
+    webhook_verify_token = Column(String(100), nullable=False)
+    template_redirect_nome = Column(String(100), default='redirect_atendimento')
+    template_recovery_nome = Column(String(100), default='numero_atualizado')
+    ativo = Column(Boolean, default=True)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Relacionamentos
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_bot_meta_gateway_phone', 'phone_number_id'),
     )
 
 

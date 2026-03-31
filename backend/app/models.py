@@ -119,6 +119,11 @@ from database.models import (
     BotProblema,
     BotRepescagem,
 
+    # Bot Phone Pool + Meta Gateway
+    BotPhonePool,
+    BotRotacaoLog,
+    BotMetaGateway,
+
     # Onboarding
     SolicitacaoCadastro,
 )
@@ -190,5 +195,8 @@ __all__ = [
     'BotAvaliacao',
     'BotProblema',
     'BotRepescagem',
+    'BotPhonePool',
+    'BotRotacaoLog',
+    'BotMetaGateway',
     'SolicitacaoCadastro',
 ]

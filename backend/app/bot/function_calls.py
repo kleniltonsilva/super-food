@@ -452,7 +452,7 @@ async def executar_funcao(
         elif nome == "aplicar_cupom":
             result = _aplicar_cupom(db, restaurante_id, args, conversa)
         elif nome == "escalar_humano":
-            result = _escalar_humano(db, restaurante_id, args, conversa)
+            result = _escalar_humano(db, restaurante_id, args, conversa, bot_config)
         elif nome == "rastrear_pedido":
             result = _rastrear_pedido(db, restaurante_id, args)
         elif nome == "trocar_item_pedido":
@@ -1474,21 +1474,21 @@ def _aplicar_cupom(db: Session, restaurante_id: int, args: dict, conversa: Optio
     })
 
 
-def _escalar_humano(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa]) -> str:
+def _escalar_humano(db: Session, restaurante_id: int, args: dict, conversa: Optional[models.BotConversa], bot_config: Optional[models.BotConfig] = None) -> str:
     if conversa:
         conversa.status = "aguardando_handoff"
         conversa.handoff_em = datetime.utcnow()
         conversa.handoff_motivo = args.get("motivo", "Solicitado pelo cliente")
         db.commit()
 
+        restaurante = db.query(models.Restaurante).filter(
+            models.Restaurante.id == restaurante_id
+        ).first()
+
         # Notificar painel admin via WebSocket (som distinto)
         try:
             import asyncio
             from ..main import manager
-
-            restaurante = db.query(models.Restaurante).filter(
-                models.Restaurante.id == restaurante_id
-            ).first()
 
             asyncio.get_event_loop().create_task(
                 manager.broadcast({
@@ -1504,6 +1504,43 @@ def _escalar_humano(db: Session, restaurante_id: int, args: dict, conversa: Opti
             )
         except Exception:
             pass  # WebSocket é best-effort
+
+        # Notificar dono via WhatsApp (Evolution API) — best-effort
+        try:
+            import asyncio
+            import os
+            from . import evolution_client
+
+            notify_number = os.environ.get("HANDOFF_NOTIFY_NUMBER", "")
+            if notify_number and bot_config:
+                # Usar instância centralizada (env vars) ou a do restaurante
+                api_url = os.environ.get("HANDOFF_EVOLUTION_API_URL") or bot_config.evolution_api_url
+                api_key = os.environ.get("HANDOFF_EVOLUTION_API_KEY") or bot_config.evolution_api_key
+                instance = os.environ.get("HANDOFF_EVOLUTION_INSTANCE") or bot_config.evolution_instance
+
+                if api_url and api_key and instance:
+                    nome_rest = restaurante.nome if restaurante else "Restaurante"
+                    nome_cliente = conversa.nome_cliente or "Cliente"
+                    telefone_cliente = conversa.telefone or ""
+                    motivo = conversa.handoff_motivo or "Solicitado pelo cliente"
+
+                    texto = (
+                        f"*HANDOFF - Atendimento Humano*\n\n"
+                        f"Restaurante: *{nome_rest}*\n"
+                        f"Cliente: *{nome_cliente}*\n"
+                        f"Telefone: {telefone_cliente}\n"
+                        f"Motivo: {motivo}\n\n"
+                        f"https://wa.me/{telefone_cliente.lstrip('+')}"
+                    )
+
+                    asyncio.get_event_loop().create_task(
+                        evolution_client.enviar_texto(
+                            notify_number, texto, instance, api_url, api_key
+                        )
+                    )
+                    logger.info(f"Handoff WA notification enviada para {notify_number[:6]}***")
+        except Exception as e:
+            logger.debug(f"Handoff WA notification falhou: {e}")
 
     return json.dumps({
         "sucesso": True,

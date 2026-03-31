@@ -17,10 +17,20 @@ from sqlalchemy import func
 from .. import models
 from ..database import SessionLocal, DATABASE_URL
 from ..email_service import BASE_URL
+from . import phone_pool as _phone_pool
+from . import whatsapp_client as _wa
 
 _IS_POSTGRES = "postgresql" in DATABASE_URL
 
 logger = logging.getLogger("superfood.bot.workers")
+
+
+def _config_pode_enviar(config: models.BotConfig) -> bool:
+    """Verifica se o BotConfig tem credenciais suficientes para enviar mensagens."""
+    provider = getattr(config, "whatsapp_provider", "") or "evolution"
+    if provider == "meta":
+        return bool(config.meta_phone_number_id and config.meta_access_token)
+    return bool(config.evolution_instance)
 
 
 async def bot_workers_loop(ws_manager):
@@ -46,6 +56,13 @@ async def bot_workers_loop(ws_manager):
                 if ciclo % 60 == 0:
                     await _verificar_clientes_inativos(db, ws_manager)
                     await _verificar_cupons_expirando(db, ws_manager)
+
+                # Worker 6: Health monitor pool de números (a cada 1 min)
+                await _health_monitor_pool(db, ws_manager)
+
+                # Worker 7: Graduação aquecimento (a cada 5 min)
+                if ciclo % 5 == 0:
+                    _phone_pool.graduar_aquecimento(db)
             finally:
                 db.close()
 
@@ -102,8 +119,8 @@ async def _verificar_avaliacoes_pendentes(db: Session, ws_manager=None):
 
             # Enviar mensagem — Etapa 1: perguntar se houve problema
             telefone = pedido.cliente_telefone
-            if telefone and config.evolution_instance:
-                from . import evolution_client
+            can_send = _config_pode_enviar(config)
+            if telefone and can_send:
                 nome = pedido.cliente_nome or "cliente"
 
                 if config.avaliacao_perguntar_problemas:
@@ -114,12 +131,7 @@ async def _verificar_avaliacoes_pendentes(db: Session, ws_manager=None):
                     texto = f"Oi {nome}! 😊 Tudo bem com o pedido #{pedido.comanda}? De 1 a 5, como foi a experiência?"
 
                 try:
-                    await evolution_client.enviar_texto(
-                        telefone, texto,
-                        config.evolution_instance,
-                        config.evolution_api_url,
-                        config.evolution_api_key,
-                    )
+                    await _wa.enviar_texto(telefone, texto, config)
                     logger.info(f"Avaliação enviada para {telefone[:8]}*** pedido #{pedido.comanda}")
 
                     # Marcar fase de avaliação na conversa ativa
@@ -264,17 +276,12 @@ async def _verificar_atrasos(db: Session, ws_manager):
 
                 # Notificar cliente
                 telefone = pedido.cliente_telefone
-                if telefone and config.evolution_instance:
-                    from . import evolution_client
+                can_send = _config_pode_enviar(config)
+                if telefone and can_send:
                     nome = pedido.cliente_nome or "cliente"
                     texto = f"Oi {nome}, peço desculpas pelo atraso no pedido #{pedido.comanda}. A equipe está finalizando e já sai! 🙏{mensagem_extra}"
                     try:
-                        await evolution_client.enviar_texto(
-                            telefone, texto,
-                            config.evolution_instance,
-                            config.evolution_api_url,
-                            config.evolution_api_key,
-                        )
+                        await _wa.enviar_texto(telefone, texto, config)
                     except Exception as e:
                         logger.error(f"Erro notificando atraso: {e}")
 
@@ -405,16 +412,10 @@ async def _verificar_clientes_inativos(db: Session, ws_manager=None):
                 f"Válido por 7 dias. É só chamar quando quiser pedir!"
             )
 
-            # Enviar
-            if config.evolution_instance:
-                from . import evolution_client
+            # Enviar via WhatsApp (unificado: Meta ou Evolution)
+            if _config_pode_enviar(config):
                 try:
-                    await evolution_client.enviar_texto(
-                        telefone, texto,
-                        config.evolution_instance,
-                        config.evolution_api_url,
-                        config.evolution_api_key,
-                    )
+                    await _wa.enviar_texto(telefone, texto, config)
                     enviados += 1
                 except Exception as e:
                     logger.error(f"Erro enviando repescagem: {e}")
@@ -592,19 +593,13 @@ async def _verificar_cupons_expirando(db: Session, ws_manager=None):
             models.BotConfig.bot_ativo == True,
         ).first()
 
-        if config and config.evolution_instance and cliente.telefone:
+        if config and _config_pode_enviar(config) and cliente.telefone:
             texto = (
                 f"Oi {nome}! Seu cupom *{rep.cupom_codigo}* de {desconto_str} "
                 f"expira amanhã! Não perca essa oportunidade no {restaurante.nome_fantasia}."
             )
             try:
-                from . import evolution_client
-                await evolution_client.enviar_texto(
-                    cliente.telefone, texto,
-                    config.evolution_instance,
-                    config.evolution_api_url,
-                    config.evolution_api_key,
-                )
+                await _wa.enviar_texto(cliente.telefone, texto, config)
             except Exception as e:
                 logger.error(f"Erro lembrete WA cupom {rep.id}: {e}")
 
@@ -733,17 +728,11 @@ async def _notificar_mudancas_status(db: Session, ws_manager=None):
             if not mensagem:
                 continue
 
-            # Enviar via Evolution
+            # Enviar via WhatsApp (unificado: Meta ou Evolution)
             telefone = conversa.telefone
-            if telefone and config.evolution_instance:
-                from . import evolution_client
+            if telefone and _config_pode_enviar(config):
                 try:
-                    await evolution_client.enviar_texto(
-                        telefone, mensagem,
-                        config.evolution_instance,
-                        config.evolution_api_url,
-                        config.evolution_api_key,
-                    )
+                    await _wa.enviar_texto(telefone, mensagem, config)
                     logger.info(f"Notificação proativa: pedido #{pedido.comanda} status={pedido.status} para {telefone[:8]}***")
 
                     # Registrar mensagem enviada
@@ -786,3 +775,110 @@ async def _notificar_mudancas_status(db: Session, ws_manager=None):
                     logger.error(f"Erro notificação proativa: {e}")
 
         db.commit()
+
+
+# ==================== WORKER 6: Health Monitor Pool de Números ====================
+
+async def _health_monitor_pool(db: Session, ws_manager):
+    """Verifica saúde de todas as instâncias ativas do pool (apenas Evolution).
+    3 falhas consecutivas → rotação automática.
+    Restaurantes com provider='meta' não precisam de health check (API oficial 99.9% uptime)."""
+    try:
+        entries_ativas = db.query(models.BotPhonePool).filter(
+            models.BotPhonePool.status == "ativo",
+        ).all()
+
+        for entry in entries_ativas:
+            # Skip health check para restaurantes Meta (API oficial não precisa)
+            bot_cfg = db.query(models.BotConfig).filter(
+                models.BotConfig.restaurante_id == entry.restaurante_id,
+            ).first()
+            if bot_cfg and getattr(bot_cfg, "whatsapp_provider", "evolution") == "meta":
+                continue
+            try:
+                status = await _phone_pool.check_instance_health(
+                    entry.evolution_instance,
+                    entry.evolution_api_url,
+                    entry.evolution_api_key,
+                )
+
+                entry.ultimo_health_check = datetime.utcnow()
+                entry.ultimo_health_status = status
+
+                if status == "open":
+                    # Saudável — resetar contador de falhas
+                    if entry.health_falhas_consecutivas > 0:
+                        entry.health_falhas_consecutivas = 0
+                        logger.debug(f"Health OK: {entry.evolution_instance} — falhas resetadas")
+                else:
+                    # Falha detectada
+                    entry.health_falhas_consecutivas = (entry.health_falhas_consecutivas or 0) + 1
+                    logger.warning(
+                        f"Health FAIL #{entry.health_falhas_consecutivas}: "
+                        f"{entry.evolution_instance} status={status}"
+                    )
+
+                    if entry.health_falhas_consecutivas >= 3:
+                        # 3 falhas consecutivas → rotação automática
+                        logger.error(
+                            f"Health 3x FAIL → rotação automática: {entry.evolution_instance} "
+                            f"(rest={entry.restaurante_id})"
+                        )
+                        old_number = entry.whatsapp_numero
+                        new_entry = _phone_pool.rotate_number(
+                            db,
+                            entry.restaurante_id,
+                            "health_3x_fail",
+                            f"Status: {status}, instance: {entry.evolution_instance}",
+                        )
+
+                        if new_entry:
+                            # Recuperar conversas afetadas
+                            bot_config = db.query(models.BotConfig).filter(
+                                models.BotConfig.restaurante_id == entry.restaurante_id,
+                            ).first()
+                            if bot_config:
+                                notificados = await _phone_pool.recover_conversations(
+                                    db, entry.restaurante_id, old_number, new_entry, bot_config
+                                )
+                                logger.info(f"Recovery: {notificados} clientes notificados")
+
+                            # Notificar painel
+                            if ws_manager:
+                                try:
+                                    await ws_manager.broadcast({
+                                        "tipo": "bot_pool_rotacao",
+                                        "dados": {
+                                            "numero_anterior": old_number,
+                                            "numero_novo": new_entry.whatsapp_numero,
+                                            "motivo": "health_3x_fail",
+                                        },
+                                    }, entry.restaurante_id)
+                                except Exception:
+                                    pass
+                        else:
+                            # Pool esgotado — alertar
+                            logger.critical(
+                                f"POOL ESGOTADO para rest={entry.restaurante_id}! "
+                                f"Nenhum número standby disponível."
+                            )
+                            if ws_manager:
+                                try:
+                                    await ws_manager.broadcast({
+                                        "tipo": "bot_pool_esgotado",
+                                        "dados": {
+                                            "numero_banido": entry.whatsapp_numero,
+                                            "mensagem": "Pool de números WhatsApp esgotado! Adicione novos números.",
+                                        },
+                                    }, entry.restaurante_id)
+                                except Exception:
+                                    pass
+
+            except Exception as e:
+                logger.error(f"Health check erro para {entry.evolution_instance}: {e}")
+
+        if entries_ativas:
+            db.commit()
+
+    except Exception as e:
+        logger.error(f"Health monitor pool erro geral: {e}")
