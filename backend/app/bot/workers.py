@@ -91,13 +91,17 @@ async def _verificar_avaliacoes_pendentes(db: Session, ws_manager=None):
         limite_max = datetime.utcnow() - timedelta(hours=2)
 
         # Pedidos entregues pelo bot que ainda não têm avaliação
-        pedidos = db.query(models.Pedido).filter(
+        # FOR UPDATE SKIP LOCKED evita que 2 Gunicorn workers processem o mesmo pedido
+        q = db.query(models.Pedido).filter(
             models.Pedido.restaurante_id == config.restaurante_id,
             models.Pedido.origem == "whatsapp_bot",
             models.Pedido.status == "entregue",
             models.Pedido.atualizado_em <= limite,
             models.Pedido.atualizado_em >= limite_max,
-        ).all()
+        )
+        if _IS_POSTGRES:
+            q = q.with_for_update(skip_locked=True)
+        pedidos = q.all()
 
         for pedido in pedidos:
             # Verificar se já tem avaliação
@@ -700,8 +704,9 @@ async def _notificar_mudancas_status(db: Session, ws_manager=None):
                 else:
                     mensagem = f"{nome}, pedido #{pedido.comanda} pronto! Já já sai pra entrega 📦"
 
-            elif pedido.status == "em_rota" and "em_rota" not in notificados_pedido:
-                # Buscar nome do motoboy
+            elif pedido.status in ("em_rota", "em_entrega") and "em_entrega" not in notificados_pedido:
+                # Pedido saiu para entrega (motoboy clicou "Iniciar")
+                # Backend usa "em_entrega" no pedido, "em_rota" na entrega
                 entrega = db.query(models.Entrega).filter(
                     models.Entrega.pedido_id == pedido.id,
                 ).first()
@@ -746,7 +751,9 @@ async def _notificar_mudancas_status(db: Session, ws_manager=None):
                     conversa.msgs_enviadas = (conversa.msgs_enviadas or 0) + 1
 
                     # Marcar status como notificado no session_data
-                    notificados_pedido.append(pedido.status)
+                    # Normalizar: em_rota e em_entrega são equivalentes
+                    status_key = "em_entrega" if pedido.status in ("em_rota", "em_entrega") else pedido.status
+                    notificados_pedido.append(status_key)
                     status_notificados[pedido_key] = notificados_pedido
                     session_data["status_notificados"] = status_notificados
                     conversa.session_data = session_data
