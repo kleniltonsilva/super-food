@@ -25,6 +25,7 @@ interface Entrega {
   longitude_entrega?: number;
   valor_total?: number;
   forma_pagamento?: string;
+  pix_pago?: boolean;
   troco_para?: number;
   observacoes?: string;
   comanda?: string;
@@ -212,7 +213,12 @@ export default function MotoboyEntrega() {
           {entrega.forma_pagamento && (
             <div className="flex items-center justify-between rounded-lg bg-gray-800 px-3 py-2">
               <span className="text-sm text-gray-400">Forma pagamento</span>
-              <span className="text-sm font-medium text-white">{entrega.forma_pagamento}</span>
+              <span className="text-sm font-medium text-white">
+                {entrega.forma_pagamento}
+                {entrega.pix_pago && (
+                  <span className="ml-2 rounded bg-green-600 px-1.5 py-0.5 text-xs font-bold text-white">PAGO</span>
+                )}
+              </span>
             </div>
           )}
 

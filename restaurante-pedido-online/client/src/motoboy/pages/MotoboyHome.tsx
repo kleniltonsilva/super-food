@@ -23,6 +23,7 @@ interface Entrega {
   longitude_entrega?: number;
   valor_total?: number;
   forma_pagamento?: string;
+  pix_pago?: boolean;
   troco_para?: number;
   observacoes?: string;
   comanda?: string;
@@ -170,7 +171,12 @@ export default function MotoboyHome() {
               {entregaAtual.forma_pagamento && (
                 <div className="flex items-center justify-between rounded-lg bg-gray-800/50 px-3 py-2">
                   <span className="text-gray-400">Pagamento</span>
-                  <span className="font-medium text-white">{entregaAtual.forma_pagamento}</span>
+                  <span className="font-medium text-white">
+                    {entregaAtual.forma_pagamento}
+                    {entregaAtual.pix_pago && (
+                      <span className="ml-2 rounded bg-green-600 px-1.5 py-0.5 text-xs font-bold text-white">PAGO</span>
+                    )}
+                  </span>
                 </div>
               )}
 

@@ -435,7 +435,7 @@ async def processar_pagamento_confirmado(
         except Exception as e:
             logger.warning(f"Erro ao enviar WebSocket pix_confirmado: {e}")
 
-    # Se pedido veio do WhatsApp bot: notificar cliente via Evolution
+    # Se pedido veio do WhatsApp bot: notificar cliente via WhatsApp (Meta ou Evolution)
     if pedido and pedido.origem == "whatsapp_bot" and pedido.cliente_telefone:
         try:
             bot_config = db.query(models.BotConfig).filter(
@@ -443,8 +443,8 @@ async def processar_pagamento_confirmado(
                 models.BotConfig.ativo == True,
             ).first()
 
-            if bot_config and bot_config.evolution_instance:
-                from ..bot.evolution_client import enviar_texto
+            if bot_config:
+                from ..bot.whatsapp_client import enviar_texto as wa_enviar_texto
 
                 valor_fmt = f"R${cobranca.valor_centavos/100:.2f}"
                 texto = (
@@ -453,12 +453,10 @@ async def processar_pagamento_confirmado(
                     f"Obrigado!"
                 )
 
-                await enviar_texto(
+                await wa_enviar_texto(
                     numero=pedido.cliente_telefone,
                     texto=texto,
-                    instance=bot_config.evolution_instance,
-                    api_url=bot_config.evolution_api_url,
-                    api_key=bot_config.evolution_api_key,
+                    bot_config=bot_config,
                 )
 
                 # Registrar BotMensagem
@@ -479,8 +477,10 @@ async def processar_pagamento_confirmado(
                     db.add(msg)
                     db.commit()
 
+                provider = getattr(bot_config, "whatsapp_provider", "evolution")
                 logger.info(
-                    f"Notificacao Pix confirmado enviada via WhatsApp para {pedido.cliente_telefone[:8]}***"
+                    f"Notificacao Pix confirmado enviada via WhatsApp ({provider}) "
+                    f"para {pedido.cliente_telefone[:8]}***"
                 )
         except Exception as e:
             logger.warning(f"Erro ao notificar cliente WhatsApp sobre Pix confirmado: {e}")

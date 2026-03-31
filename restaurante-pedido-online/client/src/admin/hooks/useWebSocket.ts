@@ -141,6 +141,28 @@ function tocarSomHandoff() {
   }
 }
 
+/** Pix confirmado: 2 tons ascendentes alegres (sine 659→988Hz) — "ka-ching" */
+function tocarSomPix() {
+  try {
+    const ctx = new AudioContext();
+    [659, 988].forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      const t = i * 0.12;
+      gain.gain.setValueAtTime(0.4, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.2);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.2);
+    });
+  } catch {
+    // AudioContext não disponível
+  }
+}
+
 /** Pedido despachado: 2 tons ascendentes de confirmação (triangle 523→784Hz) */
 function tocarSomDespacho() {
   try {
@@ -256,6 +278,19 @@ export function useWebSocket({
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.caixaAtual });
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
           if (habilitarSom) tocarSomDespacho();
+          break;
+        case "pix_confirmado":
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.pedidos });
+          qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.dashboard });
+          if (habilitarSom) tocarSomPix();
+          if (habilitarNotificacaoSistema) {
+            const comandaPix = dados?.comanda as string || "";
+            const valorPix = dados?.valor as number | undefined;
+            notificarSistema(
+              "Pix Confirmado!",
+              `Pedido #${comandaPix}${valorPix ? ` — R$ ${valorPix.toFixed(2)}` : ""} pago via Pix`
+            );
+          }
           break;
         case "motoboy_posicao":
           qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.motoboys });
@@ -377,5 +412,5 @@ export function useWebSocket({
     return false;
   }, []);
 
-  return { tocarSomNotificacao, tocarSomAlerta, tocarSomCancelamento, tocarSomDespacho, tocarSomBot, tocarSomHandoff, enviarMensagem };
+  return { tocarSomNotificacao, tocarSomAlerta, tocarSomCancelamento, tocarSomDespacho, tocarSomPix, tocarSomBot, tocarSomHandoff, enviarMensagem };
 }

@@ -76,7 +76,7 @@ class StatusUpdateRequest(BaseModel):
 
 # ========== Helpers ==========
 
-def _entrega_to_response(entrega: models.Entrega, pedido: models.Pedido = None) -> dict:
+def _entrega_to_response(entrega: models.Entrega, pedido: models.Pedido = None, db: Session = None) -> dict:
     """Converte Entrega + Pedido para dict de resposta."""
     data = {
         "id": entrega.id,
@@ -92,6 +92,18 @@ def _entrega_to_response(entrega: models.Entrega, pedido: models.Pedido = None) 
         "motivo_finalizacao": entrega.motivo_finalizacao,
     }
     if pedido:
+        # Verificar se pagamento Pix online já foi confirmado
+        pix_pago = False
+        if db and pedido.forma_pagamento and pedido.forma_pagamento.upper() == "PIX":
+            try:
+                cobranca = db.query(models.PixCobranca).filter(
+                    models.PixCobranca.pedido_id == pedido.id,
+                    models.PixCobranca.status == "COMPLETED",
+                ).first()
+                pix_pago = cobranca is not None
+            except Exception:
+                pass
+
         data.update({
             "cliente_nome": pedido.cliente_nome,
             "cliente_telefone": pedido.cliente_telefone,
@@ -100,6 +112,7 @@ def _entrega_to_response(entrega: models.Entrega, pedido: models.Pedido = None) 
             "longitude_entrega": pedido.longitude_entrega,
             "valor_total": pedido.valor_total,
             "forma_pagamento": pedido.forma_pagamento,
+            "pix_pago": pix_pago,
             "troco_para": pedido.troco_para,
             "observacoes": pedido.observacoes,
             "itens": pedido.itens,
@@ -129,7 +142,7 @@ def listar_entregas_pendentes(
             models.Pedido.id == e.pedido_id,
             models.Pedido.restaurante_id == current_motoboy.restaurante_id
         ).first()
-        resultado.append(_entrega_to_response(e, pedido))
+        resultado.append(_entrega_to_response(e, pedido, db))
 
     return resultado
 
@@ -155,7 +168,7 @@ def listar_entregas_em_rota(
             models.Pedido.id == e.pedido_id,
             models.Pedido.restaurante_id == current_motoboy.restaurante_id
         ).first()
-        resultado.append(_entrega_to_response(e, pedido))
+        resultado.append(_entrega_to_response(e, pedido, db))
 
     return resultado
 
@@ -317,7 +330,7 @@ def historico_entregas(
             models.Pedido.id == e.pedido_id,
             models.Pedido.restaurante_id == current_motoboy.restaurante_id
         ).first()
-        resultado.append(_entrega_to_response(e, pedido))
+        resultado.append(_entrega_to_response(e, pedido, db))
 
     return {
         "entregas": resultado,

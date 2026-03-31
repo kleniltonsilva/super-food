@@ -19,6 +19,7 @@ type WsEventTipo =
   | "pedido_atualizado"
   | "pedido_cancelado"
   | "pedido_despachado"
+  | "pix_confirmado"
   | "entrega_atrasada"
   | "tempo_ajustado"
   | "motoboy_posicao"
@@ -139,6 +140,11 @@ export function useMotoboyWebSocket({ restauranteId, motoboyId }: UseMotoboyWebS
           break;
         }
         case "pedido_atualizado":
+          qc.invalidateQueries({ queryKey: MOTOBOY_QUERY_KEYS.entregasPendentes });
+          qc.invalidateQueries({ queryKey: MOTOBOY_QUERY_KEYS.entregasEmRota });
+          break;
+        case "pix_confirmado":
+          // Atualiza entregas para mostrar badge "Pix Pago"
           qc.invalidateQueries({ queryKey: MOTOBOY_QUERY_KEYS.entregasPendentes });
           qc.invalidateQueries({ queryKey: MOTOBOY_QUERY_KEYS.entregasEmRota });
           break;
