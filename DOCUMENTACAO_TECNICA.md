@@ -2510,7 +2510,78 @@ A função `normalizar_origem()` unifica origens legadas (`site`, `web`, `manual
 
 ---
 
-*Documento gerado automaticamente pelo sistema Derekh Food v4.0.7*
-*Última atualização: 30/03/2026*
+## 23. Cache de Distâncias Mapbox (Redis)
+
+### 23.1 Problema
+Cada validação de endereço (checkout, bot, autocomplete) chama a API Mapbox sem cache. Clientes que repetem endereço geram chamadas idênticas. Com 50 restaurantes ativos ultrapassa o free tier de 50k req/mês.
+
+### 23.2 Solução
+Cache Redis best-effort por coordenadas arredondadas (4 casas decimais ≈ 11m). Se Redis cair, sistema continua sem cache.
+
+### 23.3 Chaves de Cache
+
+| Tipo | Formato | TTL | Exemplo |
+|------|---------|-----|---------|
+| Distância/taxa | `dist:{rest_id}:{lat:.4f}:{lng:.4f}` | 30 dias | `dist:42:-23.5505:-46.6333` |
+| Geocoding | `geo:{md5_12chars}` (inclui country) | 7 dias | `geo:a1b2c3d4e5f6` |
+
+### 23.4 Dados Cacheados (distância)
+```json
+{
+  "dentro_zona": true,
+  "distancia_km": 2.5,
+  "taxa_entrega": 5.0,
+  "mensagem": "Dentro da zona"
+}
+```
+
+### 23.5 Pontos de Cache (3 endpoints)
+
+| Endpoint | Arquivo | Ação |
+|----------|---------|------|
+| `POST /site/{codigo}/validar-entrega` | `site_cliente.py` | Cache get antes do cálculo, set depois |
+| `POST /carrinho/finalizar` | `carrinho.py` | Cache get antes do check_coverage_zone |
+| Bot `_validar_endereco()` | `bot/function_calls.py` | Cache get/set por sugestão de endereço |
+
+### 23.6 Invalidação (2 triggers)
+
+| Trigger | Arquivo | Condição |
+|---------|---------|----------|
+| Config entrega mudou | `painel.py` PUT /config | `taxa_entrega_base`, `distancia_base_km`, `taxa_km_extra`, `raio_entrega_km` |
+| Endereço restaurante mudou | `admin.py` PUT /restaurantes/{id} | `latitude` ou `longitude` mudou |
+
+Função: `invalidate_distancias(restaurante_id)` em `backend/app/cache.py` — usa `SCAN` + `DELETE` com pattern `dist:{id}:*`.
+
+### 23.7 Multi-Tenant
+Chaves isoladas por `restaurante_id`. Invalidar restaurante A não afeta B.
+
+### 23.8 O que NÃO é cacheado
+- `autocomplete_address()` — cada keystroke é diferente, hit rate <5%
+- `check_coverage_zone()` — haversine local (~0ms), mais rápido que Redis
+- Geocode que retorna `None` — não cachear erros
+- Demo restaurants — bypass total (valores fixos)
+
+### 23.9 Arquivos Modificados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `backend/app/cache.py` | + `invalidate_distancias()` |
+| `utils/mapbox_api.py` | + `_cache_key_dist()`, `_cache_key_geo(address, country)`, cache em `geocode_address()` |
+| `backend/app/routers/site_cliente.py` | Cache em `validar-entrega` |
+| `backend/app/routers/carrinho.py` | Cache no checkout |
+| `backend/app/bot/function_calls.py` | Cache em `_validar_endereco()` |
+| `backend/app/routers/painel.py` | Invalidação config entrega |
+| `backend/app/routers/admin.py` | Invalidação endereço restaurante |
+| `tests/test_distance_cache.py` | 34 testes unitários |
+
+### 23.10 Testes
+```bash
+pytest tests/test_distance_cache.py -v  # 34 testes
+```
+
+---
+
+*Documento gerado automaticamente pelo sistema Derekh Food v4.0.8*
+*Última atualização: 31/03/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
 *WhatsApp comercial: +1 555-900-4563*
