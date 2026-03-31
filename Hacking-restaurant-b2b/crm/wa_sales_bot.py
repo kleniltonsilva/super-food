@@ -192,6 +192,35 @@ def _liberar_lock_resposta(numero: str):
     _processing_lock.pop(numero, None)
 
 
+def _agregar_mensagens_pendentes(conversa_id: int, mensagem_original: str) -> str:
+    """Após delay humano, re-lê banco e concatena msgs 'enfileiradas' com a original.
+    Marca as enfileiradas como 'agregada' para não reprocessar."""
+    from crm.database import get_conn
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, conteudo FROM wa_mensagens
+            WHERE conversa_id = %s AND direcao = 'recebida' AND intencao = 'enfileirada'
+            ORDER BY created_at
+        """, (conversa_id,))
+        pendentes = cur.fetchall()
+        if not pendentes:
+            return mensagem_original
+
+        # Marcar como agregadas
+        ids = [r["id"] for r in pendentes]
+        cur.execute("""
+            UPDATE wa_mensagens SET intencao = 'agregada'
+            WHERE id = ANY(%s)
+        """, (ids,))
+        conn.commit()
+
+    # Concatenar: msg_original + pendentes
+    todas = [mensagem_original] + [r["conteudo"] for r in pendentes if r["conteudo"]]
+    log.info(f"Debounce: {len(pendentes)} msgs agregadas com original")
+    return "\n".join(todas)
+
+
 def _calcular_delay_humano(mensagem_cliente: str) -> float:
     """Calcula delay variável para parecer humano.
     Mensagens longas = mais tempo 'lendo'. Mínimo 3s, máximo 15s."""
@@ -704,7 +733,7 @@ def gerar_script_audio(lead: dict) -> str:
 # REGRA CRÍTICA: só altera texto para áudio, NUNCA para texto escrito
 # ============================================================
 _TTS_PRONUNCIA = [
-    # (escrita correta, pronúncia TTS)
+    # Marca principal
     ("Derekh Food", "Dérikh Food"),
     ("derekh food", "dérikh food"),
     ("Derekh food", "Dérikh food"),
@@ -713,6 +742,20 @@ _TTS_PRONUNCIA = [
     ("Derekh", "Dérikh"),
     ("derekh", "dérikh"),
     ("DEREKH", "DÉRIKH"),
+    # Termos tech — pronúncia correta para TTS brasileiro
+    ("iFood", "áiFud"),
+    ("ifood", "áifud"),
+    ("IFOOD", "ÁIFUD"),
+    ("Rappi", "Rápi"),
+    ("rappi", "rápi"),
+    ("KDS", "cá dê ésse"),
+    ("PWA", "pê dáblio ei"),
+    ("QR Code", "quiú ár côde"),
+    ("QR code", "quiú ár côde"),
+    ("Bridge", "Bridji"),
+    ("bridge", "bridji"),
+    ("Setup", "Setáp"),
+    ("setup", "setáp"),
 ]
 
 
@@ -744,6 +787,8 @@ _DICCAO_OBRIGATORIAS = [
     (r'\bestão\b', 'tão'), (r'\bestamos\b', 'tamo'),
     (r'\bestava\b', 'tava'), (r'\bEstava\b', 'Tava'),
     (r'\bestavam\b', 'tavam'),
+    (r'\bvamos\b', 'vamo'), (r'\bVamos\b', 'Vamo'),
+    (r'\bestive\b', 'tive'), (r'\bEstive\b', 'Tive'),
 ]
 
 # ---------- VERBOS -AR permitidos para R-drop (com espaçamento) ----------
@@ -776,6 +821,12 @@ _CONECTORES = ['Então,', 'Ah,', 'Bom,', 'Ó,', 'Olha,', 'É o seguinte,']
 
 # ---------- FINALIZADORES orais ----------
 _FINALIZADORES = ['tá?', 'viu?', 'né?']
+
+# ---------- FILLERS ORAIS naturais (inseridos em frases intermediárias) ----------
+_FILLERS_ORAIS = [
+    'olha,', 'sabe,', 'tipo,', 'na real,', 'ah,', 'bom,', 'ó,',
+    'então olha,', 'é que assim,', 'vou te falá,',
+]
 
 # ---------- CONTEXTO EMOCIONAL (palavras-chave → nível) ----------
 _CONTEXTO_KEYWORDS = {
@@ -846,6 +897,36 @@ def _contem_expressao_congelada(texto: str, pos_inicio: int, pos_fim: int) -> bo
     return False
 
 
+MAX_PALAVRAS_AUDIO = 75  # ~30 segundos a 150 palavras/min
+
+
+def _truncar_para_audio(texto: str) -> tuple:
+    """Se texto > 75 palavras, corta na última frase completa.
+    Retorna (parte_audio, texto_complemento_ou_None)."""
+    palavras = texto.split()
+    if len(palavras) <= MAX_PALAVRAS_AUDIO:
+        return texto, None
+    cortado = ' '.join(palavras[:MAX_PALAVRAS_AUDIO])
+    ultimo_ponto = max(cortado.rfind('.'), cortado.rfind('!'), cortado.rfind('?'))
+    if ultimo_ponto > len(cortado) // 2:
+        audio_part = cortado[:ultimo_ponto + 1]
+    else:
+        audio_part = cortado + '...'
+    texto_complemento = texto[len(audio_part):].strip()
+    return audio_part, texto_complemento if texto_complemento else None
+
+
+_RE_NUMERICO = re.compile(r'R\$\s*[\d.,]+|\d+%|\d+ dias|https?://\S+')
+
+
+def _extrair_dados_numericos(texto: str) -> str:
+    """Extrai preços, %, URLs. Retorna resumo ou None se <2 dados."""
+    matches = _RE_NUMERICO.findall(texto)
+    if len(matches) < 2:
+        return None
+    return "Resumindo: " + " | ".join(matches)
+
+
 def _preparar_texto_para_audio(texto: str) -> str:
     """Transforma português correto do LLM → dicção falada brasileira para TTS.
 
@@ -912,6 +993,19 @@ def _preparar_texto_para_audio(texto: str) -> str:
 
     texto = ' '.join(palavras)
 
+    # --- 6.5 Fillers orais naturais (inserir no início de frases intermediárias) ---
+    if contexto in ('amigavel', 'empolgado'):
+        frases_filler = texto.split('. ')
+        if len(frases_filler) >= 2:
+            import random as _rnd_filler
+            # Inserir filler na 2ª frase (35% chance)
+            if _rnd_filler.random() < 0.35:
+                filler = _rnd_filler.choice(_FILLERS_ORAIS)
+                f2 = frases_filler[1]
+                if f2:
+                    frases_filler[1] = filler + ' ' + f2[0].lower() + f2[1:]
+                texto = '. '.join(frases_filler)
+
     # --- 7. Encerramento casual + finalizadores ---
     # "obrigada" → "brigada" APENAS no final do áudio
     if _re_audio.search(r'\b[Oo]brigad[oa]\s*[!.]?\s*$', texto):
@@ -926,7 +1020,7 @@ def _preparar_texto_para_audio(texto: str) -> str:
         ultima_frase = frases[-1]
         if len(ultima_frase.split()) >= 8 and not ultima_frase.rstrip().endswith(('?', 'né?')):
             import random as _rnd
-            if _rnd.random() < 0.3:  # 30% de chance
+            if _rnd.random() < 0.45:  # 45% de chance
                 fin = _rnd.choice(_FINALIZADORES)
                 # Remover pontuação final e adicionar finalizador
                 frases[-1] = _re_audio.sub(r'[.!]\s*$', '', ultima_frase).rstrip() + ', ' + fin
@@ -1408,6 +1502,74 @@ Intenção atual: {intencao_atual}
 
 
 # ============================================================
+# ANTI-REPETIÇÃO INTELIGENTE — rastrear padrões usados pelo bot
+# ============================================================
+
+_ARGUMENTOS_RASTREADOS = {
+    "teste_gratis": ["teste grátis", "15 dias", "testar grátis"],
+    "kds_cozinha": ["kds", "cozinha digital", "comanda digital"],
+    "bridge_agent": ["bridge", "captura pedido", "cupom automático"],
+    "delivery_proprio": ["marca própria", "delivery próprio", "site próprio"],
+    "comissao_ifood": ["comissão", "27%", "taxa ifood"],
+    "preco_planos": ["169", "279", "329", "527"],
+    "setup_48h": ["48 horas", "48h", "configuro tudo"],
+    "prova_social": ["restaurantes", "clientes nossos"],
+    "despacho_ia": ["despacho inteligente", "motoboy automático"],
+    "garcom_app": ["garçom", "comanda mesa"],
+    "pix_online": ["pix", "qr code"],
+}
+
+
+def _extrair_padroes_usados(historico: list) -> dict:
+    """Analisa últimas msgs ENVIADAS pelo bot. Extrai aberturas, argumentos e fechamentos usados."""
+    enviadas = [m["content"] for m in historico if m["role"] == "assistant"][-6:]
+
+    aberturas = []
+    argumentos_usados = []
+    fechamentos = []
+
+    for msg in enviadas:
+        # Abertura: primeiras 2 palavras
+        palavras = msg.strip().split()
+        if palavras:
+            ab = " ".join(palavras[:2]).rstrip(".,!?")
+            if ab not in aberturas:
+                aberturas.append(ab)
+
+        # Argumentos
+        msg_lower = msg.lower()
+        for arg_nome, keywords in _ARGUMENTOS_RASTREADOS.items():
+            if any(kw in msg_lower for kw in keywords):
+                if arg_nome not in argumentos_usados:
+                    argumentos_usados.append(arg_nome)
+
+        # Fechamento: última frase
+        frases = [f.strip() for f in msg.split('.') if f.strip()]
+        if frases:
+            ultima = frases[-1][:50]
+            if ultima not in fechamentos:
+                fechamentos.append(ultima)
+
+    return {"aberturas": aberturas, "argumentos": argumentos_usados, "fechamentos": fechamentos}
+
+
+def _formatar_anti_repeticao(padroes: dict) -> str:
+    """Formata seção NÃO REPITA para injetar no system prompt."""
+    if not any(padroes.values()):
+        return ""
+    linhas = ["ANTI-REPETIÇÃO (NÃO REPITA NENHUM DESTES NESTA RESPOSTA):"]
+    if padroes.get("aberturas"):
+        linhas.append(f"- Aberturas já usadas: {', '.join(padroes['aberturas'][-4:])}")
+    if padroes.get("argumentos"):
+        nomes = [a.replace("_", " ") for a in padroes["argumentos"][-5:]]
+        linhas.append(f"- Argumentos já apresentados: {', '.join(nomes)}")
+    if padroes.get("fechamentos"):
+        linhas.append(f"- Fechamentos já usados: {', '.join(padroes['fechamentos'][-3:])}")
+    linhas.append("Use palavras e abordagens COMPLETAMENTE DIFERENTES.")
+    return "\n".join(linhas)
+
+
+# ============================================================
 # PROMPTS IA (v2.0 — humanizados)
 # ============================================================
 
@@ -1454,20 +1616,21 @@ FUNCIONALIDADES PRINCIPAIS (explique com exemplos quando perguntarem):
 10. PWA: apps instalam no celular como app nativo, funcionam offline
 
 TESTE GRÁTIS (IMPORTANTÍSSIMO — sempre oferecer):
-- 15 dias GRÁTIS no plano Premium (o mais completo, R$527/mês)
+- 15 dias GRÁTIS no plano Premium (o mais completo)
 - Sem cartão de crédito, sem compromisso, sem pegadinha
-- Após 15 dias, o cliente escolhe qual plano quer continuar (pode ser o mais barato)
+- Após 15 dias, o cliente escolhe qual plano quer continuar
 - Se não quiser continuar, simplesmente para de usar — sem cobrança
-- O trial NÃO inclui o WhatsApp Humanoide (esse é um add-on separado de R$99,45/mês)
+- O trial NÃO inclui o WhatsApp Humanoide (add-on separado)
 
-PLANOS (só detalhe quando perguntarem — não despeje tudo de uma vez):
-- Básico: R$169,90/mês — site delivery próprio, cardápio digital, pedidos WhatsApp, dashboard, Bridge Printer IA, até 2 motoboys
-- Essencial: R$279,90/mês — tudo do Básico + relatórios avançados, cupons, programa fidelidade, combos, operadores caixa, KDS cozinha, até 5 motoboys
-- Avançado: R$329,90/mês — tudo do Essencial + app garçom, integrações iFood/marketplace, Pix online, domínio personalizado, analytics avançado, até 10 motoboys
-- Premium: R$527/mês — tudo liberado + WhatsApp Humanoide incluso + suporte dedicado + motoboys ilimitados
-- Add-on WhatsApp Humanoide: R$99,45/mês (para quem não é Premium)
-- Bridge Printer IA: inclusa em TODOS os planos (intercepta pedidos iFood/Rappi direto da impressora)
+PREÇOS — REGRA INQUEBRÁVEL (NUNCA QUEBRE ISTO):
+- NUNCA mencione valores em R$ por conta própria. NUNCA.
+- Se perguntarem "quanto custa?": responda APENAS "15 dias grátis no plano Premium, sem compromisso. Você testa e depois escolhe o plano que cabe no seu bolso."
+- Se INSISTIREM no preço: mencione APENAS o plano mais barato: "O Básico começa em R$169,90/mês. Mas sério, testa grátis primeiro."
+- PROIBIDO mencionar R$527, R$329,90, R$279,90 por iniciativa própria. Só se o cliente perguntar ESPECIFICAMENTE "quais são todos os planos?"
+- Bridge Printer IA: inclusa em TODOS os planos
 - Todos sem fidelidade. Setup em 48h.
+- Quando o lead perguntar todos os planos detalhados:
+  Básico R$169,90 | Essencial R$279,90 | Avançado R$329,90 | Premium R$527
 {kb_section}
 SE PERGUNTAREM SE VOCÊ É ROBÔ/IA/BOT:
 - Responda que NÃO, você é a Ana, vendedora da Derekh Food
@@ -1546,7 +1709,7 @@ FECHAMENTO AGRESSIVO (IMPORTANTÍSSIMO — o que diferencia vendedor mediano de 
 - URGÊNCIA REAL: "hoje estou com 3 vagas pra setup gratuito essa semana. Quer que reserve a sua?"
 - PONTE PARA AÇÃO: a cada 3 mensagens sem fechamento, puxe: "então, vamos ativar seu teste de 15 dias? Leva 2 minutos"
 - SILÊNCIO ESTRATÉGICO: depois de fazer a pergunta de fechamento, NÃO fale mais. Espere a resposta.
-- DESCONTO TÁTICO SEM DINHEIRO: se o cliente diz que está difícil, sugira o Básico R$169,90 ("menos de R$6 por dia, menos que um lanche")
+- DESCONTO TÁTICO: se o cliente diz que está difícil, diga que tem plano acessível sem mencionar valor exato. "Tem plano que cabe no bolso de qualquer restaurante."
 - CÁLCULO DE RETORNO: "se você fizer 2 entregas por dia a mais com o delivery próprio, já paga o sistema. Quantas entregas você faz hoje?"
 - TRIAL COMO FATO CONSUMADO: "vou liberar seu acesso agora. Em 48h está tudo rodando. Se não gostar, cancela sem custo nenhum."
 - NUNCA TERMINE UMA MENSAGEM SEM CALL-TO-ACTION: sempre finalize com uma pergunta ou proposta de ação concreta.
@@ -1570,7 +1733,11 @@ COMO INSISTIR SEM SER CHATO:
 
 FORMATO (OBRIGATÓRIO — REGRAS INVIOLÁVEIS):
 - Escreva em português CORRETO. Sem abreviações de internet (NÃO use "vc", "tbm", "kkk", "blz", "pq").
-- TAMANHO MÁXIMO: 2 parágrafos CURTOS por mensagem. Cada parágrafo tem NO MÁXIMO 2 frases. Se passar disso, CORTE.
+- TAMANHO MÁXIMO (REGRA MAIS IMPORTANTE DE FORMATO):
+  - Máximo 2-3 frases CURTAS por mensagem. Ponto final.
+  - Se precisar explicar algo longo, seja BREVE por texto e o sistema enviará áudio complementar.
+  - Cada frase tem no máximo 15-20 palavras.
+  - PROIBIDO "textão". Se sua resposta tem mais de 3 frases, CORTE as menos importantes.
 - Separe parágrafos com uma linha vazia (\\n\\n). Nunca cole parágrafos juntos.
 - UMA mensagem por vez
 - Zero emojis corporativos (NÃO use 🚀📈💪🎯). Pode usar 😅🤙👊 RARAMENTE — NÃO em toda mensagem.
@@ -1624,15 +1791,16 @@ SOBRE A DEREKH FOOD (use só quando perguntarem):
 TESTE GRÁTIS (SEMPRE ofereça quando o lead hesitar ou perguntar sobre preço):
 - 15 dias GRÁTIS no plano Premium (o mais completo)
 - Sem cartão, sem compromisso. Depois escolhe o plano que quiser ou simplesmente para.
-- O trial NÃO inclui WhatsApp Humanoide (add-on separado R$99,45/mês)
+- O trial NÃO inclui WhatsApp Humanoide (add-on separado)
 
-PLANOS (só detalhe quando perguntarem):
-- Básico: R$169,90/mês — site delivery, cardápio digital, pedidos WhatsApp, Bridge Printer IA, até 2 motoboys
-- Essencial: R$279,90/mês — + relatórios avançados, cupons, fidelidade, combos, operadores caixa, KDS cozinha, até 5 motoboys
-- Avançado: R$329,90/mês — + app garçom, integrações iFood, Pix online, domínio personalizado, analytics, até 10 motoboys
-- Premium: R$527/mês — tudo + WhatsApp Humanoide incluso + suporte dedicado + motoboys ilimitados
-- Bridge Printer IA: inclusa em TODOS os planos
-- Todos sem fidelidade. Setup em 48h.
+PREÇOS — REGRA INQUEBRÁVEL (NUNCA QUEBRE ISTO):
+- NUNCA mencione valores em R$ por conta própria. NUNCA.
+- Se perguntarem "quanto custa?": "15 dias grátis no plano Premium, sem compromisso. Testa e depois escolhe."
+- Se INSISTIREM: "O Básico começa em R$169,90/mês. Mas testa grátis primeiro."
+- PROIBIDO mencionar R$527, R$329,90, R$279,90 por iniciativa própria.
+- Bridge Printer IA: inclusa em TODOS os planos. Todos sem fidelidade. Setup em 48h.
+- Só detalhe todos os planos se o lead perguntar ESPECIFICAMENTE:
+  Básico R$169,90 | Essencial R$279,90 | Avançado R$329,90 | Premium R$527
 {kb_section}
 SE PERGUNTAREM SE VOCÊ É ROBÔ/IA/BOT:
 - "Não não, sou a Ana da Derekh Food 😅"
@@ -1703,6 +1871,12 @@ def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
 
     system_prompt = _build_system_prompt_conversa(lead_context, n_turnos)
 
+    # Injetar anti-repetição baseada no histórico
+    padroes = _extrair_padroes_usados(historico)
+    anti_rep = _formatar_anti_repeticao(padroes)
+    if anti_rep:
+        system_prompt += f"\n\n{anti_rep}"
+
     try:
         resp = httpx.post(
             "https://api.x.ai/v1/chat/completions",
@@ -1710,7 +1884,7 @@ def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
             json={
                 "model": "grok-3-mini-fast",
                 "messages": [{"role": "system", "content": system_prompt}] + historico,
-                "max_tokens": 300,
+                "max_tokens": 150,
                 "temperature": 0.8,
             },
             timeout=20,
@@ -1788,6 +1962,21 @@ def avaliar_handoff(conversa_id: int) -> tuple:
     return None, ""
 
 
+def _verificar_msgs_novas_pos_ia(conversa_id: int, ts_inicio: float) -> list:
+    """Verifica msgs recebidas APÓS timestamp. Retorna lista ou []."""
+    from crm.database import get_conn
+    import datetime
+    dt = datetime.datetime.fromtimestamp(ts_inicio)
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT conteudo FROM wa_mensagens
+            WHERE conversa_id = %s AND direcao = 'recebida' AND created_at > %s
+            ORDER BY created_at
+        """, (conversa_id, dt))
+        return [r["conteudo"] for r in cur.fetchall()]
+
+
 # ============================================================
 # PROCESSAR RESPOSTAS (PRINCIPAL)
 # ============================================================
@@ -1858,8 +2047,11 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         log.info(f"Delay humano: {delay:.1f}s antes de responder inbound")
         _time.sleep(delay)
 
+        # Debounce: agregar msgs que chegaram durante o delay
+        mensagem_agregada = _agregar_mensagens_pendentes(conversa_id, mensagem)
+
         # Responder com IA (prompt de boas-vindas)
-        resultado_ia = _responder_inbound(conversa_id, mensagem)
+        resultado_ia = _responder_inbound(conversa_id, mensagem_agregada)
         if resultado_ia.get("sucesso"):
             # Inbound é sempre texto — LLM já gera português correto
             resposta = resultado_ia["resposta"]
@@ -1924,22 +2116,45 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
     log.info(f"Delay humano: {delay:.1f}s antes de responder lead {lead_id}")
     _time.sleep(delay)
 
-    resultado_ia = responder_com_ia(conversa_id, mensagem)
+    # Debounce: agregar msgs que chegaram durante o delay
+    mensagem_agregada = _agregar_mensagens_pendentes(conversa_id, mensagem)
+
+    # Gerar resposta IA + verificação pré-envio
+    ts_antes_ia = _time.time()
+    resultado_ia = responder_com_ia(conversa_id, mensagem_agregada)
+
+    if resultado_ia.get("sucesso"):
+        # Verificar msgs novas durante geração IA (ex: "esquece", "para")
+        msgs_novas = _verificar_msgs_novas_pos_ia(conversa_id, ts_antes_ia)
+        if msgs_novas:
+            log.info(f"Msgs novas durante IA: {len(msgs_novas)} — regenerando")
+            msg_completa = mensagem_agregada + "\n" + "\n".join(msgs_novas)
+            resultado_ia = responder_com_ia(conversa_id, msg_completa)  # Max 1 retry
 
     if resultado_ia.get("sucesso"):
         resposta_crua = resultado_ia["resposta"]
 
         # Decisão: enviar áudio ou texto?
         if _deve_enviar_audio(conversa_full, mensagem):
+            # Truncar áudio para max ~30s
+            audio_part, texto_extra = _truncar_para_audio(resposta_crua)
             # ÁUDIO: transformar português correto → dicção falada brasileira
-            resposta_audio = _preparar_texto_para_audio(resposta_crua)
+            resposta_audio = _preparar_texto_para_audio(audio_part)
             # Inferir emoção S2-Pro pelo contexto da conversa
             emocao_ctx = _inferir_emocao_contexto(intencao, resposta_crua, mensagem)
             log.info(f"Emoção S2-Pro inferida: {emocao_ctx} (intenção={intencao})")
+            # Presença "gravando..." antes do TTS (~5-15s)
+            _enviar_presenca(numero_envio, "recording", delay_ms=15000, instance_override=instance)
             audio_result = _gerar_e_enviar_audio_resposta(
                 numero_envio, resposta_audio, conversa_id,
                 instance=instance, emocao=emocao_ctx)
-            if audio_result.get("erro"):
+            if audio_result.get("sucesso"):
+                # Texto complementar (dados numéricos ou resto do texto)
+                complemento = texto_extra or _extrair_dados_numericos(resposta_crua)
+                if complemento:
+                    _time.sleep(random.uniform(1.5, 3.0))
+                    _enviar_e_salvar(conversa_id, numero_envio, complemento, instance=instance)
+            else:
                 # Fallback para texto (enviar direto — LLM já escreve correto)
                 log.warning(f"Fallback texto (áudio falhou): {audio_result['erro']}")
                 _enviar_e_salvar(conversa_id, numero_envio, resposta_crua,

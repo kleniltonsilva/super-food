@@ -69,6 +69,7 @@ EMOCOES_COMPATIVEIS = {
 # PRONÚNCIA
 # ============================================================
 _TTS_PRONUNCIA = [
+    # Marca principal
     ("Derekh Food", "Dérikh Food"),
     ("derekh food", "dérikh food"),
     ("Derekh food", "Dérikh food"),
@@ -77,6 +78,20 @@ _TTS_PRONUNCIA = [
     ("Derekh", "Dérikh"),
     ("derekh", "dérikh"),
     ("DEREKH", "DÉRIKH"),
+    # Termos tech — pronúncia correta para TTS brasileiro
+    ("iFood", "áiFud"),
+    ("ifood", "áifud"),
+    ("IFOOD", "ÁIFUD"),
+    ("Rappi", "Rápi"),
+    ("rappi", "rápi"),
+    ("KDS", "cá dê ésse"),
+    ("PWA", "pê dáblio ei"),
+    ("QR Code", "quiú ár côde"),
+    ("QR code", "quiú ár côde"),
+    ("Bridge", "Bridji"),
+    ("bridge", "bridji"),
+    ("Setup", "Setáp"),
+    ("setup", "setáp"),
 ]
 
 
