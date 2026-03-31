@@ -181,20 +181,36 @@ async def enviar_typing(
         await evolution_client.enviar_presenca_conversa(numero, inst, url, key, presenca=presenca, delay_ms=delay_ms)
 
 
+_typing_warning_logged = False
+
+
 async def _meta_enviar_typing(numero: str, bot_config: models.BotConfig):
-    """Meta: typing_indicator (dura 25s, precisa re-enviar se processo demorar mais)."""
+    """Meta: typing_indicator — feature beta, pode não estar disponível na conta.
+    Se falhar, loga warning uma vez e continua (mark as read já dá feedback visual).
+    """
+    global _typing_warning_logged
     url = f"{META_API_BASE}/{bot_config.meta_phone_number_id}/messages"
     payload = {
         "messaging_product": "whatsapp",
+        "recipient_type": "individual",
         "to": _normalizar_numero(numero),
         "type": "typing_indicator",
     }
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(url, json=payload, headers=_meta_headers(bot_config))
+            if resp.status_code == 400 and not _typing_warning_logged:
+                logger.warning(
+                    "Meta typing_indicator não disponível nesta conta (feature beta). "
+                    "O bot continua funcionando — mark as read (ticks azuis) é usado como feedback."
+                )
+                _typing_warning_logged = True
+                return
             resp.raise_for_status()
     except Exception as e:
-        logger.debug(f"Meta typing indicator falhou: {e}")
+        if not _typing_warning_logged:
+            logger.warning(f"Meta typing indicator indisponível: {e}")
+            _typing_warning_logged = True
 
 
 # ============================================================
