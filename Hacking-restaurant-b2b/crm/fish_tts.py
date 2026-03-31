@@ -1,5 +1,5 @@
 """
-fish_tts.py — Fish Audio S2-Pro TTS para o Sales Bot (Benjamim).
+fish_tts.py — Fish Audio S2-Pro TTS para o Sales Bot (Ana).
 
 TTS PRINCIPAL (async). Quando FISH_API_KEY não está configurada, retorna None
 e o caller envia texto puro (sem fallback para Grok — economia).
