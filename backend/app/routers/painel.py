@@ -382,6 +382,24 @@ async def criar_pedido_manual(
             raise HTTPException(status_code=400, detail="Cliente não encontrado neste restaurante")
         cliente_id_validado = cliente.id
 
+    # Calcular distância restaurante→entrega se possível
+    distancia_restaurante_km = None
+    lat_entrega_manual = None
+    lon_entrega_manual = None
+    if dados.endereco_entrega and dados.tipo_entrega == "entrega" and rest.latitude and rest.longitude:
+        try:
+            from utils.mapbox_api import geocode_address
+            coords = geocode_address(dados.endereco_entrega)
+            if coords:
+                lat_entrega_manual, lon_entrega_manual = coords
+                from utils.haversine import haversine
+                distancia_restaurante_km = round(haversine(
+                    (rest.latitude, rest.longitude),
+                    (lat_entrega_manual, lon_entrega_manual)
+                ), 2)
+        except Exception:
+            pass
+
     pedido = models.Pedido(
         restaurante_id=rest.id,
         comanda=str(proxima_comanda),
@@ -392,6 +410,9 @@ async def criar_pedido_manual(
         cliente_nome=dados.cliente_nome,
         cliente_telefone=dados.cliente_telefone,
         endereco_entrega=dados.endereco_entrega,
+        latitude_entrega=lat_entrega_manual,
+        longitude_entrega=lon_entrega_manual,
+        distancia_restaurante_km=distancia_restaurante_km,
         numero_mesa=dados.numero_mesa,
         itens=dados.itens,
         valor_total=dados.valor_total,
@@ -619,6 +640,10 @@ async def despachar_pedido(
                 (rest.latitude, rest.longitude),
                 (lat_entrega, lon_entrega)
             ), 2)
+
+    # Salvar distância no pedido (para uso futuro e consistência)
+    if distancia_km and not pedido.distancia_restaurante_km:
+        pedido.distancia_restaurante_km = distancia_km
 
     # Criar Entrega primeiro (para incluir no TSP)
     entrega = models.Entrega(

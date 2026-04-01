@@ -132,7 +132,8 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 - Configuração de hierarquia (posição na fila de rotação)
 - Capacidade de entregas simultâneas configurável
 - Edição de senha, ativação/desativação individual
-- **Config Pagamento (na aba Pagamentos):** valor base, km extra, taxa diária, valor lanche, permitir ver saldo, antifraude GPS (finalizar fora do raio)
+- **Config Pagamento (na aba Pagamentos):** valor base, **distância base (km)**, km extra, taxa diária, valor lanche, permitir ver saldo, antifraude GPS (finalizar fora do raio)
+- **Lógica de pagamento:** motoboy recebe valor base até a distância base configurada (ex: R$6 até 4 km). Acima disso, recebe adicional por km extra. Distância calculada automaticamente via haversine (restaurante → endereço de entrega)
 
 ### 2.7 Mapa de Motoboys
 - Rastreamento GPS em tempo real no mapa (Mapbox GL)
@@ -439,6 +440,7 @@ Admin escolhe:
 - **Endereço:** cadastro com autocomplete, CEP, complemento
   - Geocodificação automática (Mapbox)
   - Cálculo de taxa de entrega por distância ou por bairro
+  - `distancia_restaurante_km` calculada automaticamente no pedido (haversine/Mapbox) — usada para despacho e pagamento motoboy
 - **Pagamento:** dinheiro (com troco), cartão, Pix, vale-refeição
   - Pix Online: gera QR Code em tempo real (se restaurante ativou)
 - **Cupom:** campo para código de desconto

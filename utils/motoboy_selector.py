@@ -650,9 +650,12 @@ def obter_estatisticas_motoboy(
         from datetime import date
         hoje = date.today()
 
+        # Incluir todos os status que geram pagamento ao motoboy
+        status_pagos = ['entregue', 'cliente_ausente', 'cancelado_cliente']
+
         entregas_hoje = session.query(Entrega).filter(
             Entrega.motoboy_id == motoboy_id,
-            Entrega.status == 'entregue',
+            Entrega.status.in_(status_pagos),
             Entrega.entregue_em >= datetime.combine(hoje, datetime.min.time())
         ).all()
 

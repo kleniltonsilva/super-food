@@ -153,7 +153,7 @@ def calcular_ganho_motoboy(
             }
 
         valor_base = config.valor_base_motoboy or 0.0
-        distancia_base = config.distancia_base_km or 0.0
+        distancia_base = config.distancia_base_motoboy_km or 0.0
         valor_km_extra = config.valor_km_extra_motoboy or 0.0
 
         if distancia_km <= distancia_base:
@@ -173,7 +173,7 @@ def calcular_ganho_motoboy(
             'km_extras': round(km_extras, 2),
             'config': {
                 'valor_base_motoboy': valor_base,
-                'distancia_base_km': distancia_base,
+                'distancia_base_motoboy_km': distancia_base,
                 'valor_km_extra_motoboy': valor_km_extra
             }
         }

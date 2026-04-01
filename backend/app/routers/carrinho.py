@@ -486,6 +486,7 @@ async def finalizar_carrinho(
 
         # Calcula taxa de entrega real se tem coordenadas
         taxa_entrega = 0.0
+        distancia_restaurante_km = None
         if lat_entrega and lng_entrega and finalizacao.tipo_entrega == "entrega":
             restaurante = db.query(models.Restaurante).filter(
                 models.Restaurante.id == carrinho.restaurante_id
@@ -501,6 +502,7 @@ async def finalizar_carrinho(
                 cached_dist = cache_get(dist_cache_key)
                 if cached_dist is not None:
                     taxa_entrega = cached_dist.get("taxa_entrega", 0.0)
+                    distancia_restaurante_km = cached_dist.get("distancia_km")
                 else:
                     from utils.mapbox_api import check_coverage_zone
                     resultado = check_coverage_zone(
@@ -508,6 +510,7 @@ async def finalizar_carrinho(
                         (lat_entrega, lng_entrega),
                         config.raio_entrega_km or 10.0
                     )
+                    distancia_restaurante_km = resultado.get('distancia_km')
                     if resultado['dentro_zona']:
                         distancia = resultado['distancia_km']
                         if distancia <= config.distancia_base_km:
@@ -521,6 +524,13 @@ async def finalizar_carrinho(
                         "distancia_km": resultado['distancia_km'],
                         "taxa_entrega": round(taxa_entrega, 2),
                     }, ttl_seconds=2592000)
+            elif restaurante and restaurante.latitude and restaurante.longitude:
+                # Sem config mas tem coordenadas — calcular distância via haversine
+                from utils.haversine import haversine
+                distancia_restaurante_km = round(haversine(
+                    (restaurante.latitude, restaurante.longitude),
+                    (lat_entrega, lng_entrega)
+                ), 2)
 
     valor_total_final = carrinho.valor_subtotal + taxa_entrega - carrinho.valor_desconto
 
@@ -538,6 +548,7 @@ async def finalizar_carrinho(
         endereco_entrega=finalizacao.endereco_entrega,
         latitude_entrega=lat_entrega,
         longitude_entrega=lng_entrega,
+        distancia_restaurante_km=distancia_restaurante_km,
         itens="\n".join([f"{item['quantidade']}x {item['nome']}" for item in carrinho.itens_json]),
         carrinho_json=carrinho.itens_json,
         observacoes=finalizacao.observacoes,

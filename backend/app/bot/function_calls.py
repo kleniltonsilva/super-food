@@ -683,8 +683,9 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
     # Gerar comanda
     comanda = f"WA{random.randint(1000, 9999)}"
 
-    # Calcular taxa de entrega
+    # Calcular taxa de entrega e distância
     taxa_entrega = 0
+    distancia_restaurante_km = None
     endereco_validado = None
     tipo_entrega = args.get("tipo_entrega", "entrega")
     restaurante = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
@@ -694,6 +695,7 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
             endereco_validado = conversa.session_data.get("endereco_validado")
         if endereco_validado:
             taxa_entrega = endereco_validado.get("taxa_entrega", 0)
+            distancia_restaurante_km = endereco_validado.get("distancia_km")
             if not args.get("endereco_entrega"):
                 args["endereco_entrega"] = endereco_validado.get("place_name", "")
         else:
@@ -737,6 +739,22 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
                     if tem_bairros > 0:
                         logger.info(f"Bairro '{bairro_cliente}' não cadastrado para restaurante {restaurante_id}, usando taxa padrão")
 
+    # Fallback distância: calcular via haversine se não veio do Mapbox
+    if tipo_entrega == "entrega" and distancia_restaurante_km is None and restaurante and restaurante.latitude and restaurante.longitude:
+        endereco_calc = args.get("endereco_entrega", "")
+        if endereco_calc:
+            try:
+                from utils.mapbox_api import geocode_address
+                coords = geocode_address(endereco_calc)
+                if coords:
+                    from utils.haversine import haversine
+                    distancia_restaurante_km = round(haversine(
+                        (restaurante.latitude, restaurante.longitude),
+                        coords
+                    ), 2)
+            except Exception:
+                pass
+
     valor_total_final = valor_total + taxa_entrega
 
     # Pix Online: SOMENTE quando forma_pagamento='pix_online' explicitamente
@@ -778,6 +796,7 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
         cliente_nome=args.get("cliente_nome", cliente.nome if cliente else "Cliente WhatsApp"),
         cliente_telefone=tel_limpo,
         endereco_entrega=args.get("endereco_entrega", ""),
+        distancia_restaurante_km=distancia_restaurante_km,
         itens=", ".join(itens_texto),
         carrinho_json=[{
             "produto_id": i["produto_id"],

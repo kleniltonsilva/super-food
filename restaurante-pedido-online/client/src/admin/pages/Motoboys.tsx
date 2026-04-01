@@ -101,6 +101,7 @@ export default function Motoboys() {
   useEffect(() => {
     if (config) setConfigPag({
       valor_base_motoboy: config.valor_base_motoboy,
+      distancia_base_motoboy_km: config.distancia_base_motoboy_km,
       valor_km_extra_motoboy: config.valor_km_extra_motoboy,
       taxa_diaria: config.taxa_diaria,
       valor_lanche: config.valor_lanche,
@@ -592,13 +593,20 @@ export default function Motoboys() {
                 <CardTitle className="text-[var(--text-primary)] text-base">Configuração de Pagamento</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
                       Valor Base (R$)
-                      <InfoTooltip text="Valor pago ao motoboy por entrega, independente da distância percorrida." />
+                      <InfoTooltip text="Valor pago ao motoboy por entrega dentro da distância base." />
                     </label>
                     <Input type="number" step="0.01" value={(configPag.valor_base_motoboy as number) || ""} onChange={(e) => setConfigPag({ ...configPag, valor_base_motoboy: Number(e.target.value) })} className="dark-input" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                      Distância Base (km)
+                      <InfoTooltip text="Km incluídos no valor base. Ex: 4 km = motoboy recebe valor base até 4 km. Acima disso, cobra KM Extra." />
+                    </label>
+                    <Input type="number" step="0.5" value={(configPag.distancia_base_motoboy_km as number) || ""} onChange={(e) => setConfigPag({ ...configPag, distancia_base_motoboy_km: Number(e.target.value) })} className="dark-input" />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
