@@ -16,6 +16,7 @@ from ..database import SessionLocal
 from ..billing.billing_service import (
     processar_pagamento_confirmado,
     processar_pagamento_vencido,
+    processar_addon_pago,
     registrar_audit,
 )
 from ..billing.asaas_client import asaas_client
@@ -81,7 +82,14 @@ async def webhook_asaas(request: Request):
         # Processar evento
         try:
             if event_type in ("PAYMENT_RECEIVED", "PAYMENT_CONFIRMED"):
-                await processar_pagamento_confirmado(payment, db)
+                # Verificar se é pagamento de add-on
+                addon_cob = db.query(models.AddonCobranca).filter(
+                    models.AddonCobranca.asaas_payment_id == payment_id
+                ).first()
+                if addon_cob:
+                    await processar_addon_pago(addon_cob, db)
+                else:
+                    await processar_pagamento_confirmado(payment, db)
                 # Buscar PIX QR code para pagamentos futuros
                 if payment.get("billingType") == "PIX" and asaas_client.configured:
                     try:
@@ -97,7 +105,15 @@ async def webhook_asaas(request: Request):
                         pass
 
             elif event_type == "PAYMENT_OVERDUE":
-                await processar_pagamento_vencido(payment, db)
+                # Verificar se é add-on
+                addon_cob_overdue = db.query(models.AddonCobranca).filter(
+                    models.AddonCobranca.asaas_payment_id == payment_id
+                ).first()
+                if addon_cob_overdue:
+                    addon_cob_overdue.status = "OVERDUE"
+                    db.commit()
+                else:
+                    await processar_pagamento_vencido(payment, db)
 
             elif event_type == "PAYMENT_CREATED":
                 # Registrar pagamento novo

@@ -500,7 +500,7 @@ def _enviar_audio_evolution(numero: str, audio_base64: str, instance: str = "",
 def _deve_enviar_audio(conversa: dict, mensagem_atual: str) -> bool:
     """Decide se deve enviar áudio em vez de texto.
     Critérios:
-    1. Cliente PEDIU áudio explicitamente (prioridade máxima)
+    1. Cliente PEDIU áudio explicitamente — na msg atual OU nas últimas 6 msgs (preferência persistente)
     2. Cliente pediu muitas explicações (>=3 nos últimos 6 msgs)
     3. Cliente enviou áudio (reciprocidade)
     4. Conversa longa sem avanço (>=10 msgs, nunca usou áudio)
@@ -510,9 +510,6 @@ def _deve_enviar_audio(conversa: dict, mensagem_atual: str) -> bool:
     if not tts_ativo:
         return False
 
-    msg_lower = mensagem_atual.lower()
-
-    # Critério 1 (PRIORITÁRIO): Cliente pediu áudio explicitamente
     keywords_pediu_audio = [
         "áudio", "audio", "por voz", "manda áudio", "manda audio",
         "me explica por áudio", "me explica por audio", "quero ouvir",
@@ -522,9 +519,23 @@ def _deve_enviar_audio(conversa: dict, mensagem_atual: str) -> bool:
         "envia audio", "grava um áudio", "grava um audio",
         "me manda um áudio", "me manda um audio",
     ]
-    pediu_audio = any(k in msg_lower for k in keywords_pediu_audio)
+
+    msg_lower = mensagem_atual.lower()
+    pediu_audio_agora = any(k in msg_lower for k in keywords_pediu_audio)
 
     msgs = conversa.get("mensagens") or []
+
+    # Critério 1 (PRIORITÁRIO): Cliente pediu áudio — verificar msg atual E últimas 6 msgs recebidas
+    # Preferência de áudio persiste: se pediu 3 msgs atrás, ainda vale
+    pediu_audio_historico = False
+    for m in msgs[-6:]:
+        if m.get("direcao") == "recebida":
+            txt = (m.get("conteudo") or "").lower()
+            if any(k in txt for k in keywords_pediu_audio):
+                pediu_audio_historico = True
+                break
+
+    pediu_audio = pediu_audio_agora or pediu_audio_historico
 
     # Critério 2: Muitas explicações nas últimas 6 msgs
     keywords_explicacao = ["explica", "como funciona", "como é", "me fala mais",
@@ -549,8 +560,10 @@ def _deve_enviar_audio(conversa: dict, mensagem_atual: str) -> bool:
 
     if resultado:
         motivo = []
-        if pediu_audio:
-            motivo.append("cliente_pediu_audio")
+        if pediu_audio_agora:
+            motivo.append("cliente_pediu_audio_agora")
+        elif pediu_audio_historico:
+            motivo.append("cliente_pediu_audio_recente")
         if n_explicacoes >= 3:
             motivo.append(f"explicações={n_explicacoes}")
         if recebeu_audio:
@@ -1622,10 +1635,11 @@ TESTE GRÁTIS (IMPORTANTÍSSIMO — sempre oferecer):
 - Se não quiser continuar, simplesmente para de usar — sem cobrança
 - O trial NÃO inclui o WhatsApp Humanoide (add-on separado)
 
-PREÇOS — REGRA INQUEBRÁVEL (NUNCA QUEBRE ISTO):
-- NUNCA mencione valores em R$ por conta própria. NUNCA.
-- Se perguntarem "quanto custa?": responda APENAS "15 dias grátis no plano Premium, sem compromisso. Você testa e depois escolhe o plano que cabe no seu bolso."
-- Se INSISTIREM no preço: mencione APENAS o plano mais barato: "O Básico começa em R$169,90/mês. Mas sério, testa grátis primeiro."
+PREÇOS — TRANSPARÊNCIA NATURAL (REGRA IMPORTANTE):
+- NÃO mencione valores em R$ por conta própria — só se perguntarem.
+- Se perguntarem "quanto custa?": primeiro ofereça o trial: "Tem 15 dias grátis no Premium, sem compromisso. Testa e depois escolhe o plano."
+- Se pedirem valor concreto (insistirem): informe COM NATURALIDADE, sem fazer o cliente se sentir chato por perguntar: "O Básico é R$169,90/mês. Mas vale testar grátis primeiro pra ver funcionando."
+- PROIBIDO usar tom passivo-agressivo como "já que você insiste", "como você insistiu", "tá bom então". Informe o preço naturalmente, como qualquer vendedor profissional faria.
 - PROIBIDO mencionar R$527, R$329,90, R$279,90 por iniciativa própria. Só se o cliente perguntar ESPECIFICAMENTE "quais são todos os planos?"
 - Bridge Printer IA: inclusa em TODOS os planos
 - Todos sem fidelidade. Setup em 48h.
@@ -1647,10 +1661,12 @@ SEU TRABALHO É APENAS CONVENCER E VENDER (REGRA INQUEBRÁVEL):
 - Detalhes de implementação são para APÓS a contratação, via handoff para o time técnico.
 - Você explica BENEFÍCIOS e RESULTADOS, nunca o "como funciona por dentro".
 
-ÁUDIO:
+ÁUDIO (REGRA CRÍTICA):
 - NUNCA mencione áudio, voz, gravação, escritório, barulho, ligação ou videochamada.
-- NÃO diga "fica melhor por escrito", "não consigo enviar áudio", "estou num lugar barulhento" ou qualquer variação.
-- O sistema de áudio é automático — apenas responda o conteúdo normalmente por texto.
+- NUNCA diga "fica melhor por escrito", "não consigo enviar áudio", "estou num lugar barulhento", "vamos manter por texto" ou qualquer variação.
+- NUNCA recuse ou resista a enviar áudio. Se o cliente pedir áudio, NÃO comente sobre isso.
+- O sistema de áudio é AUTOMÁTICO — apenas responda o conteúdo da pergunta normalmente. O formato (texto/áudio) é decidido pelo sistema, não por você.
+- Se o cliente disser "manda áudio" ou "prefiro áudio", simplesmente responda a pergunta/tema dele. NÃO diga "entendi que prefere áudio" nem nada sobre o formato.
 
 ANTES DE CADA RESPOSTA, PENSE (não escreva isso pro cliente):
 1. FASE DO LEAD: Curioso / Interessado / Comparando / Quase fechando / Esfriando / Voltou depois de sumir
@@ -1793,10 +1809,11 @@ TESTE GRÁTIS (SEMPRE ofereça quando o lead hesitar ou perguntar sobre preço):
 - Sem cartão, sem compromisso. Depois escolhe o plano que quiser ou simplesmente para.
 - O trial NÃO inclui WhatsApp Humanoide (add-on separado)
 
-PREÇOS — REGRA INQUEBRÁVEL (NUNCA QUEBRE ISTO):
-- NUNCA mencione valores em R$ por conta própria. NUNCA.
-- Se perguntarem "quanto custa?": "15 dias grátis no plano Premium, sem compromisso. Testa e depois escolhe."
-- Se INSISTIREM: "O Básico começa em R$169,90/mês. Mas testa grátis primeiro."
+PREÇOS — TRANSPARÊNCIA NATURAL:
+- NÃO mencione valores por conta própria — só se perguntarem.
+- Se perguntarem "quanto custa?": "Tem 15 dias grátis no Premium, sem compromisso. Testa e depois escolhe."
+- Se pedirem valor concreto: informe naturalmente: "O Básico é R$169,90/mês. Mas vale testar grátis primeiro."
+- PROIBIDO tom passivo-agressivo ("já que insiste", "como insistiu"). Preço é informação normal.
 - PROIBIDO mencionar R$527, R$329,90, R$279,90 por iniciativa própria.
 - Bridge Printer IA: inclusa em TODOS os planos. Todos sem fidelidade. Setup em 48h.
 - Só detalhe todos os planos se o lead perguntar ESPECIFICAMENTE:
@@ -2019,7 +2036,7 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         """, (numero,))
         row = cur.fetchone()
 
-        # Prioridade 2: conversa encerrada/handoff (REATIVAR — manter contexto)
+        # Prioridade 2: conversa encerrada (REATIVAR — manter contexto)
         if not row:
             cur.execute("""
                 SELECT c.id, c.lead_id, c.status FROM wa_conversas c
@@ -2028,10 +2045,21 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
             """, (numero,))
             row = cur.fetchone()
             if row:
+                old_status = row["status"]
                 # Reativar conversa — contexto persistente!
                 cur.execute("UPDATE wa_conversas SET status = 'ativo' WHERE id = %s", (row["id"],))
                 conn.commit()
-                log.info(f"Conversa {row['id']} REATIVADA para {numero} (era {row['status']})")
+                log.info(f"Conversa {row['id']} REATIVADA para {numero} (era {old_status})")
+
+                # Se era handoff, NÃO deixar o bot responder — notificar humano
+                if old_status == "handoff":
+                    registrar_msg_wa(row["id"], "recebida", mensagem, intencao="pos_handoff")
+                    _notificar_handoff(row["lead_id"], numero,
+                                       f"Lead respondeu após handoff: {mensagem[:80]}",
+                                       instance)
+                    log.info(f"Lead {row['lead_id']} respondeu pós-handoff — notificando humano, bot NÃO responde")
+                    _liberar_lock_resposta(numero)
+                    return {"processado": True, "pos_handoff": True, "lead_id": row["lead_id"]}
 
     if not row:
         # --- NOVO CONTATO (nunca conversou antes): criar lead + conversa ---
@@ -2330,3 +2358,130 @@ def _notificar_handoff(lead_id: int, numero_lead: str, motivo: str, instance: st
         log.info(f"Notificação handoff enviada ao dono para lead {lead_id}")
     else:
         log.warning(f"Falha ao notificar dono sobre handoff lead {lead_id}: {resultado.get('erro')}")
+
+
+# ============================================================
+# CONVERSA OUTBOUND AUTÔNOMA — Brain Loop inicia conversa proativa
+# ============================================================
+
+def iniciar_conversa_outbound(lead_id: int) -> dict:
+    """Inicia conversa WA proativa — Ana aborda o lead com abertura
+    personalizada gerada por IA (Grok), baseada nos dados do lead.
+    Diferente de enviar_mensagem_wa() que envia texto fixo:
+    - Gera abertura via LLM (Grok) com contexto competitivo
+    - Registra como interação outbound
+    - Configura conversa para modo vendas ativo
+    Retorna dict com sucesso/erro."""
+    lead = obter_lead(lead_id)
+    if not lead:
+        return {"erro": "Lead não encontrado"}
+
+    if lead.get("opt_out_wa"):
+        return {"erro": "Lead fez opt-out de WhatsApp"}
+
+    # Verificar se já tem conversa ativa (evitar duplicata)
+    conversa = obter_conversa_wa_por_lead(lead_id)
+    if conversa and conversa.get("status") == "ativo":
+        return {"erro": "Já existe conversa ativa para este lead"}
+
+    # Gerar abertura personalizada via Grok
+    abertura = _gerar_abertura_outbound(lead)
+    if not abertura:
+        # Fallback para mensagem fixa se Grok falhar
+        pers = personalizar_abordagem(lead)
+        nome = pers.get("nome_dono") or "proprietário"
+        nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "seu restaurante"
+        abertura = (
+            f"Oi {nome}! Tudo bem?\n\n"
+            f"Me chamo Ana, da Derekh Food. "
+            f"Vi que o *{nome_rest}* tem potencial enorme para crescer com delivery próprio.\n\n"
+            f"Sem comissão de plataforma — seus clientes pedem direto de você.\n\n"
+            f"Posso te mostrar como funciona? São só 5 minutinhos!"
+        )
+
+    # Enviar via enviar_mensagem_wa() (cria conversa + envia)
+    result = enviar_mensagem_wa(lead_id, abertura, tom="abertura_proativa")
+
+    if result.get("sucesso"):
+        log.info(f"Conversa outbound iniciada para lead {lead_id}")
+        # Registrar interação específica de outbound
+        registrar_interacao(lead_id, "whatsapp", "whatsapp",
+                            f"WA outbound Ana (Brain Loop): {abertura[:80]}...", "enviado")
+
+    return result
+
+
+def _gerar_abertura_outbound(lead: dict) -> str:
+    """Gera mensagem de abertura personalizada via Grok com contexto do lead.
+    Retorna texto da mensagem ou string vazia se falhar."""
+    xai_key = _get_xai_key()
+    if not xai_key or not httpx:
+        return ""
+
+    pers = personalizar_abordagem(lead)
+    nome_dono = pers.get("nome_dono") or "proprietário"
+    nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "restaurante"
+    cidade = lead.get("cidade") or ""
+    tem_ifood = lead.get("tem_ifood") or 0
+    tem_rappi = lead.get("tem_rappi") or 0
+
+    # Contexto competitivo
+    concorrentes_texto = ""
+    try:
+        from crm.competitor_service import concorrentes_bairro
+        concorrentes = concorrentes_bairro(lead["id"], limite=3)
+        if concorrentes:
+            nomes = [c.get("nome_fantasia") or c.get("razao_social") or "?" for c in concorrentes]
+            concorrentes_texto = f"Concorrentes próximos com delivery: {', '.join(nomes[:3])}"
+    except Exception:
+        pass
+
+    # Cenário
+    cenario = "sem delivery online — oportunidade de ter delivery próprio"
+    if tem_ifood and tem_rappi:
+        cenario = "já está no iFood e Rappi — pode fidelizar com marca própria sem comissão"
+    elif tem_ifood:
+        cenario = "está no iFood — pode complementar com delivery próprio sem 27% de comissão"
+
+    system = """Você é Ana, vendedora da Derekh Food. Escreva UMA mensagem curta de WhatsApp (máx 4 linhas)
+para abordar um restaurante pela primeira vez. Seja natural, sem parecer robô.
+Regras:
+- Cumprimento simples com o nome do dono
+- Mencione algo específico do restaurante (cidade, concorrentes, cenário)
+- Termine com pergunta aberta que gere curiosidade
+- Tom amigável e direto, sem abreviações de internet
+- NÃO mencione preços
+- NÃO use emojis excessivos (máximo 1)
+- Escreva SOMENTE o texto da mensagem, nada mais"""
+
+    user = f"""Nome do dono: {nome_dono}
+Restaurante: {nome_rest}
+Cidade: {cidade}
+Cenário: {cenario}
+{concorrentes_texto}"""
+
+    try:
+        resp = httpx.post(
+            "https://api.x.ai/v1/chat/completions",
+            headers={"Authorization": f"Bearer {xai_key}", "Content-Type": "application/json"},
+            json={
+                "model": "grok-3-mini-fast",
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "max_tokens": 150,
+                "temperature": 0.85,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        texto = data["choices"][0]["message"]["content"].strip()
+        # Limpar aspas envolventes se a IA colocar
+        if texto.startswith('"') and texto.endswith('"'):
+            texto = texto[1:-1]
+        return texto
+    except Exception as e:
+        log.warning(f"Erro Grok abertura outbound: {e}")
+        return ""

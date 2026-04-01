@@ -207,12 +207,19 @@ async def startup():
     except Exception as e:
         print(f"[STARTUP] AVISO: Pool PostgreSQL (scanner) falhou: {e}")
         print("[STARTUP] Scanner ficará indisponível até corrigir DATABASE_URL")
+    # Ativar outreach por padrão (necessário para Brain Loop funcionar)
+    from crm.database import obter_configuracao, salvar_configuracao
+    if not obter_configuracao("outreach_ativo") or obter_configuracao("outreach_ativo").lower() != "true":
+        salvar_configuracao("outreach_ativo", "true")
+        print("[STARTUP] outreach_ativo ativado automaticamente")
+
     # Workers em background
     import asyncio
     asyncio.create_task(_outreach_loop())
     asyncio.create_task(_agente_loop())
     asyncio.create_task(_validacao_loop())
     asyncio.create_task(_auto_import_loop())
+    asyncio.create_task(_brain_loop())
 
 
 async def _outreach_loop():
@@ -300,6 +307,24 @@ async def _auto_import_loop():
             print(f"[AUTO-IMPORT] Erro: {e}")
 
         await asyncio.sleep(1800)  # 30 minutos
+
+
+async def _brain_loop():
+    """Worker Brain Loop — orquestra validação WA, outreach multi-canal e handoff.
+    Roda a cada 10 minutos. Conecta todos os componentes de forma autônoma."""
+    import asyncio
+    await asyncio.sleep(45)  # Esperar app + outros workers inicializarem
+    print("[BRAIN-LOOP] Iniciado — ciclo a cada 10 minutos")
+    while True:
+        try:
+            from crm.brain_loop import ciclo_brain
+            stats = await ciclo_brain()
+            total = sum(v for v in stats.values() if isinstance(v, int))
+            if total > 0:
+                print(f"[BRAIN-LOOP] Ciclo: {stats}")
+        except Exception as e:
+            print(f"[BRAIN-LOOP] Erro: {e}")
+        await asyncio.sleep(600)  # 10 minutos
 
 
 @app.on_event("shutdown")

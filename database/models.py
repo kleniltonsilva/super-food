@@ -76,6 +76,9 @@ class Restaurante(Base):
     addon_bot_valor = Column(Float, default=0.0)
     addon_bot_ativado_em = Column(DateTime)
     addon_bot_desativado_em = Column(DateTime)
+    addon_bot_ciclo_inicio = Column(Date)
+    addon_bot_proximo_vencimento = Column(Date)
+    addon_bot_asaas_payment_id = Column(String(100))
     # Relacionamentos
     config = relationship("ConfigRestaurante", back_populates="restaurante", uselist=False, cascade="all, delete-orphan")
     site_config = relationship("SiteConfig", back_populates="restaurante", uselist=False, cascade="all, delete-orphan")
@@ -1238,6 +1241,34 @@ class AddonAuditLog(Base):
     __table_args__ = (
         Index('idx_addon_audit_restaurante', 'restaurante_id', 'criado_em'),
         Index('idx_addon_audit_addon', 'addon', 'criado_em'),
+    )
+
+
+# ==================== ADDON COBRANÇAS (BILLING SEPARADO) ====================
+class AddonCobranca(Base):
+    """Cobranças avulsas de add-ons (separadas da assinatura do plano)"""
+    __tablename__ = "addon_cobrancas"
+    id = Column(Integer, primary_key=True, index=True)
+    restaurante_id = Column(Integer, ForeignKey("restaurantes.id", ondelete="CASCADE"), nullable=False)
+    addon = Column(String(50), default='bot_whatsapp')
+    asaas_payment_id = Column(String(100), unique=True)
+    valor = Column(Float, nullable=False, default=99.45)
+    billing_type = Column(String(20), default='UNDEFINED')
+    status = Column(String(30), default='PENDING')
+    data_vencimento = Column(DateTime)
+    data_pagamento = Column(DateTime)
+    pix_qr_code = Column(Text)
+    pix_copia_cola = Column(Text)
+    boleto_url = Column(String(500))
+    invoice_url = Column(String(500))
+    ciclo_inicio = Column(Date)
+    ciclo_numero = Column(Integer, default=1)
+    criado_em = Column(DateTime, default=datetime.utcnow)
+    atualizado_em = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    restaurante = relationship("Restaurante")
+    __table_args__ = (
+        Index('idx_addon_cobranca_rest', 'restaurante_id'),
+        Index('idx_addon_cobranca_status', 'status'),
     )
 
 

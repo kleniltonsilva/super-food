@@ -543,23 +543,42 @@ async def phone_registrar(
         )
 
     included_tier = ADDON_INCLUDED_TIER.get("bot_whatsapp", 4)
+
     if tier < included_tier:
         # Precisa do add-on — verificar se já está ativo
         addon_ativo = getattr(restaurante, "addon_bot_whatsapp", False)
         if not addon_ativo:
-            # Ativar add-on via billing
+            # Criar cobrança avulsa (billing separado) — NÃO ativa direto
             try:
-                from ..billing.billing_service import ativar_addon_bot
-                resultado = await ativar_addon_bot(restaurante.id, db)
-                logger.info(f"Add-on bot_whatsapp ativado para restaurante {restaurante.id}: {resultado}")
+                from ..billing.billing_service import criar_cobranca_addon_bot
+                resultado = await criar_cobranca_addon_bot(restaurante.id, db)
             except Exception as e:
-                logger.error(f"Erro ao ativar add-on bot_whatsapp: {e}")
+                logger.error(f"Erro ao criar cobrança add-on bot_whatsapp: {e}")
                 raise HTTPException(
                     status_code=402,
-                    detail=f"Erro ao ativar add-on WhatsApp Humanoide: {e}"
+                    detail=f"Erro ao criar cobrança do WhatsApp Humanoide: {e}"
                 )
 
-    # Registrar número na WABA
+            # Salvar número e display_name no BotConfig para uso posterior (após pagamento)
+            config = _get_or_create_bot_config(db, restaurante.id)
+            config.whatsapp_numero = numero
+            config.phone_display_name = display_name
+            config.phone_registration_status = "pending_payment"
+            config.atualizado_em = datetime.utcnow()
+            db.commit()
+
+            return {
+                "sucesso": True,
+                "aguardando_pagamento": True,
+                "pix_qr_code": resultado.get("pix_qr_code"),
+                "pix_copia_cola": resultado.get("pix_copia_cola"),
+                "boleto_url": resultado.get("boleto_url"),
+                "invoice_url": resultado.get("invoice_url"),
+                "valor": resultado.get("valor"),
+                "mensagem": "Cobrança criada! Após o pagamento, seu número será registrado automaticamente.",
+            }
+
+    # Premium ou add-on já ativo → registrar direto
     from ..bot.meta_phone_manager import registrar_numero, solicitar_codigo, MetaApiError
 
     try:
@@ -592,6 +611,46 @@ async def phone_registrar(
         "sucesso": True,
         "phone_number_id": phone_number_id,
         "mensagem": f"Número registrado! Código de verificação enviado por SMS para {numero}.",
+    }
+
+
+@router.get("/painel/bot/phone/payment-status")
+async def phone_payment_status(
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    db: Session = Depends(database.get_db),
+):
+    """Polling: verifica status do pagamento do add-on WhatsApp Humanoide."""
+    # Buscar cobrança mais recente
+    cobranca = db.query(models.AddonCobranca).filter(
+        models.AddonCobranca.restaurante_id == restaurante.id,
+        models.AddonCobranca.addon == "bot_whatsapp",
+    ).order_by(models.AddonCobranca.criado_em.desc()).first()
+
+    if not cobranca:
+        return {"status": "none"}
+
+    # Verificar phone_registration_status para saber se pagamento foi processado
+    bot_config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id
+    ).first()
+
+    reg_status = getattr(bot_config, "phone_registration_status", "none") if bot_config else "none"
+
+    # Se pagamento confirmado, o webhook já mudou o status para pending_code
+    if cobranca.status == "RECEIVED" or reg_status not in ("pending_payment", "none"):
+        return {
+            "status": "confirmed",
+            "phone_registration_status": reg_status,
+        }
+
+    return {
+        "status": "pending" if cobranca.status == "PENDING" else cobranca.status.lower(),
+        "pix_qr_code": cobranca.pix_qr_code,
+        "pix_copia_cola": cobranca.pix_copia_cola,
+        "boleto_url": cobranca.boleto_url,
+        "invoice_url": cobranca.invoice_url,
+        "valor": cobranca.valor,
+        "data_vencimento": cobranca.data_vencimento.isoformat() if cobranca.data_vencimento else None,
     }
 
 

@@ -1263,6 +1263,76 @@ def leads_novos_sem_outreach(limite: int = 50) -> list:
         return [dict(r) for r in cur.fetchall()]
 
 
+def leads_novos_sem_outreach_v2(limite: int = 50) -> list:
+    """Leads recentes SEM ações de outreach.
+    Inclui leads com email E/OU telefone (não só email).
+    Usado pelo Brain Loop para orquestrar outreach multi-canal."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT l.id, l.cnpj, l.nome_fantasia, l.razao_social,
+                   l.cidade, l.uf, l.bairro, l.email, l.telefone1,
+                   l.telefone_proprietario,
+                   l.lead_score, l.segmento, l.tier,
+                   l.tem_ifood, l.tem_rappi, l.tem_99food,
+                   l.wa_verificado, l.wa_existe, l.canal_primario
+            FROM leads l
+            WHERE l.created_at >= NOW() - INTERVAL '7 days'
+              AND l.opt_out_email = FALSE
+              AND (
+                  (l.email IS NOT NULL AND l.email != '' AND l.email_invalido = 0)
+                  OR (l.telefone1 IS NOT NULL AND l.telefone1 != '')
+                  OR (l.telefone_proprietario IS NOT NULL AND l.telefone_proprietario != '')
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM outreach_sequencia o
+                  WHERE o.lead_id = l.id AND o.cancelado = FALSE
+              )
+            ORDER BY l.lead_score DESC
+            LIMIT %s
+        """, (limite,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def leads_pendentes_validacao(limite: int = 50) -> list:
+    """Leads sem contato validado (contato_validado_at IS NULL).
+    Usado pelo Brain Loop para etapa de validação."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT l.id, l.email, l.telefone1, l.telefone_proprietario
+            FROM leads l
+            WHERE l.contato_validado_at IS NULL
+              AND (
+                  (l.email IS NOT NULL AND l.email != '')
+                  OR (l.telefone1 IS NOT NULL AND l.telefone1 != '')
+                  OR (l.telefone_proprietario IS NOT NULL AND l.telefone_proprietario != '')
+              )
+            ORDER BY l.lead_score DESC
+            LIMIT %s
+        """, (limite,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def conversas_wa_quentes(score_minimo: int = 80) -> list:
+    """Conversas WA ativas com intent_score alto — candidatas a handoff.
+    Usado pelo Brain Loop para monitorar e notificar dono."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT c.id, c.lead_id, c.numero_envio, c.intent_score,
+                   c.intencao_detectada, c.status, c.updated_at,
+                   l.nome_fantasia, l.razao_social, l.cidade
+            FROM wa_conversas c
+            JOIN leads l ON l.id = c.lead_id
+            WHERE c.status = 'ativo'
+              AND c.intent_score >= %s
+            ORDER BY c.intent_score DESC
+            LIMIT 20
+        """, (score_minimo,))
+        return [dict(r) for r in cur.fetchall()]
+
+
 def leads_para_outreach(cidade: str = None, uf: str = None,
                         score_min: int = 30, limite: int = 100) -> list:
     """Leads elegíveis para outreach: com email, sem opt_out, score >= min."""

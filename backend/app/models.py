@@ -86,6 +86,7 @@ from database.models import (
     AsaasEventLog,
     BillingAuditLog,
     AddonAuditLog,
+    AddonCobranca,
 
     # KDS Cozinha
     Cozinheiro,
@@ -173,6 +174,7 @@ __all__ = [
     'AsaasEventLog',
     'BillingAuditLog',
     'AddonAuditLog',
+    'AddonCobranca',
     'Cozinheiro',
     'CozinheiroProduto',
     'PedidoCozinha',

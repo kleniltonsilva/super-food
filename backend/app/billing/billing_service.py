@@ -630,9 +630,11 @@ def get_planos_disponiveis(db: Session) -> list:
     return resultado
 
 
-async def ativar_addon_bot(restaurante_id: int, db: Session):
-    """Ativa add-on Bot WhatsApp para o restaurante."""
-    import json as _json
+async def criar_cobranca_addon_bot(restaurante_id: int, db: Session) -> dict:
+    """Cria cobrança avulsa para add-on Bot WhatsApp.
+    NÃO ativa o add-on — apenas cria a cobrança Asaas e retorna dados de pagamento.
+    O add-on só será ativado quando o webhook confirmar pagamento."""
+    from datetime import date
 
     restaurante = db.query(models.Restaurante).filter(
         models.Restaurante.id == restaurante_id
@@ -657,77 +659,352 @@ async def ativar_addon_bot(restaurante_id: int, db: Session):
     if getattr(restaurante, "addon_bot_whatsapp", False):
         raise ValueError("Add-on Bot WhatsApp já está ativo.")
 
-    # Buscar assinatura ativa
-    assinatura = db.query(models.AsaasAssinatura).filter(
-        models.AsaasAssinatura.restaurante_id == restaurante_id,
-        models.AsaasAssinatura.status == "ACTIVE",
+    # Verificar se já existe cobrança PENDING
+    cobranca_pendente = db.query(models.AddonCobranca).filter(
+        models.AddonCobranca.restaurante_id == restaurante_id,
+        models.AddonCobranca.addon == "bot_whatsapp",
+        models.AddonCobranca.status == "PENDING",
+    ).first()
+    if cobranca_pendente:
+        # Retornar dados da cobrança existente
+        return {
+            "asaas_payment_id": cobranca_pendente.asaas_payment_id,
+            "pix_qr_code": cobranca_pendente.pix_qr_code,
+            "pix_copia_cola": cobranca_pendente.pix_copia_cola,
+            "boleto_url": cobranca_pendente.boleto_url,
+            "invoice_url": cobranca_pendente.invoice_url,
+            "valor": cobranca_pendente.valor,
+            "status": cobranca_pendente.status,
+        }
+
+    # Buscar customer Asaas
+    asaas_cli = db.query(models.AsaasCliente).filter(
+        models.AsaasCliente.restaurante_id == restaurante_id
     ).first()
 
-    if not assinatura:
-        raise ValueError("Nenhuma assinatura ativa encontrada.")
-
-    # Salvar valor base se não existe
-    if assinatura.valor_base_plano is None:
-        assinatura.valor_base_plano = assinatura.valor
-
-    # Calcular novo valor
-    novo_valor = round(assinatura.valor + addon_price, 2)
-
-    # Atualizar Asaas
-    if asaas_client.configured and assinatura.asaas_subscription_id:
-        await asaas_client.atualizar_assinatura(
-            assinatura.asaas_subscription_id,
-            value=novo_valor,
+    if not asaas_cli:
+        # Criar customer on-demand
+        if not asaas_client.configured:
+            raise ValueError("Sistema de pagamento não configurado. Contate o suporte.")
+        if not restaurante.cnpj:
+            raise ValueError("CPF/CNPJ é obrigatório para cobrança. Preencha em Configurações.")
+        asaas_data = await asaas_client.criar_cliente(
+            name=restaurante.nome_fantasia or restaurante.nome,
+            cpf_cnpj=restaurante.cnpj,
+            email=restaurante.email or "",
+            phone=restaurante.telefone or "",
         )
+        asaas_cli = models.AsaasCliente(
+            restaurante_id=restaurante.id,
+            asaas_customer_id=asaas_data["id"],
+            nome=restaurante.nome_fantasia or restaurante.nome,
+            cpf_cnpj=restaurante.cnpj,
+            email=restaurante.email,
+            telefone=restaurante.telefone,
+        )
+        db.add(asaas_cli)
+        db.flush()
 
-    # Atualizar BD
-    valor_anterior = assinatura.valor
-    assinatura.valor = novo_valor
-    assinatura.valor_addons = addon_price
-    addons_dict = {}
-    if assinatura.addons_json:
-        try:
-            addons_dict = _json.loads(assinatura.addons_json)
-        except (ValueError, TypeError):
-            pass
-    addons_dict["bot_whatsapp"] = addon_price
-    assinatura.addons_json = _json.dumps(addons_dict)
+    # Criar cobrança avulsa no Asaas
+    vencimento = date.today() + timedelta(days=3)
+    ext_ref = f"addon_bot_{restaurante_id}"
 
-    restaurante.addon_bot_whatsapp = True
-    restaurante.addon_bot_valor = addon_price
-    restaurante.addon_bot_ativado_em = datetime.utcnow()
-    restaurante.addon_bot_desativado_em = None
-    restaurante.valor_plano = novo_valor
+    asaas_payment_id = None
+    pix_qr_code = None
+    pix_copia_cola = None
+    boleto_url = None
+    invoice_url = None
+
+    if asaas_client.configured:
+        payment_data = await asaas_client.criar_cobranca_avulsa(
+            customer_id=asaas_cli.asaas_customer_id,
+            value=addon_price,
+            due_date=vencimento.strftime("%Y-%m-%d"),
+            description=f"Derekh Food — Add-on WhatsApp Humanoide (mensal)",
+            external_reference=ext_ref,
+        )
+        asaas_payment_id = payment_data.get("id")
+        boleto_url = payment_data.get("bankSlipUrl")
+        invoice_url = payment_data.get("invoiceUrl")
+
+        # Buscar QR Code Pix
+        if asaas_payment_id:
+            try:
+                pix_data = await asaas_client.get_pix_qr_code(asaas_payment_id)
+                pix_qr_code = pix_data.get("encodedImage", "")
+                pix_copia_cola = pix_data.get("payload", "")
+            except Exception as e:
+                logger.warning(f"Erro ao buscar QR Pix para addon: {e}")
+
+    # Criar registro no BD
+    cobranca = models.AddonCobranca(
+        restaurante_id=restaurante_id,
+        addon="bot_whatsapp",
+        asaas_payment_id=asaas_payment_id,
+        valor=addon_price,
+        billing_type="UNDEFINED",
+        status="PENDING",
+        data_vencimento=datetime(vencimento.year, vencimento.month, vencimento.day),
+        pix_qr_code=pix_qr_code,
+        pix_copia_cola=pix_copia_cola,
+        boleto_url=boleto_url,
+        invoice_url=invoice_url,
+        ciclo_numero=1,
+    )
+    db.add(cobranca)
+
+    restaurante.addon_bot_asaas_payment_id = asaas_payment_id
 
     # Audit
     addon_audit = models.AddonAuditLog(
         restaurante_id=restaurante_id,
         addon="bot_whatsapp",
-        acao="ativado",
-        valor_anterior=valor_anterior,
-        valor_novo=novo_valor,
-        motivo=f"Add-on ativado pelo restaurante ({restaurante.plano} + R${addon_price})",
+        acao="cobranca_criada",
+        valor_anterior=0,
+        valor_novo=addon_price,
+        motivo=f"Cobrança avulsa criada — aguardando pagamento",
     )
     db.add(addon_audit)
-    registrar_audit(db, restaurante_id, "addon_activated", {
+    registrar_audit(db, restaurante_id, "addon_cobranca_criada", {
         "addon": "bot_whatsapp",
-        "valor_anterior": valor_anterior,
-        "valor_novo": novo_valor,
-        "addon_price": addon_price,
+        "valor": addon_price,
+        "asaas_payment_id": asaas_payment_id,
     })
 
     db.commit()
+
     return {
-        "addon": "bot_whatsapp",
-        "valor_anterior": valor_anterior,
-        "valor_novo": novo_valor,
-        "addon_price": addon_price,
+        "asaas_payment_id": asaas_payment_id,
+        "pix_qr_code": pix_qr_code,
+        "pix_copia_cola": pix_copia_cola,
+        "boleto_url": boleto_url,
+        "invoice_url": invoice_url,
+        "valor": addon_price,
+        "status": "PENDING",
     }
 
 
+async def processar_addon_pago(addon_cobranca: "models.AddonCobranca", db: Session):
+    """Ativa add-on após confirmação de pagamento via webhook.
+    - Marca addon_bot_whatsapp = True
+    - Define ciclo_inicio (se primeiro pagamento)
+    - Define proximo_vencimento = ciclo_inicio + 1 mês
+    - Muda phone_registration_status de pending_payment → pending_code
+    - Registra número na Meta WABA automaticamente
+    """
+    from datetime import date
+    from dateutil.relativedelta import relativedelta
+
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == addon_cobranca.restaurante_id
+    ).first()
+    if not restaurante:
+        logger.error(f"Restaurante {addon_cobranca.restaurante_id} não encontrado ao processar addon pago")
+        return
+
+    # Marcar cobrança como paga
+    addon_cobranca.status = "RECEIVED"
+    addon_cobranca.data_pagamento = datetime.utcnow()
+
+    # Ativar add-on
+    addon_price = ADDON_PRICES.get("bot_whatsapp", 99.45)
+    restaurante.addon_bot_whatsapp = True
+    restaurante.addon_bot_valor = addon_price
+    restaurante.addon_bot_ativado_em = datetime.utcnow()
+    restaurante.addon_bot_desativado_em = None
+
+    # Ciclo de recorrência
+    hoje = date.today()
+    if not restaurante.addon_bot_ciclo_inicio:
+        restaurante.addon_bot_ciclo_inicio = hoje
+        addon_cobranca.ciclo_inicio = hoje
+
+    restaurante.addon_bot_proximo_vencimento = hoje + relativedelta(months=1)
+    restaurante.addon_bot_asaas_payment_id = addon_cobranca.asaas_payment_id
+
+    # Registrar número na Meta WABA automaticamente
+    bot_config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id
+    ).first()
+
+    if bot_config and getattr(bot_config, "phone_registration_status", "") == "pending_payment":
+        numero = bot_config.whatsapp_numero
+        display_name = bot_config.phone_display_name or restaurante.nome_fantasia
+
+        if numero:
+            try:
+                from ..bot.meta_phone_manager import registrar_numero, solicitar_codigo
+                result = await registrar_numero(numero, display_name)
+                phone_number_id = result["phone_number_id"]
+
+                import os
+                bot_config.meta_phone_number_id = phone_number_id
+                bot_config.meta_access_token = os.getenv("META_ACCESS_TOKEN", "")
+                bot_config.meta_waba_id = os.getenv("META_WABA_ID", "")
+                bot_config.meta_app_secret = os.getenv("META_APP_SECRET", "")
+                bot_config.meta_webhook_verify_token = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "")
+                bot_config.whatsapp_provider = "meta"
+                bot_config.phone_registration_status = "pending_code"
+
+                # Solicitar código SMS
+                try:
+                    await solicitar_codigo(phone_number_id, "SMS")
+                except Exception as e:
+                    logger.warning(f"Erro ao solicitar SMS após pagamento addon: {e}")
+
+                logger.info(f"Número {numero} registrado na WABA após pagamento addon (restaurante {restaurante.id})")
+            except Exception as e:
+                logger.error(f"Erro ao registrar número após pagamento addon: {e}")
+                bot_config.phone_registration_status = "pending_code"
+
+    # Audit
+    addon_audit = models.AddonAuditLog(
+        restaurante_id=restaurante.id,
+        addon="bot_whatsapp",
+        acao="ativado",
+        valor_anterior=0,
+        valor_novo=addon_price,
+        motivo=f"Add-on ativado por pagamento confirmado (ciclo {addon_cobranca.ciclo_numero})",
+    )
+    db.add(addon_audit)
+    registrar_audit(db, restaurante.id, "addon_activated", {
+        "addon": "bot_whatsapp",
+        "addon_price": addon_price,
+        "ciclo": addon_cobranca.ciclo_numero,
+        "asaas_payment_id": addon_cobranca.asaas_payment_id,
+    })
+
+    db.commit()
+    logger.info(f"Add-on bot_whatsapp ativado para restaurante {restaurante.id} (pagamento confirmado)")
+
+
+async def criar_recorrencia_addon(restaurante_id: int, db: Session):
+    """Cria nova cobrança mensal para add-on ativo (recorrência manual)."""
+    from datetime import date
+    from dateutil.relativedelta import relativedelta
+
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == restaurante_id
+    ).first()
+    if not restaurante:
+        return
+
+    addon_price = ADDON_PRICES.get("bot_whatsapp", 99.45)
+
+    # Buscar último ciclo
+    ultima_cobranca = db.query(models.AddonCobranca).filter(
+        models.AddonCobranca.restaurante_id == restaurante_id,
+        models.AddonCobranca.addon == "bot_whatsapp",
+    ).order_by(models.AddonCobranca.ciclo_numero.desc()).first()
+
+    ciclo_numero = (ultima_cobranca.ciclo_numero or 1) + 1 if ultima_cobranca else 1
+    vencimento = date.today() + timedelta(days=3)
+
+    # Buscar customer Asaas
+    asaas_cli = db.query(models.AsaasCliente).filter(
+        models.AsaasCliente.restaurante_id == restaurante_id
+    ).first()
+
+    asaas_payment_id = None
+    pix_qr_code = None
+    pix_copia_cola = None
+    boleto_url = None
+    invoice_url = None
+
+    if asaas_client.configured and asaas_cli:
+        try:
+            payment_data = await asaas_client.criar_cobranca_avulsa(
+                customer_id=asaas_cli.asaas_customer_id,
+                value=addon_price,
+                due_date=vencimento.strftime("%Y-%m-%d"),
+                description=f"Derekh Food — Add-on WhatsApp Humanoide (ciclo {ciclo_numero})",
+                external_reference=f"addon_bot_{restaurante_id}_c{ciclo_numero}",
+            )
+            asaas_payment_id = payment_data.get("id")
+            boleto_url = payment_data.get("bankSlipUrl")
+            invoice_url = payment_data.get("invoiceUrl")
+
+            if asaas_payment_id:
+                try:
+                    pix_data = await asaas_client.get_pix_qr_code(asaas_payment_id)
+                    pix_qr_code = pix_data.get("encodedImage", "")
+                    pix_copia_cola = pix_data.get("payload", "")
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.error(f"Erro ao criar recorrência addon para restaurante {restaurante_id}: {e}")
+            return
+
+    cobranca = models.AddonCobranca(
+        restaurante_id=restaurante_id,
+        addon="bot_whatsapp",
+        asaas_payment_id=asaas_payment_id,
+        valor=addon_price,
+        billing_type="UNDEFINED",
+        status="PENDING",
+        data_vencimento=datetime(vencimento.year, vencimento.month, vencimento.day),
+        pix_qr_code=pix_qr_code,
+        pix_copia_cola=pix_copia_cola,
+        boleto_url=boleto_url,
+        invoice_url=invoice_url,
+        ciclo_numero=ciclo_numero,
+    )
+    db.add(cobranca)
+
+    # Atualizar próximo vencimento
+    restaurante.addon_bot_proximo_vencimento = date.today() + relativedelta(months=1)
+    restaurante.addon_bot_asaas_payment_id = asaas_payment_id
+
+    db.commit()
+    logger.info(f"Recorrência addon bot ciclo {ciclo_numero} criada para restaurante {restaurante_id}")
+
+
+async def desativar_addon_por_inadimplencia(restaurante_id: int, db: Session):
+    """Desativa add-on por falta de pagamento (após 5 dias vencido)."""
+    restaurante = db.query(models.Restaurante).filter(
+        models.Restaurante.id == restaurante_id
+    ).first()
+    if not restaurante:
+        return
+
+    restaurante.addon_bot_whatsapp = False
+    restaurante.addon_bot_valor = 0.0
+    restaurante.addon_bot_desativado_em = datetime.utcnow()
+
+    # Desligar bot
+    bot_config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante_id
+    ).first()
+    if bot_config and bot_config.bot_ativo:
+        bot_config.bot_ativo = False
+
+    # Audit
+    addon_audit = models.AddonAuditLog(
+        restaurante_id=restaurante_id,
+        addon="bot_whatsapp",
+        acao="auto_desativado",
+        valor_anterior=ADDON_PRICES.get("bot_whatsapp", 99.45),
+        valor_novo=0,
+        motivo="Desativado por inadimplência (pagamento vencido há mais de 5 dias)",
+    )
+    db.add(addon_audit)
+    registrar_audit(db, restaurante_id, "addon_deactivated_overdue", {
+        "addon": "bot_whatsapp",
+    }, automatico=True)
+
+    db.commit()
+    logger.info(f"Add-on bot_whatsapp desativado por inadimplência — restaurante {restaurante_id}")
+
+
+async def ativar_addon_bot(restaurante_id: int, db: Session):
+    """DEPRECATED — Mantido para retrocompatibilidade.
+    Agora redireciona para criar_cobranca_addon_bot (billing separado)."""
+    return await criar_cobranca_addon_bot(restaurante_id, db)
+
+
 async def desativar_addon_bot(restaurante_id: int, db: Session):
-    """Desativa add-on Bot WhatsApp do restaurante."""
-    import json as _json
+    """Desativa add-on Bot WhatsApp. Não mexe na assinatura principal (billing separado).
+    Cancela cobranças PENDING no Asaas."""
 
     restaurante = db.query(models.Restaurante).filter(
         models.Restaurante.id == restaurante_id
@@ -740,45 +1017,25 @@ async def desativar_addon_bot(restaurante_id: int, db: Session):
 
     addon_price = ADDON_PRICES.get("bot_whatsapp", 99.45)
 
-    # Buscar assinatura ativa
-    assinatura = db.query(models.AsaasAssinatura).filter(
-        models.AsaasAssinatura.restaurante_id == restaurante_id,
-        models.AsaasAssinatura.status == "ACTIVE",
-    ).first()
+    # Cancelar cobranças PENDING no Asaas
+    cobrancas_pendentes = db.query(models.AddonCobranca).filter(
+        models.AddonCobranca.restaurante_id == restaurante_id,
+        models.AddonCobranca.addon == "bot_whatsapp",
+        models.AddonCobranca.status == "PENDING",
+    ).all()
 
-    if not assinatura:
-        raise ValueError("Nenhuma assinatura ativa encontrada.")
+    for cob in cobrancas_pendentes:
+        cob.status = "CANCELED"
+        if cob.asaas_payment_id and asaas_client.configured:
+            try:
+                await asaas_client.cancelar_cobranca(cob.asaas_payment_id)
+            except Exception as e:
+                logger.warning(f"Erro ao cancelar cobrança Asaas {cob.asaas_payment_id}: {e}")
 
-    # Calcular novo valor
-    novo_valor = round(max(assinatura.valor - addon_price, 0), 2)
-    # Restaurar ao base se possível
-    if assinatura.valor_base_plano:
-        novo_valor = assinatura.valor_base_plano
-
-    # Atualizar Asaas
-    if asaas_client.configured and assinatura.asaas_subscription_id:
-        await asaas_client.atualizar_assinatura(
-            assinatura.asaas_subscription_id,
-            value=novo_valor,
-        )
-
-    # Atualizar BD
-    valor_anterior = assinatura.valor
-    assinatura.valor = novo_valor
-    assinatura.valor_addons = 0
-    addons_dict = {}
-    if assinatura.addons_json:
-        try:
-            addons_dict = _json.loads(assinatura.addons_json)
-        except (ValueError, TypeError):
-            pass
-    addons_dict.pop("bot_whatsapp", None)
-    assinatura.addons_json = _json.dumps(addons_dict) if addons_dict else None
-
+    # Desativar add-on
     restaurante.addon_bot_whatsapp = False
     restaurante.addon_bot_valor = 0.0
     restaurante.addon_bot_desativado_em = datetime.utcnow()
-    restaurante.valor_plano = novo_valor
 
     # Desligar bot ativo
     bot_config = db.query(models.BotConfig).filter(
@@ -792,22 +1049,20 @@ async def desativar_addon_bot(restaurante_id: int, db: Session):
         restaurante_id=restaurante_id,
         addon="bot_whatsapp",
         acao="desativado",
-        valor_anterior=valor_anterior,
-        valor_novo=novo_valor,
+        valor_anterior=addon_price,
+        valor_novo=0,
         motivo="Add-on desativado pelo restaurante",
     )
     db.add(addon_audit)
     registrar_audit(db, restaurante_id, "addon_deactivated", {
         "addon": "bot_whatsapp",
-        "valor_anterior": valor_anterior,
-        "valor_novo": novo_valor,
+        "addon_price": addon_price,
     })
 
     db.commit()
     return {
         "addon": "bot_whatsapp",
-        "valor_anterior": valor_anterior,
-        "valor_novo": novo_valor,
+        "desativado": True,
     }
 
 

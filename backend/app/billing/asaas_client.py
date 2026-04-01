@@ -135,6 +135,32 @@ class AsaasClient:
 
     # ─── Payments ───────────────────────────────────────────
 
+    async def criar_cobranca_avulsa(
+        self,
+        customer_id: str,
+        value: float,
+        due_date: str,
+        description: str = "",
+        external_reference: str = "",
+    ) -> dict:
+        """Cria cobrança avulsa (PIX + Boleto) — POST /payments.
+        billingType UNDEFINED permite PIX ou Boleto automaticamente."""
+        payload = {
+            "customer": customer_id,
+            "billingType": "UNDEFINED",
+            "value": value,
+            "dueDate": due_date,
+        }
+        if description:
+            payload["description"] = description
+        if external_reference:
+            payload["externalReference"] = external_reference
+        return await self._post("/payments", payload)
+
+    async def cancelar_cobranca(self, payment_id: str) -> dict:
+        """Cancela/deleta cobrança avulsa — DELETE /payments/{id}."""
+        return await self._delete(f"/payments/{payment_id}")
+
     async def get_pagamento(self, payment_id: str) -> dict:
         return await self._get(f"/payments/{payment_id}")
 

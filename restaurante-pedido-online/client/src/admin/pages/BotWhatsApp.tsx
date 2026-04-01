@@ -88,6 +88,7 @@ import {
   useBotRepescagemHistorico,
   useCriarRepescagemEmMassa,
   usePhoneStatus,
+  useAddonPaymentStatus,
   useRegistrarPhone,
   useSolicitarCodigo,
   useVerificarCodigo,
@@ -1819,6 +1820,20 @@ function PhoneOnboardingWizard({
   const verificar = useVerificarCodigo();
   const atualizarPerfil = useAtualizarPerfilPhone();
   const uploadFoto = useUploadFotoPerfilPhone();
+  const [paymentTab, setPaymentTab] = useState<"pix" | "boleto">("pix");
+  const [paymentData, setPaymentData] = useState<any>(null);
+  const [copiedPix, setCopiedPix] = useState(false);
+
+  // Polling pagamento add-on (só ativo quando pending_payment)
+  const addonPayment = useAddonPaymentStatus(regStatus === "pending_payment");
+
+  // Auto-transicionar quando pagamento confirmado
+  useEffect(() => {
+    if (addonPayment.data?.status === "confirmed") {
+      toast.success("Pagamento confirmado! Numero sendo registrado...");
+      refetchPhone();
+    }
+  }, [addonPayment.data?.status]);
 
   // Cooldown timer para reenvio de codigo
   useEffect(() => {
@@ -1833,9 +1848,14 @@ function PhoneOnboardingWizard({
       return;
     }
     try {
-      await registrar.mutateAsync({ numero, display_name: displayName || "Restaurante" });
-      setCooldown(60);
-      toast.success("Numero registrado! Verifique o SMS.");
+      const result = await registrar.mutateAsync({ numero, display_name: displayName || "Restaurante" });
+      if (result.aguardando_pagamento) {
+        setPaymentData(result);
+        toast.success("Cobranca criada! Efetue o pagamento para continuar.");
+      } else {
+        setCooldown(60);
+        toast.success("Numero registrado! Verifique o SMS.");
+      }
       refetchPhone();
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Erro ao registrar numero");
@@ -1944,6 +1964,130 @@ function PhoneOnboardingWizard({
             )}
             Registrar Numero
           </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Estado 2.5: Aguardando pagamento do add-on
+  if (regStatus === "pending_payment") {
+    const pData = paymentData || addonPayment.data || {};
+    const pixCode = pData.pix_copia_cola || "";
+    const qrCode = pData.pix_qr_code || "";
+    const boletoUrl = pData.boleto_url || "";
+    const invoiceUrl = pData.invoice_url || "";
+
+    return (
+      <div className="max-w-xl mx-auto py-12 space-y-6">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/10">
+            <Clock className="h-8 w-8 text-amber-400 animate-pulse" />
+          </div>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
+            Pagamento do Add-on WhatsApp Humanoide
+          </h2>
+          <p className="text-[var(--text-secondary)]">
+            R$ 99,45/mes — cobranca separada da sua assinatura
+          </p>
+        </div>
+
+        <Card className="p-6 bg-[var(--bg-card)] border-[var(--border-subtle)] space-y-4">
+          {/* Tabs Pix / Boleto */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPaymentTab("pix")}
+              className={cn(
+                "flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors",
+                paymentTab === "pix"
+                  ? "bg-green-600 text-white"
+                  : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
+              )}
+            >
+              Pix
+            </button>
+            <button
+              onClick={() => setPaymentTab("boleto")}
+              className={cn(
+                "flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors",
+                paymentTab === "boleto"
+                  ? "bg-green-600 text-white"
+                  : "bg-[var(--bg-surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-card-hover)]"
+              )}
+            >
+              Boleto
+            </button>
+          </div>
+
+          {paymentTab === "pix" && (
+            <div className="space-y-4">
+              {qrCode && (
+                <div className="flex justify-center">
+                  <img
+                    src={`data:image/png;base64,${qrCode}`}
+                    alt="QR Code Pix"
+                    className="w-56 h-56 rounded-lg border border-[var(--border-subtle)]"
+                  />
+                </div>
+              )}
+              {pixCode && (
+                <div className="space-y-2">
+                  <Label className="text-[var(--text-primary)]">Pix copia e cola</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      value={pixCode}
+                      className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)] text-xs font-mono"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(pixCode);
+                        setCopiedPix(true);
+                        setTimeout(() => setCopiedPix(false), 2000);
+                        toast.success("Codigo Pix copiado!");
+                      }}
+                      className="shrink-0"
+                    >
+                      {copiedPix ? <CheckCircle2 className="h-4 w-4" /> : "Copiar"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {paymentTab === "boleto" && (
+            <div className="space-y-4 text-center">
+              {(boletoUrl || invoiceUrl) ? (
+                <>
+                  <p className="text-sm text-[var(--text-secondary)]">
+                    O boleto pode levar ate 2 dias uteis para compensar.
+                  </p>
+                  <a
+                    href={invoiceUrl || boletoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Abrir Boleto
+                  </a>
+                </>
+              ) : (
+                <p className="text-sm text-[var(--text-muted)]">
+                  Boleto nao disponivel. Use o Pix para pagamento imediato.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
+            <Loader2 className="h-4 w-4 animate-spin text-amber-400 shrink-0" />
+            <p className="text-xs text-amber-300">
+              Aguardando pagamento... Apos a confirmacao, seu numero sera registrado automaticamente.
+            </p>
+          </div>
         </Card>
       </div>
     );

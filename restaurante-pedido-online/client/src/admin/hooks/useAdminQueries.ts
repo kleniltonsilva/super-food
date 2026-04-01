@@ -59,6 +59,7 @@ export const ADMIN_QUERY_KEYS = {
   botRelatorioErros: ["admin", "bot", "relatorio", "erros"] as const,
   botRepescagemHistorico: ["admin", "bot", "repescagem", "historico"] as const,
   phoneStatus: ["admin", "bot", "phone", "status"] as const,
+  addonPaymentStatus: ["admin", "bot", "phone", "payment-status"] as const,
   addons: ["admin", "billing", "addons"] as const,
 };
 
@@ -1387,6 +1388,16 @@ export function usePhoneStatus() {
     queryKey: ADMIN_QUERY_KEYS.phoneStatus,
     queryFn: api.getPhoneStatus,
     staleTime: 15_000,
+  });
+}
+
+export function useAddonPaymentStatus(enabled: boolean = false) {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.addonPaymentStatus,
+    queryFn: api.getAddonPaymentStatus,
+    enabled,
+    refetchInterval: enabled ? 5000 : false,
+    staleTime: 3_000,
   });
 }
 

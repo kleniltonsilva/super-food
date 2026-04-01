@@ -915,6 +915,11 @@ export async function registrarPhone(payload: { numero: string; display_name: st
   return data;
 }
 
+export async function getAddonPaymentStatus() {
+  const { data } = await adminApi.get("/painel/bot/phone/payment-status");
+  return data;
+}
+
 export async function solicitarCodigoPhone(metodo: string = "SMS") {
   const { data } = await adminApi.post("/painel/bot/phone/solicitar-codigo", { metodo });
   return data;
