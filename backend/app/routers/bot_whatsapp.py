@@ -1,7 +1,7 @@
 """
 Router Bot WhatsApp Humanoide — Webhook Evolution + Endpoints Admin + Super Admin.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import sqlalchemy as sa
@@ -442,6 +442,393 @@ def desativar_bot(
         db.commit()
 
     return {"sucesso": True, "mensagem": "Bot WhatsApp desativado"}
+
+
+# ==================== PHONE REGISTRATION (Self-Service Onboarding) ====================
+
+META_ACCESS_TOKEN_GLOBAL = os.getenv("META_ACCESS_TOKEN", "")
+META_WABA_ID_GLOBAL = os.getenv("META_WABA_ID", "1486557139857851")
+META_APP_SECRET_GLOBAL = os.getenv("META_APP_SECRET", "")
+META_WEBHOOK_VERIFY_TOKEN_GLOBAL = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "")
+
+
+def _get_or_create_bot_config(db: Session, restaurante_id: int) -> "models.BotConfig":
+    """Retorna BotConfig existente ou cria um novo com defaults."""
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante_id
+    ).first()
+    if not config:
+        config = models.BotConfig(restaurante_id=restaurante_id)
+        db.add(config)
+        db.flush()
+    return config
+
+
+@router.get("/painel/bot/phone/status")
+def phone_status(
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Retorna estado atual do registro de telefone e dados do perfil."""
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id
+    ).first()
+
+    if not config:
+        return {
+            "registration_status": "none",
+            "phone_number_id": None,
+            "whatsapp_numero": None,
+            "display_name": None,
+            "about": None,
+            "description": None,
+            "profile_photo_url": None,
+            "registered_at": None,
+            "bot_ativo": False,
+        }
+
+    status = getattr(config, "phone_registration_status", None) or "none"
+
+    # Se bot está ativo com Meta provider mas status é none/registered, marcar como active
+    if config.bot_ativo and config.whatsapp_provider == "meta" and config.meta_phone_number_id:
+        if status in ("none", "registered"):
+            status = "active"
+
+    return {
+        "registration_status": status,
+        "phone_number_id": config.meta_phone_number_id,
+        "whatsapp_numero": config.whatsapp_numero,
+        "display_name": getattr(config, "phone_display_name", None),
+        "about": getattr(config, "phone_about", None),
+        "description": getattr(config, "phone_description", None),
+        "profile_photo_url": getattr(config, "phone_profile_photo_url", None),
+        "registered_at": config.phone_registered_at.isoformat() if getattr(config, "phone_registered_at", None) else None,
+        "bot_ativo": config.bot_ativo,
+    }
+
+
+@router.post("/painel/bot/phone/registrar")
+async def phone_registrar(
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    db: Session = Depends(database.get_db),
+):
+    """Registra número de telefone na WABA e solicita código de verificação.
+
+    NÃO usa feature guard — verifica tier manualmente e ativa add-on inline.
+    Para Essencial/Avançado: ativa add-on automaticamente se necessário.
+    Para Premium: incluso grátis.
+    Para Básico: bloqueado (tier < 2).
+    """
+    body = await request.json()
+    numero = (body.get("numero") or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    display_name = (body.get("display_name") or restaurante.nome_fantasia or "").strip()
+
+    if not numero or len(numero) < 10:
+        raise HTTPException(status_code=400, detail="Número de telefone inválido")
+    if not display_name:
+        raise HTTPException(status_code=400, detail="Nome de exibição é obrigatório")
+
+    # Verificar tier mínimo (Básico bloqueado)
+    from ..feature_flags import PlanTier, ADDON_INCLUDED_TIER, ADDON_MIN_TIER
+    plano_map = {"basico": 1, "essencial": 2, "avancado": 3, "premium": 4}
+    tier = plano_map.get((restaurante.plano or "basico").lower(), 1)
+
+    min_tier = ADDON_MIN_TIER.get("bot_whatsapp", 2)
+    if tier < min_tier:
+        raise HTTPException(
+            status_code=403,
+            detail="WhatsApp Humanoide disponível a partir do plano Essencial.",
+        )
+
+    included_tier = ADDON_INCLUDED_TIER.get("bot_whatsapp", 4)
+    if tier < included_tier:
+        # Precisa do add-on — verificar se já está ativo
+        addon_ativo = getattr(restaurante, "addon_bot_whatsapp", False)
+        if not addon_ativo:
+            # Ativar add-on via billing
+            try:
+                from ..billing.billing_service import ativar_addon_bot
+                resultado = await ativar_addon_bot(restaurante.id, db)
+                logger.info(f"Add-on bot_whatsapp ativado para restaurante {restaurante.id}: {resultado}")
+            except Exception as e:
+                logger.error(f"Erro ao ativar add-on bot_whatsapp: {e}")
+                raise HTTPException(
+                    status_code=402,
+                    detail=f"Erro ao ativar add-on WhatsApp Humanoide: {e}"
+                )
+
+    # Registrar número na WABA
+    from ..bot.meta_phone_manager import registrar_numero, solicitar_codigo, MetaApiError
+
+    try:
+        result = await registrar_numero(numero, display_name)
+        phone_number_id = result["phone_number_id"]
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao registrar número: {e.message}")
+
+    # Criar/atualizar BotConfig
+    config = _get_or_create_bot_config(db, restaurante.id)
+    config.whatsapp_numero = numero
+    config.whatsapp_provider = "meta"
+    config.meta_phone_number_id = phone_number_id
+    config.meta_access_token = META_ACCESS_TOKEN_GLOBAL
+    config.meta_waba_id = META_WABA_ID_GLOBAL
+    config.meta_app_secret = META_APP_SECRET_GLOBAL
+    config.meta_webhook_verify_token = META_WEBHOOK_VERIFY_TOKEN_GLOBAL
+    config.phone_registration_status = "pending_code"
+    config.phone_display_name = display_name
+    config.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    # Solicitar código de verificação automaticamente
+    try:
+        await solicitar_codigo(phone_number_id, "SMS")
+    except MetaApiError as e:
+        logger.warning(f"Erro ao solicitar código SMS (número já verificado?): {e.message}")
+
+    return {
+        "sucesso": True,
+        "phone_number_id": phone_number_id,
+        "mensagem": f"Número registrado! Código de verificação enviado por SMS para {numero}.",
+    }
+
+
+@router.post("/painel/bot/phone/solicitar-codigo")
+async def phone_solicitar_codigo(
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Re-solicita código de verificação via SMS ou VOICE."""
+    body = await request.json()
+    metodo = (body.get("metodo") or "SMS").upper()
+    if metodo not in ("SMS", "VOICE"):
+        metodo = "SMS"
+
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id
+    ).first()
+    if not config or not config.meta_phone_number_id:
+        raise HTTPException(status_code=400, detail="Número não registrado. Registre primeiro.")
+
+    from ..bot.meta_phone_manager import solicitar_codigo, MetaApiError
+
+    try:
+        await solicitar_codigo(config.meta_phone_number_id, metodo)
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao solicitar código: {e.message}")
+
+    return {"sucesso": True, "mensagem": f"Código enviado via {metodo}"}
+
+
+@router.post("/painel/bot/phone/verificar-codigo")
+async def phone_verificar_codigo(
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Verifica código de 6 dígitos e registra na Cloud API."""
+    body = await request.json()
+    codigo = (body.get("codigo") or "").strip()
+
+    if not codigo or len(codigo) != 6 or not codigo.isdigit():
+        raise HTTPException(status_code=400, detail="Código deve ter 6 dígitos")
+
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id
+    ).first()
+    if not config or not config.meta_phone_number_id:
+        raise HTTPException(status_code=400, detail="Número não registrado")
+
+    from ..bot.meta_phone_manager import verificar_codigo, registrar_cloud_api, MetaApiError
+
+    # Passo 1: Verificar código
+    try:
+        await verificar_codigo(config.meta_phone_number_id, codigo)
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Código inválido: {e.message}")
+
+    # Passo 2: Registrar na Cloud API
+    try:
+        await registrar_cloud_api(config.meta_phone_number_id)
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao registrar na Cloud API: {e.message}")
+
+    config.phone_registration_status = "registered"
+    config.phone_registered_at = datetime.utcnow()
+    config.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {
+        "sucesso": True,
+        "mensagem": "Número verificado e registrado na Cloud API!",
+        "registration_status": "registered",
+    }
+
+
+@router.put("/painel/bot/phone/perfil")
+async def phone_perfil(
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Atualiza perfil do WhatsApp Business (about, description, display_name)."""
+    body = await request.json()
+
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id
+    ).first()
+    if not config or not config.meta_phone_number_id:
+        raise HTTPException(status_code=400, detail="Número não registrado")
+
+    about = (body.get("about") or "").strip()
+    description = (body.get("description") or "").strip()
+    display_name = (body.get("display_name") or "").strip()
+    nome_atendente = (body.get("nome_atendente") or "").strip()
+    ativar = body.get("ativar", False)
+
+    # Atualizar perfil na Meta API
+    from ..bot.meta_phone_manager import atualizar_perfil, MetaApiError
+
+    try:
+        await atualizar_perfil(
+            phone_number_id=config.meta_phone_number_id,
+            about=about,
+            description=description,
+            vertical="RESTAURANT",
+        )
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao atualizar perfil: {e.message}")
+
+    # Salvar localmente
+    if about:
+        config.phone_about = about
+    if description:
+        config.phone_description = description
+    if display_name:
+        config.phone_display_name = display_name
+    if nome_atendente:
+        config.nome_atendente = nome_atendente
+
+    # Se pediu para ativar, ligar o bot
+    if ativar:
+        config.bot_ativo = True
+        config.phone_registration_status = "active"
+
+    config.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {
+        "sucesso": True,
+        "mensagem": "Perfil atualizado" + (" e bot ativado!" if ativar else ""),
+        "registration_status": config.phone_registration_status,
+    }
+
+
+@router.post("/painel/bot/phone/foto")
+async def phone_foto(
+    foto: UploadFile = File(...),
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Upload de foto de perfil do WhatsApp Business (JPG/PNG, max 5MB)."""
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id
+    ).first()
+    if not config or not config.meta_phone_number_id:
+        raise HTTPException(status_code=400, detail="Número não registrado")
+
+    # Validar tipo
+    content_type = foto.content_type or "image/jpeg"
+    if content_type not in ("image/jpeg", "image/png", "image/jpg"):
+        raise HTTPException(status_code=400, detail="Formato inválido. Use JPG ou PNG.")
+
+    # Ler e validar tamanho (max 5MB)
+    image_bytes = await foto.read()
+    if len(image_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Imagem muito grande. Máximo 5MB.")
+
+    from ..bot.meta_phone_manager import upload_foto_perfil, MetaApiError
+
+    try:
+        await upload_foto_perfil(config.meta_phone_number_id, image_bytes, content_type)
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao enviar foto: {e.message}")
+
+    # Salvar URL placeholder (Meta não retorna URL pública — usamos marker)
+    config.phone_profile_photo_url = f"meta://profile/{config.meta_phone_number_id}"
+    config.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {"sucesso": True, "mensagem": "Foto de perfil atualizada"}
+
+
+@router.post("/painel/bot/phone/trocar-numero")
+async def phone_trocar_numero(
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    _feature: None = Depends(verificar_feature("bot_whatsapp")),
+    db: Session = Depends(database.get_db),
+):
+    """Troca o número de telefone: desvincula antigo e registra novo."""
+    body = await request.json()
+    numero_novo = (body.get("numero_novo") or "").strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+
+    if not numero_novo or len(numero_novo) < 10:
+        raise HTTPException(status_code=400, detail="Número novo inválido")
+
+    config = db.query(models.BotConfig).filter(
+        models.BotConfig.restaurante_id == restaurante.id
+    ).first()
+    if not config or not config.meta_phone_number_id:
+        raise HTTPException(status_code=400, detail="Nenhum número registrado para trocar")
+
+    from ..bot.meta_phone_manager import desvincular_numero, registrar_numero, solicitar_codigo, MetaApiError
+
+    old_phone_id = config.meta_phone_number_id
+
+    # Desativar bot durante troca
+    config.bot_ativo = False
+
+    # Desvincular número antigo
+    try:
+        await desvincular_numero(old_phone_id)
+    except MetaApiError as e:
+        logger.warning(f"Erro ao desvincular número antigo {old_phone_id}: {e.message}")
+
+    # Registrar novo número
+    try:
+        result = await registrar_numero(numero_novo, config.phone_display_name or restaurante.nome_fantasia)
+        new_phone_id = result["phone_number_id"]
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao registrar novo número: {e.message}")
+
+    # Atualizar config
+    config.whatsapp_numero = numero_novo
+    config.meta_phone_number_id = new_phone_id
+    config.meta_access_token = META_ACCESS_TOKEN_GLOBAL
+    config.phone_registration_status = "pending_code"
+    config.phone_registered_at = None
+    config.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    # Solicitar código para novo número
+    try:
+        await solicitar_codigo(new_phone_id, "SMS")
+    except MetaApiError as e:
+        logger.warning(f"Erro ao solicitar código para novo número: {e.message}")
+
+    return {
+        "sucesso": True,
+        "phone_number_id": new_phone_id,
+        "mensagem": f"Número trocado! Código de verificação enviado para {numero_novo}.",
+    }
 
 
 @router.get("/painel/bot/conversas")

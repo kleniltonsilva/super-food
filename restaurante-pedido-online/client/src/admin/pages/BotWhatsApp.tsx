@@ -61,6 +61,12 @@ import {
   CheckSquare,
   Square,
   Search,
+  Smartphone,
+  ArrowRight,
+  Upload,
+  CheckCircle2,
+  Loader2,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -81,6 +87,13 @@ import {
   useBotRelatorioErrosContornados,
   useBotRepescagemHistorico,
   useCriarRepescagemEmMassa,
+  usePhoneStatus,
+  useRegistrarPhone,
+  useSolicitarCodigo,
+  useVerificarCodigo,
+  useAtualizarPerfilPhone,
+  useUploadFotoPerfilPhone,
+  useTrocarNumero,
 } from "@/admin/hooks/useAdminQueries";
 import { useFeatureFlag } from "@/admin/hooks/useFeatureFlag";
 import { cn } from "@/lib/utils";
@@ -151,6 +164,8 @@ export default function BotWhatsApp() {
   const [showHandoffDialog, setShowHandoffDialog] = useState<number | null>(null);
   const [buscaConversas, setBuscaConversas] = useState("");
   const [buscaDebounced, setBuscaDebounced] = useState("");
+  const [showEditarPerfil, setShowEditarPerfil] = useState(false);
+  const [showTrocarNumero, setShowTrocarNumero] = useState(false);
 
   // Auto-selecionar conversa vinda da notificação (?conversa=ID)
   useEffect(() => {
@@ -175,6 +190,7 @@ export default function BotWhatsApp() {
 
   const { hasFeature, requiredPlano, addonActive, canSubscribeAddon } = useFeatureFlag("bot_whatsapp");
   const { data: botConfig, isLoading: loadingConfig, refetch: refetchConfig } = useBotConfig();
+  const { data: phoneStatusData, refetch: refetchPhone } = usePhoneStatus();
   const { data: dashboard, isLoading: loadingDash } = useBotDashboard();
   const { data: conversasData, isLoading: loadingConversas } = useBotConversas({
     limit: 50,
@@ -266,21 +282,19 @@ export default function BotWhatsApp() {
     );
   }
 
-  // Bot não configurado (Super Admin precisa criar a instância)
-  if (!loadingConfig && botConfig && !botConfig.configurado) {
+  // Wizard de onboarding self-service (se telefone não está ativo)
+  const regStatus = phoneStatusData?.registration_status || "none";
+  const needsOnboarding = (!botConfig?.configurado || regStatus !== "active") && regStatus !== "active";
+
+  if (!loadingConfig && needsOnboarding && hasFeature) {
     return (
       <AdminLayout>
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <MessageCircle className="h-16 w-16 text-amber-400 mb-4" />
-          <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">
-            Humanoide ainda não configurado
-          </h2>
-          <p className="text-[var(--text-secondary)] max-w-md">
-            O atendente IA WhatsApp precisa ser ativado pela equipe Derekh Food.
-            Entre em contato pelo suporte para solicitar a configuração da sua
-            instância WhatsApp.
-          </p>
-        </div>
+        <PhoneOnboardingWizard
+          phoneStatus={phoneStatusData}
+          regStatus={regStatus}
+          refetchPhone={refetchPhone}
+          refetchConfig={refetchConfig}
+        />
       </AdminLayout>
     );
   }
@@ -350,6 +364,46 @@ export default function BotWhatsApp() {
             </Button>
           </div>
         </div>
+
+        {/* Número ativo + status */}
+        {phoneStatusData?.registration_status === "active" && phoneStatusData?.whatsapp_numero && (
+          <Card className="p-4 bg-[var(--bg-card)] border-green-500/30">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Smartphone className="h-5 w-5 text-green-400" />
+                <div>
+                  <p className="text-sm font-medium text-[var(--text-primary)]">
+                    Número ativo: {phoneStatusData.whatsapp_numero?.replace(/(\d{2})(\d{2})(\d{5})(\d{4})/, "+$1 ($2) $3-$4")}
+                  </p>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {phoneStatusData.display_name || "WhatsApp Business"}
+                  </p>
+                </div>
+                <Badge className="bg-green-500/20 text-green-400 text-xs">Conectado</Badge>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-[var(--border-subtle)] text-xs"
+                  onClick={() => setShowEditarPerfil(true)}
+                >
+                  <Pencil className="h-3 w-3 mr-1" />
+                  Editar Perfil
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-[var(--border-subtle)] text-xs"
+                  onClick={() => setShowTrocarNumero(true)}
+                >
+                  <Phone className="h-3 w-3 mr-1" />
+                  Trocar Numero
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Ativar / Desativar */}
         {cfg.configurado && (
@@ -1738,6 +1792,348 @@ export default function BotWhatsApp() {
     </AdminLayout>
   );
 }
+
+// ─── Wizard de Onboarding Self-Service ──────────────────────────
+
+function PhoneOnboardingWizard({
+  phoneStatus,
+  regStatus,
+  refetchPhone,
+  refetchConfig,
+}: {
+  phoneStatus: any;
+  regStatus: string;
+  refetchPhone: () => void;
+  refetchConfig: () => void;
+}) {
+  const [numero, setNumero] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [about, setAbout] = useState("");
+  const [description, setDescription] = useState("");
+  const [nomeAtendente, setNomeAtendente] = useState("Bia");
+  const [cooldown, setCooldown] = useState(0);
+
+  const registrar = useRegistrarPhone();
+  const solicitar = useSolicitarCodigo();
+  const verificar = useVerificarCodigo();
+  const atualizarPerfil = useAtualizarPerfilPhone();
+  const uploadFoto = useUploadFotoPerfilPhone();
+
+  // Cooldown timer para reenvio de codigo
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  async function handleRegistrar() {
+    if (!numero || numero.length < 10) {
+      toast.error("Numero de telefone invalido");
+      return;
+    }
+    try {
+      await registrar.mutateAsync({ numero, display_name: displayName || "Restaurante" });
+      setCooldown(60);
+      toast.success("Numero registrado! Verifique o SMS.");
+      refetchPhone();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao registrar numero");
+    }
+  }
+
+  async function handleVerificar() {
+    if (!codigo || codigo.length !== 6) {
+      toast.error("Digite o codigo de 6 digitos");
+      return;
+    }
+    try {
+      await verificar.mutateAsync(codigo);
+      toast.success("Numero verificado!");
+      refetchPhone();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Codigo invalido");
+    }
+  }
+
+  async function handleReenviar(metodo: string) {
+    try {
+      await solicitar.mutateAsync(metodo);
+      setCooldown(60);
+      toast.success(`Codigo reenviado via ${metodo}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao reenviar");
+    }
+  }
+
+  async function handleAtivarComPerfil() {
+    try {
+      await atualizarPerfil.mutateAsync({
+        about,
+        description,
+        nome_atendente: nomeAtendente,
+        ativar: true,
+      });
+      toast.success("Humanoide ativado com sucesso!");
+      refetchPhone();
+      refetchConfig();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Erro ao ativar");
+    }
+  }
+
+  // Estado 1: Nenhum número registrado
+  if (regStatus === "none") {
+    return (
+      <div className="max-w-xl mx-auto py-12 space-y-6">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/10">
+            <Smartphone className="h-8 w-8 text-green-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
+            Ativar WhatsApp Humanoide
+          </h2>
+          <p className="text-[var(--text-secondary)] max-w-md mx-auto">
+            Conecte o numero de WhatsApp do seu restaurante para ativar a atendente IA.
+            Um codigo de verificacao sera enviado por SMS.
+          </p>
+        </div>
+
+        <Card className="p-6 bg-[var(--bg-card)] border-[var(--border-subtle)] space-y-4">
+          <div className="space-y-2">
+            <Label className="text-[var(--text-primary)]">Numero de telefone (com DDD)</Label>
+            <Input
+              placeholder="5511999999999"
+              value={numero}
+              onChange={(e) => setNumero(e.target.value.replace(/\D/g, ""))}
+              className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
+              maxLength={15}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              Formato: codigo do pais + DDD + numero (ex: 5511999999999)
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-[var(--text-primary)]">Nome do negocio no WhatsApp</Label>
+            <Input
+              placeholder="Nome do seu restaurante"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
+              maxLength={200}
+            />
+          </div>
+
+          <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+            <p className="text-xs text-blue-300">
+              <strong>Como funciona:</strong> Um codigo de verificacao sera enviado por SMS para o numero informado.
+              Apos a verificacao, voce podera configurar o perfil da atendente e ativa-la.
+            </p>
+          </div>
+
+          <Button
+            className="w-full bg-green-600 hover:bg-green-700 text-white"
+            onClick={handleRegistrar}
+            disabled={registrar.isPending || !numero}
+          >
+            {registrar.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <ArrowRight className="h-4 w-4 mr-2" />
+            )}
+            Registrar Numero
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Estado 2: Aguardando codigo de verificacao
+  if (regStatus === "pending_code") {
+    const numMascarado = phoneStatus?.whatsapp_numero
+      ? phoneStatus.whatsapp_numero.replace(/(\d{4})(\d+)(\d{4})/, "$1****$3")
+      : "***";
+
+    return (
+      <div className="max-w-xl mx-auto py-12 space-y-6">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/10">
+            <MessageCircle className="h-8 w-8 text-amber-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
+            Verificar Numero
+          </h2>
+          <p className="text-[var(--text-secondary)]">
+            Codigo enviado para <strong>{numMascarado}</strong>
+          </p>
+        </div>
+
+        <Card className="p-6 bg-[var(--bg-card)] border-[var(--border-subtle)] space-y-4">
+          <div className="space-y-2">
+            <Label className="text-[var(--text-primary)]">Codigo de verificacao (6 digitos)</Label>
+            <Input
+              placeholder="000000"
+              value={codigo}
+              onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)] text-center text-2xl tracking-widest font-mono"
+              maxLength={6}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && codigo.length === 6) handleVerificar();
+              }}
+            />
+          </div>
+
+          <Button
+            className="w-full bg-green-600 hover:bg-green-700 text-white"
+            onClick={handleVerificar}
+            disabled={verificar.isPending || codigo.length !== 6}
+          >
+            {verificar.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+            )}
+            Verificar Codigo
+          </Button>
+
+          <div className="flex items-center justify-between text-sm">
+            <button
+              onClick={() => handleReenviar("SMS")}
+              disabled={cooldown > 0 || solicitar.isPending}
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50"
+            >
+              {cooldown > 0 ? `Reenviar SMS (${cooldown}s)` : "Reenviar por SMS"}
+            </button>
+            <button
+              onClick={() => handleReenviar("VOICE")}
+              disabled={cooldown > 0 || solicitar.isPending}
+              className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] disabled:opacity-50"
+            >
+              Enviar por ligacao
+            </button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Estado 3: Verificado/registrado — configurar perfil
+  if (regStatus === "verified" || regStatus === "registered") {
+    return (
+      <div className="max-w-xl mx-auto py-12 space-y-6">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/10">
+            <CheckCircle2 className="h-8 w-8 text-green-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
+            Numero Verificado!
+          </h2>
+          <p className="text-[var(--text-secondary)]">
+            Configure o perfil da atendente e ative o Humanoide.
+          </p>
+        </div>
+
+        <Card className="p-6 bg-[var(--bg-card)] border-[var(--border-subtle)] space-y-4">
+          <div className="space-y-2">
+            <Label className="text-[var(--text-primary)]">Nome da atendente IA</Label>
+            <Input
+              placeholder="Bia"
+              value={nomeAtendente}
+              onChange={(e) => setNomeAtendente(e.target.value)}
+              className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
+              maxLength={100}
+            />
+            <p className="text-xs text-[var(--text-muted)]">
+              A atendente se apresentara com este nome aos clientes.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-[var(--text-primary)]">Mensagem "Sobre" (max 139 caracteres)</Label>
+            <Input
+              placeholder="Delivery e retirada — Pedidos 24h"
+              value={about}
+              onChange={(e) => setAbout(e.target.value.slice(0, 139))}
+              className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
+              maxLength={139}
+            />
+            <p className="text-xs text-[var(--text-muted)]">{about.length}/139</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-[var(--text-primary)]">Descricao do negocio (max 512 caracteres)</Label>
+            <textarea
+              placeholder="Pizzaria artesanal com delivery rapido. Funcionamos de segunda a domingo."
+              value={description}
+              onChange={(e) => setDescription(e.target.value.slice(0, 512))}
+              className="w-full min-h-[80px] p-2 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-sm resize-none"
+              maxLength={512}
+            />
+            <p className="text-xs text-[var(--text-muted)]">{description.length}/512</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-[var(--text-primary)]">Foto de perfil (opcional)</Label>
+            <div className="flex items-center gap-3">
+              <label className="flex items-center gap-2 px-4 py-2 rounded-lg border border-dashed border-[var(--border-subtle)] cursor-pointer hover:bg-[var(--bg-card-hover)] text-sm text-[var(--text-secondary)]">
+                <Upload className="h-4 w-4" />
+                Enviar foto
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) {
+                      toast.error("Imagem muito grande (max 5MB)");
+                      return;
+                    }
+                    try {
+                      await uploadFoto.mutateAsync(file);
+                      toast.success("Foto enviada!");
+                      refetchPhone();
+                    } catch {
+                      toast.error("Erro ao enviar foto");
+                    }
+                  }}
+                />
+              </label>
+              {uploadFoto.isPending && <Loader2 className="h-4 w-4 animate-spin text-[var(--text-muted)]" />}
+              {phoneStatus?.profile_photo_url && (
+                <Badge className="bg-green-500/20 text-green-400 text-xs">Foto enviada</Badge>
+              )}
+            </div>
+          </div>
+
+          <Button
+            className="w-full bg-green-600 hover:bg-green-700 text-white"
+            onClick={handleAtivarComPerfil}
+            disabled={atualizarPerfil.isPending}
+          >
+            {atualizarPerfil.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Power className="h-4 w-4 mr-2" />
+            )}
+            Ativar Humanoide
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Fallback — caso de status desconhecido, mostrar mensagem genérica
+  return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <Loader2 className="h-8 w-8 text-[var(--text-muted)] animate-spin mb-4" />
+      <p className="text-[var(--text-secondary)]">Carregando configuracao...</p>
+    </div>
+  );
+}
+
 
 // ─── Componentes auxiliares ──────────────────────────────
 

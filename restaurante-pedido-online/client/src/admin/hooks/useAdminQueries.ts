@@ -58,6 +58,7 @@ export const ADMIN_QUERY_KEYS = {
   botRelatorioInativos: ["admin", "bot", "relatorio", "inativos"] as const,
   botRelatorioErros: ["admin", "bot", "relatorio", "erros"] as const,
   botRepescagemHistorico: ["admin", "bot", "repescagem", "historico"] as const,
+  phoneStatus: ["admin", "bot", "phone", "status"] as const,
   addons: ["admin", "billing", "addons"] as const,
 };
 
@@ -1376,6 +1377,74 @@ export function useCriarRepescagemEmMassa() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botRepescagemHistorico });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botRelatorioInativos });
+    },
+  });
+}
+
+// ─── Phone Registration (Self-Service Onboarding) ─────────────────────────
+export function usePhoneStatus() {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.phoneStatus,
+    queryFn: api.getPhoneStatus,
+    staleTime: 15_000,
+  });
+}
+
+export function useRegistrarPhone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.registrarPhone,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.phoneStatus });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConfig });
+    },
+  });
+}
+
+export function useSolicitarCodigo() {
+  return useMutation({
+    mutationFn: api.solicitarCodigoPhone,
+  });
+}
+
+export function useVerificarCodigo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.verificarCodigoPhone,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.phoneStatus });
+    },
+  });
+}
+
+export function useAtualizarPerfilPhone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.atualizarPerfilPhone,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.phoneStatus });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConfig });
+    },
+  });
+}
+
+export function useUploadFotoPerfilPhone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.uploadFotoPerfilPhone,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.phoneStatus });
+    },
+  });
+}
+
+export function useTrocarNumero() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.trocarNumeroPhone,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.phoneStatus });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConfig });
     },
   });
 }

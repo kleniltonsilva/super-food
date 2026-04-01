@@ -89,12 +89,13 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 30/03/2026
+- **Última sessão:** 01/04/2026
 - **Migrations em produção:** 001-036 + 039-042 (última: 042_solicitacao_cadastro)
+- **Migrations locais:** 043-046 (última: 046_bot_phone_registration)
 - **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034 + sistema de add-ons (migration 041)
 - **Add-on Bot WhatsApp:** ✅ Implementado — R$99,45/mês, fatura única Asaas, 15 arquivos, 33 testes
-- **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 24 function calls (+ gerar_cobranca_pix, consultar_pagamento_pix), handoff com senha, STT/TTS, repescagem, testado E2E em produção
+- **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 24 function calls, handoff, STT/TTS, repescagem, onboarding self-service (migration 046)
 - **Geocoding multi-país:** Reverse geocoding direto, normalização acentos, filtro relaxado para não-BR, migration 038+040
 - **Pix Online (Sprint 17):** Backend implementado (migration 040, paymentLinkUrl, bot Pix integrado, webhook notificação), aguardando WOOVI_APP_ID válido
 - **Sales Autopilot CRM:** `derekh-crm.fly.dev` — autopilot ativo (email branded + regras + WA + auto-import)
@@ -306,6 +307,7 @@ super-food/
 | 25 | Security Hardening | ✅ 26/03 (8 vulnerabilidades, security headers, CORS, webhook auth, 36 testes) |
 | 26 | Landing Page + Onboarding Self-Service | ✅ 29/03 (migration 042, landing `/onboarding`, formulário self-service, Super Admin review 1-click) |
 | 27 | App Nativo Android Motoboy (CapacitorJS) | ✅ 30/03 (GPS background, auto-update, CI/CD APK, página download, banner install) |
+| 28 | Onboarding Self-Service WhatsApp Humanoide | ✅ 01/04 (migration 046, meta_phone_manager, 7 endpoints, wizard frontend, 18 testes) |
 
 ---
 
@@ -573,6 +575,20 @@ super-food/
 
 **Etapa 9: Deploy**
 - [x] Deploy migration 035-036 + auditoria 5 fases + testes E2E em produção (26-27/03)
+
+**Etapa 10: Onboarding Self-Service (Migration 046)**
+- [x] Migration 046: 6 campos em bot_config (phone_registration_status, phone_display_name, phone_about, phone_description, phone_profile_photo_url, phone_registered_at)
+- [x] `meta_phone_manager.py`: 8 funções (registrar_numero, solicitar_codigo, verificar_codigo, registrar_cloud_api, atualizar_perfil, upload_foto_perfil, obter_perfil, desvincular_numero)
+- [x] 7 endpoints: GET/POST phone/status|registrar|solicitar-codigo|verificar-codigo|perfil|foto|trocar-numero
+- [x] Frontend wizard: 5 estados (plano insuficiente, sem config, pending_code, registered, active) + card número ativo
+- [x] 7 hooks + 7 API functions no frontend
+- [x] Billing: add-on ativado automaticamente para Essencial/Avançado (inline no endpoint registrar)
+- [x] 18 testes (`tests/test_phone_registration.py`)
+
+> **Token permanente:** System User Token (`META_ACCESS_TOKEN`), `expires_at: 0`, guardado como secret no Fly.io.
+> **WABA compartilhada:** `META_WABA_ID=1486557139857851` — todos os restaurantes usam mesma WABA.
+> **Fluxo self-service:** Restaurante registra número → SMS → código 6 dígitos → Cloud API → perfil → ativa bot.
+> **Endpoint `/painel/bot/phone/registrar` NÃO usa feature guard** — verifica tier manualmente (min_tier=2) e ativa add-on inline.
 
 ---
 

@@ -904,6 +904,52 @@ export async function getBotRepescagemHistorico(pagina: number = 1) {
   return data;
 }
 
+// ─── Phone Registration (Self-Service Onboarding) ──────────────────────────
+export async function getPhoneStatus() {
+  const { data } = await adminApi.get("/painel/bot/phone/status");
+  return data;
+}
+
+export async function registrarPhone(payload: { numero: string; display_name: string }) {
+  const { data } = await adminApi.post("/painel/bot/phone/registrar", payload);
+  return data;
+}
+
+export async function solicitarCodigoPhone(metodo: string = "SMS") {
+  const { data } = await adminApi.post("/painel/bot/phone/solicitar-codigo", { metodo });
+  return data;
+}
+
+export async function verificarCodigoPhone(codigo: string) {
+  const { data } = await adminApi.post("/painel/bot/phone/verificar-codigo", { codigo });
+  return data;
+}
+
+export async function atualizarPerfilPhone(payload: {
+  about?: string;
+  description?: string;
+  display_name?: string;
+  nome_atendente?: string;
+  ativar?: boolean;
+}) {
+  const { data } = await adminApi.put("/painel/bot/phone/perfil", payload);
+  return data;
+}
+
+export async function uploadFotoPerfilPhone(file: File) {
+  const formData = new FormData();
+  formData.append("foto", file);
+  const { data } = await adminApi.post("/painel/bot/phone/foto", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function trocarNumeroPhone(numero_novo: string) {
+  const { data } = await adminApi.post("/painel/bot/phone/trocar-numero", { numero_novo });
+  return data;
+}
+
 export async function uploadImagem(file: File, tipo: string = "produto") {
   // Obter restaurante_id do localStorage
   const restauranteStr = localStorage.getItem("sf_admin_restaurante");
