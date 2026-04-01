@@ -1580,7 +1580,7 @@ Salvar mensagem no BD + notificar painel via WebSocket
 | `bot_problemas` | restaurante_id, conversa_id, pedido_id, tipo, descricao, resolvido | Reclamações detectadas |
 | `bot_repescagem` | restaurante_id, cliente_id, tipo, mensagem, cupom_codigo, desconto_pct, enviado_em, respondido, cupom_validade_dias, lembrete_enviado, lembrete_enviado_em, canal, email_enviado, promocao_id | Campanhas de reativação |
 
-### 17.5 Function Calls (22 funções)
+### 17.5 Function Calls (24 funções)
 
 | Função | Descrição |
 |--------|-----------|
@@ -2104,6 +2104,28 @@ Resposta via Graph API v21.0:
 - Webhook: texto, áudio, status updates (ignorados), sem mensagens
 - Validação signature HMAC-SHA256, migration 045, dual-provider simultâneo
 - Graceful: ffmpeg não disponível → skip áudio, audio fallback → texto
+
+### 17.24 Auditoria 24 Capacidades + Stress Test 100 Conversas (01/04)
+
+**Bug corrigido em produção — `UnboundLocalError: endereco_validado`:**
+- `function_calls.py` → `_criar_pedido()`: variável `endereco_validado` só era definida dentro de `if tipo_entrega == "entrega":`, mas acessada fora do bloco
+- **Efeito:** TODOS os pedidos de retirada via bot crashavam com `UnboundLocalError`
+- **Fix:** Mover `endereco_validado = None` para antes do `if` (1 linha)
+
+**Teste de auditoria — `tests/test_bot_capacidades.py`:**
+- 27 testes determinísticos (sem LLM, sem WhatsApp) chamando `executar_funcao()` direto
+- BD SQLite em memória com fixtures completas (restaurante, cardápio, clientes, pedidos, entrega, promoções)
+- Assertions estritas: valores exatos, verificação de estado no BD após mutações
+- Multi-tenant: restaurante 2 isolado, queries do restaurante 1 não vazam
+- Permissões: `pode_cancelar=False` e `pode_alterar=False` bloqueiam corretamente
+- Resultado: **27/27 PASS**
+
+**Stress test 100 conversas — `tests/test_bot_100_conversas.py`:**
+- 100 clientes fictícios com nomes/telefones únicos
+- 15 fluxos de conversa diferentes (novo pedido, retirada, rastrear, cancelar, alterar, trocar item, avaliar, reclamar, cupom, info, endereço, escalar, validar endereço, promoções, repetir)
+- 22/22 function calls cobertos em ~170 chamadas totais
+- Seed `random.seed(42)` para reprodutibilidade
+- Resultado: **100/100 OK, 22/22 funções testadas**
 
 ---
 

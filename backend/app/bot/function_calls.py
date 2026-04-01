@@ -685,11 +685,11 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
 
     # Calcular taxa de entrega
     taxa_entrega = 0
+    endereco_validado = None
     tipo_entrega = args.get("tipo_entrega", "entrega")
     restaurante = db.query(models.Restaurante).filter(models.Restaurante.id == restaurante_id).first()
     if tipo_entrega == "entrega":
         # Prioridade 1: Usar taxa pré-calculada pelo Mapbox (validar_endereco)
-        endereco_validado = None
         if conversa and conversa.session_data:
             endereco_validado = conversa.session_data.get("endereco_validado")
         if endereco_validado:
