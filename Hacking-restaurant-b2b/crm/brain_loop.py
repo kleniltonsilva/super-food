@@ -111,6 +111,14 @@ async def ciclo_brain() -> dict:
         log.error(f"Etapa 5.6 (recontato agendado) falhou: {e}")
         stats["erros"] += 1
 
+    # Etapa 5.7: Follow-up outbound (conversas sem resposta do lead)
+    try:
+        result = await asyncio.to_thread(_etapa_followup_outbound)
+        stats["followups_outbound"] = result.get("followups", 0)
+    except Exception as e:
+        log.error(f"Etapa 5.7 (followup outbound) falhou: {e}")
+        stats["erros"] += 1
+
     # Etapa 6: Desistência de leads sem resposta (P3)
     try:
         result = await asyncio.to_thread(_etapa_desistencia)
@@ -574,6 +582,19 @@ def _etapa_retomar_conversas() -> dict:
     except Exception as e:
         log.warning(f"Erro ao retomar conversas: {e}")
         return {"retomadas": 0, "erros": 1}
+
+
+def _etapa_followup_outbound() -> dict:
+    """Follow-up para conversas outbound sem resposta do lead.
+    Envia mensagem de acompanhamento para quem não respondeu
+    (pode ter respondido mas o webhook não recebeu).
+    Envia preferencialmente por áudio para quebrar o gelo."""
+    from crm.wa_sales_bot import followup_conversas_outbound
+    try:
+        return followup_conversas_outbound(limite=15)
+    except Exception as e:
+        log.warning(f"Erro ao fazer follow-up outbound: {e}")
+        return {"followups": 0, "erros": 1}
 
 
 # ============================================================

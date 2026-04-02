@@ -3311,3 +3311,113 @@ def retomar_conversas_sem_resposta(limite: int = 20) -> dict:
         log.info(f"Retomadas: {result['retomadas']} conversas sem resposta")
 
     return result
+
+
+def followup_conversas_outbound(limite: int = 15) -> dict:
+    """Envia follow-up para conversas outbound que ficaram sem resposta do lead.
+    Conversas onde o bot enviou mensagem inicial mas o lead não respondeu
+    (pode ter respondido mas o webhook não recebeu — Evolution desconectada).
+    Envia preferencialmente por áudio para quebrar o gelo.
+    Chamado pelo brain_loop."""
+    from crm.database import get_conn
+
+    result = {"followups": 0, "erros": 0}
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # Conversas ativas com msgs enviadas mas sem recebidas
+        # Enviada entre 1h e 24h atrás (não muito cedo, não muito tarde)
+        # Máximo 2 mensagens enviadas (não ficar mandando follow-up infinito)
+        cur.execute("""
+            SELECT c.id as conversa_id, c.lead_id, c.numero_envio,
+                   c.msgs_enviadas,
+                   l.nome_fantasia, l.razao_social,
+                   (SELECT m.conteudo FROM wa_mensagens m
+                    WHERE m.conversa_id = c.id ORDER BY m.created_at DESC LIMIT 1) as ultima_msg
+            FROM wa_conversas c
+            JOIN leads l ON c.lead_id = l.id
+            WHERE c.status = 'ativo'
+              AND c.msgs_recebidas = 0
+              AND c.msgs_enviadas BETWEEN 1 AND 2
+              AND c.updated_at < NOW() - INTERVAL '1 hour'
+              AND c.updated_at > NOW() - INTERVAL '24 hours'
+              AND l.opt_out_wa IS NOT TRUE
+              AND l.status_pipeline NOT IN ('perdido', 'lead_falso')
+            ORDER BY c.updated_at ASC
+            LIMIT %s
+        """, (limite,))
+        rows = cur.fetchall()
+
+    if not rows:
+        return result
+
+    log.info(f"Follow-up outbound: {len(rows)} conversas sem resposta do lead")
+
+    for row in rows:
+        conversa_id = row["conversa_id"]
+        lead_id = row["lead_id"]
+        numero = row["numero_envio"]
+
+        # Pular números excluídos ou inválidos
+        numero_limpo = _limpar_telefone(numero)
+        if numero_limpo in _NUMEROS_EXCLUIDOS or len(numero_limpo) < 8:
+            continue
+
+        try:
+            lead = {"nome_fantasia": row["nome_fantasia"], "razao_social": row["razao_social"]}
+            nome_rest = _limpar_nome_restaurante(lead)
+
+            # Gerar follow-up personalizado — curto e direto
+            followup_templates = [
+                (f"Oi! Sou a Ana da Derekh Food, mandei uma mensagem mais cedo. "
+                 f"Queria te mostrar como o {nome_rest} pode ter delivery próprio "
+                 f"sem pagar comissão de iFood. Posso te contar mais?"),
+                (f"Oi! Ana da Derekh Food aqui. Mandei mensagem mais cedo sobre "
+                 f"uma solução de delivery pra {nome_rest}. Quer dar uma olhada? "
+                 f"Tem teste grátis de 15 dias!"),
+                (f"Oi! Aqui é a Ana da Derekh Food. Vi que não consegui falar "
+                 f"com vocês antes — queria apresentar algo bacana pro {nome_rest}. "
+                 f"Posso explicar rapidinho?"),
+            ]
+
+            import random
+            texto = random.choice(followup_templates)
+
+            decision_log.info(f"FOLLOWUP_OUTBOUND conv={conversa_id} lead={lead_id} "
+                              f"num={numero} msgs_env={row['msgs_enviadas']}")
+
+            # Delay humano
+            _time.sleep(_calcular_delay_humano(texto))
+
+            # Tentar enviar áudio primeiro (quebrar gelo)
+            audio_enviado = False
+            tts_ativo = (obter_configuracao("audio_tts_autonomo") or "true").lower() == "true"
+            if tts_ativo:
+                try:
+                    audio_texto = _preparar_texto_para_audio(_preparar_texto_tts(texto))
+                    audio_result = _gerar_e_enviar_audio_resposta(
+                        numero, audio_texto, conversa_id, emocao="amigavel")
+                    if audio_result.get("sucesso"):
+                        audio_enviado = True
+                        log.info(f"Follow-up ÁUDIO conv {conversa_id} (lead {lead_id})")
+                except Exception as e:
+                    log.warning(f"Áudio follow-up falhou conv {conversa_id}: {e}")
+
+            if not audio_enviado:
+                # Fallback: enviar por texto
+                _enviar_e_salvar(conversa_id, numero, texto)
+                log.info(f"Follow-up TEXTO conv {conversa_id} (lead {lead_id})")
+
+            result["followups"] += 1
+
+            # Delay entre follow-ups (30-90s)
+            _time.sleep(random.uniform(30, 90))
+
+        except Exception as e:
+            log.warning(f"Erro follow-up conv {conversa_id}: {e}")
+            result["erros"] += 1
+
+    if result["followups"] > 0:
+        log.info(f"Follow-up outbound: {result['followups']} conversas contactadas")
+
+    return result
