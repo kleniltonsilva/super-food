@@ -25,13 +25,22 @@ from . import phone_pool as _phone_pool
 
 logger = logging.getLogger("superfood.bot.atendente")
 
-# Anti-spam: locks por número para evitar respostas duplicadas
-_processing_locks: dict[str, float] = {}
-_LOCK_TIMEOUT = 30  # segundos
+# Anti-spam: serializar processamento por número (NUNCA descarta mensagens)
+_number_locks: dict[str, asyncio.Lock] = {}
+_MAX_NUMBER_LOCKS = 200
 
 # Cache de msg IDs processados (dedup webhook)
 _processed_msg_ids: dict[str, float] = {}
 _DEDUP_MAX = 500
+
+
+def _get_number_lock(numero: str) -> asyncio.Lock:
+    """Retorna lock asyncio por número. Serializa processamento sem descartar mensagens."""
+    if len(_number_locks) > _MAX_NUMBER_LOCKS:
+        _number_locks.clear()
+    if numero not in _number_locks:
+        _number_locks[numero] = asyncio.Lock()
+    return _number_locks[numero]
 
 
 # ============================================================
@@ -148,7 +157,6 @@ async def processar_webhook(payload: dict) -> dict:
         return {"status": "dedup"}
     _processed_msg_ids[msg_id] = time.time()
     _limpar_cache_dedup()
-    _limpar_cache_locks()
 
     # Extrair número — WhatsApp pode usar @lid (Linked ID) em vez de @s.whatsapp.net
     if "@lid" in remote_jid:
@@ -212,8 +220,7 @@ async def processar_webhook_meta(payload: dict) -> dict:
                     continue
                 _processed_msg_ids[msg_id] = time.time()
                 _limpar_cache_dedup()
-                _limpar_cache_locks()
-
+            
                 # Extrair texto ou áudio
                 texto = ""
                 audio_meta = None
@@ -251,12 +258,9 @@ async def _processar_mensagem_meta(
     phone_number_id: str,
 ):
     """Processa mensagem Meta em background. Identifica restaurante por phone_number_id."""
-    # Anti-spam lock
-    agora = time.time()
-    if numero in _processing_locks and (agora - _processing_locks[numero]) < _LOCK_TIMEOUT:
-        logger.debug(f"Lock ativo para {numero[:8]}***, ignorando (Meta)")
-        return
-    _processing_locks[numero] = agora
+    # Serializar por número — nunca descartar mensagens
+    lock = _get_number_lock(numero)
+    await lock.acquire()
 
     db = SessionLocal()
     try:
@@ -276,18 +280,53 @@ async def _processar_mensagem_meta(
         await _wa.marcar_lida(msg_id, bot_config)
 
         # 2. Transcrever áudio se necessário
-        if audio_meta and bot_config.stt_ativo:
-            media_id = audio_meta.get("id", "")
-            if media_id:
-                audio_data = await _wa.baixar_audio(media_id, bot_config)
-                if audio_data:
-                    resultado_stt = await groq_stt.transcrever_audio(
-                        audio_data["base64"],
-                        bot_config.idioma[:2] if bot_config.idioma else "pt",
-                    )
-                    texto = resultado_stt.get("texto", "")
-                    duracao = resultado_stt.get("duracao_seg", 5)
-                    await asyncio.sleep(min(duracao / 1.5, 10))
+        if audio_meta:
+            if bot_config.stt_ativo:
+                media_id = audio_meta.get("id", "")
+                if media_id:
+                    audio_data = await _wa.baixar_audio(media_id, bot_config)
+                    if audio_data:
+                        resultado_stt = await groq_stt.transcrever_audio(
+                            audio_data["base64"],
+                            bot_config.idioma[:2] if bot_config.idioma else "pt",
+                        )
+                        texto = resultado_stt.get("texto", "")
+                        duracao = resultado_stt.get("duracao_seg", 5)
+                        await asyncio.sleep(min(duracao / 1.5, 10))
+                    else:
+                        logger.warning(f"Download áudio Meta falhou para {numero[:8]}***")
+            else:
+                logger.warning(f"STT desativado — áudio de {numero[:8]}*** não transcrito")
+
+            # Áudio recebido mas transcrição falhou → registrar no BD + avisar cliente
+            if not texto:
+                logger.warning(f"Áudio sem transcrição de {numero[:8]}*** (Meta) — enviando fallback")
+                conversa = _get_or_create_conversa(db, restaurante_id, numero, pool_entry=None, bot_config=bot_config)
+                msg_recebida = models.BotMensagem(
+                    conversa_id=conversa.id,
+                    direcao="recebida",
+                    tipo="audio",
+                    conteudo="[áudio não transcrito]",
+                    duracao_audio_seg=audio_meta.get("duration"),
+                )
+                db.add(msg_recebida)
+                conversa.msgs_recebidas = (conversa.msgs_recebidas or 0) + 1
+                conversa.usou_audio = True
+
+                fallback = "Oi! Não consegui ouvir seu áudio direito 😅 Pode mandar por texto?"
+                await _wa.enviar_texto(numero, fallback, bot_config)
+
+                msg_fallback = models.BotMensagem(
+                    conversa_id=conversa.id,
+                    direcao="enviada",
+                    tipo="texto",
+                    conteudo=fallback,
+                )
+                db.add(msg_fallback)
+                conversa.msgs_enviadas = (conversa.msgs_enviadas or 0) + 1
+                conversa.atualizado_em = datetime.utcnow()
+                db.commit()
+                return
 
         if not texto:
             return
@@ -563,7 +602,7 @@ async def _processar_mensagem_meta(
         logger.error(f"Erro processando mensagem Meta de {numero[:8]}***: {e}", exc_info=True)
     finally:
         db.close()
-        _processing_locks.pop(numero, None)
+        lock.release()
 
 
 async def _processar_mensagem(
@@ -574,12 +613,9 @@ async def _processar_mensagem(
     instance_origem: str,
 ):
     """Processa mensagem individual em background."""
-    # Anti-spam lock
-    agora = time.time()
-    if numero in _processing_locks and (agora - _processing_locks[numero]) < _LOCK_TIMEOUT:
-        logger.debug(f"Lock ativo para {numero[:8]}***, ignorando")
-        return
-    _processing_locks[numero] = agora
+    # Serializar por número — nunca descartar mensagens
+    lock = _get_number_lock(numero)
+    await lock.acquire()
 
     db = SessionLocal()
     try:
@@ -595,22 +631,60 @@ async def _processar_mensagem(
         pool_entry = _phone_pool.get_active_number(db, restaurante_id)
 
         # 2. Transcrever áudio se necessário
-        if audio_msg and bot_config.stt_ativo:
-            audio_data = await evolution_client.baixar_audio(
-                msg_id,
-                bot_config.evolution_instance,
-                bot_config.evolution_api_url,
-                bot_config.evolution_api_key,
-            )
-            if audio_data:
-                resultado_stt = await groq_stt.transcrever_audio(
-                    audio_data["base64"],
-                    bot_config.idioma[:2] if bot_config.idioma else "pt",
+        if audio_msg:
+            if bot_config.stt_ativo:
+                audio_data = await evolution_client.baixar_audio(
+                    msg_id,
+                    bot_config.evolution_instance,
+                    bot_config.evolution_api_url,
+                    bot_config.evolution_api_key,
                 )
-                texto = resultado_stt.get("texto", "")
-                # Delay simulando escuta
-                duracao = resultado_stt.get("duracao_seg", 5)
-                await asyncio.sleep(min(duracao / 1.5, 10))
+                if audio_data:
+                    resultado_stt = await groq_stt.transcrever_audio(
+                        audio_data["base64"],
+                        bot_config.idioma[:2] if bot_config.idioma else "pt",
+                    )
+                    texto = resultado_stt.get("texto", "")
+                    # Delay simulando escuta
+                    duracao = resultado_stt.get("duracao_seg", 5)
+                    await asyncio.sleep(min(duracao / 1.5, 10))
+                else:
+                    logger.warning(f"Download áudio Evolution falhou para {numero[:8]}***")
+            else:
+                logger.warning(f"STT desativado — áudio de {numero[:8]}*** não transcrito")
+
+            # Áudio recebido mas transcrição falhou → registrar no BD + avisar cliente
+            if not texto:
+                logger.warning(f"Áudio sem transcrição de {numero[:8]}*** (Evolution) — enviando fallback")
+                conversa = _get_or_create_conversa(db, restaurante_id, numero, pool_entry, bot_config)
+                msg_recebida = models.BotMensagem(
+                    conversa_id=conversa.id,
+                    direcao="recebida",
+                    tipo="audio",
+                    conteudo="[áudio não transcrito]",
+                    duracao_audio_seg=audio_msg.get("seconds"),
+                )
+                db.add(msg_recebida)
+                conversa.msgs_recebidas = (conversa.msgs_recebidas or 0) + 1
+                conversa.usou_audio = True
+
+                _inst = pool_entry.evolution_instance if pool_entry else bot_config.evolution_instance
+                _url = pool_entry.evolution_api_url if pool_entry else bot_config.evolution_api_url
+                _key = pool_entry.evolution_api_key if pool_entry else bot_config.evolution_api_key
+                fallback = "Oi! Não consegui ouvir seu áudio direito 😅 Pode mandar por texto?"
+                await evolution_client.enviar_texto(numero, fallback, _inst, _url, _key)
+
+                msg_fallback = models.BotMensagem(
+                    conversa_id=conversa.id,
+                    direcao="enviada",
+                    tipo="texto",
+                    conteudo=fallback,
+                )
+                db.add(msg_fallback)
+                conversa.msgs_enviadas = (conversa.msgs_enviadas or 0) + 1
+                conversa.atualizado_em = datetime.utcnow()
+                db.commit()
+                return
 
         if not texto:
             return
@@ -953,7 +1027,7 @@ async def _processar_mensagem(
         logger.error(f"Erro processando mensagem de {numero[:8]}***: {e}", exc_info=True)
     finally:
         db.close()
-        _processing_locks.pop(numero, None)
+        lock.release()
 
 
 def _identificar_restaurante(db: Session, instance: str) -> Optional[models.BotConfig]:
@@ -1073,9 +1147,3 @@ def _limpar_cache_dedup():
         _processed_msg_ids = {k: v for k, v in _processed_msg_ids.items() if agora - v < 300}
 
 
-def _limpar_cache_locks():
-    """Limpa locks expirados do anti-spam (evita crescimento indefinido)."""
-    global _processing_locks
-    if len(_processing_locks) > 100:
-        agora = time.time()
-        _processing_locks = {k: v for k, v in _processing_locks.items() if agora - v < _LOCK_TIMEOUT}

@@ -818,15 +818,25 @@ LEMBRETE (5 dias antes)
     v
 ATIVO (pagou) ou INADIMPLENTE (não pagou)
     |                    |
-    |                    v (2 dias)
+    |                    v (dias_suspensao dias ÚTEIS)
+    |              AVISO DIÁRIO no painel + WebSocket
+    |              "Mensalidade vencida. Suspensão em X dias."
+    |                    |
+    |                    v
     |              SUSPENSO (bloqueio parcial)
     |                    |
-    |                    v (15 dias)
+    |                    v (dias_cancelamento dias ÚTEIS)
     |              CANCELADO (preserva dados 90 dias)
     |
     v
 Renovação automática --> ATIVO
 ```
+
+**Contagem de inadimplência em dias ÚTEIS (lógica Asaas):**
+- Sábados, domingos e feriados nacionais BR NÃO contam como dias vencidos
+- Feriados: 8 fixos + Carnaval, Sexta-feira Santa, Corpus Christi (via Páscoa)
+- Suspensão NÃO ocorre em dias não úteis (dá tempo para boleto compensar)
+- `billing_tasks._eh_dia_util()` e `dias_uteis_desde()` controlam a lógica
 
 ### 10.4 Pix Online
 ```
@@ -1068,36 +1078,54 @@ O sistema usa **comparação por tier inteiro** (1-4) com hierarquia cumulativa.
 
 ### 13.4 Sistema de Add-ons
 
-Add-ons são funcionalidades contratáveis à parte, cobradas na mesma fatura Asaas (fatura única integrada). A assinatura existente é atualizada com o novo valor.
+Add-ons são funcionalidades contratáveis à parte, com **billing separado** da assinatura do plano. Cada add-on gera cobrança avulsa mensal no Asaas (PIX + Boleto). O add-on só é ativado **após confirmação de pagamento via webhook**.
 
 **Arquivos-chave:**
 - `backend/app/feature_flags.py` — Constantes `ADDON_FEATURES`, `ADDON_PRICES`, `ADDON_MIN_TIER`, `ADDON_INCLUDED_TIER`, `ADDON_LABELS`
 - `backend/app/feature_guard.py` — `addon_info` no 403 (preço, can_subscribe, min_tier)
-- `backend/app/billing/billing_service.py` — `ativar_addon_bot()`, `desativar_addon_bot()`, `get_addons_status()`
-- Migration 041 — campos addon em `restaurantes` e `asaas_assinaturas` + tabela `addon_audit_log`
+- `backend/app/billing/billing_service.py` — `criar_cobranca_addon_bot()`, `processar_addon_pago()`, `desativar_addon_bot()`, `criar_recorrencia_addon()`, `desativar_addon_por_inadimplencia()`, `get_addons_status()`
+- `backend/app/billing/billing_tasks.py` — Recorrência mensal, dias úteis BR, desativação por inadimplência
+- Migration 041 — campos addon em `restaurantes` + tabela `addon_audit_log`
+- Migration 047 — tabela `addon_cobrancas` + campos recorrência em `restaurantes`
 
 **Add-ons disponíveis:**
 
-| Add-on | Key | Preço/mês | Plano Mínimo | Incluso em |
-|--------|-----|-----------|:------------:|:----------:|
-| WhatsApp Humanoide | `bot_whatsapp` | R$99,45 | Essencial (T2) | Premium (T4) |
+| Add-on | Key | Preço/mês | Plano Mínimo | Incluso em | Billing |
+|--------|-----|-----------|:------------:|:----------:|---------|
+| WhatsApp Humanoide | `bot_whatsapp` | R$99,45 | Essencial (T2) | Premium (T4) | Separado (cobrança avulsa mensal) |
 
-**Fluxo de ativação:**
-1. Restaurante acessa Minha Assinatura → seção Add-ons
-2. Clica "Ativar" → dialog com breakdown: Plano R$279,90 + Bot R$99,45 = R$379,35
-3. Confirma → `billing_service.ativar_addon_bot()`:
-   - Valida: tier >= 2, tier < 4, billing_status == "active", addon não ativo
-   - Atualiza assinatura Asaas: `atualizar_assinatura(sub_id, value=novo_valor)`
-   - BD: `addon_bot_whatsapp=True`, `addon_bot_valor=99.45`
-   - Registra `AddonAuditLog` + `BillingAuditLog`
-4. Feature guard passa: `has_feature()` aceita addons dict → bot acessível
+**Fluxo de ativação (billing separado):**
+1. Restaurante clica "Registrar Número" no wizard WhatsApp Humanoide
+2. Se tier < 4 (não-Premium) e add-on inativo:
+   - `billing_service.criar_cobranca_addon_bot()` cria cobrança avulsa Asaas R$99,45
+   - Frontend exibe QR Code Pix + link boleto (`phone_registration_status = "pending_payment"`)
+   - Polling a cada 5s via `GET /painel/bot/phone/payment-status`
+3. Restaurante paga (Pix ou Boleto)
+4. Webhook Asaas `PAYMENT_RECEIVED` → `processar_addon_pago()`:
+   - Marca `addon_bot_whatsapp = True`
+   - Define `ciclo_inicio` e `proximo_vencimento` (+1 mês)
+   - Registra número na Meta WABA automaticamente
+   - Muda `phone_registration_status` para `pending_code`
+5. Frontend detecta via polling → avança para verificação de código SMS
+6. Se tier >= 4 (Premium) → registro direto, sem cobrança
+
+**Recorrência mensal:**
+- Task periódica (30min) verifica `addon_bot_proximo_vencimento <= hoje`
+- Cria nova `AddonCobranca` via `criar_recorrencia_addon()`
+- Incrementa `ciclo_numero`
+
+**Inadimplência (lógica dias úteis BR):**
+- Contagem de atraso em **dias úteis** (seg-sex, exceto feriados nacionais BR)
+- Feriados calculados via algoritmo de Páscoa (Carnaval, Sexta-feira Santa, Corpus Christi)
+- **Humanoide:** desativado após **1 dia útil** vencido (`ADDON_DIAS_UTEIS_TOLERANCIA = 1`)
+- **Assinatura:** aviso diário no painel + WebSocket, suspensão após `dias_suspensao` dias úteis
+- Boleto: tolerância automática (Asaas ajusta vencimento para próximo dia útil)
 
 **Fluxo de desativação:**
-1. Restaurante clica "Desativar" → confirma
-2. `billing_service.desativar_addon_bot()`:
-   - Atualiza Asaas: volta ao valor base
+1. Restaurante desativa → `billing_service.desativar_addon_bot()`:
+   - Cancela cobranças PENDING no Asaas
    - BD: `addon_bot_whatsapp=False`, desliga `bot_config.bot_ativo`
-   - Registra auditoria
+   - **NÃO** mexe na assinatura principal (billing separado)
 
 **Edge cases:**
 | Cenário | Comportamento |
@@ -1106,8 +1134,11 @@ Add-ons são funcionalidades contratáveis à parte, cobradas na mesma fatura As
 | Básico (T1) ativa addon | Bloqueado — requer Essencial+ |
 | Premium ativa addon | Bloqueado — já incluso grátis |
 | Upgrade para Premium com addon | Auto-desativa addon (já incluso) |
-| Downgrade de Premium | Perde bot — precisa ativar addon manualmente |
-| Desativa mid-cycle | Asaas atualiza valor; bot desliga imediato |
+| Downgrade de Premium | Perde bot — precisa ativar addon e pagar |
+| Desativa addon | Cancela cobranças PENDING, bot desliga imediato |
+| Pagamento vence sexta | Desativa só terça (1 dia útil, pula sáb/dom) |
+| Pagamento vence véspera feriado | Pula feriado na contagem |
+| Reativa após desativação | Nova cobrança avulsa criada |
 
 **Endpoints:**
 | Método | Rota | Descrição |
@@ -1115,17 +1146,22 @@ Add-ons são funcionalidades contratáveis à parte, cobradas na mesma fatura As
 | GET | `/painel/billing/addons` | Lista add-ons com status/preço/pode_assinar |
 | POST | `/painel/billing/addon/bot-whatsapp/ativar` | Ativa add-on bot |
 | POST | `/painel/billing/addon/bot-whatsapp/desativar` | Desativa add-on bot |
+| GET | `/painel/bot/phone/payment-status` | Polling status pagamento add-on |
 
-**Tabelas BD (Migration 041):**
-- `restaurantes`: `addon_bot_whatsapp` (Bool), `addon_bot_valor` (Float), `addon_bot_ativado_em` (DateTime), `addon_bot_desativado_em` (DateTime)
-- `asaas_assinaturas`: `valor_base_plano` (Float), `valor_addons` (Float), `addons_json` (Text/JSON)
+**Tabelas BD:**
+
+*Migration 041:*
+- `restaurantes`: `addon_bot_whatsapp` (Bool), `addon_bot_valor` (Float), `addon_bot_ativado_em`, `addon_bot_desativado_em`
 - `addon_audit_log`: id, restaurante_id, addon, acao, valor_anterior, valor_novo, motivo, criado_em
 
+*Migration 047:*
+- `addon_cobrancas`: id, restaurante_id, addon, asaas_payment_id, valor, billing_type, status, data_vencimento, data_pagamento, pix_qr_code, pix_copia_cola, boleto_url, invoice_url, ciclo_inicio, ciclo_numero, criado_em, atualizado_em
+- `restaurantes` (campos novos): `addon_bot_ciclo_inicio` (Date), `addon_bot_proximo_vencimento` (Date), `addon_bot_asaas_payment_id` (String)
+
 **Frontend:**
-- Hooks: `useAddons()`, `useAtivarAddonBot()`, `useDesativarAddonBot()`
-- Billing.tsx: seção "Add-ons" com cards, dialogs de confirmação, breakdown de valores
-- BotWhatsApp.tsx: banner "Ativo via add-on (+R$99,45/mês)" quando acesso é via addon
-- AdminSidebar.tsx: badge "ADD-ON" em vez de "PRO" para features de addon
+- Hooks: `useAddons()`, `useAtivarAddonBot()`, `useDesativarAddonBot()`, `useAddonPaymentStatus()`
+- BotWhatsApp.tsx: wizard com estado `pending_payment` — QR Code Pix + Boleto + polling 5s
+- Billing.tsx: seção "Add-ons" com cards, dialogs de confirmação
 - useFeatureFlag.ts: retorna `isAddon`, `addonActive`, `addonPrice`, `canSubscribeAddon`
 
 ### 13.5 Super Admin Override

@@ -91,10 +91,10 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
 - **Última sessão:** 01/04/2026
 - **Migrations em produção:** 001-036 + 039-042 (última: 042_solicitacao_cadastro)
-- **Migrations locais:** 043-046 (última: 046_bot_phone_registration)
+- **Migrations locais:** 043-047 (última: 047_addon_billing_separado)
 - **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034 + sistema de add-ons (migration 041)
-- **Add-on Bot WhatsApp:** ✅ Implementado — R$99,45/mês, fatura única Asaas, 15 arquivos, 33 testes
+- **Add-on Bot WhatsApp:** ✅ Billing separado — R$99,45/mês, cobrança avulsa Asaas (PIX+Boleto), ativa só após pagamento, recorrência mensal, dias úteis BR (migration 047)
 - **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 24 function calls, handoff, STT/TTS, repescagem, onboarding self-service (migration 046)
 - **Geocoding multi-país:** Reverse geocoding direto, normalização acentos, filtro relaxado para não-BR, migration 038+040
 - **Pix Online (Sprint 17):** Backend implementado (migration 040, paymentLinkUrl, bot Pix integrado, webhook notificação), aguardando WOOVI_APP_ID válido
