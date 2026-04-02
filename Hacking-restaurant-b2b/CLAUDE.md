@@ -342,4 +342,19 @@ requirements-crm.txt    # FastAPI, psycopg2-binary, resend, uvicorn, jinja2
   - Management API xAI: saldo real no `/api/tokens/usage`
   - Modelo chat: `grok-3-fast`
   - Handoff: notifica +351 933 358 929
+- (x) **Fase 7.2**: WA Sales Bot v3.0 — Overhaul 15 correções (02/04):
+  - Nome: **Ana** (eliminou "Klenilton" hardcoded)
+  - `_limpar_nome_restaurante()`: filtra CNPJ/CPF de nome_fantasia/razao_social
+  - `_detectar_autoresposta()`: 15 regex patterns (horário, menu, bem-vindo, resposta automática)
+  - `_detectar_contador()`: 9 patterns + pede contato do dono
+  - `_detectar_nao_restaurante()`: 11 patterns + marca lead_falso
+  - `_enriquecer_lead_conversa()`: salva nome/tipo/telefone descobertos na conversa
+  - `_enviar_audio_abertura()`: TTS no primeiro contato outbound
+  - `retomar_conversas_sem_resposta()`: brain loop retoma leads no vácuo (preferência áudio)
+  - Validação lead 3 etapas antes de handoff (restaurante? tipo? delivery?)
+  - Decision log: `/tmp/wa_decisions.log` (RECV, IA_REQ, IA_RESP, AUDIO, ENRICH)
+  - Brain loop: `_etapa_retomar_conversas()` + `_etapa_recontato_agendado()`
+  - Pipeline `lead_falso` excluído de 6 queries + brain loop
+  - Modelo: `grok-3-mini-fast` (~8K tokens contexto, 68 tokens resposta média)
+  - Dual-provider: Evolution API fallback → Cloud API (Meta)
 - ( ) **Fase 8**: Agente de auditoria (revisao de codigo + performance + seguranca)

@@ -59,6 +59,12 @@ from crm.database import (
     marcar_thread_lida, marcar_thread_starred,
     arquivar_thread, categorizar_thread,
     contar_threads_por_categoria,
+    # P2-P5: Funil completo, scoring, conversão
+    conversas_handoff_sem_resposta,
+    registrar_evento_lead,
+    registrar_conversao, buscar_lead_por_cnpj,
+    # Sync API
+    upsert_leads_batch,
 )
 from crm.models import (
     PIPELINE_STATUS, PIPELINE_LABELS, PIPELINE_CORES,
@@ -80,6 +86,7 @@ from db_pg import (
 # ============================================================
 CRM_PASSWORD = os.environ.get("CRM_PASSWORD", "893618@")
 CRM_SESSION_SECRET = os.environ.get("CRM_SESSION_SECRET", secrets.token_hex(32))
+CRM_SYNC_API_KEY = os.environ.get("CRM_SYNC_API_KEY", "")
 
 # Sessões ativas (token → True)
 _active_sessions: dict[str, bool] = {}
@@ -91,6 +98,7 @@ PUBLIC_PATHS = {
     "/webhooks/",         # Webhooks Resend outbound + inbound (prefixo)
     "/wa-sales/webhook",  # Webhook WhatsApp (prefixo)
     "/api/leads/quiz",    # Quiz diagnóstico landing page (público)
+    "/api/leads/sync",    # Sync API (autenticado por API key, não por sessão)
     "/api/health/",       # Health checks (público)
 }
 
@@ -105,6 +113,10 @@ def _is_public(path: str) -> bool:
     if path == "/wa-sales/webhook":
         return True
     if path == "/api/leads/quiz":
+        return True
+    if path == "/api/wa/migrar-numero":
+        return True
+    if path.startswith("/api/leads/") and path.endswith("/conversao"):
         return True
     return False
 
@@ -183,10 +195,22 @@ def format_datetime(value):
         return ""
     return str(value)[:16]
 
+def format_time(value):
+    if not value:
+        return ""
+    s = str(value)
+    # Extract HH:MM from datetime string
+    if "T" in s:
+        return s.split("T")[1][:5]
+    if " " in s:
+        return s.split(" ")[1][:5]
+    return s[:5]
+
 templates.env.filters["format_number"] = format_number
 templates.env.filters["format_currency"] = format_currency
 templates.env.filters["format_date"] = format_date
 templates.env.filters["format_datetime"] = format_datetime
+templates.env.filters["format_time"] = format_time
 templates.env.globals["PIPELINE_LABELS"] = PIPELINE_LABELS
 templates.env.globals["SEGMENTO_LABELS"] = SEGMENTO_LABELS
 templates.env.globals["SEGMENTO_CORES"] = SEGMENTO_CORES
@@ -229,7 +253,7 @@ async def _outreach_loop():
     while True:
         try:
             from crm.outreach_engine import executar_acoes_pendentes
-            stats = executar_acoes_pendentes()
+            stats = await asyncio.to_thread(executar_acoes_pendentes)
             if stats.get("executadas", 0) > 0 or stats.get("erros", 0) > 0:
                 print(f"[OUTREACH-WORKER] {stats}")
         except Exception as e:
@@ -248,7 +272,7 @@ async def _agente_loop():
         if agora.hour == 6 and ultimo_dia != agora.date():
             try:
                 from crm.agente_autonomo import ciclo_diario
-                resultado = ciclo_diario()
+                resultado = await asyncio.to_thread(ciclo_diario)
                 print(f"[AGENTE-WORKER] Ciclo diário concluído: {resultado.get('relatorio_id')}")
                 ultimo_dia = agora.date()
             except Exception as e:
@@ -281,32 +305,34 @@ async def _auto_import_loop():
     await asyncio.sleep(60)  # Esperar app inicializar
     while True:
         try:
-            from crm.database import obter_configuracao, leads_novos_sem_outreach
-            from crm.outreach_engine import criar_sequencia_com_regras
-            from crm.scoring import calcular_tier
-
-            outreach_ativo = (obter_configuracao("outreach_ativo") or "false").lower() == "true"
-            if not outreach_ativo:
-                await asyncio.sleep(1800)
-                continue
-
-            leads = leads_novos_sem_outreach(50)
-            if not leads:
-                await asyncio.sleep(1800)
-                continue
-
-            total_acoes = 0
-            for lead in leads:
-                acoes = criar_sequencia_com_regras(lead["id"], lead)
-                total_acoes += len(acoes)
-
-            if leads:
-                print(f"[AUTO-IMPORT] Importados {len(leads)} leads, {total_acoes} ações criadas")
-
+            stats = await asyncio.to_thread(_auto_import_sync)
+            if stats and stats.get("leads", 0) > 0:
+                print(f"[AUTO-IMPORT] Importados {stats['leads']} leads, {stats['acoes']} ações criadas")
         except Exception as e:
             print(f"[AUTO-IMPORT] Erro: {e}")
 
         await asyncio.sleep(1800)  # 30 minutos
+
+
+def _auto_import_sync() -> dict:
+    """Versão sync do auto-import para rodar em thread."""
+    from crm.database import obter_configuracao, leads_novos_sem_outreach
+    from crm.outreach_engine import criar_sequencia_com_regras
+
+    outreach_ativo = (obter_configuracao("outreach_ativo") or "false").lower() == "true"
+    if not outreach_ativo:
+        return {"leads": 0, "acoes": 0}
+
+    leads = leads_novos_sem_outreach(50)
+    if not leads:
+        return {"leads": 0, "acoes": 0}
+
+    total_acoes = 0
+    for lead in leads:
+        acoes = criar_sequencia_com_regras(lead["id"], lead)
+        total_acoes += len(acoes)
+
+    return {"leads": len(leads), "acoes": total_acoes}
 
 
 async def _brain_loop():
@@ -940,6 +966,33 @@ async def api_recalcular_scores(background_tasks: BackgroundTasks):
     return RedirectResponse("/", status_code=303)
 
 
+@app.post("/api/wa/migrar-numero")
+async def api_migrar_numero(
+    request: Request,
+    limite: int = Query(default=50),
+    key: str = Query(default=""),
+):
+    """Roda migração de conversas para novo número em background.
+    Protegido por chave secreta na query string."""
+    secret = os.environ.get("CRM_ADMIN_KEY", "derekh_migra_2026")
+    if key != secret:
+        return JSONResponse({"erro": "Chave inválida"}, status_code=403)
+
+    from crm.wa_sales_bot import migrar_conversas_novo_numero
+    import threading
+
+    def _run_migration():
+        try:
+            result = migrar_conversas_novo_numero(limite=limite)
+            log.info(f"Migração background concluída: {result}")
+        except Exception as e:
+            log.error(f"Erro migração background: {e}")
+
+    t = threading.Thread(target=_run_migration, daemon=True)
+    t.start()
+    return JSONResponse({"status": "migração iniciada em background", "limite": limite})
+
+
 # ============================================================
 # EMAIL: ENVIAR PARA LEAD
 # ============================================================
@@ -1200,6 +1253,11 @@ async def tracking_pixel(tracking_id: str):
     from fastapi.responses import Response
     try:
         marcar_email_aberto(tracking_id)
+        # P4.1: Event scoring — email aberto
+        email_reg = buscar_email_por_tracking(tracking_id)
+        if email_reg and email_reg.get("lead_id"):
+            from crm.scoring import atualizar_score_evento
+            atualizar_score_evento(email_reg["lead_id"], "email_aberto")
     except Exception:
         pass  # Não falhar — pixel deve sempre retornar imagem
     return Response(content=PIXEL_GIF, media_type="image/gif",
@@ -1211,6 +1269,11 @@ async def tracking_click(tracking_id: str, tipo: str, url: str = ""):
     """Registra clique e redireciona para URL destino."""
     try:
         marcar_email_clique(tracking_id, tipo)
+        # P4.1: Event scoring — email clicado
+        email_reg = buscar_email_por_tracking(tracking_id)
+        if email_reg and email_reg.get("lead_id"):
+            from crm.scoring import atualizar_score_evento
+            atualizar_score_evento(email_reg["lead_id"], "email_clicado")
     except Exception:
         pass
     destino = url or "https://derekh.com.br/food"
@@ -2199,3 +2262,235 @@ async def api_tts_status():
     """Status da fila TTS: slots ativos, métricas, provider."""
     from crm.tts_queue import tts_queue
     return JSONResponse(tts_queue.status)
+
+
+# ============================================================
+# SYNC API — Scraper remoto → CRM via HTTPS
+# ============================================================
+
+def _verify_sync_api_key(request: Request) -> bool:
+    """Valida API key do scraper remoto."""
+    if not CRM_SYNC_API_KEY:
+        return False
+    api_key = request.headers.get("X-API-Key", "")
+    return secrets.compare_digest(api_key, CRM_SYNC_API_KEY)
+
+
+@app.get("/api/health/sync")
+async def api_health_sync():
+    """Health check público para o scraper verificar conectividade."""
+    from datetime import datetime as dt
+    has_key = bool(CRM_SYNC_API_KEY)
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) as c FROM leads")
+            total = cur.fetchone()["c"]
+        db_ok = True
+    except Exception:
+        total = 0
+        db_ok = False
+    return JSONResponse({
+        "status": "ok" if db_ok else "degraded",
+        "api_key_configured": has_key,
+        "total_leads": total,
+        "timestamp": dt.now().isoformat(),
+    })
+
+
+@app.post("/api/leads/sync")
+async def api_leads_sync(request: Request):
+    """Recebe batch de leads do scraper remoto e faz upsert no PostgreSQL.
+
+    Headers: X-API-Key: <CRM_SYNC_API_KEY>
+    Body JSON: {"leads": [...], "source": "scraper", "cidade": "MACEIO", "uf": "AL"}
+    Max: 100 leads por batch.
+    """
+    if not _verify_sync_api_key(request):
+        return JSONResponse({"erro": "API key inválida"}, status_code=401)
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"erro": "JSON inválido"}, status_code=400)
+
+    leads = body.get("leads", [])
+    source = body.get("source", "sync_api")
+    cidade = body.get("cidade", "")
+    uf = body.get("uf", "")
+
+    if not leads:
+        return JSONResponse({"erro": "Lista de leads vazia"}, status_code=400)
+
+    if len(leads) > 100:
+        return JSONResponse({"erro": f"Máximo 100 leads por batch (recebido: {len(leads)})"}, status_code=400)
+
+    try:
+        stats = upsert_leads_batch(leads, source=source)
+        return JSONResponse({
+            "ok": True,
+            "inseridos": stats["inseridos"],
+            "atualizados": stats["atualizados"],
+            "erros": stats["erros"],
+            "cidade": cidade,
+            "uf": uf,
+            "detalhes_erros": stats["detalhes_erros"][:10],
+        })
+    except Exception as e:
+        return JSONResponse({"erro": f"Erro no upsert: {str(e)[:200]}"}, status_code=500)
+
+
+# ============================================================
+# P2.3: HANDOFF FILA — Dashboard de Conversas Handoff
+# ============================================================
+
+@app.get("/api/handoff/fila")
+async def api_handoff_fila():
+    """Lista conversas em handoff com dados do lead, score, tempo em espera."""
+    conversas = conversas_handoff_sem_resposta(0)  # Todas em handoff
+    fila = []
+    for c in conversas:
+        lead = obter_lead(c.get("lead_id")) if c.get("lead_id") else {}
+        fila.append({
+            "conversa_id": c["id"],
+            "lead_id": c.get("lead_id"),
+            "nome": (lead.get("nome_fantasia") or lead.get("razao_social") or "Desconhecido") if lead else "Desconhecido",
+            "cidade": lead.get("cidade", "") if lead else "",
+            "score": lead.get("lead_score", 0) if lead else 0,
+            "tier": lead.get("tier", "") if lead else "",
+            "numero": c.get("numero_envio", ""),
+            "motivo": c.get("handoff_motivo", ""),
+            "handoff_at": str(c.get("handoff_at") or ""),
+            "ultima_msg": str(c.get("updated_at") or ""),
+            "msgs_recebidas": c.get("msgs_recebidas", 0),
+            "persona": c.get("persona_detectada", ""),
+            "followup_etapa": c.get("followup_handoff_etapa", 0),
+        })
+    return JSONResponse(json.loads(json.dumps(fila, default=str)))
+
+
+@app.post("/api/handoff/{conversa_id}/responder")
+async def api_handoff_responder(conversa_id: int, request: Request):
+    """Humano responde ao lead pelo CRM (envia WA via Evolution/Meta)."""
+    body = await request.json()
+    texto = body.get("mensagem", "").strip()
+    if not texto:
+        return JSONResponse({"erro": "Mensagem vazia"}, status_code=400)
+
+    from crm.database import registrar_msg_wa
+    msg_id = registrar_msg_wa(conversa_id, "enviada", texto, tipo="texto")
+
+    conv = obter_conversa_wa(conversa_id)
+    if conv and conv.get("numero_envio"):
+        try:
+            from crm.wa_sales_bot import _enviar_direto
+            _enviar_direto(conv["numero_envio"], texto)
+        except Exception as e:
+            return JSONResponse({"erro": f"Falha ao enviar: {e}"}, status_code=500)
+
+    return JSONResponse({"ok": True, "msg_id": msg_id})
+
+
+@app.post("/api/handoff/{conversa_id}/devolver")
+async def api_handoff_devolver_bot(conversa_id: int):
+    """Devolve conversa ao bot (sai do handoff)."""
+    ok = atualizar_conversa_wa(conversa_id, status="ativo")
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE wa_conversas SET handoff_at = NULL, handoff_motivo = NULL
+            WHERE id = %s
+        """, (conversa_id,))
+        conn.commit()
+    return JSONResponse({"ok": True})
+
+
+@app.get("/handoff", response_class=HTMLResponse)
+async def handoff_fila_page(request: Request):
+    """Página da fila de handoff."""
+    return templates.TemplateResponse("handoff_fila.html", {
+        "request": request,
+        "pagina_ativa": "handoff",
+    })
+
+
+# ============================================================
+# P4.3: CONVERSÃO — Endpoint chamado pelo backend principal
+# ============================================================
+
+@app.post("/api/leads/{cnpj}/conversao")
+async def api_registrar_conversao(cnpj: str, request: Request):
+    """Registra conversão de lead. Chamado pelo backend principal quando restaurante ativa conta.
+    Protegido por API key (CRM_SYNC_API_KEY)."""
+    if not _verify_sync_api_key(request):
+        return JSONResponse({"erro": "API key inválida"}, status_code=401)
+
+    body = await request.json()
+    plano = body.get("plano", "basico")
+    valor_mensal = float(body.get("valor_mensal", 169.90))
+
+    lead = buscar_lead_por_cnpj(cnpj)
+    if not lead:
+        return JSONResponse({"erro": f"Lead com CNPJ {cnpj} não encontrado"}, status_code=404)
+
+    lead_id = lead["id"]
+
+    # Determinar canal de atribuição
+    from crm.metricas_roi import determinar_canal_atribuicao
+    canal = determinar_canal_atribuicao(lead_id)
+
+    # Registrar conversão
+    conversao_id = registrar_conversao(lead_id, plano, valor_mensal, canal, cnpj)
+
+    # P4.3: Feedback de conversão (scoring)
+    try:
+        from crm.scoring import feedback_conversao
+        feedback_conversao(cnpj)
+    except Exception as e:
+        print(f"[CONVERSAO] Erro no feedback scoring: {e}")
+
+    return JSONResponse({
+        "ok": True,
+        "conversao_id": conversao_id,
+        "lead_id": lead_id,
+        "canal_atribuicao": canal,
+        "plano": plano,
+        "valor_mensal": valor_mensal,
+    })
+
+
+# ============================================================
+# P5.4: MÉTRICAS ROI — Dashboard
+# ============================================================
+
+@app.get("/api/metricas/roi")
+async def api_metricas_roi():
+    """KPIs financeiros: CAC, LTV, ROI, canais, receita."""
+    from crm.metricas_roi import metricas_roi_completas
+    try:
+        metricas = metricas_roi_completas()
+        return JSONResponse(json.loads(json.dumps(metricas, default=str)))
+    except Exception as e:
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
+
+@app.get("/api/metricas/funil-conversao")
+async def api_funil_conversao():
+    """Funil de conversão: leads → contactados → responderam → demo → trial → cliente."""
+    from crm.metricas_roi import metricas_funil_conversao
+    try:
+        funil = metricas_funil_conversao()
+        return JSONResponse(json.loads(json.dumps(funil, default=str)))
+    except Exception as e:
+        return JSONResponse({"erro": str(e)}, status_code=500)
+
+
+@app.get("/api/metricas/atribuicao/{lead_id}")
+async def api_atribuicao_lead(lead_id: int):
+    """Multi-touch attribution para um lead específico."""
+    from crm.metricas_roi import atribuicao_lead
+    try:
+        touchpoints = atribuicao_lead(lead_id)
+        return JSONResponse(json.loads(json.dumps(touchpoints, default=str)))
+    except Exception as e:
+        return JSONResponse({"erro": str(e)}, status_code=500)

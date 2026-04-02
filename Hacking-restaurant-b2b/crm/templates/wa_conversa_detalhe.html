@@ -1,0 +1,296 @@
+{% extends "base.html" %}
+{% set pagina_ativa = "wa_conversas" %}
+{% block title %}Conversa #{{ conversa.id }} — Derekh CRM{% endblock %}
+
+{% block content %}
+<style>
+    .wa-chat {
+        background: #0b141a url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cdefs%3E%3Cpattern id='p' width='40' height='40' patternUnits='userSpaceOnUse'%3E%3Cpath d='M20 2c1 0 2 1 2 2v2c0 1-1 2-2 2s-2-1-2-2V4c0-1 1-2 2-2z' fill='%23ffffff06'/%3E%3C/pattern%3E%3C/defs%3E%3Crect width='200' height='200' fill='url(%23p)'/%3E%3C/svg%3E");
+        border-radius: 8px;
+        padding: 16px 12px;
+        max-height: 75vh;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+    .wa-msg {
+        display: flex;
+        margin-bottom: 2px;
+    }
+    .wa-msg.sent { justify-content: flex-end; }
+    .wa-msg.recv { justify-content: flex-start; }
+    .wa-bubble {
+        max-width: 360px;
+        padding: 6px 8px 4px 9px;
+        font-size: 13.5px;
+        line-height: 1.35;
+        position: relative;
+        word-wrap: break-word;
+        box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
+    }
+    .wa-msg.sent .wa-bubble {
+        background: #005c4b;
+        color: #e9edef;
+        border-radius: 7.5px 0 7.5px 7.5px;
+    }
+    .wa-msg.recv .wa-bubble {
+        background: #202c33;
+        color: #e9edef;
+        border-radius: 0 7.5px 7.5px 7.5px;
+    }
+    .wa-bubble .wa-text {
+        white-space: pre-wrap;
+        margin: 0;
+    }
+    .wa-bubble .wa-meta {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 4px;
+        margin-top: 2px;
+        float: right;
+        margin-left: 10px;
+    }
+    .wa-bubble .wa-time {
+        font-size: 11px;
+        color: rgba(255,255,255,0.45);
+    }
+    .wa-bubble .wa-ia {
+        font-size: 9px;
+        background: #00a884;
+        color: #fff;
+        padding: 1px 4px;
+        border-radius: 3px;
+        font-weight: 600;
+    }
+    /* Audio PTT style */
+    .wa-audio {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        min-width: 220px;
+    }
+    .wa-audio-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        background: #00a884;
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+    .wa-audio-btn svg {
+        fill: #fff;
+        width: 16px;
+        height: 16px;
+    }
+    .wa-audio-wave {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 26px;
+    }
+    .wa-audio-wave .bar {
+        width: 3px;
+        border-radius: 2px;
+        background: rgba(255,255,255,0.35);
+    }
+    .wa-audio-dur {
+        font-size: 11px;
+        color: rgba(255,255,255,0.45);
+        flex-shrink: 0;
+        min-width: 30px;
+    }
+    .wa-audio-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #00a884;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 18px;
+    }
+    .wa-msg.recv .wa-audio-avatar { background: #2a3942; }
+    .wa-msg.recv .wa-audio-btn { background: #2a3942; }
+    /* Date separator */
+    .wa-date-sep {
+        text-align: center;
+        margin: 12px 0 8px;
+    }
+    .wa-date-sep span {
+        background: #182229;
+        color: rgba(255,255,255,0.55);
+        font-size: 12px;
+        padding: 5px 12px;
+        border-radius: 8px;
+        box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
+    }
+    /* Header bar */
+    .wa-header {
+        background: #202c33;
+        border-radius: 8px 8px 0 0;
+        padding: 10px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .wa-header-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #2a3942;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        color: #aebac1;
+    }
+    .wa-header-info h3 {
+        font-size: 15px;
+        font-weight: 500;
+        color: #e9edef;
+        margin: 0;
+    }
+    .wa-header-info p {
+        font-size: 12px;
+        color: #8696a0;
+        margin: 2px 0 0;
+    }
+    .wa-header-badges {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+    .wa-header-badges .badge {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 10px;
+    }
+</style>
+
+<div class="max-w-2xl mx-auto">
+    <!-- Back link -->
+    <a href="/wa-sales/conversas" style="font-size:12px; color:#00a884; text-decoration:none; display:inline-block; margin-bottom:8px;"
+       onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">&larr; Voltar</a>
+
+    <!-- WhatsApp header -->
+    <div class="wa-header">
+        <div class="wa-header-avatar">
+            {% if conversa.nome_fantasia %}
+                {{ (conversa.nome_fantasia or 'L')[0]|upper }}
+            {% else %}
+                L
+            {% endif %}
+        </div>
+        <div class="wa-header-info">
+            <h3>{{ conversa.nome_fantasia or conversa.razao_social or 'Lead #' ~ conversa.lead_id }}</h3>
+            <p>{{ conversa.cidade or '' }}{% if conversa.uf %}/{{ conversa.uf }}{% endif %}
+               {% if conversa.lead_score %} · Score: {{ conversa.lead_score }}{% endif %}</p>
+        </div>
+        <div class="wa-header-badges">
+            <span class="badge" style="
+                {% if conversa.status == 'ativo' %}background:#00a88420; color:#00a884;
+                {% elif conversa.status == 'handoff' %}background:#d2992220; color:#d29922;
+                {% elif conversa.status == 'opt_out' %}background:#f8514920; color:#f85149;
+                {% else %}background:#8696a020; color:#8696a0;{% endif %}
+            ">{{ conversa.status }}</span>
+            {% if conversa.usou_audio %}
+            <span class="badge" style="background:#00a88420; color:#00a884;">🎤 {{ conversa.voz_usada or 'audio' }}</span>
+            {% endif %}
+            {% if conversa.intencao_detectada %}
+            <span class="badge" style="background:#58a6ff20; color:#58a6ff;">{{ conversa.intencao_detectada }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Chat area -->
+    <div class="wa-chat" id="chatArea">
+        {% set prev_date = namespace(val='') %}
+        {% for msg in conversa.mensagens %}
+            {# Date separator #}
+            {% set msg_date = msg.created_at|format_date if msg.created_at else '' %}
+            {% if msg_date != prev_date.val %}
+                <div class="wa-date-sep"><span>{{ msg_date }}</span></div>
+                {% set prev_date.val = msg_date %}
+            {% endif %}
+
+            <div class="wa-msg {% if msg.direcao == 'enviada' %}sent{% else %}recv{% endif %}">
+                {% if msg.tipo == 'audio' %}
+                {# Audio message - WhatsApp PTT style #}
+                <div class="wa-bubble" style="padding: 6px 8px;">
+                    <div class="wa-audio">
+                        <div class="wa-audio-avatar">
+                            {% if msg.direcao == 'enviada' %}🤖{% else %}👤{% endif %}
+                        </div>
+                        <div style="flex:1;">
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <div style="display:flex; align-items:center; gap:4px; flex:1;">
+                                    <span style="font-size:16px;">🎤</span>
+                                    <div class="wa-audio-wave">
+                                        {% for h in [40, 65, 30, 80, 50, 70, 35, 90, 45, 75, 55, 60, 25, 85, 40, 70, 50, 65, 35, 80] %}
+                                        <div class="bar" style="height:{{ h }}%"></div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="wa-meta" style="margin-top:2px;">
+                                <span class="wa-time">{{ msg.created_at|format_time }}</span>
+                                {% if msg.grok_resposta %}<span class="wa-ia">IA</span>{% endif %}
+                                {% if msg.direcao == 'enviada' %}
+                                <svg width="16" height="11" viewBox="0 0 16 11" fill="rgba(83,209,254,0.7)"><path d="M11.07.71l-5.72 7.03-2.42-2.42L1.5 6.75 5.35 10.6 12.5 2.14z"/><path d="M15.07.71l-5.72 7.03-.9-.9-1.43 1.43L10.35 11.6 16.5 2.14z"/></svg>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {% else %}
+                {# Text message #}
+                <div class="wa-bubble">
+                    <p class="wa-text">{{ msg.conteudo or '' }}</p>
+                    <div class="wa-meta">
+                        <span class="wa-time">{{ msg.created_at|format_time }}</span>
+                        {% if msg.grok_resposta %}<span class="wa-ia">IA</span>{% endif %}
+                        {% if msg.direcao == 'enviada' %}
+                        <svg width="16" height="11" viewBox="0 0 16 11" fill="rgba(83,209,254,0.7)"><path d="M11.07.71l-5.72 7.03-2.42-2.42L1.5 6.75 5.35 10.6 12.5 2.14z"/><path d="M15.07.71l-5.72 7.03-.9-.9-1.43 1.43L10.35 11.6 16.5 2.14z"/></svg>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+    </div>
+
+    {% if conversa.handoff_motivo %}
+    <div style="margin-top:8px; background:#d2992215; border:1px solid #d2992233; border-radius:8px; padding:10px 14px;">
+        <p style="font-size:13px; color:#d29922; margin:0;">
+            <strong>Handoff:</strong> {{ conversa.handoff_motivo }}
+        </p>
+    </div>
+    {% endif %}
+
+    <!-- Stats -->
+    <div style="margin-top:8px; display:flex; gap:12px; font-size:11px; color:#8696a0; padding:0 4px;">
+        <span>Enviadas: <strong style="color:#00a884;">{{ conversa.msgs_enviadas }}</strong></span>
+        <span>Recebidas: <strong style="color:#a371f7;">{{ conversa.msgs_recebidas }}</strong></span>
+        {% if conversa.numero_envio %}
+        <span>Tel: {{ conversa.numero_envio }}</span>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Auto-scroll to bottom
+const chat = document.getElementById('chatArea');
+if (chat) chat.scrollTop = chat.scrollHeight;
+</script>
+{% endblock %}

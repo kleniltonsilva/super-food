@@ -1,12 +1,33 @@
 """
-scoring.py - Lead scoring, segmentação automática e personalização de abordagem
-Score de 0-100 baseado em múltiplos fatores do lead.
+scoring.py - Lead scoring, segmentação automática, personalização de abordagem,
+event-driven scoring e score decay.
+
+P4: Scoring Dinâmico — eventos em tempo real + decaimento temporal + feedback conversão.
 """
 import json
+import logging
 from datetime import datetime, date
 
 from crm.database import get_conn
 from crm.models import TIERS
+
+log = logging.getLogger("scoring")
+
+# Pontuação por tipo de evento (P4 Etapa 4.1)
+EVENTO_PONTUACAO = {
+    "email_aberto": 5,
+    "email_clicado": 10,
+    "wa_respondeu": 15,
+    "wa_pediu_demo": 25,
+    "trial_ativado": 30,
+    "proposta_enviada": 10,
+    "proposta_visualizada": 15,
+    "opt_out": -50,
+    "bounce_email": -10,
+    "hard_no": -30,
+    "conversa_reativada": 10,
+    "conversao": 100,
+}
 
 
 # ============================================================
@@ -394,3 +415,123 @@ def calcular_score_lead(lead_id: int) -> dict:
         conn.commit()
 
         return {"lead_id": lead_id, "score": score, "segmento": segmento, "tier": tier}
+
+
+# ============================================================
+# P4: EVENT-DRIVEN SCORING
+# ============================================================
+
+def atualizar_score_evento(lead_id: int, evento: str, valor: int = 0) -> dict:
+    """Atualiza score do lead baseado em um evento.
+    Registra evento no histórico e recalcula tier.
+    Retorna {"score_antes", "score_depois", "tier"}."""
+    from crm.database import registrar_evento_lead, atualizar_score_lead
+
+    if not valor:
+        valor = EVENTO_PONTUACAO.get(evento, 0)
+
+    if valor == 0:
+        return {"erro": f"Evento '{evento}' sem pontuação definida"}
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT lead_score FROM leads WHERE id = %s", (lead_id,))
+        row = cur.fetchone()
+        if not row:
+            return {"erro": "Lead não encontrado"}
+
+        score_antes = row["lead_score"] or 0
+        score_depois = max(0, min(100, score_antes + valor))
+        tier = calcular_tier(score_depois)
+
+    # Atualizar score e tier
+    atualizar_score_lead(lead_id, score_depois, tier)
+
+    # Registrar evento
+    registrar_evento_lead(lead_id, evento, valor, score_antes, score_depois)
+
+    log.info(f"Score evento: lead {lead_id} '{evento}' {score_antes}→{score_depois} (tier={tier})")
+    return {"score_antes": score_antes, "score_depois": score_depois, "tier": tier}
+
+
+# ============================================================
+# P4: SCORE DECAY (DECAIMENTO TEMPORAL)
+# ============================================================
+
+def aplicar_decaimento_scores() -> dict:
+    """Aplica decaimento de 5% por semana para leads sem interação recente.
+    Rodar diariamente (brain_loop chama 1x/dia).
+    Mínimo: 10 (nunca zera). Retorna stats."""
+    from crm.database import leads_sem_interacao_recente, atualizar_score_lead, registrar_evento_lead
+
+    stats = {"processados": 0, "decaidos": 0}
+
+    leads = leads_sem_interacao_recente(dias=7)
+    if not leads:
+        return stats
+
+    for lead in leads:
+        lead_id = lead["id"]
+        score_atual = lead["lead_score"] or 0
+
+        if score_atual <= 10:
+            continue  # Já no mínimo
+
+        # Decaimento de 5%
+        decaimento = max(1, int(score_atual * 0.05))
+        novo_score = max(10, score_atual - decaimento)
+        novo_tier = calcular_tier(novo_score)
+
+        atualizar_score_lead(lead_id, novo_score, novo_tier)
+        registrar_evento_lead(lead_id, "score_decay", -decaimento, score_atual, novo_score)
+
+        stats["processados"] += 1
+        if novo_score < score_atual:
+            stats["decaidos"] += 1
+
+    if stats["decaidos"] > 0:
+        log.info(f"Score decay: {stats['decaidos']}/{stats['processados']} leads decaíram")
+
+    return stats
+
+
+# ============================================================
+# P4: FEEDBACK DE CONVERSÃO
+# ============================================================
+
+def feedback_conversao(lead_cnpj: str) -> dict:
+    """Quando lead vira cliente: registra evento, marca pipeline, boost similares.
+    Chamado pelo backend principal via API."""
+    from crm.database import buscar_lead_por_cnpj, registrar_evento_lead, leads_similares
+
+    lead = buscar_lead_por_cnpj(lead_cnpj)
+    if not lead:
+        return {"erro": f"Lead com CNPJ {lead_cnpj} não encontrado"}
+
+    lead_id = lead["id"]
+
+    # 1. Registrar evento de conversão (+100)
+    atualizar_score_evento(lead_id, "conversao", 100)
+
+    # 2. Marcar pipeline como 'cliente'
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE leads SET status_pipeline = 'cliente' WHERE id = %s
+        """, (lead_id,))
+        conn.commit()
+
+    # 3. Retroalimentar: boost leads similares (+10)
+    similares = leads_similares(lead_id, limite=10)
+    boosted = 0
+    for sim in similares:
+        atualizar_score_evento(sim["id"], "similar_converteu", 10)
+        boosted += 1
+
+    log.info(f"Conversão: lead {lead_id} ({lead_cnpj}) → +{boosted} leads boosted")
+
+    return {
+        "lead_id": lead_id,
+        "boosted": boosted,
+        "similares": [s["id"] for s in similares[:5]],
+    }

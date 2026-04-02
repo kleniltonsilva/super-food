@@ -874,6 +874,54 @@ def _enviar_audio_evolution(numero: str, audio_base64: str, instance: str = "",
         return {"erro": f"Envio áudio Evolution: {e}"}
 
 
+def _enviar_audio_cloud_api(numero: str, audio_bytes: bytes) -> dict:
+    """Fallback: envia áudio via WhatsApp Cloud API (Meta).
+    Faz upload do áudio e envia como mensagem de áudio (não PTT)."""
+    phone_id, token = _get_wa_config()
+    if not phone_id or not token:
+        return {"erro": "WhatsApp Cloud API não configurada para áudio"}
+
+    try:
+        # Upload do áudio para Meta
+        import io
+        resp_upload = httpx.post(
+            f"{_GRAPH_API}/{phone_id}/media",
+            headers={"Authorization": f"Bearer {token}"},
+            files={"file": ("audio.mp3", io.BytesIO(audio_bytes), "audio/mpeg")},
+            data={"messaging_product": "whatsapp", "type": "audio/mpeg"},
+            timeout=30,
+        )
+        resp_upload.raise_for_status()
+        media_id = resp_upload.json().get("id")
+        if not media_id:
+            return {"erro": "Upload áudio Cloud API falhou (sem media_id)"}
+
+        log.info(f"Áudio uploaded para Cloud API: media_id={media_id}")
+
+        # Enviar mensagem de áudio
+        resp_msg = httpx.post(
+            f"{_GRAPH_API}/{phone_id}/messages",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "messaging_product": "whatsapp",
+                "to": numero,
+                "type": "audio",
+                "audio": {"id": media_id},
+            },
+            timeout=15,
+        )
+        resp_msg.raise_for_status()
+        wa_msg_id = (resp_msg.json().get("messages") or [{}])[0].get("id", "")
+        log.info(f"Áudio enviado via Cloud API: wa_msg_id={wa_msg_id}")
+        return {"sucesso": True, "wa_msg_id": wa_msg_id, "via": "cloud_api_audio"}
+    except Exception as e:
+        log.error(f"Erro envio áudio Cloud API: {e}")
+        return {"erro": f"Cloud API áudio: {e}"}
+
+
 # ============================================================
 # DECISÃO AUTÔNOMA: QUANDO ENVIAR ÁUDIO
 # ============================================================
@@ -1044,15 +1092,26 @@ def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
     try:
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
 
-        # Enviar via Evolution
-        resultado = _enviar_audio_evolution(numero, audio_b64, instance=instance)
+        # Verificar se Evolution está configurada
+        evo_instance = (obter_configuracao("evolution_instance") or "").strip()
+        if evo_instance:
+            # Enviar via Evolution (PTT nativo)
+            resultado = _enviar_audio_evolution(numero, audio_b64, instance=instance)
+            # Fallback: Cloud API (áudio normal, não PTT)
+            if not resultado.get("sucesso"):
+                log.warning(f"Evolution áudio falhou, tentando Cloud API: {resultado.get('erro', '')}")
+                resultado = _enviar_audio_cloud_api(numero, audio_bytes)
+        else:
+            # Evolution desabilitada — enviar direto via Cloud API
+            resultado = _enviar_audio_cloud_api(numero, audio_bytes)
 
         if resultado.get("sucesso"):
             registrar_msg_wa(conversa_id, "enviada",
                              f"[ÁUDIO] {texto_resposta[:100]}...", tipo="audio")
             provider_label = "fish" if tts_provider == "fish" else f"grok/{voz}"
-            atualizar_conversa_wa(conversa_id, usou_audio=True, voz_usada=provider_label)
-            log.info(f"Áudio TTS enviado para conversa {conversa_id} (provider={provider_label})")
+            via = resultado.get("via", "evolution")
+            atualizar_conversa_wa(conversa_id, usou_audio=True, voz_usada=f"{provider_label}/{via}")
+            log.info(f"Áudio TTS enviado para conversa {conversa_id} (provider={provider_label}, via={via})")
         return resultado
 
     except Exception as e:
@@ -2914,13 +2973,16 @@ def _enviar_direto(numero: str, texto: str, instance: str = "") -> dict:
     """Envia mensagem direta para um número (sem precisar de lead_id).
     Prioridade: Evolution API → Cloud API.
     Se instance fornecido, usa essa instância Evolution específica."""
-    # Tentar Evolution API primeiro
-    resultado = _enviar_via_evolution(numero, texto, instance_override=instance)
-    if resultado.get("sucesso"):
-        log.info(f"Mensagem direta enviada via Evolution ({instance or 'default'}) para {numero}")
-        return resultado
+    # Verificar se Evolution está configurada
+    evo_instance = (obter_configuracao("evolution_instance") or "").strip()
+    if evo_instance or instance:
+        # Tentar Evolution API primeiro
+        resultado = _enviar_via_evolution(numero, texto, instance_override=instance)
+        if resultado.get("sucesso"):
+            log.info(f"Mensagem direta enviada via Evolution ({instance or 'default'}) para {numero}")
+            return resultado
 
-    # Fallback Cloud API
+    # Cloud API (direto se Evolution desabilitada, fallback se falhou)
     resultado = _enviar_via_cloud_api(numero, texto)
     if resultado.get("sucesso"):
         log.info(f"Mensagem direta enviada via Cloud API para {numero}")
@@ -3420,4 +3482,181 @@ def followup_conversas_outbound(limite: int = 15) -> dict:
     if result["followups"] > 0:
         log.info(f"Follow-up outbound: {result['followups']} conversas contactadas")
 
+    return result
+
+
+def migrar_conversas_novo_numero(limite: int = 15) -> dict:
+    """Migra conversas ativas para novo número.
+    Lê o histórico de cada conversa, envia áudio explicando a troca de número
+    e depois áudio sobre a Derekh Food. Cria nova conversa para cada lead.
+    Chamado manualmente ou pelo brain_loop."""
+    from crm.database import get_conn, criar_conversa_wa, registrar_msg_wa
+
+    result = {"migrados": 0, "erros": 0, "pulados": 0}
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # Pegar conversas ativas que ainda não foram migradas
+        # (conversas antigas — antes da migração de número)
+        cur.execute("""
+            SELECT c.id as conversa_id, c.lead_id, c.numero_envio,
+                   c.msgs_enviadas, c.msgs_recebidas, c.status,
+                   l.nome_fantasia, l.razao_social, l.telefone1, l.telefone2
+            FROM wa_conversas c
+            JOIN leads l ON c.lead_id = l.id
+            WHERE c.status = 'ativo'
+              AND (c.notas NOT LIKE '%%[MIGRADO]%%' OR c.notas IS NULL)
+              AND l.opt_out_wa IS NOT TRUE
+              AND l.status_pipeline NOT IN ('perdido', 'lead_falso')
+            ORDER BY c.msgs_recebidas DESC, c.id ASC
+            LIMIT %s
+        """, (limite,))
+        conversas = cur.fetchall()
+
+    if not conversas:
+        log.info("Migração: nenhuma conversa para migrar")
+        return result
+
+    log.info(f"Migração novo número: {len(conversas)} conversas")
+
+    for conv in conversas:
+        conversa_id = conv["conversa_id"]
+        lead_id = conv["lead_id"]
+        numero = conv["numero_envio"]
+        nome_fantasia = conv["nome_fantasia"] or ""
+        razao_social = conv["razao_social"] or ""
+
+        numero_limpo = _limpar_telefone(numero)
+        if numero_limpo in _NUMEROS_EXCLUIDOS or len(numero_limpo) < 8:
+            result["pulados"] += 1
+            continue
+
+        try:
+            lead = {"nome_fantasia": nome_fantasia, "razao_social": razao_social}
+            nome_rest = _limpar_nome_restaurante(lead)
+
+            # Ler histórico da conversa antiga para contexto
+            with get_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    SELECT direcao, conteudo, tipo FROM wa_mensagens
+                    WHERE conversa_id = %s ORDER BY created_at ASC
+                """, (conversa_id,))
+                historico = cur.fetchall()
+
+            # Resumir contexto da conversa
+            ultima_msg_lead = ""
+            lead_respondeu = conv["msgs_recebidas"] > 0
+            lead_interessado = False
+            nome_contato = ""
+
+            for msg in historico:
+                if msg["direcao"] == "recebida":
+                    ultima_msg_lead = msg["conteudo"] or ""
+                    msg_lower = ultima_msg_lead.lower()
+                    if any(w in msg_lower for w in ["sim", "quero", "interesse", "pode", "manda", "explica"]):
+                        lead_interessado = True
+                    # Tentar extrair nome
+                    import re
+                    match_nome = re.search(
+                        r'(?:me chamo|meu nome|sou o|sou a|aqui é o|aqui é a)\s+([A-ZÀ-Ú][a-zà-ú]+)',
+                        msg["conteudo"] or "")
+                    if match_nome:
+                        nome_contato = match_nome.group(1)
+
+            # Gerar mensagem contextual de troca de número
+            if lead_respondeu and lead_interessado:
+                # Lead demonstrou interesse — mensagem quente
+                saudacao = f"Oi{' ' + nome_contato if nome_contato else ''}! "
+                texto_troca = (
+                    f"{saudacao}Aqui é a Ana da Derekh Food! "
+                    f"Tive um probleminha no outro número, mas agora podemos "
+                    f"continuar nossa conversa por aqui. "
+                    f"Você tinha demonstrado interesse no sistema pro {nome_rest} — "
+                    f"vamos continuar de onde paramos?"
+                )
+            elif lead_respondeu:
+                # Lead respondeu mas sem interesse claro
+                saudacao = f"Oi{' ' + nome_contato if nome_contato else ''}! "
+                texto_troca = (
+                    f"{saudacao}Aqui é a Ana da Derekh Food. "
+                    f"Desculpa, tive um probleminha no número anterior. "
+                    f"Agora é por aqui! Posso te contar como o {nome_rest} "
+                    f"pode ter delivery próprio sem pagar comissão?"
+                )
+            else:
+                # Lead não respondeu — reapresentação
+                texto_troca = (
+                    f"Oi! Aqui é a Ana da Derekh Food. "
+                    f"Mandei mensagem por outro número antes mas tive um probleminha. "
+                    f"Agora é por aqui! Queria te mostrar como o {nome_rest} "
+                    f"pode ter delivery próprio sem comissão de iFood. "
+                    f"Posso te explicar rapidinho?"
+                )
+
+            decision_log.info(f"MIGRA_NUMERO conv={conversa_id} lead={lead_id} "
+                              f"num={numero} respondeu={lead_respondeu} "
+                              f"interessado={lead_interessado} nome={nome_contato}")
+
+            # Delay humano (reduzido para migração)
+            _time.sleep(random.uniform(2, 5))
+
+            # Enviar áudio 1: explicando a troca de número
+            audio_texto_troca = _preparar_texto_para_audio(_preparar_texto_tts(texto_troca))
+            audio_ok = False
+            try:
+                audio_result = _gerar_e_enviar_audio_resposta(
+                    numero, audio_texto_troca, conversa_id, emocao="amigavel")
+                if audio_result.get("sucesso"):
+                    audio_ok = True
+                    log.info(f"Migração ÁUDIO troca conv {conversa_id} (lead {lead_id})")
+            except Exception as e:
+                log.warning(f"Áudio troca falhou conv {conversa_id}: {e}")
+
+            if not audio_ok:
+                # Fallback texto
+                _enviar_e_salvar(conversa_id, numero, texto_troca)
+                log.info(f"Migração TEXTO troca conv {conversa_id} (lead {lead_id})")
+
+            # Delay entre áudios (3-5s)
+            _time.sleep(random.uniform(3, 5))
+
+            # Enviar áudio 2: sobre a Derekh Food (só se lead não respondeu ou demonstrou interesse)
+            texto_derekh = (
+                "A Derekh Food é uma plataforma completa de delivery "
+                "feita pra restaurantes que querem vender mais e depender menos "
+                "de marketplace. Você tem cardápio digital, gestão de pedidos, "
+                "app próprio do motoboy e até atendente com inteligência artificial "
+                "no WhatsApp. E o melhor: sem comissão por pedido! "
+                "Tem teste grátis de 15 dias. Quer experimentar?"
+            )
+            audio_texto_derekh = _preparar_texto_para_audio(_preparar_texto_tts(texto_derekh))
+            try:
+                audio_result2 = _gerar_e_enviar_audio_resposta(
+                    numero, audio_texto_derekh, conversa_id, emocao="entusiasmado")
+                if audio_result2.get("sucesso"):
+                    log.info(f"Migração ÁUDIO derekh conv {conversa_id} (lead {lead_id})")
+            except Exception as e:
+                log.warning(f"Áudio derekh falhou conv {conversa_id}: {e}")
+
+            # Marcar conversa antiga como migrada
+            with get_conn() as conn:
+                cur = conn.cursor()
+                cur.execute("""
+                    UPDATE wa_conversas
+                    SET notas = COALESCE(notas, '') || %s
+                    WHERE id = %s
+                """, ("\n[MIGRADO] Número trocado — conversa continuada pelo novo número", conversa_id))
+                conn.commit()
+
+            result["migrados"] += 1
+
+            # Delay entre leads (8-15s)
+            _time.sleep(random.uniform(8, 15))
+
+        except Exception as e:
+            log.warning(f"Erro migração conv {conversa_id}: {e}")
+            result["erros"] += 1
+
+    log.info(f"Migração concluída: {result}")
     return result
