@@ -69,6 +69,14 @@ _EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")
 # Número inbound (para incluir nos emails como "Fale Conosco")
 WHATSAPP_INBOUND_NUMBER = os.environ.get("WHATSAPP_INBOUND_NUMBER", "5511971765565")
 
+# Números excluídos da prospecção (dono, bots, números internos)
+_NUMEROS_EXCLUIDOS = {
+    "351933358929",   # Klenilton (dono) — Portugal
+    "554599713063",   # Bot outbound (derekh-whatsapp)
+    "5511971765565",  # Bot inbound (derekh-inbound)
+    "16465894168",    # Número teste
+}
+
 # Fallback: WhatsApp Cloud API (Meta) — mantido para compatibilidade
 _GRAPH_API = "https://graph.facebook.com/v21.0"
 
@@ -194,7 +202,33 @@ _AUTORESPOSTA_PATTERNS = [
     r"nossa equipe (ir[áa]|vai) (te )?atender",
     r"aguarde.*(atendente|atendimento)",
     r"funcionamos de .*(segunda|seg).*(sexta|sex)",
+    # Novos padrões detectados em produção (02/04)
+    r"este n[úu]mero foi substitu[íi]do",
+    r"este [ée] o (novo )?canal",
+    r"canal de atendimento",
+    r"ligue para.*(0800|\(\d{2}\))",
+    r"(whatsapp|wpp|zap).*(atendimento|comercial|vendas).*\d{4}",
 ]
+
+
+def _detectar_broadcast_promo(mensagem: str) -> bool:
+    """Detecta se a mensagem é um broadcast promocional / copypaste do lead.
+    Mensagens com múltiplos links de delivery, preços, ou templates de vendas."""
+    msg_lower = mensagem.lower().strip()
+    # Múltiplos links de delivery = broadcast
+    delivery_links = sum(1 for p in ["ifood.com", "rappi.com", "99food", "keeta",
+                                      "uber ?eats", "aiqfome"] if p in msg_lower)
+    if delivery_links >= 2:
+        return True
+    # Link maps.google ou maps.app = autoresposta com endereço
+    if "maps.google" in msg_lower or "maps.app" in msg_lower:
+        if len(mensagem) > 200:  # Mensagem longa com mapa = template
+            return True
+    # Mensagem muito longa com vários preços = cardápio/template
+    precos = re.findall(r'r\$\s?\d+', msg_lower)
+    if len(precos) >= 3:
+        return True
+    return False
 
 
 def _detectar_autoresposta(mensagem: str) -> bool:
@@ -251,6 +285,27 @@ _CONTADOR_PATTERNS = [
     r"esse n[úu]mero [ée] (da |do )?(contabilidade|contador)",
     r"empresa (de )?contabilidade",
 ]
+
+# Detecção de número errado / não pertence ao lead
+_NUMERO_ERRADO_PATTERNS = [
+    r"(esse|este) n[úu]mero n[ãa]o [ée] (dele|dela|do |da |meu|nosso)",
+    r"n[úu]mero errado",
+    r"n[ãa]o conhe[çc]o (essa|esta) pessoa",
+    r"n[ãa]o [ée] (aqui|esse|desse|dono|propriet)",
+    r"(mandou|enviou|ligou) (pro |para o? ?)n[úu]mero errado",
+    r"n[ãa]o (tenho|tem) (nada|nenhuma) (a ver|relação|rela[çc][ãa]o)",
+    r"pessoa errada",
+    r"engano",
+]
+
+
+def _detectar_numero_errado(mensagem: str) -> bool:
+    """Detecta se o lead indica que o número não pertence a ele / pessoa errada."""
+    msg_lower = mensagem.lower().strip()
+    for pattern in _NUMERO_ERRADO_PATTERNS:
+        if re.search(pattern, msg_lower):
+            return True
+    return False
 
 
 def _detectar_contador(mensagem: str) -> bool:
@@ -642,6 +697,12 @@ def enviar_mensagem_wa(lead_id: int, texto: str, tom: str = "informal") -> dict:
     else:
         telefone = lead.get("telefone1") or lead.get("telefone_proprietario") or ""
         numero = _formatar_numero_wa(telefone)
+        # Verificar número excluído ou inválido
+        num_limpo = _limpar_telefone(numero)
+        if num_limpo in _NUMEROS_EXCLUIDOS:
+            return {"erro": f"Número excluído da prospecção: {num_limpo}"}
+        if len(num_limpo) < 8:
+            return {"erro": f"Telefone inválido: {telefone}"}
         conversa_id = criar_conversa_wa(lead_id, numero, tom)
 
     if not numero:
@@ -2367,13 +2428,25 @@ def avaliar_handoff(conversa_id: int) -> tuple:
         _detectar_e_salvar_persona(conversa)
 
     # VALIDAÇÃO PRÉ-HANDOFF: Verificar se confirmou que é restaurante
-    # Se o lead nunca confirmou tipo de negócio, NÃO fazer handoff automático
     restaurante_confirmado = _verificar_restaurante_confirmado(conversa)
+
+    # 0. HANDOFF IMEDIATO — lead aceitou/disse "sim" 2+ vezes (Conv 84 pattern)
+    # Se lead responde afirmativamente sem dar detalhes, precisa de humano
+    respostas_afirmativas = 0
+    for msg in (conversa.get("mensagens") or []):
+        if msg["direcao"] == "recebida":
+            txt = (msg.get("conteudo") or "").lower().strip()
+            if txt in ("sim", "quero", "pode ser", "vamos", "ok", "bora",
+                        "com certeza", "claro", "vamos lá", "vamos la",
+                        "pode", "aceito", "top", "fechou", "beleza"):
+                respostas_afirmativas += 1
+    if respostas_afirmativas >= 2:
+        _enviar_trial_link_se_necessario(conversa, lead)
+        return "warm", f"Lead aceitou {respostas_afirmativas}x — precisa de humano para converter"
 
     # 1. HANDOFF IMEDIATO — pediu demo ou humano
     if pediu_demo or pediu_humano:
         if not restaurante_confirmado and msgs_recebidas >= 2:
-            # Ainda não confirmou que é restaurante — bot precisa validar primeiro
             log.info(f"Handoff adiado para conv {conversa_id} — restaurante não confirmado")
             return None, ""
         _enviar_trial_link_se_necessario(conversa, lead)
@@ -2598,26 +2671,49 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
                       f"tipo={tipo_msg} msg={mensagem[:200]}")
 
     # Fix #4 + #10: Detecção de auto-reply ANTES do intent scoring
-    if _detectar_autoresposta(mensagem):
-        log.info(f"Auto-reply detectada de {numero} — solicitando contato humano")
-        decision_log.info(f"AUTORESPOSTA conv={conversa_id} msg={mensagem[:200]}")
-        registrar_msg_wa(conversa_id, "recebida", mensagem, intencao="autoresposta")
+    if _detectar_autoresposta(mensagem) or _detectar_broadcast_promo(mensagem):
+        is_broadcast = _detectar_broadcast_promo(mensagem)
+        log.info(f"{'Broadcast' if is_broadcast else 'Auto-reply'} detectada de {numero}")
+        decision_log.info(f"{'BROADCAST' if is_broadcast else 'AUTORESPOSTA'} conv={conversa_id} msg={mensagem[:200]}")
+        registrar_msg_wa(conversa_id, "recebida", mensagem,
+                         intencao="broadcast" if is_broadcast else "autoresposta")
         _time.sleep(_calcular_delay_humano(mensagem))
 
-        horario_info = _extrair_horario_funcionamento(mensagem)
-        if horario_info:
-            resposta = (f"Entendi que o horário de atendimento é {horario_info}. "
-                        f"Vou entrar em contato nesse horário então! "
-                        f"Poderia me encaminhar para um responsável quando possível?")
-            _agendar_recontato(lead_id, conversa_id, horario_info)
+        if is_broadcast:
+            resposta = ("Oi! Vi que vocês estão ativos no delivery, muito bom! "
+                        "Sou a Ana da Derekh Food. Gostaria de conversar com o "
+                        "responsável sobre uma forma de ter delivery próprio, "
+                        "sem comissão de plataforma. Com quem estou falando?")
         else:
-            resposta = ("Entendi! Poderia me encaminhar para um responsável? "
-                        "Sou a Ana da Derekh Food, gostaria de apresentar algo "
-                        "que pode ajudar o negócio de vocês.")
+            horario_info = _extrair_horario_funcionamento(mensagem)
+            if horario_info:
+                resposta = (f"Entendi que o horário de atendimento é {horario_info}. "
+                            f"Vou entrar em contato nesse horário então! "
+                            f"Poderia me encaminhar para um responsável quando possível?")
+                _agendar_recontato(lead_id, conversa_id, horario_info)
+            else:
+                resposta = ("Entendi! Poderia me encaminhar para um responsável? "
+                            "Sou a Ana da Derekh Food, gostaria de apresentar algo "
+                            "que pode ajudar o negócio de vocês.")
 
         _enviar_e_salvar(conversa_id, numero_envio, resposta, instance=instance)
         _liberar_lock_resposta(numero)
         return {"processado": True, "autoresposta": True, "lead_id": lead_id}
+
+    # Detecção de número errado
+    if _detectar_numero_errado(mensagem):
+        log.info(f"Número errado detectado para lead {lead_id}")
+        decision_log.info(f"NUMERO_ERRADO lead={lead_id} conv={conversa_id} msg={mensagem[:200]}")
+        registrar_msg_wa(conversa_id, "recebida", mensagem, intencao="numero_errado")
+        _time.sleep(_calcular_delay_humano(mensagem))
+        resposta = ("Desculpa pelo incômodo! Deve ter sido um engano. "
+                    "Se por acaso conhecer alguém com restaurante que precise "
+                    "de um app de delivery, fico no aguardo! Boa semana! 🤙")
+        _enviar_e_salvar(conversa_id, numero_envio, resposta, instance=instance)
+        atualizar_conversa_wa(conversa_id, status="encerrado",
+                              notas="\n[NUMERO_ERRADO] Lead informou que número não pertence a ele")
+        _liberar_lock_resposta(numero)
+        return {"processado": True, "numero_errado": True, "lead_id": lead_id}
 
     # Fix #12: Detecção de contador/intermediário
     if _detectar_contador(mensagem):
@@ -2954,6 +3050,18 @@ def iniciar_conversa_outbound(lead_id: int) -> dict:
 
     if lead.get("opt_out_wa"):
         return {"erro": "Lead fez opt-out de WhatsApp"}
+
+    # Verificar se o telefone é um número excluído (dono, bots)
+    telefone = lead.get("telefone1") or lead.get("telefone_proprietario") or ""
+    numero_limpo = _limpar_telefone(telefone)
+    if numero_limpo in _NUMEROS_EXCLUIDOS:
+        log.warning(f"Lead {lead_id} tem número excluído ({numero_limpo}) — não prospectar")
+        return {"erro": f"Número excluído da prospecção: {numero_limpo}"}
+
+    # Verificar telefone inválido (muito curto ou "0")
+    if len(numero_limpo) < 8:
+        log.warning(f"Lead {lead_id} tem telefone inválido ({telefone}) — não prospectar")
+        return {"erro": f"Telefone inválido: {telefone}"}
 
     # Verificar se já tem conversa ativa (evitar duplicata)
     conversa = obter_conversa_wa_por_lead(lead_id)
