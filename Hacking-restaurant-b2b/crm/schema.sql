@@ -628,3 +628,51 @@ CREATE INDEX IF NOT EXISTS idx_audio_cache_uso ON audio_cache(vezes_usado DESC, 
 -- Campos novos em wa_conversas para rastrear áudios cache
 ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS cache_ids_usados JSONB DEFAULT '[]';
 ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS intents_usadas JSONB DEFAULT '[]';
+
+-- ============================================================
+-- P2-P5: CRM TRUE AUTO SALES
+-- ============================================================
+
+-- P2: Funil Completo — campos trial link + follow-up handoff
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS trial_link_enviado_at TIMESTAMPTZ;
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS ultimo_reengajamento_at TIMESTAMPTZ;
+
+-- P3: Brain Loop — persona detectada + contagem msgs lead
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS persona_detectada TEXT;
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS msgs_lead_count INTEGER DEFAULT 0;
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS followup_handoff_etapa INTEGER DEFAULT 0;
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS followup_handoff_at TIMESTAMPTZ;
+
+-- Notas em wa_conversas (enriquecimento, agendamento, lead_falso)
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS notas TEXT;
+
+-- P4: Event-Driven Scoring — tabela de eventos
+CREATE TABLE IF NOT EXISTS lead_eventos (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+    evento TEXT NOT NULL,
+    valor INTEGER DEFAULT 0,
+    score_antes INTEGER,
+    score_depois INTEGER,
+    metadata JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_lead_eventos_lead ON lead_eventos(lead_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lead_eventos_evento ON lead_eventos(evento, created_at DESC);
+
+-- P5: Tracking de Conversão — tabela de conversões
+CREATE TABLE IF NOT EXISTS conversoes (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER REFERENCES leads(id) ON DELETE SET NULL,
+    cnpj VARCHAR(14),
+    plano TEXT,
+    valor_mensal REAL,
+    canal_atribuicao TEXT,
+    primeira_interacao_at TIMESTAMPTZ,
+    conversao_at TIMESTAMPTZ DEFAULT NOW(),
+    meses_ativo INTEGER DEFAULT 0,
+    receita_total REAL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_conversoes_lead ON conversoes(lead_id);
+CREATE INDEX IF NOT EXISTS idx_conversoes_cnpj ON conversoes(cnpj);
+CREATE INDEX IF NOT EXISTS idx_conversoes_canal ON conversoes(canal_atribuicao, conversao_at DESC);

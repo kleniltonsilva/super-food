@@ -50,6 +50,17 @@ if not log.handlers:
     _h.setFormatter(logging.Formatter("[WA-BOT] %(message)s"))
     log.addHandler(_h)
 
+# Decision log — registro estruturado de decisões do bot (Fix #7)
+decision_log = logging.getLogger("wa_decision")
+decision_log.setLevel(logging.DEBUG)
+if not decision_log.handlers:
+    try:
+        _dh = logging.FileHandler("/tmp/wa_decisions.log", encoding="utf-8")
+        _dh.setFormatter(logging.Formatter("%(asctime)s | %(message)s"))
+        decision_log.addHandler(_dh)
+    except Exception:
+        pass  # fallback: sem arquivo de decisões
+
 # Evolution API config (outbound)
 _EVOLUTION_API_URL = os.environ.get("EVOLUTION_API_URL", "https://derekh-evolution.fly.dev")
 _EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE", "derekh-whatsapp")
@@ -133,6 +144,315 @@ def _formatar_numero_wa(telefone: str) -> str:
     if len(num) >= 10 and not num.startswith("55"):
         num = "55" + num
     return num
+
+
+# ============================================================
+# LIMPEZA DE NOME DO RESTAURANTE (Fix #2)
+# ============================================================
+
+def _limpar_nome_restaurante(lead: dict) -> str:
+    """Extrai nome limpo do restaurante, filtrando CNPJ/CPF e padrões de razão social.
+    Evita usar '34.462.490 WESLEY LOURENCA VIEIRA' como nome do restaurante."""
+    nome = lead.get("nome_fantasia") or ""
+
+    # Se nome_fantasia parece ser CNPJ+nome ou nome+CPF, descartar
+    if re.search(r'\d{2}\.\d{3}\.\d{3}', nome) or re.search(r'\d{11}', nome):
+        nome = ""
+
+    # Se vazio, tentar razão social limpa
+    if not nome:
+        razao = lead.get("razao_social") or ""
+        # Limpar CNPJ/CPF da razão social
+        razao = re.sub(r'\d{2}\.\d{3}\.\d{3}[/.\-\d]*', '', razao).strip()
+        razao = re.sub(r'\d{9,}', '', razao).strip()
+        if razao and len(razao) > 3:
+            nome = razao.title()
+
+    if not nome:
+        nome = "seu restaurante"
+
+    return nome
+
+
+# ============================================================
+# DETECÇÃO DE AUTO-REPLY / BOT WHATSAPP BUSINESS (Fix #4)
+# ============================================================
+
+_AUTORESPOSTA_PATTERNS = [
+    r"selecione uma (das )?opções",
+    r"digite \d+ para",
+    r"hor[áa]rio de atendimento",
+    r"fora do (nosso )?hor[áa]rio",
+    r"em breve (um )?atendente",
+    r"n[ãa]o estamos (dispon[íi]veis|atendendo)",
+    r"deixe sua mensagem",
+    r"retornaremos (em breve|o mais r[áa]pido)",
+    r"atendimento (autom[áa]tico|virtual)",
+    r"bem[- ]vindo.*selecione",
+    r"menu (principal|de opções)",
+    r"resposta autom[áa]tica",
+    r"nossa equipe (ir[áa]|vai) (te )?atender",
+    r"aguarde.*(atendente|atendimento)",
+    r"funcionamos de .*(segunda|seg).*(sexta|sex)",
+]
+
+
+def _detectar_autoresposta(mensagem: str) -> bool:
+    """Detecta se a mensagem é uma auto-reply de WhatsApp Business."""
+    msg_lower = mensagem.lower().strip()
+    for pattern in _AUTORESPOSTA_PATTERNS:
+        if re.search(pattern, msg_lower):
+            return True
+    return False
+
+
+def _extrair_horario_funcionamento(mensagem: str) -> str:
+    """Extrai informação de horário de funcionamento da msg automática."""
+    msg_lower = mensagem.lower()
+    match = re.search(
+        r'(segunda|seg).*?(sexta|sex|s[áa]bado|sab|domingo|dom).*?(\d{1,2}[h:]?\d{0,2}).*?(\d{1,2}[h:]?\d{0,2})',
+        msg_lower
+    )
+    if match:
+        return match.group(0)
+    match2 = re.search(r'das?\s+(\d{1,2}[h:]\d{0,2})\s+(às|ate|a)\s+(\d{1,2}[h:]\d{0,2})', msg_lower)
+    if match2:
+        return match2.group(0)
+    return ""
+
+
+def _agendar_recontato(lead_id: int, conversa_id: int, horario_info: str):
+    """Agenda recontato via brain_loop para o horário indicado."""
+    from crm.database import get_conn
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE wa_conversas
+            SET status = 'aguardando_horario',
+                notas = COALESCE(notas, '') || %s
+            WHERE id = %s
+        """, (f"\n[AGENDAR] Recontato sugerido: {horario_info}", conversa_id))
+        conn.commit()
+    log.info(f"Recontato agendado para lead {lead_id}, conversa {conversa_id}: {horario_info}")
+
+
+# ============================================================
+# DETECÇÃO DE CONTADOR / INTERMEDIÁRIO (Fix #12)
+# ============================================================
+
+_CONTADOR_PATTERNS = [
+    r"escrit[óo]rio (de )?contab",
+    r"contabil",
+    r"contabilidade",
+    r"contador(a)?(\s|$|,|\.)",
+    r"n[ãa]o sou (o )?(dono|propriet[áa]rio|s[óo]cio|respons[áa]vel)",
+    r"aqui [ée] (escrit[óo]rio|contabilidade)",
+    r"(sou|somos) (o |a )?(contador|contadora)",
+    r"esse n[úu]mero [ée] (da |do )?(contabilidade|contador)",
+    r"empresa (de )?contabilidade",
+]
+
+
+def _detectar_contador(mensagem: str) -> bool:
+    """Detecta se a resposta indica que o número pertence a um contador."""
+    msg_lower = mensagem.lower().strip()
+    for pattern in _CONTADOR_PATTERNS:
+        if re.search(pattern, msg_lower):
+            return True
+    return False
+
+
+# ============================================================
+# ENRIQUECIMENTO DE LEAD NA CONVERSA (Fix #13)
+# ============================================================
+
+def _enriquecer_lead_conversa(lead_id: int, conversa_id: int, mensagem: str):
+    """Extrai informações da conversa e atualiza o lead no banco."""
+    from crm.database import get_conn
+    updates = {}
+    msg_lower = mensagem.lower()
+
+    # Detectar nome da pessoa (quando se apresenta)
+    match_nome = re.search(
+        r'(?:me chamo|meu nome [ée]|sou o|sou a|aqui [ée] o|aqui [ée] a)\s+'
+        r'([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)?)',
+        mensagem
+    )
+    if match_nome:
+        nome = match_nome.group(1).strip()
+        if len(nome) > 2:
+            updates["nome_contato_wa"] = nome
+            decision_log.info(f"ENRICH lead={lead_id} nome_contato={nome}")
+
+    # Detectar tipo de comida
+    tipos_comida = {
+        "pizzaria": ["pizza", "pizzaria"],
+        "hamburgueria": ["hambúrguer", "hamburger", "hamburgueria", "burger"],
+        "japonesa": ["japonesa", "sushi", "temaki", "japa"],
+        "açaí": ["açaí", "acai"],
+        "padaria": ["padaria", "pão", "pao"],
+        "lanchonete": ["lanchonete", "lanche", "x-burger"],
+        "churrascaria": ["churrasco", "churrascaria"],
+        "marmitaria": ["marmita", "marmitaria", "marmitex"],
+        "doceria": ["doce", "doceria", "confeitaria", "bolo"],
+        "restaurante": ["restaurante", "refeição", "almoço", "comida caseira"],
+    }
+    for tipo, keywords in tipos_comida.items():
+        if any(kw in msg_lower for kw in keywords):
+            updates["tipo_comida_detectado"] = tipo
+            break
+
+    # Detectar novo número (contato do dono fornecido pelo contador)
+    if any(w in msg_lower for w in ("contato", "número", "whatsapp", "zap", "telefone")):
+        match_tel = re.search(r'(?:\+?55\s?)?(?:\(?\d{2}\)?\s?)?\d{4,5}[-\s]?\d{4}', mensagem)
+        if match_tel:
+            novo_numero = re.sub(r'\D', '', match_tel.group(0))
+            if len(novo_numero) >= 10:
+                updates["telefone_dono_wa"] = novo_numero
+                decision_log.info(f"ENRICH lead={lead_id} novo_telefone_dono={novo_numero}")
+
+    if updates:
+        try:
+            with get_conn() as conn:
+                cur = conn.cursor()
+                notas_extra = json.dumps(updates, ensure_ascii=False)
+                cur.execute("""
+                    UPDATE leads SET notas = COALESCE(notas, '') || %s, updated_at = NOW()
+                    WHERE id = %s
+                """, (f"\n[ENRICH] {notas_extra}", lead_id))
+                if "nome_contato_wa" in updates:
+                    cur.execute("""
+                        UPDATE wa_conversas SET notas = COALESCE(notas, '') || %s
+                        WHERE id = %s
+                    """, (f"\n[NOME] {updates['nome_contato_wa']}", conversa_id))
+                conn.commit()
+                log.info(f"Lead {lead_id} enriquecido pela conversa: {list(updates.keys())}")
+        except Exception as e:
+            log.warning(f"Erro ao enriquecer lead {lead_id}: {e}")
+
+
+def _enviar_audio_abertura(lead_id: int, conversa_id: int, texto_base: str, instance: str = ""):
+    """Envia áudio complementar na abertura outbound (Fix #6).
+    Gera TTS do texto de abertura e envia como PTT."""
+    tts_ativo = (obter_configuracao("audio_tts_autonomo") or "true").lower() == "true"
+    if not tts_ativo or not conversa_id:
+        return
+    try:
+        conversa = obter_conversa_wa(conversa_id)
+        numero = (conversa or {}).get("numero_envio") or ""
+        if not numero:
+            return
+        _time.sleep(random.uniform(2, 4))  # Delay natural entre texto e áudio
+        # Preparar texto para TTS (pronúncia + dicção falada)
+        audio_texto = _preparar_texto_para_audio(_preparar_texto_tts(texto_base))
+        emocao = "animada"  # Abertura é sempre animada
+        resultado = _gerar_e_enviar_audio_resposta(
+            numero, audio_texto, conversa_id, instance=instance, emocao=emocao)
+        if resultado.get("sucesso"):
+            log.info(f"Áudio abertura enviado para lead {lead_id}")
+            decision_log.info(f"AUDIO_ABERTURA lead={lead_id} conv={conversa_id}")
+        else:
+            log.warning(f"Falha áudio abertura lead {lead_id}: {resultado.get('erro')}")
+    except Exception as e:
+        log.warning(f"Erro áudio abertura lead {lead_id}: {e}")
+
+
+# ============================================================
+# DETECÇÃO DE NÃO-RESTAURANTE / LEAD FALSO (Novo requisito)
+# ============================================================
+
+_NAO_RESTAURANTE_PATTERNS = [
+    r"n[ãa]o (tenho|temos) restaurante",
+    r"n[ãa]o (sou|somos) (de )?restaurante",
+    r"n[ãa]o (é|e) restaurante",
+    r"n[ãa]o trabalh[oa] com (comida|aliment|restau|deliver)",
+    r"(sou|somos|trabalh\w*)\s+(com |de |do |da )?(advogad|advocacia|escrit[óo]rio|consult[óo]ria|im[óo]vel|imobili[áa]ria|loja de roupa|sal[ãa]o|barbearia|farm[áa]cia|cl[íi]nica|consult[óo]rio|oficina|borracharia|posto|mercado|mercadinho|supermercado|atacad|constru[çc][ãa]o|material|funilaria|auto ?pe[çc]a|assist[eê]ncia|inform[áa]tica|academia|est[úu]dio|pet ?shop|veterin[áa]ri|cabeleirei)",
+    r"(n[ãa]o|nunca) (trabalh|mexo|fa[çc]o|vend).*(comida|aliment|gastron|culin|delivery)",
+    r"fechei o restaurante",
+    r"restaurante (fechou|fechado|encerr)",
+    r"n[ãa]o (existe|funciona) mais",
+    r"cnpj.*(inativo|baixado|fechado|encerrado|suspenso)",
+    r"empresa (encerr|fechou|baixou|inativ)",
+]
+
+
+def _detectar_nao_restaurante(mensagem: str) -> bool:
+    """Detecta se o lead indica que NÃO é restaurante / negócio de alimentação."""
+    msg_lower = mensagem.lower().strip()
+    for pattern in _NAO_RESTAURANTE_PATTERNS:
+        if re.search(pattern, msg_lower):
+            return True
+    return False
+
+
+def _marcar_lead_falso(lead_id: int, conversa_id: int, motivo: str):
+    """Marca lead como falso (não é restaurante) — sai do pipeline e de ações futuras."""
+    from crm.database import get_conn
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE leads SET status_pipeline = 'lead_falso',
+                                 motivo_perda = %s, updated_at = NOW()
+                WHERE id = %s
+            """, (f"lead_falso: {motivo}", lead_id))
+            cur.execute("""
+                UPDATE wa_conversas SET status = 'encerrado',
+                                        notas = COALESCE(notas, '') || %s
+                WHERE id = %s
+            """, (f"\n[LEAD_FALSO] {motivo}", conversa_id))
+            conn.commit()
+        log.info(f"Lead {lead_id} marcado como FALSO: {motivo}")
+        decision_log.info(f"LEAD_FALSO lead={lead_id} conv={conversa_id} motivo={motivo}")
+    except Exception as e:
+        log.warning(f"Erro ao marcar lead {lead_id} como falso: {e}")
+
+
+def _verificar_restaurante_confirmado(conversa: dict) -> bool:
+    """Verifica se nas mensagens da conversa o lead confirmou que é restaurante/food service.
+    Retorna True se houver evidência de que é restaurante, False se ainda não confirmou."""
+    msgs = conversa.get("mensagens") or []
+    texto_recebido = " ".join(
+        (m.get("conteudo") or "").lower()
+        for m in msgs if m.get("direcao") == "recebida"
+    )
+    if not texto_recebido:
+        return False
+
+    # Palavras que indicam que é restaurante/food service
+    indicadores_restaurante = [
+        "restaurante", "pizzaria", "hamburgueria", "lanchonete", "padaria",
+        "açaiteria", "acaiteria", "churrascaria", "marmitaria", "doceria",
+        "confeitaria", "sushi", "temaki", "japonesa", "comida", "cozinha",
+        "delivery", "entrega", "cardápio", "cardapio", "prato", "refeição",
+        "refeicao", "almoço", "almoco", "janta", "jantar", "café", "cafe",
+        "bar", "pub", "bistrô", "bistro", "cantina", "buffet", "self-service",
+        "self service", "quentinha", "marmita", "marmitex", "food truck",
+        "food", "gastronomia", "culinária", "culinaria", "forno", "churros",
+        "pastel", "coxinha", "esfirra", "esfiha", "tapioca", "crepe",
+        "sorvete", "sorveteria", "gelateria", "açaí", "acai",
+        "pizza", "hambúrguer", "hamburger", "lanche", "hot dog",
+        "ifood", "rappi", "99food", "uber eats",
+        "pedido", "pedidos", "entregas por dia", "entrego", "entregamos",
+    ]
+
+    for indicador in indicadores_restaurante:
+        if indicador in texto_recebido:
+            return True
+
+    # Se o lead respondeu positivamente sobre comida/tipo
+    if re.search(r'(sim|é sim|isso mesmo|exato|exatamente|correto|isso|uhum|aham)', texto_recebido):
+        # Verificar se alguma mensagem do bot perguntou sobre tipo de negócio
+        texto_enviado = " ".join(
+            (m.get("conteudo") or "").lower()
+            for m in msgs if m.get("direcao") == "enviada"
+        )
+        if any(p in texto_enviado for p in ["tipo de comida", "tipo de restaurante",
+                                              "pizzaria", "lanchonete", "delivery",
+                                              "que tipo", "é restaurante"]):
+            return True
+
+    return False
 
 
 def verificar_webhook_meta(body: bytes, signature: str) -> bool:
@@ -689,8 +1009,10 @@ def gerar_script_audio(lead: dict) -> str:
     """Gera script de áudio personalizado para o lead (~30s).
     Usa dados iFood enriquecidos quando disponíveis."""
     pers = personalizar_abordagem(lead)
-    nome_dono = pers.get("nome_dono") or "proprietário"
-    nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "seu restaurante"
+    nome_dono = pers.get("nome_dono") or ""
+    if not nome_dono:
+        nome_dono = _limpar_nome_restaurante(lead)
+    nome_rest = _limpar_nome_restaurante(lead)
     rating = lead.get("rating") or 0
     reviews = lead.get("total_reviews") or 0
     ifood_rating = lead.get("ifood_rating") or 0
@@ -1454,7 +1776,7 @@ def detectar_intencao(mensagem: str) -> dict:
 
 def _build_lead_context(conversa: dict, lead: dict) -> str:
     """Monta resumo contextual do lead para injetar no prompt."""
-    nome_rest = conversa.get("nome_fantasia") or conversa.get("razao_social") or "restaurante"
+    nome_rest = _limpar_nome_restaurante(lead or conversa)
     cidade = (lead or {}).get("cidade") or ""
     rating = conversa.get("rating") or 0
     reviews = conversa.get("total_reviews") or 0
@@ -1503,8 +1825,17 @@ def _build_lead_context(conversa: dict, lead: dict) -> str:
             objecoes_anteriores.extend(det.get("objecoes", []))
     objecoes_unicas = list(set(objecoes_anteriores))
 
+    # Nome do contato (Fix #3)
+    pers = personalizar_abordagem(lead or {})
+    nome_contato = pers.get("nome_dono") or ""
+
+    # Verificar se restaurante já foi confirmado na conversa
+    restaurante_confirmado = _verificar_restaurante_confirmado(conversa)
+
     resumo = f"""RESUMO DO LEAD:
 Restaurante: {nome_rest}{f' ({cidade})' if cidade else ''}
+Nome do contato: {nome_contato or 'DESCONHECIDO — precisa perguntar'}
+Restaurante confirmado: {'SIM' if restaurante_confirmado else 'NÃO CONFIRMADO — PRECISA VALIDAR antes de vender'}
 Google: {rating}★ ({reviews} avaliações)
 Usa iFood: {'Sim' if tem_ifood else 'Não sei'}
 {ifood_context}{cenario}
@@ -1747,6 +2078,33 @@ COMO INSISTIR SEM SER CHATO:
 - Se disse "NÃO" firme ou pediu para parar, encerre com classe.
 - Se demonstrou interesse MAS não fechou: insista UMA vez com urgência — "consigo configurar tudo hoje se você quiser. Amanhã minha agenda complica."
 
+REGRA OBRIGATÓRIA — IDENTIFICAÇÃO (Fix #3):
+- Se você NÃO sabe o nome da pessoa (proprietário/sócio), PERGUNTE na primeira oportunidade: "Com quem estou falando?" ou "Qual o seu nome?"
+- NUNCA chame de "proprietário", "senhor(a)", "dono". Use o nome da pessoa ou do restaurante.
+- Se só tem nome do restaurante, use: "Oi, pessoal do [Restaurante]!" e pergunte o nome.
+
+SITE OFICIAL — MENCIONAR PROATIVAMENTE (Fix #8):
+- Sempre que o lead demonstrar interesse ou perguntar sobre a empresa, compartilhe: "Dá uma olhada no nosso site: derekhfood.com.br"
+- Se o lead desconfiar/perguntar se é golpe: "Pode conferir no nosso site oficial: derekhfood.com.br"
+- Na primeira ou segunda mensagem de resposta a interesse, mencionar o site naturalmente.
+
+VALIDAÇÃO DO LEAD — OBRIGATÓRIO ANTES DE QUALQUER VENDA (REGRA MAIS IMPORTANTE):
+- ANTES de oferecer demo, teste ou handoff, você DEVE confirmar estas 3 informações:
+  1. SE É REALMENTE UM RESTAURANTE: "Vocês trabalham com que tipo de comida?" ou "É restaurante, pizzaria, lanchonete?"
+  2. TIPO DE RESTAURANTE/COMIDA: "Qual o carro-chefe de vocês?" ou "Trabalham com que tipo de culinária?"
+  3. DELIVERY/PLATAFORMAS: "Vocês já fazem delivery? Estão no iFood ou em alguma plataforma?"
+- Use os dados do lead (se disponíveis) para confirmar: "Vi que vocês são [tipo]. É isso mesmo?"
+- Muitos CNPJs de alimentação no Brasil NÃO são restaurantes (salão de beleza, pet shop, consultório, loja de roupa que usa CNPJ de alimentação).
+- Se o lead disser que NÃO é restaurante/delivery/food service, encerre EDUCADAMENTE: "Ah, entendi! A Derekh Food é focada em restaurantes. Te desejo sucesso!"
+- NUNCA ofereça demo/teste sem ter confirmado que é um restaurante de verdade.
+- Se respondeu "sim" a tudo mas não deu detalhes, pergunte: "Me conta mais sobre o restaurante? Quantas entregas vocês fazem por dia mais ou menos?"
+- Somente DEPOIS de confirmar que é restaurante real, comece a vender.
+
+DETECÇÃO DE INTERMEDIÁRIOS — contador, secretário, recepção (Fix #12):
+- Se a pessoa diz que é contador, recepcionista ou que não é o dono, NÃO insista em vender.
+- Peça educadamente o contato do dono/sócio: "Poderia me passar o WhatsApp do responsável? Quero apresentar algo que pode ajudar muito o restaurante."
+- Se conseguir o contato, agradeça: "Muito obrigada! Vou entrar em contato com ele(a)."
+
 FORMATO (OBRIGATÓRIO — REGRAS INVIOLÁVEIS):
 - Escreva em português CORRETO. Sem abreviações de internet (NÃO use "vc", "tbm", "kkk", "blz", "pq").
 - TAMANHO MÁXIMO (REGRA MAIS IMPORTANTE DE FORMATO):
@@ -1894,6 +2252,23 @@ def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
     if anti_rep:
         system_prompt += f"\n\n{anti_rep}"
 
+    # P3.3: Adaptar tom por persona detectada
+    persona = conversa.get("persona_detectada")
+    if persona:
+        _PERSONA_PROMPTS = {
+            "tecnico": "\nTOM ADAPTADO (lead técnico): Seja mais detalhista nas funcionalidades. Mencione integrações, APIs, escalabilidade. Use termos como 'painel de controle', 'dashboard em tempo real', 'sistema integrado'. Menos emoção, mais dados concretos.",
+            "apressado": "\nTOM ADAPTADO (lead apressado): Seja ULTRA direto. Frases curtas. Sem rodeios. Vá direto ao CTA. Máximo 2-3 frases por mensagem. Sem saudações longas. Foco: preço, resultado, ação.",
+            "cauteloso": "\nTOM ADAPTADO (lead cauteloso): Transmita segurança. Mencione garantias: 'sem contrato', 'cancela quando quiser', 'sem cartão no trial'. Use provas sociais e referências. Sem pressão. Deixe o lead decidir no ritmo dele.",
+            "entusiasta": "\nTOM ADAPTADO (lead entusiasta): Acompanhe a energia! Use exclamações (com moderação). Aproveite o entusiasmo para avançar rápido pro trial. Seja animada. 'Vai amar!', 'É exatamente isso!'",
+        }
+        prompt_persona = _PERSONA_PROMPTS.get(persona, "")
+        if prompt_persona:
+            system_prompt += prompt_persona
+
+    # Fix #7: Log de decisão IA
+    decision_log.info(f"IA_REQ conv={conversa_id} model=grok-3-mini-fast "
+                      f"n_historico={len(historico)} persona={persona}")
+
     try:
         resp = httpx.post(
             "https://api.x.ai/v1/chat/completions",
@@ -1909,6 +2284,11 @@ def responder_com_ia(conversa_id: int, mensagem_lead: str) -> dict:
         resp.raise_for_status()
         data = resp.json()
         resposta = data["choices"][0]["message"]["content"]
+        # Fix #7: Log da resposta IA
+        usage = data.get("usage", {})
+        decision_log.info(f"IA_RESP conv={conversa_id} resposta={resposta[:200]} "
+                          f"tokens_in={usage.get('prompt_tokens')} "
+                          f"tokens_out={usage.get('completion_tokens')}")
     except Exception as e:
         log.error(f"Erro Grok IA: {e}")
         return {"erro": f"Falha na IA: {e}"}
@@ -1959,24 +2339,137 @@ def avaliar_handoff(conversa_id: int) -> tuple:
                 objecoes_nao_resolvidas += 1
             intent_score_acumulado += det.get("score", 0)
 
+    # P2.1: Enviar trial link antes do handoff (se não enviou ainda)
+    lead = obter_lead(conversa.get("lead_id")) if conversa.get("lead_id") else None
+    trial_ja_enviado = bool(lead and lead.get("trial_link_enviado_at"))
+
+    def _enviar_trial_link_se_necessario(conv, lead_data):
+        """Envia link trial self-service se ainda não enviou."""
+        if trial_ja_enviado or not lead_data:
+            return
+        numero = conv.get("numero_envio")
+        if not numero:
+            return
+        lid = lead_data.get("id")
+        link = f"https://derekhfood.com.br/onboarding?ref={lid}&utm_source=wa_bot"
+        texto = (
+            f"Enquanto nosso time prepara tudo, você já pode experimentar grátis por 15 dias:\n\n"
+            f"{link}\n\nSem compromisso, sem cartão! 😊"
+        )
+        _enviar_direto(numero, texto)
+        from crm.database import marcar_trial_link_enviado, registrar_interacao
+        marcar_trial_link_enviado(lid)
+        registrar_interacao(lid, "whatsapp", "whatsapp", "Trial link enviado (pré-handoff)", "enviado")
+        log.info(f"Trial link enviado para lead {lid} (pré-handoff)")
+
+    # P3.3: Detectar persona após 2+ mensagens
+    if msgs_recebidas >= 2:
+        _detectar_e_salvar_persona(conversa)
+
+    # VALIDAÇÃO PRÉ-HANDOFF: Verificar se confirmou que é restaurante
+    # Se o lead nunca confirmou tipo de negócio, NÃO fazer handoff automático
+    restaurante_confirmado = _verificar_restaurante_confirmado(conversa)
+
     # 1. HANDOFF IMEDIATO — pediu demo ou humano
     if pediu_demo or pediu_humano:
+        if not restaurante_confirmado and msgs_recebidas >= 2:
+            # Ainda não confirmou que é restaurante — bot precisa validar primeiro
+            log.info(f"Handoff adiado para conv {conversa_id} — restaurante não confirmado")
+            return None, ""
+        _enviar_trial_link_se_necessario(conversa, lead)
         motivo = "Lead pediu demo/reunião" if pediu_demo else "Lead pediu atendente humano"
         return "immediate", motivo
 
     # 2. HANDOFF QUENTE — lead muito engajado
     if intent_score_acumulado >= 60 and msgs_recebidas >= 3:
+        _enviar_trial_link_se_necessario(conversa, lead)
         return "warm", f"Lead engajado (score acumulado={intent_score_acumulado}, {msgs_recebidas} msgs)"
 
     # 3. HANDOFF QUENTE — score CRM alto
     if score >= 85 and msgs_recebidas >= 1:
+        _enviar_trial_link_se_necessario(conversa, lead)
         return "warm", f"Lead HOT (score CRM={score}) respondeu"
 
     # 4. HANDOFF ESTRATÉGICO — objeções não resolvidas
     if objecoes_nao_resolvidas >= 2:
+        _enviar_trial_link_se_necessario(conversa, lead)
         return "strategic", f"Lead com {objecoes_nao_resolvidas} objeções — escalar para gerente"
 
     return None, ""
+
+
+def _detectar_e_salvar_persona(conversa: dict):
+    """P3.3: Detecta persona do lead via análise de mensagens recebidas.
+    Classifica: tecnico, apressado, cauteloso, entusiasta.
+    Salva em wa_conversas.persona_detectada (uma vez, sem recalcular)."""
+    # Não recalcular se já detectado
+    if conversa.get("persona_detectada"):
+        return
+
+    conversa_id = conversa.get("id")
+    if not conversa_id:
+        return
+
+    msgs = [m for m in (conversa.get("mensagens") or []) if m.get("direcao") == "recebida"]
+    if len(msgs) < 2:
+        return
+
+    textos = [(m.get("conteudo") or "").lower() for m in msgs]
+    texto_concat = " ".join(textos)
+    avg_len = sum(len(t) for t in textos) / max(len(textos), 1)
+
+    # Pontuação por persona
+    scores = {"tecnico": 0, "apressado": 0, "cauteloso": 0, "entusiasta": 0}
+
+    # Técnico
+    for kw in ("api", "integração", "integracao", "webhook", "como funciona",
+               "feature", "funcionalidade", "tecnologia", "banco de dados",
+               "migração", "migracao", "configurar", "suporte técnico"):
+        if kw in texto_concat:
+            scores["tecnico"] += 3
+
+    # Apressado
+    if avg_len < 30:
+        scores["apressado"] += 3
+    for kw in ("rápido", "rapido", "logo", "agora", "direto",
+               "quanto custa", "preço", "valor", "resumo"):
+        if kw in texto_concat:
+            scores["apressado"] += 2
+    # Msgs curtas (1-2 palavras) são indicador forte
+    short_msgs = sum(1 for t in textos if len(t.split()) <= 3)
+    if short_msgs >= 2:
+        scores["apressado"] += 3
+
+    # Cauteloso
+    for kw in ("caro", "garantia", "contrato", "cancelar", "funciona mesmo",
+               "dúvida", "duvida", "certeza", "confiável", "confiavel",
+               "comprovante", "referência", "referencia", "golpe", "seguro",
+               "não sei", "nao sei", "será que", "sera que", "fidelidade"):
+        if kw in texto_concat:
+            scores["cauteloso"] += 3
+
+    # Entusiasta
+    for kw in ("demais", "show", "top", "perfeito", "incrível", "incrivel",
+               "gostei", "adorei", "uau", "legal", "maravilha", "genial",
+               "sensacional", "excelente", "ótimo", "otimo", "massa"):
+        if kw in texto_concat:
+            scores["entusiasta"] += 3
+    # Emojis indicam entusiasmo
+    import re as _re
+    emoji_count = len(_re.findall(r'[\U0001F600-\U0001F64F\U0001F680-\U0001F6FF\U0001F900-\U0001F9FF\U00002702-\U000027B0\U0001FA00-\U0001FA6F]', texto_concat))
+    if emoji_count >= 3:
+        scores["entusiasta"] += 4
+
+    # Determinar vencedor
+    melhor = max(scores, key=scores.get)
+    if scores[melhor] < 3:
+        return  # Confiança muito baixa
+
+    try:
+        atualizar_conversa_wa(conversa_id, persona_detectada=melhor)
+        log.info(f"Persona detectada: {melhor} para conversa {conversa_id} (scores: {scores})")
+    except Exception as e:
+        log.warning(f"Erro ao salvar persona: {e}")
 
 
 def _verificar_msgs_novas_pos_ia(conversa_id: int, ts_inicio: float) -> list:
@@ -2096,6 +2589,64 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
     conversa_id = row["id"]
     lead_id = row["lead_id"]
 
+    # Buscar número de envio (precisamos antes das detecções)
+    conversa_full = obter_conversa_wa(conversa_id)
+    numero_envio = (conversa_full or {}).get("numero_envio") or numero
+
+    # Fix #7: Log de decisão principal
+    decision_log.info(f"RECV lead={lead_id} conv={conversa_id} num={numero} "
+                      f"tipo={tipo_msg} msg={mensagem[:200]}")
+
+    # Fix #4 + #10: Detecção de auto-reply ANTES do intent scoring
+    if _detectar_autoresposta(mensagem):
+        log.info(f"Auto-reply detectada de {numero} — solicitando contato humano")
+        decision_log.info(f"AUTORESPOSTA conv={conversa_id} msg={mensagem[:200]}")
+        registrar_msg_wa(conversa_id, "recebida", mensagem, intencao="autoresposta")
+        _time.sleep(_calcular_delay_humano(mensagem))
+
+        horario_info = _extrair_horario_funcionamento(mensagem)
+        if horario_info:
+            resposta = (f"Entendi que o horário de atendimento é {horario_info}. "
+                        f"Vou entrar em contato nesse horário então! "
+                        f"Poderia me encaminhar para um responsável quando possível?")
+            _agendar_recontato(lead_id, conversa_id, horario_info)
+        else:
+            resposta = ("Entendi! Poderia me encaminhar para um responsável? "
+                        "Sou a Ana da Derekh Food, gostaria de apresentar algo "
+                        "que pode ajudar o negócio de vocês.")
+
+        _enviar_e_salvar(conversa_id, numero_envio, resposta, instance=instance)
+        _liberar_lock_resposta(numero)
+        return {"processado": True, "autoresposta": True, "lead_id": lead_id}
+
+    # Fix #12: Detecção de contador/intermediário
+    if _detectar_contador(mensagem):
+        log.info(f"Contador detectado para lead {lead_id} — pedindo contato do dono")
+        decision_log.info(f"CONTADOR lead={lead_id} conv={conversa_id} msg={mensagem[:200]}")
+        registrar_msg_wa(conversa_id, "recebida", mensagem, intencao="contador")
+        _time.sleep(_calcular_delay_humano(mensagem))
+        resposta = ("Ah, entendi! Desculpa o incômodo. "
+                    "Poderia me passar o contato do responsável pelo restaurante? "
+                    "Quero apresentar algo que pode ajudar bastante o negócio dele.")
+        _enviar_e_salvar(conversa_id, numero_envio, resposta, instance=instance)
+        atualizar_conversa_wa(conversa_id, status="aguardando_contato_dono")
+        _liberar_lock_resposta(numero)
+        return {"processado": True, "contador": True, "lead_id": lead_id}
+
+    # Detecção de NÃO-RESTAURANTE / Lead falso
+    if _detectar_nao_restaurante(mensagem):
+        log.info(f"Lead {lead_id} NÃO é restaurante — marcando como lead_falso")
+        decision_log.info(f"NAO_RESTAURANTE lead={lead_id} conv={conversa_id} msg={mensagem[:200]}")
+        registrar_msg_wa(conversa_id, "recebida", mensagem, intencao="nao_restaurante")
+        _time.sleep(_calcular_delay_humano(mensagem))
+        resposta = ("Ah, entendi! Desculpa o incômodo então. "
+                    "A Derekh Food é focada em restaurantes e delivery de comida. "
+                    "Te desejo muito sucesso no seu negócio! 🤙")
+        _enviar_e_salvar(conversa_id, numero_envio, resposta, instance=instance)
+        _marcar_lead_falso(lead_id, conversa_id, f"Lead informou: {mensagem[:100]}")
+        _liberar_lock_resposta(numero)
+        return {"processado": True, "lead_falso": True, "lead_id": lead_id}
+
     # Detectar intenção (scoring contextual v2.0)
     intent_result = detectar_intencao(mensagem)
     intencao = intent_result["intencao"]
@@ -2107,17 +2658,30 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
     registrar_interacao(lead_id, "whatsapp", "whatsapp",
                         f"WA recebido: {mensagem[:100]}", "positivo")
 
+    # P4.1: Event scoring — lead respondeu via WA
+    try:
+        from crm.scoring import atualizar_score_evento
+        atualizar_score_evento(lead_id, "wa_respondeu")
+    except Exception:
+        pass  # Scoring não deve bloquear fluxo
+
+    # Fix #7: Log de intenção
+    decision_log.info(f"INTENT lead={lead_id} conv={conversa_id} intent={intencao} "
+                      f"score={intent_score} objecoes={objecoes}")
+
     log.info(f"Resposta do lead {lead_id}: intenção={intencao} score={intent_score} "
              f"objeções={objecoes} (instance={instance})")
-
-    # Buscar número de envio
-    conversa_full = obter_conversa_wa(conversa_id)
-    numero_envio = (conversa_full or {}).get("numero_envio") or numero
 
     # --- OPT-OUT: remove da lista para sempre ---
     if intencao == "opt_out":
         opt_out_lead(lead_id, "wa")
         atualizar_conversa_wa(conversa_id, status="opt_out", intencao_detectada="opt_out")
+        # P4.1: Event scoring — opt_out
+        try:
+            from crm.scoring import atualizar_score_evento
+            atualizar_score_evento(lead_id, "opt_out")
+        except Exception:
+            pass
         _enviar_e_salvar(conversa_id, numero_envio,
                          "Tranquilo, te tirei da lista. Desculpa o incômodo! 🤙",
                          instance=instance)
@@ -2147,6 +2711,9 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
     # Debounce: agregar msgs que chegaram durante o delay
     mensagem_agregada = _agregar_mensagens_pendentes(conversa_id, mensagem)
 
+    # Fix #13: Enriquecer lead com dados descobertos na conversa
+    _enriquecer_lead_conversa(lead_id, conversa_id, mensagem_agregada)
+
     # Gerar resposta IA + verificação pré-envio
     ts_antes_ia = _time.time()
     resultado_ia = responder_com_ia(conversa_id, mensagem_agregada)
@@ -2163,7 +2730,9 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         resposta_crua = resultado_ia["resposta"]
 
         # Decisão: enviar áudio ou texto?
-        if _deve_enviar_audio(conversa_full, mensagem):
+        enviar_audio = _deve_enviar_audio(conversa_full, mensagem)
+        decision_log.info(f"AUDIO_DECISION conv={conversa_id} resultado={enviar_audio}")
+        if enviar_audio:
             # Truncar áudio para max ~30s
             audio_part, texto_extra = _truncar_para_audio(resposta_crua)
             # ÁUDIO: transformar português correto → dicção falada brasileira
@@ -2196,6 +2765,13 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         handoff_tipo, motivo = avaliar_handoff(conversa_id)
         if handoff_tipo == "immediate":
             atualizar_conversa_wa(conversa_id, status="handoff", handoff_motivo=motivo)
+            # P4.1: Event scoring — lead pediu demo/reunião
+            try:
+                if "demo" in motivo.lower() or "reunião" in motivo.lower():
+                    from crm.scoring import atualizar_score_evento
+                    atualizar_score_evento(lead_id, "wa_pediu_demo")
+            except Exception:
+                pass
             # Notificar o dono
             _notificar_handoff(lead_id, numero, motivo, instance)
             log.info(f"HANDOFF IMEDIATO lead {lead_id}: {motivo}")
@@ -2387,10 +2963,12 @@ def iniciar_conversa_outbound(lead_id: int) -> dict:
     # Gerar abertura personalizada via Grok
     abertura = _gerar_abertura_outbound(lead)
     if not abertura:
-        # Fallback para mensagem fixa se Grok falhar
+        # Fallback para mensagem fixa se Grok falhar (Fix #2 + #3)
         pers = personalizar_abordagem(lead)
-        nome = pers.get("nome_dono") or "proprietário"
-        nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "seu restaurante"
+        nome = pers.get("nome_dono") or ""
+        nome_rest = _limpar_nome_restaurante(lead)
+        if not nome:
+            nome = nome_rest
         abertura = (
             f"Oi {nome}! Tudo bem?\n\n"
             f"Me chamo Ana, da Derekh Food. "
@@ -2404,9 +2982,11 @@ def iniciar_conversa_outbound(lead_id: int) -> dict:
 
     if result.get("sucesso"):
         log.info(f"Conversa outbound iniciada para lead {lead_id}")
-        # Registrar interação específica de outbound
         registrar_interacao(lead_id, "whatsapp", "whatsapp",
                             f"WA outbound Ana (Brain Loop): {abertura[:80]}...", "enviado")
+
+        # Fix #6: Enviar áudio de apresentação complementar
+        _enviar_audio_abertura(lead_id, result.get("conversa_id", 0), abertura)
 
     return result
 
@@ -2419,8 +2999,10 @@ def _gerar_abertura_outbound(lead: dict) -> str:
         return ""
 
     pers = personalizar_abordagem(lead)
-    nome_dono = pers.get("nome_dono") or "proprietário"
-    nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "restaurante"
+    nome_dono = pers.get("nome_dono") or ""
+    nome_rest = _limpar_nome_restaurante(lead)
+    if not nome_dono:
+        nome_dono = nome_rest  # Usa nome do restaurante quando não tem sócio
     cidade = lead.get("cidade") or ""
     tem_ifood = lead.get("tem_ifood") or 0
     tem_rappi = lead.get("tem_rappi") or 0
@@ -2446,19 +3028,43 @@ def _gerar_abertura_outbound(lead: dict) -> str:
     system = """Você é Ana, vendedora da Derekh Food. Escreva UMA mensagem curta de WhatsApp (máx 4 linhas)
 para abordar um restaurante pela primeira vez. Seja natural, sem parecer robô.
 Regras:
-- Cumprimento simples com o nome do dono
-- Mencione algo específico do restaurante (cidade, concorrentes, cenário)
+- Se o nome do contato é DESCONHECIDO, cumprimente usando o nome do restaurante e pergunte com quem está falando
+- Se tem nome do contato, cumprimente pelo nome
+- Mencione algo específico dos dados (cidade, iFood, rating, concorrentes)
+- Se apresente como Ana da Derekh Food
 - Termine com pergunta aberta que gere curiosidade
 - Tom amigável e direto, sem abreviações de internet
 - NÃO mencione preços
 - NÃO use emojis excessivos (máximo 1)
 - Escreva SOMENTE o texto da mensagem, nada mais"""
 
-    user = f"""Nome do dono: {nome_dono}
+    # Fix #11: Prompt enriquecido com mais dados do lead
+    nome_contato_label = nome_dono if nome_dono != nome_rest else "DESCONHECIDO (pergunte o nome)"
+    ifood_info = ""
+    if lead.get("rating"):
+        ifood_info += f"\nRating Google Maps: {lead['rating']}★"
+        if lead.get("total_reviews"):
+            ifood_info += f" ({lead['total_reviews']} avaliações)"
+    if tem_ifood:
+        ifood_info += f"\nNo iFood: Sim"
+        if lead.get("ifood_categorias"):
+            ifood_info += f" — {lead['ifood_categorias']}"
+        if lead.get("ifood_preco"):
+            ifood_info += f" {lead['ifood_preco']}"
+    else:
+        ifood_info += "\nNo iFood: Não encontrado"
+
+    user = f"""Nome do contato: {nome_contato_label}
 Restaurante: {nome_rest}
 Cidade: {cidade}
-Cenário: {cenario}
-{concorrentes_texto}"""
+Cenário delivery: {cenario}
+{concorrentes_texto}{ifood_info}
+
+OBRIGATÓRIO na mensagem:
+- Se o nome do contato é DESCONHECIDO, cumprimente usando o nome do restaurante e pergunte com quem está falando
+- Mencione algo específico dos dados acima (cidade, iFood, rating)
+- Se apresente como Ana da Derekh Food
+- Termine com pergunta aberta"""
 
     try:
         resp = httpx.post(
@@ -2485,3 +3091,115 @@ Cenário: {cenario}
     except Exception as e:
         log.warning(f"Erro Grok abertura outbound: {e}")
         return ""
+
+
+# ============================================================
+# RETOMAR CONVERSAS SEM RESPOSTA (Novo requisito)
+# ============================================================
+
+def retomar_conversas_sem_resposta(limite: int = 20) -> dict:
+    """Analisa conversas ativas onde o lead respondeu mas ficou sem resposta do bot.
+    Envia resposta por áudio para retomar o contato.
+    Chamado pelo brain_loop para não deixar leads no 'vácuo'."""
+    from crm.database import get_conn
+
+    result = {"retomadas": 0, "erros": 0}
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # Buscar conversas onde a última msg é do lead (sem resposta do bot)
+        # e não é opt_out, encerrado, handoff ou lead_falso
+        cur.execute("""
+            SELECT c.id as conversa_id, c.lead_id, c.numero_envio,
+                   (SELECT m.conteudo FROM wa_mensagens m
+                    WHERE m.conversa_id = c.id ORDER BY m.created_at DESC LIMIT 1) as ultima_msg,
+                   (SELECT m.direcao FROM wa_mensagens m
+                    WHERE m.conversa_id = c.id ORDER BY m.created_at DESC LIMIT 1) as ultima_direcao,
+                   (SELECT m.created_at FROM wa_mensagens m
+                    WHERE m.conversa_id = c.id ORDER BY m.created_at DESC LIMIT 1) as ultima_msg_at
+            FROM wa_conversas c
+            JOIN leads l ON c.lead_id = l.id
+            WHERE c.status = 'ativo'
+              AND l.status_pipeline NOT IN ('perdido', 'lead_falso')
+              AND l.opt_out_wa IS NOT TRUE
+            ORDER BY c.updated_at DESC
+            LIMIT %s
+        """, (limite * 3,))  # Buscar mais para filtrar
+        rows = cur.fetchall()
+
+    retomadas = 0
+    for row in rows:
+        if retomadas >= limite:
+            break
+
+        # Só retomar se a última mensagem é do lead (ficou sem resposta)
+        if row["ultima_direcao"] != "recebida":
+            continue
+
+        # Verificar se a última msg não é muito antiga (máx 48h)
+        if row.get("ultima_msg_at"):
+            from datetime import datetime, timedelta
+            try:
+                agora = datetime.now()
+                if hasattr(row["ultima_msg_at"], 'replace'):
+                    delta = agora - row["ultima_msg_at"]
+                    if delta > timedelta(hours=48):
+                        continue  # Muito antigo, não retomar
+            except Exception:
+                pass
+
+        conversa_id = row["conversa_id"]
+        lead_id = row["lead_id"]
+        numero = row["numero_envio"]
+        ultima_msg = row["ultima_msg"] or ""
+
+        try:
+            log.info(f"Retomando conversa {conversa_id} (lead {lead_id}) — "
+                     f"sem resposta: {ultima_msg[:80]}")
+            decision_log.info(f"RETOMAR conv={conversa_id} lead={lead_id} "
+                              f"ultima_msg={ultima_msg[:200]}")
+
+            # Gerar resposta IA para a mensagem não respondida
+            resultado_ia = responder_com_ia(conversa_id, ultima_msg)
+
+            if resultado_ia.get("sucesso"):
+                resposta = resultado_ia["resposta"]
+
+                # Enviar delay humano
+                _time.sleep(_calcular_delay_humano(ultima_msg))
+
+                # Preferencialmente enviar por áudio
+                audio_texto = _preparar_texto_para_audio(_preparar_texto_tts(resposta))
+                emocao = "amigavel"
+                audio_result = _gerar_e_enviar_audio_resposta(
+                    numero, audio_texto, conversa_id, emocao=emocao)
+
+                if audio_result.get("sucesso"):
+                    # Texto complementar com dados numéricos
+                    complemento = _extrair_dados_numericos(resposta)
+                    if complemento:
+                        _time.sleep(random.uniform(1.5, 3.0))
+                        _enviar_e_salvar(conversa_id, numero, complemento)
+                    log.info(f"Conversa {conversa_id} retomada por ÁUDIO")
+                else:
+                    # Fallback: enviar por texto
+                    _enviar_e_salvar(conversa_id, numero, resposta, grok=True)
+                    log.info(f"Conversa {conversa_id} retomada por TEXTO (áudio falhou)")
+
+                retomadas += 1
+                result["retomadas"] += 1
+
+                # Delay entre retomadas para não parecer automático
+                _time.sleep(random.uniform(30, 90))
+            else:
+                log.warning(f"Falha IA retomar conv {conversa_id}: {resultado_ia.get('erro')}")
+                result["erros"] += 1
+
+        except Exception as e:
+            log.warning(f"Erro retomar conv {conversa_id}: {e}")
+            result["erros"] += 1
+
+    if result["retomadas"] > 0:
+        log.info(f"Retomadas: {result['retomadas']} conversas sem resposta")
+
+    return result

@@ -1315,19 +1315,20 @@ def leads_pendentes_validacao(limite: int = 50) -> list:
 
 
 def conversas_wa_quentes(score_minimo: int = 80) -> list:
-    """Conversas WA ativas com intent_score alto — candidatas a handoff.
+    """Conversas WA ativas com lead_score alto — candidatas a handoff.
     Usado pelo Brain Loop para monitorar e notificar dono."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
-            SELECT c.id, c.lead_id, c.numero_envio, c.intent_score,
+            SELECT c.id, c.lead_id, c.numero_envio,
+                   l.lead_score as intent_score,
                    c.intencao_detectada, c.status, c.updated_at,
                    l.nome_fantasia, l.razao_social, l.cidade
             FROM wa_conversas c
             JOIN leads l ON l.id = c.lead_id
             WHERE c.status = 'ativo'
-              AND c.intent_score >= %s
-            ORDER BY c.intent_score DESC
+              AND l.lead_score >= %s
+            ORDER BY l.lead_score DESC
             LIMIT 20
         """, (score_minimo,))
         return [dict(r) for r in cur.fetchall()]
@@ -1514,7 +1515,9 @@ def atualizar_conversa_wa(conversa_id: int, **kwargs) -> bool:
     """Atualiza campos da conversa WA."""
     campos_validos = {"status", "intencao_detectada", "handoff_at", "handoff_motivo",
                       "voz_usada", "tom_usado", "usou_audio",
-                      "cache_ids_usados", "intents_usadas"}
+                      "cache_ids_usados", "intents_usadas",
+                      "persona_detectada", "followup_handoff_etapa", "followup_handoff_at",
+                      "notas"}
     sets = []
     params = []
     for k, v in kwargs.items():
@@ -1929,7 +1932,7 @@ def autopilot_leads_quentes(limite: int = 10) -> list:
                    (SELECT conteudo FROM interacoes WHERE lead_id = l.id ORDER BY created_at DESC LIMIT 1) as ultimo_evento
             FROM leads l
             WHERE l.lead_score >= 60
-              AND l.status_pipeline NOT IN ('perdido', 'cliente')
+              AND l.status_pipeline NOT IN ('perdido', 'cliente', 'lead_falso')
             ORDER BY l.lead_score DESC
             LIMIT %s
         """, (limite,))
@@ -2023,7 +2026,7 @@ def leads_com_mais_dados(cidade: str = None, limite: int = 50) -> list:
     Prioriza: tem iFood + Maps + RF + contato."""
     with get_conn() as conn:
         cur = conn.cursor()
-        where = "WHERE l.status_pipeline NOT IN ('perdido', 'cliente')"
+        where = "WHERE l.status_pipeline NOT IN ('perdido', 'cliente', 'lead_falso')"
         params = []
         if cidade:
             where += " AND l.cidade = %s"
@@ -2454,3 +2457,427 @@ def criar_lead_quiz(dados: dict) -> int:
 
         conn.commit()
         return new_id
+
+
+# ============================================================
+# SYNC API — Upsert batch de leads (scraper remoto → CRM)
+# ============================================================
+
+# Colunas permitidas no sync (whitelist)
+_SYNC_COLUNAS_PERMITIDAS = {
+    "cnpj", "razao_social", "nome_fantasia", "logradouro", "numero",
+    "complemento", "bairro", "cidade", "uf", "cep",
+    "telefone1", "telefone2", "email", "cnae_principal", "data_abertura",
+    "situacao_cadastral", "tipo_empresa", "tipo_negocio", "capital_social",
+    "porte", "natureza_juridica", "simples", "mei", "data_opcao_simples",
+    "telefone_proprietario", "email_proprietario", "socios_json",
+    "tem_ifood", "nome_ifood", "url_ifood",
+    "ifood_rating", "ifood_reviews", "ifood_preco",
+    "ifood_categorias", "ifood_tempo_entrega", "ifood_aberto",
+    "tem_rappi", "nome_rappi", "url_rappi",
+    "tem_99food", "nome_99food", "url_99food",
+    "multi_restaurante", "matched", "detalhado", "score_match",
+    "nome_maps", "endereco_maps", "telefone_maps",
+    "website", "rating", "total_reviews", "google_maps_url", "categoria",
+}
+
+# Campos CRM protegidos — NUNCA sobrescrever via sync
+_SYNC_PROTEGIDOS = {
+    "id", "lead_score", "segmento", "status_pipeline",
+    "motivo_perda", "notas", "data_ultimo_contato",
+    "data_proximo_contato", "email_invalido",
+    "opt_out_email", "opt_out_wa", "opt_out_at", "tier",
+    "created_at",
+}
+
+_SYNC_CAMPOS_INT = {"tem_ifood", "tem_rappi", "tem_99food", "multi_restaurante",
+                     "ifood_reviews", "total_reviews", "matched", "detalhado",
+                     "ifood_aberto"}
+_SYNC_CAMPOS_FLOAT = {"capital_social", "rating", "ifood_rating", "score_match"}
+
+
+def _sync_safe_int(val):
+    if val is None:
+        return None
+    try:
+        return int(float(str(val).strip().replace(",", ".")))
+    except (ValueError, TypeError):
+        return None
+
+
+def _sync_safe_float(val):
+    if val is None:
+        return None
+    try:
+        return float(str(val).strip().replace(",", "."))
+    except (ValueError, TypeError):
+        return None
+
+
+## ============================================================
+# P2-P5: CRM TRUE AUTO SALES — NOVAS QUERIES
+# ============================================================
+
+# --- P2: Funil Completo ---
+
+def marcar_trial_link_enviado(lead_id: int):
+    """Marca que o trial link foi enviado ao lead."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE leads SET trial_link_enviado_at = NOW() WHERE id = %s
+        """, (lead_id,))
+        conn.commit()
+
+
+def conversas_handoff_sem_resposta(horas: int = 24) -> list:
+    """Conversas em status 'handoff' sem resposta do humano há N horas.
+    Usadas para follow-up automático pós-handoff."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT c.id, c.lead_id, c.numero_envio, c.handoff_at,
+                   c.followup_handoff_etapa, c.followup_handoff_at,
+                   l.nome_fantasia, l.razao_social, l.email, l.lead_score,
+                   l.trial_link_enviado_at
+            FROM wa_conversas c
+            JOIN leads l ON l.id = c.lead_id
+            WHERE c.status = 'handoff'
+              AND c.handoff_at IS NOT NULL
+              AND c.handoff_at <= NOW() - INTERVAL '%s hours'
+              AND COALESCE(c.followup_handoff_etapa, 0) < 3
+              AND l.opt_out_wa = FALSE
+            ORDER BY c.handoff_at ASC
+            LIMIT 20
+        """, (horas,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def registrar_followup_handoff(conversa_id: int, etapa: int):
+    """Registra etapa de follow-up pós-handoff (1=D+1, 2=D+3, 3=D+7)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE wa_conversas
+            SET followup_handoff_etapa = %s, followup_handoff_at = NOW()
+            WHERE id = %s
+        """, (etapa, conversa_id))
+        conn.commit()
+
+
+# --- P3: Brain Loop Inteligente ---
+
+def leads_para_reengajamento(limite: int = 10) -> list:
+    """Leads frios com potencial para reengajamento.
+    Critérios: score > 40, tem contato, sem opt-out, sem contato há 30+ dias,
+    sem reengajamento recente (30+ dias)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT l.id, l.cnpj, l.nome_fantasia, l.razao_social,
+                   l.cidade, l.uf, l.email, l.telefone1,
+                   l.lead_score, l.segmento, l.tier,
+                   l.data_ultimo_contato, l.ultimo_reengajamento_at,
+                   l.wa_existe
+            FROM leads l
+            WHERE l.lead_score > 40
+              AND l.status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso')
+              AND l.opt_out_email = FALSE AND l.opt_out_wa = FALSE
+              AND (l.email IS NOT NULL AND l.email != '' OR l.telefone1 IS NOT NULL AND l.telefone1 != '')
+              AND (l.data_ultimo_contato IS NULL OR l.data_ultimo_contato <= NOW() - INTERVAL '30 days')
+              AND (l.ultimo_reengajamento_at IS NULL OR l.ultimo_reengajamento_at <= NOW() - INTERVAL '30 days')
+              AND NOT EXISTS (
+                  SELECT 1 FROM outreach_sequencia o
+                  WHERE o.lead_id = l.id AND o.cancelado = FALSE
+                  AND o.created_at >= NOW() - INTERVAL '14 days'
+              )
+            ORDER BY l.lead_score DESC
+            LIMIT %s
+        """, (limite,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def marcar_reengajamento(lead_id: int):
+    """Marca que o lead foi reengajado."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE leads SET ultimo_reengajamento_at = NOW() WHERE id = %s
+        """, (lead_id,))
+        conn.commit()
+
+
+def leads_para_desistencia(max_tentativas: int = 5) -> list:
+    """Leads com N+ tentativas de outreach (WA + email) sem nenhuma resposta.
+    Candidatos a 'frio_permanente'."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT l.id, l.nome_fantasia, l.lead_score, l.status_pipeline,
+                   COUNT(o.id) as total_tentativas
+            FROM leads l
+            JOIN outreach_sequencia o ON o.lead_id = l.id
+            WHERE o.executado = TRUE
+              AND o.resultado IN ('enviado', 'erro')
+              AND l.status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso', 'respondeu', 'demo_agendada')
+              AND NOT EXISTS (
+                  SELECT 1 FROM wa_conversas wc
+                  WHERE wc.lead_id = l.id AND wc.msgs_recebidas > 0
+              )
+              AND NOT EXISTS (
+                  SELECT 1 FROM emails_enviados ee
+                  WHERE ee.lead_id = l.id AND (ee.aberto = TRUE OR ee.clicou_site = TRUE)
+              )
+            GROUP BY l.id, l.nome_fantasia, l.lead_score, l.status_pipeline
+            HAVING COUNT(o.id) >= %s
+            ORDER BY COUNT(o.id) DESC
+            LIMIT 50
+        """, (max_tentativas,))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def stats_horario_resposta(cidade: str = None, uf: str = None) -> dict:
+    """Agregação de respostas WA por hora do dia (para horário ótimo)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        where_extra = ""
+        params = []
+        if cidade:
+            where_extra += " AND l.cidade = %s"
+            params.append(cidade)
+        if uf:
+            where_extra += " AND l.uf = %s"
+            params.append(uf)
+        cur.execute(f"""
+            SELECT EXTRACT(HOUR FROM wm.created_at)::int as hora, COUNT(*) as total
+            FROM wa_mensagens wm
+            JOIN wa_conversas wc ON wm.conversa_id = wc.id
+            JOIN leads l ON wc.lead_id = l.id
+            WHERE wm.direcao = 'recebida'
+              AND wm.created_at >= NOW() - INTERVAL '30 days'
+              {where_extra}
+            GROUP BY hora ORDER BY hora
+        """, params)
+        return {r["hora"]: r["total"] for r in cur.fetchall()}
+
+
+# --- P4: Event-Driven Scoring ---
+
+def registrar_evento_lead(lead_id: int, evento: str, valor: int = 0,
+                           score_antes: int = None, score_depois: int = None,
+                           metadata: dict = None) -> int:
+    """Registra evento no histórico de scoring do lead. Retorna ID."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        import json as _json
+        cur.execute("""
+            INSERT INTO lead_eventos (lead_id, evento, valor, score_antes, score_depois, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (lead_id, evento, valor, score_antes, score_depois,
+              _json.dumps(metadata) if metadata else None))
+        new_id = cur.fetchone()["id"]
+        conn.commit()
+        return new_id
+
+
+def leads_sem_interacao_recente(dias: int = 7) -> list:
+    """Leads com updated_at > N dias sem interação — para score decay."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT l.id, l.lead_score, l.tier, l.segmento
+            FROM leads l
+            WHERE l.lead_score > 10
+              AND l.status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso')
+              AND (l.data_ultimo_contato IS NULL OR l.data_ultimo_contato < NOW() - INTERVAL '%s days')
+              AND NOT EXISTS (
+                  SELECT 1 FROM lead_eventos le
+                  WHERE le.lead_id = l.id AND le.created_at >= NOW() - INTERVAL '%s days'
+              )
+            ORDER BY l.id
+        """, (dias, dias))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def atualizar_score_lead(lead_id: int, score: int, tier: str):
+    """Atualiza score e tier de um lead."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE leads SET lead_score = %s, tier = %s WHERE id = %s
+        """, (score, tier, lead_id))
+        conn.commit()
+
+
+# --- P5: Tracking de Conversão ---
+
+def registrar_conversao(lead_id: int, plano: str, valor_mensal: float,
+                         canal: str, cnpj: str = None) -> int:
+    """Registra conversão de lead para cliente. Retorna ID."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # Buscar primeira interação do lead
+        cur.execute("""
+            SELECT MIN(created_at) as primeira FROM interacoes WHERE lead_id = %s
+        """, (lead_id,))
+        row = cur.fetchone()
+        primeira = row["primeira"] if row else None
+
+        if not cnpj:
+            cur.execute("SELECT cnpj FROM leads WHERE id = %s", (lead_id,))
+            row = cur.fetchone()
+            cnpj = row["cnpj"] if row else None
+
+        cur.execute("""
+            INSERT INTO conversoes (lead_id, cnpj, plano, valor_mensal,
+                                     canal_atribuicao, primeira_interacao_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (lead_id, cnpj, plano, valor_mensal, canal, primeira))
+        new_id = cur.fetchone()["id"]
+
+        # Atualizar status do lead
+        cur.execute("""
+            UPDATE leads SET status_pipeline = 'cliente' WHERE id = %s
+        """, (lead_id,))
+
+        conn.commit()
+        return new_id
+
+
+def atualizar_receita_conversao(lead_id: int, meses: int, receita: float):
+    """Atualiza meses ativos e receita total de uma conversão."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE conversoes
+            SET meses_ativo = %s, receita_total = %s
+            WHERE lead_id = %s
+        """, (meses, receita, lead_id))
+        conn.commit()
+
+
+def buscar_lead_por_cnpj(cnpj: str) -> Optional[dict]:
+    """Busca lead pelo CNPJ."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM leads WHERE cnpj = %s", (cnpj,))
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def leads_similares(lead_id: int, limite: int = 10) -> list:
+    """Busca leads similares (mesma cidade, mesmo porte, mesmo segmento)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT cidade, uf, porte, segmento FROM leads WHERE id = %s", (lead_id,))
+        ref = cur.fetchone()
+        if not ref:
+            return []
+
+        cur.execute("""
+            SELECT id, nome_fantasia, lead_score, segmento, tier
+            FROM leads
+            WHERE id != %s
+              AND cidade = %s AND uf = %s
+              AND status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso')
+            ORDER BY
+                (CASE WHEN porte = %s THEN 0 ELSE 1 END),
+                (CASE WHEN segmento = %s THEN 0 ELSE 1 END),
+                lead_score DESC
+            LIMIT %s
+        """, (lead_id, ref["cidade"], ref["uf"],
+              ref.get("porte") or "", ref.get("segmento") or "",
+              limite))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def upsert_leads_batch(leads_data: list, source: str = "sync_api") -> dict:
+    """Upsert batch de leads no PostgreSQL.
+    INSERT ... ON CONFLICT (cnpj) DO UPDATE — só campos não-protegidos.
+    Usa SAVEPOINT por lead (erro em 1 não cancela o batch).
+
+    Returns:
+        {"inseridos": N, "atualizados": N, "erros": N, "detalhes_erros": [...]}
+    """
+    stats = {"inseridos": 0, "atualizados": 0, "erros": 0, "detalhes_erros": []}
+
+    if not leads_data:
+        return stats
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+
+        for i, lead in enumerate(leads_data):
+            cnpj = (lead.get("cnpj") or "").strip()
+            if not cnpj or len(cnpj) < 11:
+                stats["erros"] += 1
+                stats["detalhes_erros"].append(f"Lead {i}: CNPJ inválido '{cnpj}'")
+                continue
+
+            try:
+                # Filtrar apenas colunas permitidas
+                dados = {}
+                for k, v in lead.items():
+                    if k in _SYNC_COLUNAS_PERMITIDAS and k not in _SYNC_PROTEGIDOS:
+                        if v is not None and str(v).strip() != "":
+                            if k in _SYNC_CAMPOS_INT:
+                                v = _sync_safe_int(v)
+                            elif k in _SYNC_CAMPOS_FLOAT:
+                                v = _sync_safe_float(v)
+                            elif k == "socios_json":
+                                if isinstance(v, (list, dict)):
+                                    v = json.dumps(v, ensure_ascii=False)
+                            dados[k] = v
+
+                if "cnpj" not in dados:
+                    dados["cnpj"] = cnpj
+
+                # Construir INSERT ... ON CONFLICT DO UPDATE
+                colunas = list(dados.keys())
+                placeholders = ["%s"] * len(colunas)
+                valores = [dados[c] for c in colunas]
+
+                # SET clause: apenas colunas não-protegidas, skip cnpj
+                update_cols = [c for c in colunas if c != "cnpj"]
+                if not update_cols:
+                    stats["erros"] += 1
+                    stats["detalhes_erros"].append(f"Lead {i} ({cnpj}): sem dados para atualizar")
+                    continue
+
+                set_clause = ", ".join(
+                    f"{c} = EXCLUDED.{c}" for c in update_cols
+                )
+
+                # SAVEPOINT para isolar erros
+                cur.execute(f"SAVEPOINT sp_lead_{i}")
+
+                sql = f"""
+                    INSERT INTO leads ({', '.join(colunas)}, synced_at)
+                    VALUES ({', '.join(placeholders)}, NOW())
+                    ON CONFLICT (cnpj) DO UPDATE SET
+                        {set_clause},
+                        synced_at = NOW()
+                    RETURNING (xmax = 0) AS inserted
+                """
+                cur.execute(sql, valores)
+                row = cur.fetchone()
+                if row and row["inserted"]:
+                    stats["inseridos"] += 1
+                else:
+                    stats["atualizados"] += 1
+
+                cur.execute(f"RELEASE SAVEPOINT sp_lead_{i}")
+
+            except Exception as e:
+                stats["erros"] += 1
+                stats["detalhes_erros"].append(f"Lead {i} ({cnpj}): {str(e)[:100]}")
+                try:
+                    cur.execute(f"ROLLBACK TO SAVEPOINT sp_lead_{i}")
+                except Exception:
+                    pass
+
+        conn.commit()
+
+    return stats

@@ -276,6 +276,12 @@ def executar_acoes_pendentes() -> dict:
         if acao.get("email_invalido"):
             marcar_outreach_executado(acao_id, "erro", "Email invalido")
             stats["pular_invalido"] += 1
+            # P4.1: Event scoring — bounce email
+            try:
+                from crm.scoring import atualizar_score_evento
+                atualizar_score_evento(lead_id, "bounce_email")
+            except Exception:
+                pass
             continue
 
         # Guardrail: COOLING PERIOD — anti-fadiga
@@ -471,27 +477,12 @@ def _executar_reenviar_email(acao: dict) -> dict:
 
 
 def _executar_enviar_wa(acao: dict) -> dict:
-    """Envia mensagem WhatsApp para uma ação de outreach."""
-    from crm.wa_sales_bot import enviar_mensagem_wa
-    from crm.scoring import personalizar_abordagem
-
+    """Envia mensagem WhatsApp para uma ação de outreach.
+    Redireciona para iniciar_conversa_outbound() que gera abertura
+    personalizada via Grok com nome 'Ana'."""
+    from crm.wa_sales_bot import iniciar_conversa_outbound
     lead_id = acao["lead_id"]
-    lead = obter_lead(lead_id)
-    if not lead:
-        return {"erro": "Lead não encontrado"}
-
-    pers = personalizar_abordagem(lead)
-    nome = pers.get("nome_dono") or "proprietário"
-    nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "seu restaurante"
-
-    texto = (
-        f"Oi {nome}! Tudo bem?\n\n"
-        f"Me chamo Klenilton da Derekh Food. "
-        f"Vi que o *{nome_rest}* tem tudo para crescer com delivery próprio.\n\n"
-        f"Sem comissão de 27% do iFood — seus clientes pedem direto com você.\n\n"
-        f"Posso te mostrar como funciona em 5 minutos?"
-    )
-    return enviar_mensagem_wa(lead_id, texto)
+    return iniciar_conversa_outbound(lead_id)
 
 
 def _executar_enviar_audio(acao: dict) -> dict:
