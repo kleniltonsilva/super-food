@@ -1132,8 +1132,8 @@ def _cancelar_pedido(db: Session, restaurante_id: int, bot_config: models.BotCon
             models.Pedido.id == conversa.pedido_ativo_id,
             models.Pedido.restaurante_id == restaurante_id,
         ).first()
-    elif conversa and conversa.cliente_telefone:
-        tel = conversa.cliente_telefone
+    elif conversa and conversa.telefone:
+        tel = conversa.telefone
         pedido = db.query(models.Pedido).filter(
             models.Pedido.restaurante_id == restaurante_id,
             models.Pedido.cliente_telefone.like(f"%{tel[-8:]}"),
@@ -1155,6 +1155,9 @@ def _cancelar_pedido(db: Session, restaurante_id: int, bot_config: models.BotCon
         pass
 
     pedido.status = "cancelado"
+    # Limpar pedido_ativo_id da conversa
+    if conversa and conversa.pedido_ativo_id == pedido.id:
+        conversa.pedido_ativo_id = None
     db.commit()
 
     return json.dumps({"sucesso": True, "mensagem": f"Pedido #{pedido.comanda} cancelado. Motivo: {args.get('motivo', 'Solicitado pelo cliente')}"})
@@ -1452,10 +1455,10 @@ def _registrar_avaliacao(db: Session, restaurante_id: int, args: dict, conversa:
     if not pedido_id and conversa:
         if conversa.pedido_ativo_id:
             pedido_id = conversa.pedido_ativo_id
-        elif conversa.cliente_telefone:
+        elif conversa.telefone:
             ultimo = db.query(models.Pedido).filter(
                 models.Pedido.restaurante_id == restaurante_id,
-                models.Pedido.cliente_telefone.like(f"%{conversa.cliente_telefone[-8:]}"),
+                models.Pedido.cliente_telefone.like(f"%{conversa.telefone[-8:]}"),
             ).order_by(models.Pedido.data_criacao.desc()).first()
             if ultimo:
                 pedido_id = ultimo.id
@@ -1840,8 +1843,8 @@ def _trocar_item_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
             models.Pedido.id == conversa.pedido_ativo_id,
             models.Pedido.restaurante_id == restaurante_id,
         ).first()
-    elif conversa and conversa.cliente_telefone:
-        tel = conversa.cliente_telefone
+    elif conversa and conversa.telefone:
+        tel = conversa.telefone
         pedido = db.query(models.Pedido).filter(
             models.Pedido.restaurante_id == restaurante_id,
             models.Pedido.cliente_telefone.like(f"%{tel[-8:]}"),

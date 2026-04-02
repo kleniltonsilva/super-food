@@ -172,8 +172,18 @@ async def processar_webhook(payload: dict) -> dict:
     texto = message.get("conversation") or message.get("extendedTextMessage", {}).get("text", "")
     audio_msg = message.get("audioMessage")
 
+    # Se não é texto nem áudio, tratar como mensagem de mídia
     if not texto and not audio_msg:
-        return {"status": "ignored", "reason": "no_text_no_audio"}
+        # Verificar se é imagem, vídeo, sticker, documento ou localização
+        if message.get("imageMessage") or message.get("videoMessage") or message.get("stickerMessage") or message.get("documentMessage"):
+            texto = "[cliente enviou mídia que não consigo processar]"
+        elif message.get("locationMessage"):
+            loc = message.get("locationMessage", {})
+            texto = f"[cliente compartilhou localização: lat={loc.get('degreesLatitude')}, lng={loc.get('degreesLongitude')}]"
+        elif message.get("contactMessage") or message.get("contactsArrayMessage"):
+            texto = "[cliente enviou um contato]"
+        else:
+            return {"status": "ignored", "reason": "no_text_no_audio"}
 
     # Processar em background para resposta rápida ao webhook
     asyncio.create_task(_processar_mensagem(numero, texto, audio_msg, msg_id, instance))
@@ -235,8 +245,17 @@ async def processar_webhook_meta(payload: dict) -> dict:
                     texto = btn_reply.get("title", "") or list_reply.get("title", "")
                 elif msg_type == "audio":
                     audio_meta = msg.get("audio", {})
+                elif msg_type in ("image", "video", "sticker", "document"):
+                    texto = "[cliente enviou mídia que não consigo processar]"
+                elif msg_type == "location":
+                    lat = msg.get("location", {}).get("latitude")
+                    lng = msg.get("location", {}).get("longitude")
+                    texto = f"[cliente compartilhou localização: lat={lat}, lng={lng}]"
+                elif msg_type == "contacts":
+                    texto = "[cliente enviou um contato]"
+                elif msg_type == "reaction":
+                    continue  # Reações não precisam de resposta
                 else:
-                    # image, video, document, location, etc. → ignorar
                     continue
 
                 if not texto and not audio_meta:
