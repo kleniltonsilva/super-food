@@ -343,7 +343,7 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
             if not p.disponivel or (not p.estoque_ilimitado and p.estoque_quantidade <= 0):
                 esgotado_tag = " [ESGOTADO]"
             desc = f" — {p.descricao[:60]}" if p.descricao else ""
-            cardapio_linhas.append(f"  • {p.nome} — R${preco:.2f}{promo_tag}{esgotado_tag}{desc}")
+            cardapio_linhas.append(f"  • [ID:{p.id}] {p.nome} — R${preco:.2f}{promo_tag}{esgotado_tag}{desc}")
 
             # Variações
             variacoes = db.query(models.VariacaoProduto).filter(
@@ -352,7 +352,7 @@ def build_restaurant_context(db: Session, restaurante_id: int) -> str:
             ).all()
             for v in variacoes:
                 preco_final_var = preco + (v.preco_adicional or 0)
-                cardapio_linhas.append(f"    ↳ {v.tipo_variacao}: {v.nome} — R${preco_final_var:.2f}")
+                cardapio_linhas.append(f"    ↳ [VarID:{v.id}] {v.tipo_variacao}: {v.nome} — R${preco_final_var:.2f}")
 
     cardapio_texto = "\n".join(cardapio_linhas) if cardapio_linhas else "Cardápio vazio"
 

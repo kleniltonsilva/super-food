@@ -2165,6 +2165,53 @@ Resposta via Graph API v21.0:
 - Seed `random.seed(42)` para reprodutibilidade
 - Resultado: **100/100 OK, 22/22 funções testadas**
 
+### 17.25 Correções Críticas + 244 Testes Unitários (02/04)
+
+**3 bugs críticos corrigidos:**
+
+1. **Áudio silenciosamente ignorado (anti-spam lock):**
+   - `_processing_locks` (dict timestamp 30s) descartava mensagens recebidas durante processamento, incluindo áudios
+   - **Fix:** Substituído por `asyncio.Lock` por número (`_number_locks`) — serializa processamento, nunca descarta
+   - Áudios sem transcrição STT agora registram no BD + enviam fallback: "Não consegui ouvir seu áudio, pode mandar por texto?"
+
+2. **Pedidos criados com itens errados (`criar_pedido`):**
+   - LLM enviava nomes corretos mas `produto_id` errado (cardápio não mostrava IDs)
+   - **Fix:** Cardápio agora exibe `[ID:X]` e `[VarID:X]` no contexto
+   - Busca por NOME primeiro (mais confiável), fallback para ID com cross-validação
+   - Validação 3 camadas: `produto.disponivel` → `estoque_quantidade` → `ItemEsgotado`
+
+3. **`ItemEsgotado.produto_id` → `item_cardapio_id` (bug silencioso):**
+   - `function_calls.py` referenciava `models.ItemEsgotado.produto_id` (não existe)
+   - Queries falhavam silenciosamente via `try/except` — itens esgotados NUNCA eram detectados
+   - **Fix:** 6 ocorrências corrigidas para `item_cardapio_id` + filtro `ativo == True`
+
+**Prompt anti-robótico (`context_builder.py`):**
+- PROIBIDO terminar com: "Bora?", "Beleza?", "Pode ser?", "Tudo certo?", "Confirma?"
+- PROIBIDO perguntas duplas na mesma mensagem
+- NUNCA encerrar com pergunta se não precisa de resposta
+
+**Funções atualizadas com validação de disponibilidade:**
+- `alterar_pedido` — busca por nome + 3 camadas disponibilidade para itens adicionados
+- `trocar_item_pedido` — verifica estoque + ItemEsgotado do novo item
+- `repetir_ultimo_pedido` — filtra itens indisponíveis com mensagem específica
+- `buscar_cardapio` — retorna TODOS os itens (incluindo indisponíveis) com campo `status`
+
+**244 testes unitários (10 por função × 24 funções + extras):**
+
+| Arquivo | Funções | Testes | Status |
+|---------|---------|--------|--------|
+| `tests/test_bot_function_calls.py` | 1-12 (buscar_cliente → registrar_avaliacao) | 124 | ✅ |
+| `tests/test_bot_function_calls_part2.py` | 13-24 (registrar_problema → consultar_pagamento_pix) | 120 | ✅ |
+
+Cenários cobertos por função:
+- Happy path, not found, multi-tenant isolation, permission denied
+- Validação de status (pronto/em_rota bloqueia alteração)
+- KDS (cozinha começou = não pode alterar)
+- Estoque (zero, ilimitado, esgotado pela equipe)
+- Busca por nome (case-insensitive, parcial, normalização acentos)
+- Cupons (expirado, esgotado, exclusivo, pedido mínimo)
+- Pix (cobrança ativa, expirada, pagamento confirmado)
+
 ---
 
 ## 18. Repescagem Avançada + Verificação Email + Reset Senha (Migration 037)

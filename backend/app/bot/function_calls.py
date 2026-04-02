@@ -566,10 +566,11 @@ def _cadastrar_cliente(db: Session, restaurante_id: int, args: dict) -> str:
 
 
 def _buscar_cardapio(db: Session, restaurante_id: int, busca: str) -> str:
+    """Busca itens no cardápio com verificação de disponibilidade em tempo real."""
     busca_lower = busca.lower()
+    # Buscar TODOS os produtos (inclusive indisponíveis) para dar feedback claro
     produtos = db.query(models.Produto).filter(
         models.Produto.restaurante_id == restaurante_id,
-        models.Produto.disponivel == True,
         models.Produto.nome.ilike(f"%{busca_lower}%"),
     ).limit(10).all()
 
@@ -583,16 +584,46 @@ def _buscar_cardapio(db: Session, restaurante_id: int, busca: str) -> str:
         if cat:
             produtos = db.query(models.Produto).filter(
                 models.Produto.categoria_id == cat.id,
-                models.Produto.disponivel == True,
             ).limit(10).all()
 
     if not produtos:
         return json.dumps({"encontrados": 0, "mensagem": f"Nenhum item encontrado para '{busca}'"})
 
+    # IDs de itens esgotados pela equipe (garçom/cozinha)
+    esgotados_ids = set()
+    try:
+        esgotados = db.query(models.ItemEsgotado.item_cardapio_id).filter(
+            models.ItemEsgotado.restaurante_id == restaurante_id,
+            models.ItemEsgotado.ativo == True,
+        ).all()
+        esgotados_ids = {e[0] for e in esgotados}
+    except Exception:
+        pass  # Tabela pode não existir
+
     itens = []
     for p in produtos:
         preco = p.preco_promocional if p.promocao and p.preco_promocional else p.preco
-        item = {"id": p.id, "nome": p.nome, "preco": preco, "descricao": p.descricao or ""}
+
+        # Verificar disponibilidade em tempo real
+        status = "disponivel"
+        if not p.disponivel:
+            status = "indisponivel"
+        elif p.id in esgotados_ids:
+            status = "esgotado_equipe"
+        elif not getattr(p, "estoque_ilimitado", True):
+            estoque = getattr(p, "estoque_quantidade", None)
+            if estoque is not None and estoque <= 0:
+                status = "esgotado"
+
+        item = {
+            "id": p.id,
+            "nome": p.nome,
+            "preco": preco,
+            "descricao": p.descricao or "",
+            "status": status,
+        }
+        if status != "disponivel":
+            item["aviso"] = f"ATENÇÃO: {p.nome} NÃO está disponível no momento"
         if p.promocao:
             item["preco_original"] = p.preco
             item["em_promocao"] = True
@@ -639,24 +670,75 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
         produto_id = item.get("produto_id")
         nome_item = item.get("nome", "")
 
-        # Tentar por ID primeiro
-        if produto_id:
+        # ============================================================
+        # VALIDAÇÃO ROBUSTA: buscar produto + checar disponibilidade
+        # Prioridade: nome > ID (LLM pode errar ID, nome é mais confiável)
+        # ============================================================
+
+        def _normalizar(s: str) -> str:
+            s = unicodedata.normalize("NFD", s.lower().strip())
+            return "".join(c for c in s if not unicodedata.combining(c))
+
+        # 1. Buscar por NOME primeiro (mais confiável que ID do LLM)
+        if nome_item:
+            nome_n = _normalizar(nome_item)
+            # Buscar todos os produtos do restaurante (inclusive indisponíveis)
+            candidatos = db.query(models.Produto).filter(
+                models.Produto.restaurante_id == restaurante_id,
+            ).all()
+            # Match por nome normalizado (substring match)
+            for c in candidatos:
+                c_nome_n = _normalizar(c.nome)
+                if nome_n in c_nome_n or c_nome_n in nome_n:
+                    produto = c
+                    break
+
+        # 2. Fallback por ID (se nome não encontrou)
+        if not produto and produto_id:
             produto = db.query(models.Produto).filter(
                 models.Produto.id == produto_id,
                 models.Produto.restaurante_id == restaurante_id,
-                models.Produto.disponivel == True,
             ).first()
-
-        # Fallback: buscar por nome (LLM pode não acertar o ID)
-        if not produto and nome_item:
-            produto = db.query(models.Produto).filter(
-                models.Produto.restaurante_id == restaurante_id,
-                models.Produto.disponivel == True,
-                models.Produto.nome.ilike(f"%{nome_item}%"),
-            ).first()
+            # Validar que ID corresponde ao nome (se ambos fornecidos)
+            if produto and nome_item:
+                if _normalizar(nome_item) not in _normalizar(produto.nome) and _normalizar(produto.nome) not in _normalizar(nome_item):
+                    logger.warning(f"produto_id={produto_id} ({produto.nome}) não corresponde a '{nome_item}' — ID ignorado")
+                    produto = None
 
         if not produto:
-            return json.dumps({"erro": f"Produto '{nome_item or produto_id}' não encontrado ou indisponível. Use buscar_cardapio para verificar itens disponíveis."})
+            return json.dumps({"erro": f"Produto '{nome_item or produto_id}' não existe no cardápio. Verifique o nome e tente novamente."})
+
+        # 3. Checar disponibilidade em TEMPO REAL
+        if not produto.disponivel:
+            return json.dumps({
+                "erro": f"'{produto.nome}' está indisponível no momento (o restaurante desativou). "
+                        f"Informe ao cliente e sugira outras opções do cardápio.",
+                "produto_indisponivel": produto.nome,
+            })
+
+        if not getattr(produto, "estoque_ilimitado", True):
+            estoque = getattr(produto, "estoque_quantidade", None)
+            if estoque is not None and estoque <= 0:
+                return json.dumps({
+                    "erro": f"'{produto.nome}' esgotou! Informe ao cliente que acabou e sugira alternativas.",
+                    "produto_esgotado": produto.nome,
+                })
+
+        # 4. Checar ItemEsgotado (garçom/cozinha marcou como esgotado em tempo real)
+        try:
+            item_esgotado = db.query(models.ItemEsgotado).filter(
+                models.ItemEsgotado.restaurante_id == restaurante_id,
+                models.ItemEsgotado.item_cardapio_id == produto.id,
+                models.ItemEsgotado.ativo == True,
+            ).first()
+            if item_esgotado:
+                return json.dumps({
+                    "erro": f"'{produto.nome}' acabou por hoje (marcado pela equipe). "
+                            f"Informe ao cliente e sugira alternativas.",
+                    "produto_esgotado": produto.nome,
+                })
+        except Exception:
+            pass  # Tabela pode não existir em todos os ambientes
 
         preco_real = produto.preco_promocional if produto.promocao and produto.preco_promocional else produto.preco
         qtd = item.get("quantidade", 1)
@@ -963,21 +1045,61 @@ def _alterar_pedido(db: Session, restaurante_id: int, bot_config: models.BotConf
             if item:
                 db.delete(item)
 
-    # Adicionar itens
+    # Adicionar itens (mesma validação robusta do criar_pedido)
     if args.get("adicionar_itens"):
         for item_data in args["adicionar_itens"]:
-            produto = db.query(models.Produto).filter(
-                models.Produto.id == item_data["produto_id"],
-                models.Produto.restaurante_id == restaurante_id,
-            ).first()
-            if produto:
-                novo_item = models.ItemPedido(
-                    pedido_id=pedido.id,
-                    produto_id=produto.id,
-                    quantidade=item_data.get("quantidade", 1),
-                    preco_unitario=produto.preco_promocional if produto.promocao else produto.preco,
-                )
-                db.add(novo_item)
+            produto = None
+            nome_item = item_data.get("nome", "")
+            prod_id = item_data.get("produto_id")
+
+            def _norm(s: str) -> str:
+                s = unicodedata.normalize("NFD", s.lower().strip())
+                return "".join(c for c in s if not unicodedata.combining(c))
+
+            # Buscar por nome primeiro (mais confiável)
+            if nome_item:
+                candidatos = db.query(models.Produto).filter(
+                    models.Produto.restaurante_id == restaurante_id,
+                ).all()
+                for c in candidatos:
+                    if _norm(nome_item) in _norm(c.nome) or _norm(c.nome) in _norm(nome_item):
+                        produto = c
+                        break
+            # Fallback por ID
+            if not produto and prod_id:
+                produto = db.query(models.Produto).filter(
+                    models.Produto.id == prod_id,
+                    models.Produto.restaurante_id == restaurante_id,
+                ).first()
+
+            if not produto:
+                return json.dumps({"erro": f"Produto '{nome_item or prod_id}' não encontrado no cardápio."})
+
+            # Checar disponibilidade em tempo real
+            if not produto.disponivel:
+                return json.dumps({"erro": f"'{produto.nome}' está indisponível no momento. Sugira alternativas ao cliente."})
+            if not getattr(produto, "estoque_ilimitado", True):
+                estoque = getattr(produto, "estoque_quantidade", None)
+                if estoque is not None and estoque <= 0:
+                    return json.dumps({"erro": f"'{produto.nome}' esgotou! Sugira alternativas ao cliente."})
+            try:
+                esgotado = db.query(models.ItemEsgotado).filter(
+                    models.ItemEsgotado.restaurante_id == restaurante_id,
+                    models.ItemEsgotado.item_cardapio_id == produto.id,
+                models.ItemEsgotado.ativo == True,
+                ).first()
+                if esgotado:
+                    return json.dumps({"erro": f"'{produto.nome}' acabou por hoje. Sugira alternativas ao cliente."})
+            except Exception:
+                pass
+
+            novo_item = models.ItemPedido(
+                pedido_id=pedido.id,
+                produto_id=produto.id,
+                quantidade=item_data.get("quantidade", 1),
+                preco_unitario=produto.preco_promocional if produto.promocao else produto.preco,
+            )
+            db.add(novo_item)
 
     # Atualizar observação
     if args.get("nova_observacao"):
@@ -1051,26 +1173,56 @@ def _repetir_ultimo_pedido(db: Session, restaurante_id: int, bot_config: models.
     if not ultimo:
         return json.dumps({"erro": "Nenhum pedido anterior encontrado"})
 
-    # Verificar disponibilidade dos itens
+    # Verificar disponibilidade dos itens em tempo real
     itens_repetir = []
+    itens_indisponiveis = []
+
+    # IDs marcados como esgotados pela equipe
+    esgotados_ids = set()
+    try:
+        esgotados = db.query(models.ItemEsgotado.item_cardapio_id).filter(
+            models.ItemEsgotado.restaurante_id == restaurante_id,
+            models.ItemEsgotado.ativo == True,
+        ).all()
+        esgotados_ids = {e[0] for e in esgotados}
+    except Exception:
+        pass
+
     if ultimo.carrinho_json:
         for item in ultimo.carrinho_json:
             produto = db.query(models.Produto).filter(
                 models.Produto.id == item.get("produto_id"),
                 models.Produto.restaurante_id == restaurante_id,
-                models.Produto.disponivel == True,
             ).first()
-            if produto:
-                preco_atual = produto.preco_promocional if produto.promocao else produto.preco
-                itens_repetir.append({
-                    "produto_id": produto.id,
-                    "nome": produto.nome,
-                    "quantidade": item.get("quantidade", 1),
-                    "preco_unitario": preco_atual,
-                })
+            if not produto:
+                continue
+
+            # Checar disponibilidade completa
+            if not produto.disponivel:
+                itens_indisponiveis.append(f"{produto.nome} (indisponível)")
+                continue
+            if produto.id in esgotados_ids:
+                itens_indisponiveis.append(f"{produto.nome} (esgotou hoje)")
+                continue
+            if not getattr(produto, "estoque_ilimitado", True):
+                estoque = getattr(produto, "estoque_quantidade", None)
+                if estoque is not None and estoque <= 0:
+                    itens_indisponiveis.append(f"{produto.nome} (sem estoque)")
+                    continue
+
+            preco_atual = produto.preco_promocional if produto.promocao else produto.preco
+            itens_repetir.append({
+                "produto_id": produto.id,
+                "nome": produto.nome,
+                "quantidade": item.get("quantidade", 1),
+                "preco_unitario": preco_atual,
+            })
 
     if not itens_repetir:
-        return json.dumps({"erro": "Itens do último pedido não estão mais disponíveis"})
+        msg = "Itens do último pedido não estão mais disponíveis"
+        if itens_indisponiveis:
+            msg += ": " + ", ".join(itens_indisponiveis)
+        return json.dumps({"erro": msg})
 
     valor_total = sum(i["preco_unitario"] * i["quantidade"] for i in itens_repetir)
     itens_texto = [f"{i['quantidade']}x {i['nome']} (R${i['preco_unitario']:.2f})" for i in itens_repetir]
@@ -1730,16 +1882,33 @@ def _trocar_item_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
     if not item_encontrado:
         return json.dumps({"erro": f"Item '{args.get('item_remover', '')}' não encontrado no pedido"})
 
-    # Buscar novo produto
+    # Buscar novo produto com validação completa de disponibilidade
     item_novo_nome = args.get("item_novo", "").lower()
     novo_produto = db.query(models.Produto).filter(
         models.Produto.restaurante_id == restaurante_id,
-        models.Produto.disponivel == True,
         models.Produto.nome.ilike(f"%{item_novo_nome}%"),
     ).first()
 
     if not novo_produto:
-        return json.dumps({"erro": f"Item '{args.get('item_novo', '')}' não encontrado no cardápio ou indisponível"})
+        return json.dumps({"erro": f"Item '{args.get('item_novo', '')}' não encontrado no cardápio."})
+
+    # Checar disponibilidade em tempo real
+    if not novo_produto.disponivel:
+        return json.dumps({"erro": f"'{novo_produto.nome}' está indisponível no momento. Sugira alternativas ao cliente."})
+    if not getattr(novo_produto, "estoque_ilimitado", True):
+        estoque = getattr(novo_produto, "estoque_quantidade", None)
+        if estoque is not None and estoque <= 0:
+            return json.dumps({"erro": f"'{novo_produto.nome}' esgotou! Sugira alternativas ao cliente."})
+    try:
+        esgotado = db.query(models.ItemEsgotado).filter(
+            models.ItemEsgotado.restaurante_id == restaurante_id,
+            models.ItemEsgotado.item_cardapio_id == novo_produto.id,
+            models.ItemEsgotado.ativo == True,
+        ).first()
+        if esgotado:
+            return json.dumps({"erro": f"'{novo_produto.nome}' acabou por hoje. Sugira alternativas ao cliente."})
+    except Exception:
+        pass
 
     # Remover item antigo
     db.delete(item_encontrado)
