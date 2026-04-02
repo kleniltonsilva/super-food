@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.0.9 | Última atualização: 31/03/2026
+> Versão 4.1.0 | Última atualização: 02/04/2026
 
 ---
 
@@ -1163,6 +1163,31 @@ Add-ons são funcionalidades contratáveis à parte, com **billing separado** da
 - BotWhatsApp.tsx: wizard com estado `pending_payment` — QR Code Pix + Boleto + polling 5s
 - Billing.tsx: seção "Add-ons" com cards, dialogs de confirmação
 - useFeatureFlag.ts: retorna `isAddon`, `addonActive`, `addonPrice`, `canSubscribeAddon`
+
+**Validação E2E em Produção (02/04/2026):**
+
+Testes realizados com restaurante real "maia pizza" (CNPJ 03993338000180) na API Asaas produção:
+
+| # | Cenário | Resultado |
+|---|---------|-----------|
+| 1 | Criar cliente Asaas (produção) | `cus_000169022400` criado |
+| 2 | Cobrança Tier 3 — PIX + Boleto | Gerada com sucesso (QR Code + copia-cola + boleto PDF) |
+| 3 | Cobrança Tier 2 — PIX + Boleto | Gerada com sucesso |
+| 4 | Premium (Tier 4) tenta ativar | Bloqueado: "Já incluso no plano Premium" |
+| 5 | Básico (Tier 1) tenta ativar | Bloqueado: "Plano mínimo Essencial" |
+| 6 | Addon já ativo tenta ativar | Bloqueado: "Add-on já está ativo" |
+| 7 | Billing manual tenta ativar | Bloqueado: "Assinatura precisa estar ativa" |
+| 8 | Trial tenta ativar | Bloqueado: "Período de teste já tem acesso" |
+| 9 | Suspended tenta ativar | Bloqueado: "Assinatura precisa estar ativa" |
+| 10 | CNPJ inválido no Asaas | Bloqueado: Asaas rejeita CNPJ falso |
+| 11 | Webhook PAYMENT_RECEIVED (PIX) | Addon ativado, ciclo definido, audit registrado |
+| 12 | Chave PIX EVP ativa na conta | QR Code gerado automaticamente |
+
+**Webhook Asaas configurado:**
+- URL: `https://superfood-api.fly.dev/webhooks/asaas`
+- Eventos: PAYMENT_CREATED, PAYMENT_RECEIVED, PAYMENT_CONFIRMED, PAYMENT_OVERDUE, PAYMENT_UPDATED, PAYMENT_REFUNDED, PAYMENT_DELETED
+- Autenticação: token `asaas-access-token` no header
+- Chave PIX: EVP (aleatória) ativa na conta Asaas
 
 ### 13.5 Super Admin Override
 

@@ -84,17 +84,16 @@ MEMORY.md (hub — SEMPRE carregado)
 ## ESTADO ATUAL DO PROJETO
 
 - **Nome:** Derekh Food (anteriormente Super Food)
-- **Versão:** 4.0.7
+- **Versão:** 4.1.0
 - **Autor:** Klenilton Silva (@kleniltonsilva)
 - **Tipo:** SaaS multi-tenant de delivery para restaurantes (proprietário)
 - **Produção:** https://superfood-api.fly.dev (Fly.io, região GRU)
 - **Sprint atual:** Plano Mestre de Implementação — 6 módulos
-- **Última sessão:** 01/04/2026
-- **Migrations em produção:** 001-036 + 039-042 (última: 042_solicitacao_cadastro)
-- **Migrations locais:** 043-047 (última: 047_addon_billing_separado)
+- **Última sessão:** 02/04/2026
+- **Migrations em produção:** 001-036 + 039-047 (última: 047_addon_billing_separado)
 - **Security Hardening:** ✅ Deployed — 8 vulnerabilidades corrigidas, 36 testes
 - **Feature Flags:** 22 features em 4 tiers, 38 endpoints protegidos, migration 034 + sistema de add-ons (migration 041)
-- **Add-on Bot WhatsApp:** ✅ Billing separado — R$99,45/mês, cobrança avulsa Asaas (PIX+Boleto), ativa só após pagamento, recorrência mensal, dias úteis BR (migration 047)
+- **Add-on Bot WhatsApp:** ✅ Billing separado + E2E validado em produção — R$99,45/mês, cobrança avulsa Asaas (PIX+Boleto), ativa só após pagamento, recorrência mensal, dias úteis BR (migration 047)
 - **Bot WhatsApp Humanoide:** ✅ Deployed + Auditoria 5 fases — 24 function calls, handoff, STT/TTS, repescagem, onboarding self-service (migration 046)
 - **Geocoding multi-país:** Reverse geocoding direto, normalização acentos, filtro relaxado para não-BR, migration 038+040
 - **Pix Online (Sprint 17):** Backend implementado (migration 040, paymentLinkUrl, bot Pix integrado, webhook notificação), aguardando WOOVI_APP_ID válido
@@ -104,6 +103,7 @@ MEMORY.md (hub — SEMPRE carregado)
 - **Landing Page + Onboarding:** ✅ Migration 042, landing page `/onboarding`, formulário self-service, Super Admin review 1-click
 - **App Motoboy Nativo (Sprint 27):** ✅ Capacitor Android — GPS background, auto-update, CI/CD GitHub Actions, página download entregador
 - **Impressora Virtual (Teste E2E):** ✅ `virtual_printer/` + `DerekhFood-Windows/` pacote pendrive (TCP 9100, 4 plataformas, 8 subcomandos CLI)
+- **Asaas Produção:** ✅ API key produção configurada, webhook ativo (`PAYMENT_RECEIVED/CONFIRMED/OVERDUE`), chave PIX EVP ativa
 - **Bugs conhecidos:** Nenhum crítico
 - **Pendente:** Configurar WOOVI_APP_ID real, keystore Android (secrets GitHub), Módulo 5 (Sales), Resend prod
 
