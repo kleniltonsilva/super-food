@@ -10,6 +10,7 @@ from tkinter import ttk, messagebox
 import requests
 import logging
 import threading
+import os
 
 from ..config import load_config, save_config
 from ..spooler_monitor import listar_impressoras
@@ -110,6 +111,13 @@ class ConfigWindow:
         cp_combo["values"] = ("CP860", "CP850", "UTF-8", "latin-1", "CP437")
         cp_combo.pack(anchor="w")
 
+        self.autostart_var = tk.BooleanVar(value=self.config.get("auto_start", False))
+        ttk.Checkbutton(
+            options_frame,
+            text="Iniciar com Windows",
+            variable=self.autostart_var,
+        ).pack(anchor="w", pady=(5, 0))
+
         # Botões
         btn_frame = ttk.Frame(main_frame)
         btn_frame.pack(fill="x", pady=10)
@@ -170,10 +178,41 @@ class ConfigWindow:
         self.config["auto_criar_pedido"] = self.auto_criar_var.get()
         self.config["ignorar_prefixo"] = self.ignorar_var.get().strip()
         self.config["codepage"] = self.codepage_var.get()
+        self.config["auto_start"] = self.autostart_var.get()
 
         save_config(self.config)
+        self._set_autostart(self.config["auto_start"])
         messagebox.showinfo("Salvo", "Configuração salva com sucesso!")
         self.root.destroy()
+
+    def _set_autostart(self, enable: bool):
+        """Configura/remove auto-start no registro do Windows."""
+        import platform
+        if platform.system() != "Windows":
+            return
+
+        try:
+            import winreg
+            import sys
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
+
+            if enable:
+                if getattr(sys, "frozen", False):
+                    exe_path = sys.executable
+                else:
+                    # Usar o .bat correspondente no diretório pai
+                    bat_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "BRIDGE.bat")
+                    exe_path = f'"{bat_path}"'
+                winreg.SetValueEx(key, "DerekhFoodBridge", 0, winreg.REG_SZ, exe_path)
+            else:
+                try:
+                    winreg.DeleteValue(key, "DerekhFoodBridge")
+                except FileNotFoundError:
+                    pass
+            winreg.CloseKey(key)
+        except Exception as e:
+            logger.warning(f"Erro ao configurar auto-start: {e}")
 
     def run(self):
         self.root.mainloop()

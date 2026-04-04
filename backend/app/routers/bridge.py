@@ -5,7 +5,7 @@ Router Bridge Printer — Intercepta impressões de plataformas externas,
 parseia com padrões aprendidos ou IA (Grok), e cria pedidos no Derekh Food.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 from pydantic import BaseModel
@@ -462,6 +462,7 @@ async def parse_texto(
 
 @router.post("/orders")
 async def criar_pedido_from_bridge(
+    request: Request,
     req: CriarPedidoFromBridgeRequest,
     rest: models.Restaurante = Depends(get_rest),
     db: Session = Depends(database.get_db)
@@ -581,6 +582,31 @@ async def criar_pedido_from_bridge(
     intercepted.status = "processado"
     db.commit()
     db.refresh(pedido)
+
+    # Broadcast novo_pedido para painel admin (WebSocket geral)
+    ws_manager = getattr(request.app.state, 'ws_manager', None)
+    if ws_manager:
+        await ws_manager.broadcast({
+            "tipo": "novo_pedido",
+            "dados": {
+                "pedido_id": pedido.id,
+                "comanda": pedido.comanda,
+                "origem": origem,
+                "cliente_nome": pedido.cliente_nome,
+            }
+        }, rest.id)
+
+    # Broadcast imprimir_pedido para printer agent (impressão automática)
+    config_rest = db.query(models.ConfigRestaurante).filter(
+        models.ConfigRestaurante.restaurante_id == rest.id
+    ).first()
+    if config_rest and config_rest.impressao_automatica:
+        pm = getattr(request.app.state, 'printer_manager', None)
+        if pm:
+            await pm.broadcast({
+                "tipo": "imprimir_pedido",
+                "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+            }, rest.id)
 
     return {
         "pedido_id": pedido.id,

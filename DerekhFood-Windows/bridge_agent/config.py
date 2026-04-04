@@ -20,6 +20,7 @@ DEFAULT_CONFIG = {
     "auto_criar_pedido": False,
     "codepage": "CP860",
     "poll_interval": 2.0,
+    "auto_start": False,
 }
 
 

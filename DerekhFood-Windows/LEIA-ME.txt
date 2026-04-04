@@ -27,6 +27,7 @@ COMPATIBILIDADE:
   INSTALAR.bat      → Instala tudo (Python deps + impressora virtual)
   DESINSTALAR.bat   → Remove a impressora virtual
 
+  TUDO.bat          → Inicia tudo de uma vez (servidor+bridge+impressao)
   SERVIDOR.bat      → Liga a impressora virtual (TCP porta 9100)
   SIMULAR.bat       → Envia pedidos falsos pelo spooler do Windows
   BRIDGE.bat        → Interceptador — detecta pedidos de plataformas
@@ -55,41 +56,72 @@ COMPATIBILIDADE:
                        │  Virtual 80mm"│
                        └───────┬───────┘
                                │
-                       ┌───────┴───────┐
-                       │ BRIDGE.bat    │
-                       │ (intercepta!) │
-                       └───────────────┘
+                       ┌───────┴───────┐     ┌──────────────┐
+                       │ BRIDGE.bat    │────>│ Backend      │
+                       │ (intercepta!) │     │ (cria pedido)│
+                       └───────────────┘     └──────┬───────┘
+                                                    │ WebSocket
+                                             ┌──────┴───────┐
+                                             │ IMPRESSAO.bat│
+                                             │ (imprime!)   │
+                                             └──────────────┘
 
 
 ═══════════════════════════════════════════════════════════════
-  TESTE 1 — Testar Bridge Agent (Interceptador)
+  JEITO FACIL — TUDO.bat
 ═══════════════════════════════════════════════════════════════
 
-  Abre 3 janelas do Prompt de Comando:
+  Clique duas vezes em TUDO.bat para iniciar tudo automaticamente.
+  Ele abre 3 janelas em sequencia:
+    1. SERVIDOR (verde) — impressora virtual TCP 9100
+    2. BRIDGE (roxa) — interceptador de pedidos
+    3. IMPRESSAO (vermelha) — imprime pedidos do Derekh
 
-  Janela 1: Clique em SERVIDOR.bat (deixe rodando)
-  Janela 2: Clique em BRIDGE.bat (configure na primeira vez)
-  Janela 3: Clique em SIMULAR.bat (escolha opcao 1)
-
-  O que acontece:
-  - SIMULAR envia recibos falsos do iFood, Rappi, etc
-  - Os recibos passam pelo spooler do Windows (como se fossem reais)
-  - O SERVIDOR recebe e exibe os recibos no console
-  - O BRIDGE detecta os recibos no spooler e envia para o backend
-
-  Se o Bridge detectou e processou = FUNCIONA!
+  Na primeira vez, Bridge e Impressao pedem configuracao (login).
+  Depois, basta rodar TUDO.bat novamente.
 
 
 ═══════════════════════════════════════════════════════════════
-  TESTE 2 — Testar Printer Agent (Impressao)
+  INICIAR COM WINDOWS (auto-start)
+═══════════════════════════════════════════════════════════════
+
+  Tanto o Bridge quanto a Impressao podem iniciar automaticamente
+  quando voce liga o computador. Para ativar:
+
+  1. Abra BRIDGE.bat → na configuracao, marque "Iniciar com Windows"
+  2. Abra IMPRESSAO.bat → na configuracao, marque "Iniciar com Windows"
+
+  Depois de ativar, eles iniciam sozinhos ao ligar o PC.
+  Para desativar, desmarque a opcao na configuracao.
+
+
+═══════════════════════════════════════════════════════════════
+  TESTE 1 — Teste Completo (Bridge + Impressao)
+═══════════════════════════════════════════════════════════════
+
+  1. Clique em TUDO.bat (abre 3 janelas)
+  2. Configure Bridge e Impressao na primeira vez
+  3. Clique em SIMULAR.bat → opcao 1 (4 pedidos de teste)
+  4. Verifique:
+     - SERVIDOR (verde): recibos ESC/POS decodificados
+     - BRIDGE (roxa): "Parse OK" + "Pedido criado!"
+     - IMPRESSAO (vermelha): "Recebido pedido para impressao"
+
+  No painel admin (/admin):
+  - Pedidos: 4 novos com origem "iFood (Bridge)", etc
+  - Bridge Impressora: 4 interceptados, status "processado"
+
+
+═══════════════════════════════════════════════════════════════
+  TESTE 2 — Testar so a Impressao
 ═══════════════════════════════════════════════════════════════
 
   Janela 1: Clique em SERVIDOR.bat (deixe rodando)
   Janela 2: Clique em IMPRESSAO.bat (configure na primeira vez)
-            Na config, selecione "Termica Virtual 80mm" como impressora
+            Selecione "Termica Virtual 80mm" como impressora
 
   Depois, crie um pedido pelo site do restaurante.
-  O Printer Agent recebe o pedido via WebSocket, formata em ESC/POS,
+  O Printer Agent recebe via WebSocket, formata em ESC/POS,
   e envia para a impressora virtual. O SERVIDOR exibe o recibo.
 
 
@@ -101,7 +133,8 @@ COMPATIBILIDADE:
   - URL do servidor: https://superfood-api.fly.dev
   - Email e senha do restaurante
   - Selecionar "Termica Virtual 80mm" na lista de impressoras
-  - Marcar "Criar pedido automaticamente" se quiser teste completo
+  - Marcar "Criar pedido automaticamente" para teste completo
+  - Marcar "Iniciar com Windows" se quiser auto-start
 
 
 ═══════════════════════════════════════════════════════════════
@@ -109,9 +142,10 @@ COMPATIBILIDADE:
 ═══════════════════════════════════════════════════════════════
 
   Ao abrir IMPRESSAO.bat pela primeira vez, aparece uma janela pedindo:
-  - URL do servidor: https://superfood-api.fly.dev
+  - URL do servidor: wss://superfood-api.fly.dev
   - Email e senha do restaurante
   - Selecionar "Termica Virtual 80mm" como impressora geral
+  - Marcar "Iniciar com Windows" se quiser auto-start
 
 
 ═══════════════════════════════════════════════════════════════
@@ -135,6 +169,10 @@ COMPATIBILIDADE:
   "Bridge nao detecta os pedidos"
   → Verifique se selecionou "Termica Virtual 80mm" na config
   → Verifique se SERVIDOR.bat esta rodando
+
+  "Impressao nao recebe pedidos"
+  → Verifique se a URL comeca com wss:// (nao https://)
+  → Verifique se fez login com sucesso
 
 
 ═══════════════════════════════════════════════════════════════

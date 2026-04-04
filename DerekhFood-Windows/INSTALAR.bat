@@ -63,12 +63,12 @@ echo.
 :: Verificar se ja esta rodando como admin
 net session >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    powershell -ExecutionPolicy Bypass -File "%~dp0impressora_virtual\install.ps1"
+    powershell -ExecutionPolicy Bypass -File "%~dp0virtual_printer\install.ps1"
 ) else (
     echo  [INFO] Abrindo PowerShell como Administrador...
     echo         Aceite a permissao na janela que aparecer.
     echo.
-    powershell -Command "Start-Process powershell -ArgumentList '-ExecutionPolicy Bypass -File \"%~dp0impressora_virtual\install.ps1\"' -Verb RunAs -Wait"
+    powershell -Command "Start-Process powershell -ArgumentList '-ExecutionPolicy Bypass -File \"%~dp0virtual_printer\install.ps1\"' -Verb RunAs -Wait"
 )
 
 :: ── Resultado ────────────────────────────────────────────────────────────────
@@ -86,18 +86,22 @@ echo  ╔═══════════════════════�
 echo  ║           INSTALACAO CONCLUIDA!                  ║
 echo  ╚══════════════════════════════════════════════════╝
 echo.
-echo  Agora voce pode usar os 3 programas:
+echo  Agora voce pode usar os programas:
 echo.
-echo    1. SERVIDOR.bat    - Liga a impressora virtual
-echo    2. SIMULAR.bat     - Envia pedidos fake pelo spooler
-echo    3. BRIDGE.bat      - Intercepta e envia para o backend
-echo    4. IMPRESSAO.bat   - Recebe pedidos reais e imprime
+echo    TUDO.bat           - Inicia tudo (servidor+bridge+impressao)
+echo    SERVIDOR.bat       - Liga a impressora virtual
+echo    BRIDGE.bat         - Intercepta e envia para o backend
+echo    IMPRESSAO.bat      - Recebe pedidos reais e imprime
+echo    SIMULAR.bat        - Envia pedidos fake pelo spooler
 echo.
-echo  Ordem para testar:
-echo    1. Abra SERVIDOR.bat (deixe rodando)
-echo    2. Abra BRIDGE.bat (deixe rodando)
-echo    3. Abra SIMULAR.bat (dispara pedidos)
-echo    4. Veja o Bridge interceptar e processar!
+echo  Jeito mais facil de testar:
+echo    1. Clique em TUDO.bat (abre 3 janelas automaticamente)
+echo    2. Configure Bridge e Impressao na primeira vez
+echo    3. Abra SIMULAR.bat para disparar pedidos de teste
+echo    4. Veja o Bridge interceptar, criar pedido e imprimir!
+echo.
+echo  DICA: Bridge e Impressao podem iniciar com o Windows
+echo        (marque "Iniciar com Windows" na configuracao)
 echo.
 
 pause

@@ -1,23 +1,32 @@
 @echo off
-REM Build DerekhFood-Bridge.exe com PyInstaller
-REM Executar na raiz do projeto: bridge_agent\build.bat
-
-echo === Derekh Food Bridge Agent — Build ===
+cd /d "%~dp0.."
+echo ========================================
+echo Derekh Food - Build Bridge Agent
+echo ========================================
 echo.
 
+:: Instalar dependencias
 pip install pyinstaller
-pip install -r bridge_agent\requirements.txt
+pip install pywin32 pystray Pillow requests
 
-pyinstaller --noconfirm --onefile --windowed ^
+:: Build com PyInstaller
+pyinstaller --noconfirm --onefile --console ^
     --name "DerekhFood-Bridge" ^
-    --icon "bridge_agent\ui\icon.ico" ^
-    --add-data "bridge_agent\ui;ui" ^
+    --hidden-import bridge_agent ^
+    --hidden-import bridge_agent.main ^
+    --hidden-import bridge_agent.config ^
+    --hidden-import bridge_agent.bridge_client ^
+    --hidden-import bridge_agent.spooler_monitor ^
+    --hidden-import bridge_agent.text_extractor ^
+    --hidden-import bridge_agent.simulador ^
+    --hidden-import bridge_agent.ui ^
+    --hidden-import bridge_agent.ui.config_window ^
     --hidden-import win32print ^
     --hidden-import win32api ^
     --hidden-import pystray ^
     --hidden-import PIL ^
-    bridge_agent\main.py
+    bridge_agent\__main__.py
 
 echo.
-echo Build concluído! Executável em dist\DerekhFood-Bridge.exe
+echo Build completo! Executavel em: dist\DerekhFood-Bridge.exe
 pause

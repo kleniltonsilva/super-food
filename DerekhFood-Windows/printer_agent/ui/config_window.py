@@ -187,11 +187,17 @@ class ConfigWindow:
         try:
             import winreg
             import sys
+            import os
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE)
 
             if enable:
-                exe_path = sys.executable if getattr(sys, "frozen", False) else f'"{sys.executable}" "{__file__}"'
+                if getattr(sys, "frozen", False):
+                    exe_path = sys.executable
+                else:
+                    # Usar o .bat correspondente no diretório pai
+                    bat_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "IMPRESSAO.bat")
+                    exe_path = f'"{bat_path}"'
                 winreg.SetValueEx(key, "DerekhFoodPrinter", 0, winreg.REG_SZ, exe_path)
             else:
                 try:

@@ -1209,11 +1209,18 @@ Testes realizados com restaurante real "maia pizza" (CNPJ 03993338000180) na API
 └─────────────────────┘     │  text_extractor.py    │     │  parse + orders │
                             │  bridge_client.py     │     └────────┬────────┘
                             └──────────────────────┘              │
-                                                           ┌──────▼──────┐
-                                                           │  Pedido no  │
-                                                           │  Painel Admin│
-                                                           └─────────────┘
+                                                    ┌─────────────┼─────────────┐
+                                                    │ WebSocket   │ WebSocket   │
+                                                    ▼             ▼             │
+                                              ┌──────────┐ ┌──────────────┐    │
+                                              │ Painel   │ │ Printer Agent│    │
+                                              │ Admin    │ │ (imprime!)   │    │
+                                              └──────────┘ └──────────────┘    │
 ```
+
+**Ciclo completo Bridge→Pedido→Impressão:** Quando o Bridge cria um pedido (`POST /painel/bridge/orders`), o backend automaticamente:
+1. Broadcast `novo_pedido` via WebSocket → painel admin atualiza em tempo real
+2. Broadcast `imprimir_pedido` via printer_manager → Printer Agent imprime automaticamente (se `impressao_automatica` ativo)
 
 ### Fluxo de Interceptação
 
@@ -1296,13 +1303,47 @@ No **NovoPedido.tsx**, ao digitar telefone, debounce 500ms busca cliente existen
 
 Pedidos criados pelo Bridge são pedidos normais do sistema. Cancelamentos devem ser feitos manualmente pelo painel (página Pedidos), não há cancelamento automático.
 
+### Pacote Windows (DerekhFood-Windows/)
+
+Pasta copiada para pendrive e usada no PC do restaurante:
+
+```
+DerekhFood-Windows/
+├── INSTALAR.bat      — Instala deps + impressora virtual (1 vez)
+├── TUDO.bat          — Inicia tudo (servidor+bridge+impressão) em 3 janelas
+├── SERVIDOR.bat      — Impressora virtual TCP 9100
+├── BRIDGE.bat        — Interceptador de pedidos (auto-instala deps)
+├── IMPRESSAO.bat     — Printer Agent (auto-instala deps)
+├── SIMULAR.bat       — Pedidos falsos para teste
+├── LEIA-ME.txt       — Documentação para o usuário
+├── virtual_printer/  — Código da impressora virtual
+├── bridge_agent/     — Código do interceptador
+└── printer_agent/    — Código do agente de impressão
+```
+
 ### Configuração no Windows
 
-1. Instalar `DerekhFood-Bridge.exe`
-2. Na janela de configuração: login com email/senha do restaurante
-3. Selecionar impressoras a monitorar (checkbox)
-4. Opcionalmente ativar "Criar pedido automaticamente"
-5. Config salva em `%APPDATA%/DerekhBridge/bridge_config.json`
+**Bridge Agent:**
+1. Rodar `BRIDGE.bat` (ou `TUDO.bat` para tudo de uma vez)
+2. Login com email/senha do restaurante
+3. Selecionar impressoras a monitorar
+4. Marcar "Criar pedido automaticamente" para ciclo completo
+5. Marcar "Iniciar com Windows" para auto-start
+6. Config salva em `%APPDATA%/DerekhBridge/bridge_config.json`
+
+**Printer Agent:**
+1. Rodar `IMPRESSAO.bat`
+2. Servidor `wss://superfood-api.fly.dev`, login restaurante
+3. Selecionar "Termica Virtual 80mm" (ou impressora real)
+4. Marcar "Iniciar com Windows" para auto-start
+5. Config salva em `%APPDATA%/DerekhFood/printer_config.json`
+
+### Auto-start com Windows
+
+Ambos agentes podem iniciar automaticamente com o Windows via checkbox "Iniciar com Windows":
+- Registra o `.bat` correspondente em `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+- Chaves de registro: `DerekhFoodBridge` e `DerekhFoodPrinter`
+- Quando compilado como `.exe` (PyInstaller), registra o executável diretamente
 
 ### Estrutura do Bridge Agent
 
@@ -1312,11 +1353,11 @@ bridge_agent/
 ├── spooler_monitor.py   — Win32 spooler polling
 ├── text_extractor.py    — ESC/POS → texto limpo
 ├── bridge_client.py     — REST client → backend
-├── config.py            — Config JSON persistente
+├── config.py            — Config JSON persistente (inclui auto_start)
 ├── simulador.py         — Simulador de recibos (texto puro, modo teste)
-├── ui/config_window.py  — Tkinter login + settings
+├── ui/config_window.py  — Tkinter login + settings + auto-start
 ├── requirements.txt     — requests, pywin32, pystray, Pillow
-└── build.bat            — PyInstaller → .exe
+└── build.bat            — PyInstaller → .exe (--console, hidden-imports)
 ```
 
 ### 14.1 Impressora Térmica Virtual (Teste E2E sem hardware)
