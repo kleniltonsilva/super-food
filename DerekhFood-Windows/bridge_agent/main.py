@@ -81,9 +81,45 @@ def _simular_plataforma(client: BridgeClient, plataforma: str):
         logger.error(f"[SIMULAÇÃO] Erro ao simular {plataforma}: {e}")
 
 
+def _perguntar_reconfigurar_bridge(config: dict) -> bool:
+    """Mostra dialog perguntando se o usuário deseja reconfigurar o Bridge.
+    Retorna True se sim, False se quer continuar com a config atual."""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        rest_id = config.get("restaurante_id", "?")
+        impressoras = config.get("impressoras_monitorar", [])
+        lista_imp = ", ".join(impressoras) if impressoras else "(nenhuma)"
+        server = config.get("server_url", "?")
+        auto_criar = "Sim" if config.get("auto_criar_pedido") else "Não"
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+
+        resposta = messagebox.askyesno(
+            "Derekh Food Bridge Agent",
+            f"Já está configurado!\n\n"
+            f"Restaurante ID: {rest_id}\n"
+            f"Impressoras monitoradas: {lista_imp}\n"
+            f"Criar pedido automaticamente: {auto_criar}\n"
+            f"Servidor: {server}\n\n"
+            f"Deseja RECONFIGURAR?\n"
+            f"(Clique 'Não' para continuar com a configuração atual)",
+            default=messagebox.NO,
+        )
+        root.destroy()
+        return bool(resposta)
+    except Exception as e:
+        logger.warning(f"Não foi possível mostrar dialog de reconfiguração: {e}")
+        return False
+
+
 def main():
     """Ponto de entrada principal do Bridge Agent."""
     modo_teste = "--modo-teste" in sys.argv or "--test" in sys.argv
+    silent = "--silent" in sys.argv or "--auto-start" in sys.argv
 
     logger.info("=" * 50)
     if modo_teste:
@@ -108,6 +144,20 @@ def main():
         except Exception as e:
             logger.error(f"Erro ao abrir config: {e}")
             return
+    else:
+        # Já configurado — perguntar se deseja reconfigurar (exceto no auto-start/silent)
+        if not silent and _perguntar_reconfigurar_bridge(config):
+            logger.info("Usuário solicitou reconfiguração")
+            try:
+                from .ui.config_window import abrir_config
+                abrir_config()
+                config = load_config()
+                if not config.get("token"):
+                    logger.error("Reconfiguração cancelada/limpa — encerrando")
+                    return
+            except Exception as e:
+                logger.error(f"Erro ao abrir config: {e}")
+                return
 
     # Em modo normal, exigir impressoras configuradas
     if not modo_teste and not config.get("impressoras_monitorar"):

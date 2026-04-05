@@ -25,6 +25,6 @@ pip install requests pywin32 pystray Pillow websockets --quiet 2>nul
 echo  [OK] Dependencias verificadas.
 echo.
 
-python -m printer_agent
+python -m printer_agent %*
 
 pause

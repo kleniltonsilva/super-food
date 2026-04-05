@@ -36,26 +36,120 @@ Write-Host ""
 
 $existing = Get-Printer -Name $PrinterName -ErrorAction SilentlyContinue
 if ($existing) {
-    Write-Host "  [OK] Impressora '$PrinterName' ja existe." -ForegroundColor Green
-    Write-Host "  Para reinstalar, execute uninstall.ps1 primeiro." -ForegroundColor Yellow
+    Write-Host "  [AVISO] Impressora '$PrinterName' ja esta instalada." -ForegroundColor Yellow
     Write-Host ""
-    exit 0
+    Write-Host "  Detalhes da impressora atual:" -ForegroundColor White
+    Write-Host "    Nome:   $($existing.Name)" -ForegroundColor Gray
+    Write-Host "    Driver: $($existing.DriverName)" -ForegroundColor Gray
+    Write-Host "    Porta:  $($existing.PortName)" -ForegroundColor Gray
+    Write-Host "    Status: $($existing.PrinterStatus)" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  O que voce quer fazer?" -ForegroundColor Cyan
+    Write-Host "    [M] Manter a impressora atual (recomendado)" -ForegroundColor White
+    Write-Host "    [R] Reinstalar (remove e cria novamente)" -ForegroundColor White
+    Write-Host ""
+
+    do {
+        $escolha = Read-Host "  Digite M ou R"
+        $escolha = $escolha.ToUpper().Trim()
+    } while ($escolha -ne "M" -and $escolha -ne "R")
+
+    if ($escolha -eq "M") {
+        Write-Host ""
+        Write-Host "  [OK] Mantendo impressora atual. Nada foi alterado." -ForegroundColor Green
+        Write-Host ""
+        exit 0
+    }
+
+    # Reinstalar: remover impressora + porta existente
+    Write-Host ""
+    Write-Host "  Removendo impressora atual..." -NoNewline
+    try {
+        Remove-Printer -Name $PrinterName -ErrorAction Stop
+        Write-Host " OK" -ForegroundColor Green
+    } catch {
+        Write-Host " ERRO: $_" -ForegroundColor Red
+        exit 1
+    }
+
+    # Remover porta antiga (se existir e nao for usada por outras impressoras)
+    $oldPort = Get-PrinterPort -Name $PortName -ErrorAction SilentlyContinue
+    if ($oldPort) {
+        Write-Host "  Removendo porta antiga '$PortName'..." -NoNewline
+        try {
+            Remove-PrinterPort -Name $PortName -ErrorAction Stop
+            Write-Host " OK" -ForegroundColor Green
+        } catch {
+            Write-Host " (em uso, continuando)" -ForegroundColor Yellow
+        }
+    }
+    Write-Host ""
+    Write-Host "  Prosseguindo com reinstalacao..." -ForegroundColor Cyan
+    Write-Host ""
 }
 
-# ── 2. Verificar driver disponivel ───────────────────────────────────────────
+# ── 2. Verificar/instalar driver ─────────────────────────────────────────────
 
 Write-Host "  [1/4] Verificando driver '$DriverName'..." -NoNewline
 $driver = Get-PrinterDriver -Name $DriverName -ErrorAction SilentlyContinue
+
 if (-not $driver) {
-    Write-Host " ERRO" -ForegroundColor Red
+    Write-Host " (nao instalado)" -ForegroundColor Yellow
+    Write-Host "         Tentando instalar driver nativo..." -NoNewline
+    try {
+        Add-PrinterDriver -Name $DriverName -ErrorAction Stop
+        Write-Host " OK" -ForegroundColor Green
+        $driver = Get-PrinterDriver -Name $DriverName -ErrorAction SilentlyContinue
+    } catch {
+        Write-Host " FALHA" -ForegroundColor Red
+        Write-Host "         Erro: $_" -ForegroundColor DarkRed
+
+        # Fallback: tentar via pnputil com INF do Windows
+        Write-Host "         Tentando via pnputil (INF nativo)..." -NoNewline
+        $infFiles = @(
+            "$env:WINDIR\inf\prnms001.inf",
+            "$env:WINDIR\inf\ntprint.inf"
+        )
+        $pnpOk = $false
+        foreach ($inf in $infFiles) {
+            if (Test-Path $inf) {
+                try {
+                    pnputil /add-driver $inf /install 2>&1 | Out-Null
+                    Start-Sleep -Seconds 2
+                    Add-PrinterDriver -Name $DriverName -ErrorAction Stop
+                    $pnpOk = $true
+                    break
+                } catch { }
+            }
+        }
+        if ($pnpOk) {
+            Write-Host " OK" -ForegroundColor Green
+            $driver = Get-PrinterDriver -Name $DriverName -ErrorAction SilentlyContinue
+        } else {
+            Write-Host " FALHA" -ForegroundColor Red
+        }
+    }
+}
+
+if (-not $driver) {
     Write-Host ""
-    Write-Host "  Driver '$DriverName' nao encontrado!" -ForegroundColor Red
-    Write-Host "  Este driver deveria estar instalado por padrao no Windows." -ForegroundColor Red
-    Write-Host "  Tente: Painel de Controle > Programas > Ativar recursos do Windows" -ForegroundColor Yellow
+    Write-Host "  ERRO: Driver '$DriverName' nao esta disponivel neste Windows." -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Drivers disponiveis no seu sistema:" -ForegroundColor Yellow
+    Get-PrinterDriver | Select-Object -First 20 | ForEach-Object {
+        Write-Host "    - $($_.Name)" -ForegroundColor Gray
+    }
+    Write-Host ""
+    Write-Host "  SOLUCAO:" -ForegroundColor Cyan
+    Write-Host "    1. Abra 'Configuracoes' > 'Bluetooth e dispositivos' > 'Impressoras'" -ForegroundColor White
+    Write-Host "    2. Clique 'Adicionar dispositivo' > 'Adicionar manualmente'" -ForegroundColor White
+    Write-Host "    3. Escolha 'Adicionar impressora local'" -ForegroundColor White
+    Write-Host "    4. Criar porta TCP/IP 127.0.0.1:9100" -ForegroundColor White
+    Write-Host "    5. Na selecao de driver, escolha 'Generico' > 'Generic / Text Only'" -ForegroundColor White
     Write-Host ""
     exit 1
 }
-Write-Host " OK" -ForegroundColor Green
+Write-Host "         Driver OK." -ForegroundColor Green
 
 # ── 3. Criar porta TCP/IP ───────────────────────────────────────────────────
 
@@ -65,19 +159,19 @@ $existingPort = Get-PrinterPort -Name $PortName -ErrorAction SilentlyContinue
 if ($existingPort) {
     Write-Host " (ja existe)" -ForegroundColor Yellow
 } else {
+    $portCriada = $false
     try {
-        # Criar porta TCP/IP RAW (porta 9100, SNMP desabilitado)
+        # Criar porta TCP/IP RAW (porta 9100)
+        # -SNMP removido: causa HRESULT 0x80070057 em algumas versoes do Win
+        # SNMP sera desabilitado via registry apos criacao
         Add-PrinterPort -Name $PortName `
             -PrinterHostAddress $PortIP `
             -PortNumber $PortNumber `
-            -SNMP 0
+            -ErrorAction Stop
         Write-Host " OK" -ForegroundColor Green
+        $portCriada = $true
     } catch {
-        Write-Host " ERRO" -ForegroundColor Red
-        Write-Host "  Falha ao criar porta: $_" -ForegroundColor Red
-
-        # Tentativa alternativa via WMI
-        Write-Host "  Tentando via WMI..." -NoNewline
+        Write-Host " (tentando WMI)" -ForegroundColor Yellow
         try {
             $wmi = ([wmiclass]"Win32_TcpIpPrinterPort").CreateInstance()
             $wmi.Name = $PortName
@@ -86,13 +180,24 @@ if ($existingPort) {
             $wmi.PortNumber = $PortNumber
             $wmi.SNMPEnabled = $false
             $wmi.Put() | Out-Null
-            Write-Host " OK (WMI)" -ForegroundColor Green
+            Write-Host "         OK (via WMI)" -ForegroundColor Green
+            $portCriada = $true
         } catch {
-            Write-Host " ERRO" -ForegroundColor Red
-            Write-Host "  Nao foi possivel criar a porta TCP/IP." -ForegroundColor Red
-            Write-Host "  Tente criar manualmente: Configuracoes > Impressoras > Adicionar porta TCP/IP" -ForegroundColor Yellow
+            Write-Host "         ERRO" -ForegroundColor Red
+            Write-Host "         Falha ao criar porta: $_" -ForegroundColor Red
             exit 1
         }
+    }
+
+    # Desabilitar SNMP via registry (evita status "offline" quando servidor nao responde)
+    if ($portCriada) {
+        try {
+            $regPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors\Standard TCP/IP Port\Ports\$PortName"
+            if (Test-Path $regPath) {
+                Set-ItemProperty -Path $regPath -Name "SNMP Enabled" -Value 0 -Type DWord -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $regPath -Name "Protocol" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+            }
+        } catch { }
     }
 }
 
@@ -100,15 +205,19 @@ if ($existingPort) {
 
 Write-Host "  [3/4] Criando impressora '$PrinterName'..." -NoNewline
 try {
+    # -Shared removido: default ja e nao-compartilhado
+    # -Shared $false gera erro "positional parameter cannot be found"
     Add-Printer -Name $PrinterName `
         -DriverName $DriverName `
         -PortName $PortName `
         -Comment "Impressora termica virtual para testes Derekh Food" `
-        -Shared $false
+        -ErrorAction Stop
     Write-Host " OK" -ForegroundColor Green
 } catch {
     Write-Host " ERRO" -ForegroundColor Red
     Write-Host "  Falha ao criar impressora: $_" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  Verifique em 'Get-PrinterDriver' se o driver esta instalado." -ForegroundColor Yellow
     exit 1
 }
 

@@ -68,8 +68,9 @@ logger = logging.getLogger("printer_agent")
 class PrinterAgent:
     """Orquestrador principal do agente de impressão."""
 
-    def __init__(self, modo_teste: bool = False):
+    def __init__(self, modo_teste: bool = False, silent: bool = False):
         self.modo_teste = modo_teste
+        self.silent = silent
         if modo_teste:
             print_driver_mod.MODO_TESTE = True
         self.config = load_config()
@@ -99,6 +100,15 @@ class PrinterAgent:
             if not is_configured(self.config):
                 logger.error("Configuração cancelada — encerrando")
                 return
+        else:
+            # Já configurado — perguntar se deseja reconfigurar (exceto no auto-start/silent)
+            if not self.silent and self._perguntar_reconfigurar():
+                logger.info("Usuário solicitou reconfiguração")
+                self._abrir_config()
+                self.config = load_config()
+                if not is_configured(self.config):
+                    logger.error("Reconfiguração cancelada/limpa — encerrando")
+                    return
 
         # Em modo teste, auto-configurar impressora virtual se necessário
         if self.modo_teste:
@@ -146,6 +156,37 @@ class PrinterAgent:
         window = ConfigWindow(on_save=lambda cfg: None)
         window.mostrar()
         self.config = load_config()
+
+    def _perguntar_reconfigurar(self) -> bool:
+        """Mostra dialog perguntando se o usuário deseja reconfigurar.
+        Retorna True se sim, False se quer continuar com a config atual."""
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+
+            rest_id = self.config.get("restaurante_id", "?")
+            impressora_geral = self.config.get("impressoras", {}).get("geral") or "(nenhuma)"
+            server = self.config.get("server_url", "?")
+
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+
+            resposta = messagebox.askyesno(
+                "Derekh Food — Agente de Impressão",
+                f"Já está configurado!\n\n"
+                f"Restaurante ID: {rest_id}\n"
+                f"Impressora: {impressora_geral}\n"
+                f"Servidor: {server}\n\n"
+                f"Deseja RECONFIGURAR?\n"
+                f"(Clique 'Não' para continuar com a configuração atual)",
+                default=messagebox.NO,
+            )
+            root.destroy()
+            return bool(resposta)
+        except Exception as e:
+            logger.warning(f"Não foi possível mostrar dialog de reconfiguração: {e}")
+            return False
 
     def _iniciar_tray(self):
         """Inicia system tray icon."""
@@ -307,6 +348,7 @@ class PrinterAgent:
 
 def main():
     modo_teste = "--modo-teste" in sys.argv or "--test" in sys.argv
+    silent = "--silent" in sys.argv or "--auto-start" in sys.argv
     if modo_teste:
         print("\n" + "=" * 50)
         print("  MODO TESTE ATIVADO")
@@ -314,7 +356,7 @@ def main():
         print("  Não é necessário impressora térmica")
         print("=" * 50 + "\n")
 
-    agent = PrinterAgent(modo_teste=modo_teste)
+    agent = PrinterAgent(modo_teste=modo_teste, silent=silent)
     agent.iniciar()
 
 

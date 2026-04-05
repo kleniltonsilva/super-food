@@ -25,6 +25,6 @@ pip install requests pywin32 pystray Pillow --quiet 2>nul
 echo  [OK] Dependencias verificadas.
 echo.
 
-python -m bridge_agent
+python -m bridge_agent %*
 
 pause

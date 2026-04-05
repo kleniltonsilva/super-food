@@ -24,9 +24,19 @@ class ConfigWindow:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Derekh Food Bridge — Configuração")
-        self.root.geometry("480x620")
-        self.root.resizable(False, False)
+        # Tamanho adaptativo: 90% da altura da tela, limitado entre 500 e 700
+        screen_h = self.root.winfo_screenheight()
+        win_h = min(700, max(500, int(screen_h * 0.85)))
+        self.root.geometry(f"520x{win_h}")
+        self.root.minsize(480, 500)
+        self.root.resizable(True, True)  # permite redimensionar se cortar
         self.root.configure(bg="#1a1a2e")
+
+        # Centraliza na tela
+        self.root.update_idletasks()
+        x = (self.root.winfo_screenwidth() - 520) // 2
+        y = max(0, (screen_h - win_h) // 2 - 20)
+        self.root.geometry(f"+{x}+{y}")
 
         self.config = load_config()
 
@@ -42,8 +52,32 @@ class ConfigWindow:
         style.configure("Dark.TButton", background="#e94560", foreground="white", font=("Segoe UI", 10, "bold"))
         style.configure("Dark.TCheckbutton", background="#1a1a2e", foreground="#e0e0e0", font=("Segoe UI", 9))
 
-        main_frame = ttk.Frame(self.root, style="Dark.TFrame", padding=20)
-        main_frame.pack(fill="both", expand=True)
+        # ─── Frame scrollavel para conteudo (evita corte em telas pequenas) ───
+        outer_frame = tk.Frame(self.root, bg="#1a1a2e")
+        outer_frame.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(outer_frame, bg="#1a1a2e", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(outer_frame, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        main_frame = ttk.Frame(canvas, style="Dark.TFrame", padding=20)
+        canvas_window = canvas.create_window((0, 0), window=main_frame, anchor="nw")
+
+        def _on_frame_configure(event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        main_frame.bind("<Configure>", _on_frame_configure)
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # Scroll com roda do mouse
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         # Título
         ttk.Label(main_frame, text="Derekh Food Bridge", style="Title.TLabel").pack(pady=(0, 15))
@@ -94,7 +128,7 @@ class ConfigWindow:
         options_frame = ttk.LabelFrame(main_frame, text="Opções", padding=10)
         options_frame.pack(fill="x", pady=(0, 10))
 
-        self.auto_criar_var = tk.BooleanVar(value=self.config.get("auto_criar_pedido", False))
+        self.auto_criar_var = tk.BooleanVar(value=self.config.get("auto_criar_pedido", True))
         ttk.Checkbutton(
             options_frame,
             text="Criar pedido automaticamente ao interceptar",
@@ -147,11 +181,25 @@ class ConfigWindow:
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    self.config["token"] = data.get("token")
+                    # Backend retorna 'access_token' (não 'token')
+                    token_value = data.get("access_token") or data.get("token")
+                    if not token_value:
+                        self.root.after(0, lambda: self.login_status.config(
+                            text="Erro: resposta sem token",
+                            foreground="#e94560"
+                        ))
+                        return
+                    self.config["token"] = token_value
                     self.config["restaurante_id"] = data.get("restaurante", {}).get("id")
                     self.config["server_url"] = server_url
+                    # SALVAR IMEDIATAMENTE — sem depender de clicar "Salvar" depois
+                    try:
+                        save_config(self.config)
+                    except Exception as e:
+                        logger.error(f"Erro ao salvar config após login: {e}")
+                    nome_rest = data.get("restaurante", {}).get("nome", "")
                     self.root.after(0, lambda: self.login_status.config(
-                        text=f"Login OK — {data.get('restaurante', {}).get('nome', '')}",
+                        text=f"Login OK — {nome_rest} (token salvo)",
                         foreground="#4ecca3"
                     ))
                 else:
@@ -199,11 +247,11 @@ class ConfigWindow:
 
             if enable:
                 if getattr(sys, "frozen", False):
-                    exe_path = sys.executable
+                    exe_path = f'"{sys.executable}" --silent'
                 else:
-                    # Usar o .bat correspondente no diretório pai
+                    # Usar o .bat correspondente no diretório pai (flag --silent suprime dialog reconfigurar)
                     bat_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "BRIDGE.bat")
-                    exe_path = f'"{bat_path}"'
+                    exe_path = f'"{bat_path}" --silent'
                 winreg.SetValueEx(key, "DerekhFoodBridge", 0, winreg.REG_SZ, exe_path)
             else:
                 try:

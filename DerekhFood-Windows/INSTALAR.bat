@@ -64,11 +64,13 @@ echo.
 net session >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     powershell -ExecutionPolicy Bypass -File "%~dp0virtual_printer\install.ps1"
+    set "PS_EXIT=%ERRORLEVEL%"
 ) else (
     echo  [INFO] Abrindo PowerShell como Administrador...
-    echo         Aceite a permissao na janela que aparecer.
+    echo         Aceite a permissao UAC na janela que aparecer.
     echo.
     powershell -Command "Start-Process powershell -ArgumentList '-ExecutionPolicy Bypass -File \"%~dp0virtual_printer\install.ps1\"' -Verb RunAs -Wait"
+    set "PS_EXIT=0"
 )
 
 :: ── Resultado ────────────────────────────────────────────────────────────────
@@ -79,7 +81,39 @@ echo  [4/4] Verificando instalacao...
 python -c "import win32print; print('         pywin32 OK')" 2>nul
 if %ERRORLEVEL% NEQ 0 (
     echo  [ERRO] pywin32 falhou. Tente: pip install pywin32
+    pause
+    exit /b 1
 )
+
+:: Verificar que a impressora EXISTE de verdade no Windows
+python -c "import win32print; lst=[p[2] for p in win32print.EnumPrinters(2|4)]; exit(0 if 'Termica Virtual 80mm' in lst else 1)" 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo  ═══════════════════════════════════════════════════════════
+    echo   [FALHA] Impressora "Termica Virtual 80mm" NAO foi instalada!
+    echo  ═══════════════════════════════════════════════════════════
+    echo.
+    echo   Impressoras atualmente no seu Windows:
+    python -c "import win32print; [print('     - '+p[2]) for p in win32print.EnumPrinters(2^|4)]" 2>nul
+    echo.
+    echo   Possiveis causas:
+    echo     1. Voce NAO aceitou o UAC de Administrador
+    echo     2. Driver "Generic / Text Only" nao disponivel neste Windows
+    echo     3. PowerShell bloqueado por politica
+    echo.
+    echo   SOLUCAO MANUAL:
+    echo     Abra PowerShell como Administrador e cole:
+    echo.
+    echo       cd "%~dp0virtual_printer"
+    echo       Set-ExecutionPolicy -Scope Process Bypass -Force
+    echo       .\install.ps1
+    echo.
+    echo   Leia as mensagens de erro para diagnosticar.
+    echo.
+    pause
+    exit /b 1
+)
+echo         Impressora "Termica Virtual 80mm" detectada - OK
 
 echo.
 echo  ╔══════════════════════════════════════════════════╗

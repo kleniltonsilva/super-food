@@ -4,8 +4,20 @@
 Monitor do Windows Print Spooler.
 Detecta novos jobs de impressão e captura os bytes brutos.
 Requer pywin32 no Windows.
+
+Estratégia para capturar bytes de impressão:
+1. Polling rápido (0.3s) via EnumJobs
+2. Ao detectar job novo: PAUSAR imediatamente (SetJob JOB_CONTROL_PAUSE)
+3. Ler o arquivo .SPL direto do disco (C:\\Windows\\System32\\spool\\PRINTERS\\)
+4. RESUMIR o job (o spooler imprime normalmente na impressora real)
+
+Importante: win32print.ReadPrinter() NÃO lê o conteúdo do spool — ele lê respostas
+de impressoras bidirecionais. Para capturar bytes enviados à impressora, o único
+caminho confiável é ler o arquivo .SPL diretamente do disco enquanto o job está
+pausado no spool.
 """
 
+import os
 import threading
 import time
 import logging
@@ -21,6 +33,13 @@ except ImportError:
     logger.warning("pywin32 não disponível — monitor de spooler desabilitado (apenas Windows)")
 
 
+# Diretório onde o Windows guarda os arquivos de spool (.SPL / .SHD)
+SPOOL_DIR = os.path.join(
+    os.environ.get("WINDIR", r"C:\Windows"),
+    "System32", "spool", "PRINTERS"
+)
+
+
 class SpoolerMonitor:
     """Monitora o spooler de impressão do Windows por polling."""
 
@@ -28,7 +47,7 @@ class SpoolerMonitor:
         self,
         impressoras: List[str],
         ignorar_prefixo: str = "Derekh_",
-        poll_interval: float = 2.0,
+        poll_interval: float = 0.2,
         on_job_captured: Optional[Callable[[str, bytes], None]] = None,
     ):
         self.impressoras = impressoras
@@ -94,10 +113,32 @@ class SpoolerMonitor:
 
                     logger.info(f"Novo job detectado: [{printer_name}] #{job_id} '{doc_name}'")
 
-                    # Capturar bytes brutos
-                    raw_bytes = self._read_job_data(handle, job_id)
-                    if raw_bytes and self.on_job_captured:
-                        self.on_job_captured(printer_name, raw_bytes)
+                    # ─── PAUSAR o job IMEDIATAMENTE para ter tempo de ler o spool ───
+                    # Sem pausar, o spooler envia os bytes para a impressora e deleta
+                    # o arquivo .SPL antes de conseguirmos ler.
+                    pausado = False
+                    try:
+                        win32print.SetJob(handle, job_id, 0, None, win32print.JOB_CONTROL_PAUSE)
+                        pausado = True
+                    except Exception as e:
+                        logger.debug(f"Não foi possível pausar job #{job_id}: {e}")
+
+                    # Ler bytes direto do arquivo .SPL
+                    raw_bytes = self._read_job_data(job_id)
+
+                    # Resumir o job (deixar o spooler enviar à impressora normalmente)
+                    if pausado:
+                        try:
+                            win32print.SetJob(handle, job_id, 0, None, win32print.JOB_CONTROL_RESUME)
+                        except Exception as e:
+                            logger.debug(f"Não foi possível resumir job #{job_id}: {e}")
+
+                    if raw_bytes:
+                        logger.info(f"Job #{job_id} capturado — {len(raw_bytes)} bytes")
+                        if self.on_job_captured:
+                            self.on_job_captured(printer_name, raw_bytes)
+                    else:
+                        logger.warning(f"Job #{job_id} detectado mas não foi possível ler bytes do spool")
 
             finally:
                 win32print.ClosePrinter(handle)
@@ -105,16 +146,31 @@ class SpoolerMonitor:
         except Exception as e:
             logger.debug(f"Erro ao verificar impressora '{printer_name}': {e}")
 
-    def _read_job_data(self, handle, job_id: int) -> Optional[bytes]:
-        """Tenta ler os dados brutos de um job de impressão."""
-        try:
-            # ReadPrinter lê bytes do spool file
-            data = win32print.ReadPrinter(handle, 65536)
-            if data:
-                return data
-        except Exception as e:
-            logger.debug(f"Não foi possível ler dados do job #{job_id}: {e}")
+    def _read_job_data(self, job_id: int) -> Optional[bytes]:
+        """Lê os bytes brutos do arquivo .SPL do job no spool do Windows.
 
+        O Windows guarda os arquivos em C:\\Windows\\System32\\spool\\PRINTERS\\
+        com nome <job_id zero-padded 5 digits>.SPL.
+
+        Tentativas com retry porque o arquivo pode ainda estar sendo escrito.
+        """
+        spool_file = os.path.join(SPOOL_DIR, f"{job_id:05d}.SPL")
+
+        for attempt in range(20):  # até 1s total (20 x 50ms)
+            if os.path.exists(spool_file):
+                try:
+                    with open(spool_file, "rb") as f:
+                        data = f.read()
+                    if data:
+                        return data
+                except PermissionError:
+                    # Spooler ainda tem o arquivo aberto — aguardar
+                    pass
+                except Exception as e:
+                    logger.debug(f"Erro lendo {spool_file}: {e}")
+            time.sleep(0.05)
+
+        logger.warning(f"Spool file não encontrado ou vazio: {spool_file}")
         return None
 
     @property

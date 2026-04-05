@@ -30,17 +30,49 @@ class ConfigWindow:
         """Abre a janela de configuração."""
         self._root = tk.Tk()
         self._root.title("Derekh Food - Configuração da Impressora")
-        self._root.geometry("500x620")
-        self._root.resizable(False, False)
+        # Tamanho adaptativo: 85% da altura da tela, limitado entre 500 e 700
+        screen_h = self._root.winfo_screenheight()
+        win_h = min(700, max(500, int(screen_h * 0.85)))
+        self._root.geometry(f"540x{win_h}")
+        self._root.minsize(480, 500)
+        self._root.resizable(True, True)
+
+        # Centraliza na tela
+        self._root.update_idletasks()
+        x = (self._root.winfo_screenwidth() - 540) // 2
+        y = max(0, (screen_h - win_h) // 2 - 20)
+        self._root.geometry(f"+{x}+{y}")
 
         # Estilo
         style = ttk.Style()
         style.configure("Title.TLabel", font=("Segoe UI", 14, "bold"))
         style.configure("Section.TLabel", font=("Segoe UI", 10, "bold"))
 
-        # Container principal com padding
-        main = ttk.Frame(self._root, padding=20)
-        main.pack(fill=tk.BOTH, expand=True)
+        # ─── Frame scrollavel (evita corte em telas pequenas) ───
+        outer = tk.Frame(self._root)
+        outer.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(outer, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        main = ttk.Frame(canvas, padding=20)
+        canvas_window = canvas.create_window((0, 0), window=main, anchor="nw")
+
+        def _on_frame_configure(event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        main.bind("<Configure>", _on_frame_configure)
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # Scroll com roda do mouse
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         # Título
         ttk.Label(main, text="Derekh Food - Impressora", style="Title.TLabel").pack(pady=(0, 15))
@@ -140,8 +172,13 @@ class ConfigWindow:
                     self.config["token"] = result.get("access_token") or result["token"]
                     self.config["restaurante_id"] = result.get("restaurante", {}).get("id")
                     self.config["server_url"] = server
+                    # SALVAR IMEDIATAMENTE — não depender do botão "Salvar" depois
+                    try:
+                        save_config(self.config)
+                    except Exception as e:
+                        logger.error(f"Erro ao salvar config após login: {e}")
                     self._root.after(0, lambda: self._login_status.set(
-                        f"Conectado! (ID: {self.config['restaurante_id']})"
+                        f"Conectado! (ID: {self.config['restaurante_id']}) — token salvo"
                     ))
                 else:
                     self._root.after(0, lambda: self._login_status.set("Falha no login"))
@@ -193,11 +230,11 @@ class ConfigWindow:
 
             if enable:
                 if getattr(sys, "frozen", False):
-                    exe_path = sys.executable
+                    exe_path = f'"{sys.executable}" --silent'
                 else:
-                    # Usar o .bat correspondente no diretório pai
+                    # Usar o .bat correspondente no diretório pai (flag --silent suprime dialog reconfigurar)
                     bat_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "IMPRESSAO.bat")
-                    exe_path = f'"{bat_path}"'
+                    exe_path = f'"{bat_path}" --silent'
                 winreg.SetValueEx(key, "DerekhFoodPrinter", 0, winreg.REG_SZ, exe_path)
             else:
                 try:

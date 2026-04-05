@@ -1224,15 +1224,19 @@ Testes realizados com restaurante real "maia pizza" (CNPJ 03993338000180) na API
 
 ### Fluxo de Interceptação
 
-1. **Spooler Monitor** detecta novo job de impressão no Windows (polling 2s)
-2. Ignora jobs com prefixo "Derekh_" (impressões do próprio sistema)
-3. **Text Extractor** remove comandos ESC/POS e decodifica texto (CP860/UTF-8)
-4. **Bridge Client** envia texto para `POST /painel/bridge/parse`
-5. Backend tenta **padrões aprendidos** (regex por confiança decrescente)
-6. Se nenhum casou → **Groq IA (Llama 3.3 70B)** extrai JSON estruturado
-7. Registro salvo em `bridge_intercepted_orders` com status `pendente`
-8. Operador revisa no painel e clica "Criar Pedido" (ou automático se configurado)
-9. Backend cria `Pedido` com `origem=bridge_{plataforma}`, vincula cliente por telefone
+1. **Spooler Monitor** detecta novo job de impressão no Windows (polling **0.2s** — crítico!)
+2. **Pausa o job** imediatamente (`SetJob JOB_CONTROL_PAUSE`) para evitar race condition com o spooler
+3. **Lê arquivo .SPL diretamente** de `C:\Windows\System32\spool\PRINTERS\<job_id:05d>.SPL` (NÃO usa `ReadPrinter` — este lê respostas bidirecionais, não conteúdo do spool)
+4. **Retoma o job** (`SetJob JOB_CONTROL_RESUME`) para finalizar a impressão normalmente
+5. Ignora jobs com prefixo "Derekh_" (impressões do próprio sistema)
+6. **Text Extractor** remove comandos ESC/POS e decodifica texto (CP860/UTF-8)
+7. **Bridge Client** envia texto para `POST /painel/bridge/parse`
+8. Backend tenta **padrões aprendidos** (regex por confiança decrescente)
+9. Se nenhum casou → **Groq IA (Llama 3.3 70B)** extrai JSON estruturado
+10. **Auto-aprendizado:** Se IA mapeou ≥3 campos, gera pattern automaticamente (confiança 0.5 — máquina). Próximos cupons iguais pegam via regex direto (sem custo de IA)
+11. Registro salvo em `bridge_intercepted_orders` com status `pendente`
+12. Se `auto_criar_pedido=True` (padrão), cria pedido automaticamente
+13. Backend cria `Pedido` com `origem=bridge_{plataforma}`, vincula cliente por telefone
 
 ### Motor de IA — Groq (NÃO Grok)
 
@@ -1248,21 +1252,23 @@ Prioridade:
 - **response_format:** `{"type": "json_object"}` — garante JSON válido
 - **Campos extraídos:** cliente_nome, cliente_telefone, endereco, itens[], valor_total, forma_pagamento
 
-### Ciclo de Aprendizado
+### Ciclo de Aprendizado (Auto — sem validação humana)
 
 ```
 1. Cupom novo → nenhum pattern → Groq parseia (confiança 0.3)
-2. Admin clica "Validar e Aprender" no painel
-3. Sistema analisa texto original + dados parseados → gera regex automáticos
-4. Salva BridgePattern (confiança 0.7 — validado por humano)
-5. Próximos cupons iguais → regex pega direto (sem chamar Groq)
-6. Confiança sobe +0.1 a cada validação (até 1.0)
+2. AUTOMÁTICO: Se IA mapeou ≥3 campos, backend gera BridgePattern (confiança 0.5 — máquina)
+3. Se pattern já existe: merge de campos novos + +0.05 confiança (cap 0.9)
+4. Próximos cupons iguais → regex pega direto (sem chamar Groq → economia de API)
+5. Admin ainda pode clicar "Validar e Aprender" → confiança sobe para 0.7 (humano)
+6. Confiança sobe +0.1 a cada validação humana (até 1.0)
 ```
 
+- **Tiers de confiança:** 0.3 (IA parse), 0.5 (IA auto-aprendido), 0.7 (humano), 0.9+ (muito usado)
 - Padrões são armazenados em `bridge_patterns` com regex de detecção + mapeamento de campos
 - Cada uso incrementa o contador e a confiança cresce
 - Padrões com confiança alta são usados antes da IA (economia de API)
 - Operador pode remover padrões ruins ou re-parsear registros que falharam
+- **Fluxo zero-touch:** Com `auto_criar_pedido=True` (padrão), todo o ciclo Spooler→Parse→Pattern→Pedido→Impressão acontece sem intervenção humana
 
 ### 14 Plataformas Detectadas
 
@@ -1350,15 +1356,40 @@ Ambos agentes podem iniciar automaticamente com o Windows via checkbox "Iniciar 
 ```
 bridge_agent/
 ├── main.py              — Orquestrador + system tray
-├── spooler_monitor.py   — Win32 spooler polling
+├── spooler_monitor.py   — Win32 spooler polling (0.2s + pausa job + lê .SPL)
 ├── text_extractor.py    — ESC/POS → texto limpo
 ├── bridge_client.py     — REST client → backend
-├── config.py            — Config JSON persistente (inclui auto_start)
+├── config.py            — Config JSON persistente (auto_start, auto_criar_pedido=True)
 ├── simulador.py         — Simulador de recibos (texto puro, modo teste)
 ├── ui/config_window.py  — Tkinter login + settings + auto-start
 ├── requirements.txt     — requests, pywin32, pystray, Pillow
-└── build.bat            — PyInstaller → .exe (--console, hidden-imports)
+└── build.bat            — PyInstaller → .exe (--paths ., --console, hidden-imports)
 ```
+
+### Build dos Executáveis (PyInstaller)
+
+**Crítico:** Os `build.bat` usam `cd /d "%~dp0.."` para rodar a partir de `DerekhFood-Windows/` (e não da subpasta do agent). Isto garante que o PyInstaller inclua `DerekhFood-Windows/` no `sys.path` via `--paths .`, fazendo `bridge_agent` e `printer_agent` funcionarem como packages no .exe final.
+
+```bash
+cd DerekhFood-Windows\bridge_agent
+build.bat
+# Gera: DerekhFood-Windows\dist\DerekhFood-Bridge.exe
+
+cd DerekhFood-Windows\printer_agent
+build.bat
+# Gera: DerekhFood-Windows\dist\DerekhFood-Impressora.exe
+```
+
+### Bugs Críticos Resolvidos (05/04/2026)
+
+| # | Bug | Causa | Fix |
+|---|-----|-------|-----|
+| 1 | Spooler não captura jobs | `poll_interval=2s` muito lento — impressora virtual processa jobs instantaneamente, spooler deleta `.SPL` antes de ler | `poll_interval=0.2s` no `spooler_monitor.py` + `config.py` |
+| 2 | `win32print.ReadPrinter` retorna vazio | `ReadPrinter` lê respostas de impressoras bidirecionais, NÃO conteúdo do spool | Ler arquivo `.SPL` diretamente de `C:\Windows\System32\spool\PRINTERS\<job_id:05d>.SPL` |
+| 3 | Race condition: job sumia antes de ler | Spooler envia e apaga o job rápido demais | `SetJob(JOB_CONTROL_PAUSE)` antes de ler, `JOB_CONTROL_RESUME` depois |
+| 4 | Token sempre `null` após login | Config lia `data.get("token")` mas backend retorna `access_token` | `data.get("access_token") or data.get("token")` + save imediato (sem esperar botão Salvar) |
+| 5 | `.exe` falhava com `ImportError: attempted relative import with no known parent package` | PyInstaller adicionava `bridge_agent/` ao sys.path em vez de `DerekhFood-Windows/` | `--paths .` no PyInstaller + `cd /d "%~dp0.."` no build.bat |
+| 6 | Impressora virtual erro `HRESULT 0x80070057` | `-SNMP 0` e `-Shared $false` inválidos no `Add-PrinterPort`/`Add-Printer` | Remover ambos; desabilitar SNMP via registry após criar porta |
 
 ### 14.1 Impressora Térmica Virtual (Teste E2E sem hardware)
 

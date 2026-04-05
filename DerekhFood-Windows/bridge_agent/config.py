@@ -17,9 +17,9 @@ DEFAULT_CONFIG = {
     "token": None,
     "impressoras_monitorar": [],
     "ignorar_prefixo": "Derekh_",
-    "auto_criar_pedido": False,
+    "auto_criar_pedido": True,
     "codepage": "CP860",
-    "poll_interval": 2.0,
+    "poll_interval": 0.2,
     "auto_start": False,
 }
 

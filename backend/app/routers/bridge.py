@@ -447,6 +447,51 @@ async def parse_texto(
             pattern.usos = (pattern.usos or 0) + 1
             pattern.atualizado_em = datetime.utcnow()
 
+    # ─── AUTO-APRENDIZADO ──────────────────────────────────────
+    # Se o parse veio da IA com sucesso, gera pattern automaticamente
+    # (sem esperar validação humana). Confiança 0.5 (máquina) vs 0.7 (humano).
+    pattern_auto_criado_id = None
+    if resultado and fonte == "ia" and resultado.get("dados"):
+        try:
+            pattern_data = auto_gerar_pattern(texto, resultado["dados"], plataforma)
+            # Auto-aprender apenas se mapeou >= 3 campos (qualidade mínima)
+            if pattern_data and pattern_data.get("campos_mapeados", 0) >= 3:
+                existente = db.query(models.BridgePattern).filter(
+                    models.BridgePattern.restaurante_id == rest.id,
+                    models.BridgePattern.regex_detectar == pattern_data["regex_detectar"],
+                ).first()
+                if existente:
+                    # Merge campos novos + aumenta confiança levemente
+                    mapeamento_atual = existente.mapeamento_json or {}
+                    for campo, regex in pattern_data["mapeamento_json"].items():
+                        if campo not in mapeamento_atual:
+                            mapeamento_atual[campo] = regex
+                    existente.mapeamento_json = mapeamento_atual
+                    existente.usos = (existente.usos or 0) + 1
+                    existente.confianca = min(0.9, (existente.confianca or 0.5) + 0.05)
+                    existente.atualizado_em = datetime.utcnow()
+                    pattern_auto_criado_id = existente.id
+                else:
+                    novo_pattern = models.BridgePattern(
+                        restaurante_id=rest.id,
+                        plataforma=plataforma,
+                        nome_pattern=f"Auto-IA — {plataforma.capitalize()}",
+                        regex_detectar=pattern_data["regex_detectar"],
+                        mapeamento_json=pattern_data["mapeamento_json"],
+                        confianca=0.5,  # Máquina (não validado por humano ainda)
+                        usos=1,
+                        validado=False,
+                    )
+                    db.add(novo_pattern)
+                    db.flush()
+                    pattern_auto_criado_id = novo_pattern.id
+                    logger.info(
+                        f"Pattern auto-criado pela IA — plataforma={plataforma}, "
+                        f"campos={pattern_data['campos_mapeados']}, id={novo_pattern.id}"
+                    )
+        except Exception as e:
+            logger.warning(f"Falha no auto-aprendizado: {e}")
+
     db.commit()
     db.refresh(intercepted)
 
@@ -457,6 +502,7 @@ async def parse_texto(
         "dados_parseados": resultado["dados"] if resultado else None,
         "fonte": fonte,
         "confianca": resultado.get("confianca") if resultado else 0,
+        "pattern_auto_criado_id": pattern_auto_criado_id,
     }
 
 

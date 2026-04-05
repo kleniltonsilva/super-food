@@ -423,6 +423,32 @@ PLATAFORMAS = {
 }
 
 
+def listar_impressoras_windows() -> list:
+    """Lista nomes de todas as impressoras instaladas no Windows."""
+    try:
+        import win32print
+        # PRINTER_ENUM_LOCAL (2) + PRINTER_ENUM_CONNECTIONS (4) = 6
+        printers = win32print.EnumPrinters(2 | 4)
+        return [p[2] for p in printers]
+    except ImportError:
+        return []
+    except Exception:
+        return []
+
+
+def resolver_impressora(printer_name: str) -> Optional[str]:
+    """Verifica se a impressora existe no Windows pelo nome EXATO.
+
+    Retorna o nome se encontrada, None caso contrario.
+    Sem fuzzy matching: em producao o Printer Agent usa o nome exato da API
+    do Windows, entao o teste cego deve usar as mesmas regras.
+    """
+    impressoras = listar_impressoras_windows()
+    if printer_name in impressoras:
+        return printer_name
+    return None
+
+
 def enviar_recibo_spooler(
     raw_bytes: bytes,
     printer_name: str = PRINTER_NAME,
@@ -483,6 +509,34 @@ def simular_pedidos(
 
     enviados = 0
     total = len(platforms_to_use) * count
+
+    # ── Validar impressora antes de simular ───────────────────────
+    # Teste cego: nome EXATO. Em producao o Printer Agent usa o mesmo nome
+    # que vem de EnumPrinters — se aqui nao achar, a instalacao falhou.
+    if resolver_impressora(printer_name) is None:
+        impressoras_disponiveis = listar_impressoras_windows()
+        print(f"\n  ═══════════════════════════════════════════════════════════")
+        print(f"   [ERRO CRITICO] Impressora '{printer_name}' NAO existe!")
+        print(f"  ═══════════════════════════════════════════════════════════")
+        print()
+        if impressoras_disponiveis:
+            print("  Impressoras instaladas no seu Windows:")
+            for nome in impressoras_disponiveis:
+                print(f"     - {nome}")
+        else:
+            print("  Nenhuma impressora encontrada no Windows.")
+        print()
+        print("  Isto significa que INSTALAR.bat NAO foi concluido com sucesso.")
+        print()
+        print("  SOLUCAO:")
+        print("    1. Feche esta janela")
+        print("    2. Clique com BOTAO DIREITO em INSTALAR.bat")
+        print("    3. Escolha 'Executar como administrador'")
+        print("    4. Aceite o UAC e leia TODAS as mensagens")
+        print("    5. Se houver erro no driver, siga as instrucoes do script")
+        print("    6. So depois volte a rodar SIMULAR.bat")
+        print()
+        return 0
 
     print(f"\n  Simulando {total} recibo(s) para '{printer_name}'...\n")
 
