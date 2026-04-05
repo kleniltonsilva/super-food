@@ -658,7 +658,8 @@ super-food/
 - [x] `build.bat` corrigido (`--paths .` fix ImportError no .exe) — 05/04
 - [x] Groq Learning cycle — auto-aprendizado inline no `/parse` (conf 0.5 máquina, 0.7 humano) — 05/04
 - [x] Ciclo zero-touch: `auto_criar_pedido=True` default, poll 0.2s, leitura `.SPL` direto, pausa/retoma job — 05/04
-- [ ] Rebuild .exe no Windows → copiar para `backend/static/downloads/` → página `/admin/downloads` serve download real
+- [x] Rebuild `.exe` no Windows (Python 3.14 + PyInstaller 6.19) → upload SFTP para volume Fly.io → `/admin/downloads` servindo Bridge (21.7 MB) + Impressora (22.9 MB) — 05/04
+- [x] Fix endpoint `/api/public/downloads`: nome `DerekhFood-Printer.exe` → `DerekhFood-Impressora.exe` (bate com build.bat) — 05/04
 - [ ] Super Admin dashboard impressoras conectadas
 
 ---

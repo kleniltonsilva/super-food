@@ -1370,15 +1370,73 @@ bridge_agent/
 
 **Crítico:** Os `build.bat` usam `cd /d "%~dp0.."` para rodar a partir de `DerekhFood-Windows/` (e não da subpasta do agent). Isto garante que o PyInstaller inclua `DerekhFood-Windows/` no `sys.path` via `--paths .`, fazendo `bridge_agent` e `printer_agent` funcionarem como packages no .exe final.
 
-```bash
-cd DerekhFood-Windows\bridge_agent
-build.bat
-# Gera: DerekhFood-Windows\dist\DerekhFood-Bridge.exe
+**Build só roda em Windows** — PyInstaller não faz cross-compile para binários que usam bibliotecas nativas (`pywin32`, `win32print`). Requer:
+- Windows 10/11 64 bits
+- Python 3.12+ (testado em 3.14.3) com "Add to PATH"
+- Pasta `DerekhFood-Windows/` copiada para o PC
 
-cd DerekhFood-Windows\printer_agent
-build.bat
-# Gera: DerekhFood-Windows\dist\DerekhFood-Impressora.exe
+```batch
+REM No CMD (Windows), dentro da pasta DerekhFood-Windows:
+bridge_agent\build.bat
+REM Gera: DerekhFood-Windows\dist\DerekhFood-Bridge.exe       (~22 MB)
+
+printer_agent\build.bat
+REM Gera: DerekhFood-Windows\dist\DerekhFood-Impressora.exe   (~23 MB)
 ```
+
+Guia completo passo-a-passo em `DerekhFood-Windows/BUILD-WINDOWS.txt`.
+
+### Deploy dos .exe em Produção (Fly.io)
+
+Os `.exe` são servidos via endpoint público `GET /api/public/downloads` e exibidos no painel admin em `/admin/downloads`. O endpoint **prioriza o volume persistente** `/app/backend/static/uploads/downloads/` (Fly.io) em relação à pasta da imagem Docker `backend/static/downloads/`.
+
+**Fluxo de atualização dos `.exe`:**
+
+```bash
+# 1. Levar DerekhFood-Windows/ para um Windows, rodar os 2 build.bat
+#    Resultado: DerekhFood-Windows\dist\DerekhFood-Bridge.exe + DerekhFood-Impressora.exe
+
+# 2. Trazer os .exe de volta para o Linux (pendrive, rede, etc)
+cp DerekhFood-Bridge.exe     backend/static/downloads/
+cp DerekhFood-Impressora.exe backend/static/downloads/
+
+# 3. (OPCIONAL) Commit no git — só se quiser os .exe versionados na imagem Docker
+#    Observação: em produção o volume persistente tem prioridade, então os .exe
+#    da imagem Docker SÓ servem como fallback de dev/primeira execução.
+git add backend/static/downloads/*.exe
+git commit -m "build: rebuild .exe agents bridge + impressora"
+git push
+
+# 4. Upload dos .exe para o VOLUME PERSISTENTE do Fly.io (obrigatório em prod)
+#    ATENÇÃO: SFTP não sobrescreve — deletar os antigos primeiro
+~/.fly/bin/fly ssh console --app superfood-api -C "sh -c 'rm /app/backend/static/uploads/downloads/DerekhFood-Bridge.exe /app/backend/static/uploads/downloads/DerekhFood-Impressora.exe'"
+
+~/.fly/bin/fly sftp shell --app superfood-api <<'EOF'
+put backend/static/downloads/DerekhFood-Bridge.exe /app/backend/static/uploads/downloads/DerekhFood-Bridge.exe
+put backend/static/downloads/DerekhFood-Impressora.exe /app/backend/static/uploads/downloads/DerekhFood-Impressora.exe
+EOF
+
+# 5. Verificar em produção
+curl -s https://superfood-api.fly.dev/api/public/downloads | python -m json.tool
+# Os 3 items (motoboy_app, printer_agent, bridge_agent) devem ter "disponivel": true
+```
+
+**Nomes dos arquivos (obrigatório bater):**
+- `DerekhFood-Bridge.exe` — gerado pelo `bridge_agent/build.bat` + lido pelo endpoint em `main.py:452`
+- `DerekhFood-Impressora.exe` — gerado pelo `printer_agent/build.bat` + lido pelo endpoint em `main.py:443`
+- Se o `build.bat` mudar o nome de saída, atualizar `backend/app/main.py` na função `downloads_disponiveis()`.
+
+**Locais onde os .exe ficam:**
+| Ambiente | Caminho | Prioridade |
+|----------|---------|------------|
+| Dev (local) | `backend/static/downloads/` | fallback (se volume não existir) |
+| Prod (Fly.io) | `/app/backend/static/uploads/downloads/` | **prioridade 1** (volume persistente 1GB) |
+| Imagem Docker | `/app/backend/static/downloads/` | fallback dentro da imagem |
+
+**Por que usar o volume persistente em prod?**
+- Sobrescrever os `.exe` não exige novo `fly deploy` (upload via SFTP é instantâneo)
+- Imagem Docker fica leve (sem ~45 MB de binários Windows)
+- Permite atualizar só o Bridge ou só o Impressora sem rebuild da imagem
 
 ### Bugs Críticos Resolvidos (05/04/2026)
 
