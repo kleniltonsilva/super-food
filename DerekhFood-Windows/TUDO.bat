@@ -16,10 +16,11 @@ echo.
 
 cd /d "%~dp0"
 
-:: ── Verificar Python ──────────────────────────────────────────
-python --version >nul 2>&1
+:: ── Python + todas as dependencias (auto-instala se ausente) ───────────────
+:: (executado uma vez aqui - os sub-bat aproveitam o cache .deps_ok)
+call "%~dp0_CHECK_DEPS.bat"
 if %ERRORLEVEL% NEQ 0 (
-    echo  [ERRO] Python nao encontrado! Rode INSTALAR.bat primeiro.
+    echo  [ERRO] Nao foi possivel configurar o ambiente.
     pause
     exit /b 1
 )

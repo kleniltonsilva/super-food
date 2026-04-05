@@ -11,18 +11,13 @@ echo.
 
 cd /d "%~dp0"
 
-:: ── Verificar Python ──────────────────────────────────────────
-python --version >nul 2>&1
+:: ── Python + todas as dependencias (auto-instala se ausente) ───────────────
+call "%~dp0_CHECK_DEPS.bat"
 if %ERRORLEVEL% NEQ 0 (
-    echo  [ERRO] Python nao encontrado! Rode INSTALAR.bat primeiro.
+    echo  [ERRO] Nao foi possivel configurar o ambiente.
     pause
     exit /b 1
 )
-
-:: ── Instalar dependencias automaticamente ─────────────────────
-echo  [INFO] Verificando dependencias...
-pip install requests pywin32 pystray Pillow --quiet 2>nul
-echo  [OK] Dependencias verificadas.
 echo.
 
 python -m bridge_agent %*

@@ -4,54 +4,26 @@ title Derekh Food - Instalador Windows
 color 0B
 
 echo.
-echo  ╔══════════════════════════════════════════════════╗
-echo  ║      DEREKH FOOD - Instalador Windows           ║
-echo  ║                                                  ║
-echo  ║  Este script instala tudo que voce precisa:      ║
-echo  ║    1. Python 3.12 (se nao tiver)                 ║
-echo  ║    2. Dependencias (pywin32, etc)                 ║
-echo  ║    3. Impressora Termica Virtual                  ║
-echo  ╚══════════════════════════════════════════════════╝
+echo  +--------------------------------------------------+
+echo  ^|      DEREKH FOOD - Instalador Windows           ^|
+echo  ^|                                                  ^|
+echo  ^|  Este script instala tudo que voce precisa:     ^|
+echo  ^|    1. Python 3.12 (baixa e instala sozinho)     ^|
+echo  ^|    2. Dependencias (pywin32, etc)                ^|
+echo  ^|    3. Impressora Termica Virtual                 ^|
+echo  +--------------------------------------------------+
 echo.
 
-:: ── Verificar Python ────────────────────────────────────────────────────────
-
-echo  [1/4] Verificando Python...
-python --version >nul 2>&1
+:: ── 1+2. Python + TODAS as dependencias (auto-instala se ausente) ──────────
+echo  [1/4] Verificando Python + dependencias...
+call "%~dp0_CHECK_DEPS.bat"
 if %ERRORLEVEL% NEQ 0 (
     echo.
-    echo  PYTHON NAO ENCONTRADO!
-    echo.
-    echo  Voce precisa instalar o Python primeiro:
-    echo    1. Acesse: https://www.python.org/downloads/
-    echo    2. Baixe Python 3.12 ou superior
-    echo    3. IMPORTANTE: Marque "Add Python to PATH" na instalacao!
-    echo    4. Depois rode este script novamente
-    echo.
+    echo  [ERRO] Nao foi possivel configurar o ambiente.
     pause
     exit /b 1
 )
-
-for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYVER=%%i
-echo         Python %PYVER% encontrado - OK
-
-:: ── Instalar dependencias ────────────────────────────────────────────────────
-
-echo.
-echo  [2/4] Instalando dependencias Python...
-echo         (pywin32, pystray, Pillow, requests, websockets)
-echo.
-
-pip install pywin32>=306 pystray>=0.12 Pillow>=10.0 requests>=2.31 websockets>=12.0 --quiet 2>nul
-if %ERRORLEVEL% NEQ 0 (
-    echo  [AVISO] Algumas dependencias podem ter falhado. Tentando individualmente...
-    pip install pywin32 --quiet 2>nul
-    pip install pystray --quiet 2>nul
-    pip install Pillow --quiet 2>nul
-    pip install requests --quiet 2>nul
-    pip install websockets --quiet 2>nul
-)
-echo         Dependencias instaladas - OK
+echo  [2/4] Dependencias OK.
 
 :: ── Instalar impressora virtual ──────────────────────────────────────────────
 

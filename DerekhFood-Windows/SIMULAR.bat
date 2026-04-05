@@ -22,16 +22,13 @@ set /p OPCAO="  Escolha (1-7): "
 
 cd /d "%~dp0"
 
-:: ── Verificar Python ──────────────────────────────────────────
-python --version >nul 2>&1
+:: ── Python + todas as dependencias (auto-instala se ausente) ───────────────
+call "%~dp0_CHECK_DEPS.bat"
 if %ERRORLEVEL% NEQ 0 (
-    echo  [ERRO] Python nao encontrado! Rode INSTALAR.bat primeiro.
+    echo  [ERRO] Nao foi possivel configurar o ambiente.
     pause
     exit /b 1
 )
-
-:: ── Instalar dependencias automaticamente ─────────────────────
-pip install pywin32 --quiet 2>nul
 
 if "%OPCAO%"=="1" (
     python -m virtual_printer simulate
