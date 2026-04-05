@@ -440,7 +440,7 @@ def downloads_disponiveis():
             "nome": "Impressora de Pedidos",
             "descricao": "Agente de impressão automática de pedidos",
             "versao": "1.0.0",
-            "arquivo": "DerekhFood-Printer.exe",
+            "arquivo": "DerekhFood-Impressora.exe",
             "tamanho": "",
             "plataforma": "windows",
         },
