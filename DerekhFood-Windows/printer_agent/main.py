@@ -52,13 +52,15 @@ def setup_logging():
 
     log_file = log_dir / f"{datetime.now().strftime('%Y-%m-%d')}.log"
 
+    # Handlers: sempre arquivo; stdout somente se disponivel (build --windowed nao tem stdout)
+    handlers = [logging.FileHandler(str(log_file), encoding="utf-8")]
+    if sys.stdout is not None:
+        handlers.append(logging.StreamHandler(sys.stdout))
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-        handlers=[
-            logging.FileHandler(str(log_file), encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
+        handlers=handlers,
     )
 
 

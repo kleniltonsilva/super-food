@@ -16,9 +16,9 @@ if exist dist\DerekhFood-Bridge.exe del /q dist\DerekhFood-Bridge.exe
 
 :: Build com PyInstaller
 :: --paths . : adiciona DerekhFood-Windows\ ao sys.path (bridge_agent vira package)
-:: --console : mantem janela de terminal visivel (facilita debug)
+:: --windowed : SEM janela de console (roda invisivel, apenas tray icon)
 :: --onefile : gera um unico .exe autocontido
-pyinstaller --noconfirm --onefile --console ^
+pyinstaller --noconfirm --onefile --windowed ^
     --name "DerekhFood-Bridge" ^
     --paths . ^
     --hidden-import bridge_agent ^

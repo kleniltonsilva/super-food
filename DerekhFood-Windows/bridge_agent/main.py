@@ -23,13 +23,15 @@ from .bridge_client import BridgeClient
 log_dir = get_log_dir()
 log_file = os.path.join(log_dir, f"bridge_{datetime.now().strftime('%Y%m%d')}.log")
 
+# Handlers: sempre arquivo; stdout somente se disponivel (build --windowed nao tem stdout)
+_log_handlers = [logging.FileHandler(log_file, encoding="utf-8")]
+if sys.stdout is not None:
+    _log_handlers.append(logging.StreamHandler(sys.stdout))
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    handlers=[
-        logging.FileHandler(log_file, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=_log_handlers,
 )
 
 logger = logging.getLogger("bridge_agent")

@@ -16,9 +16,9 @@ if exist dist\DerekhFood-Impressora.exe del /q dist\DerekhFood-Impressora.exe
 
 :: Build com PyInstaller
 :: --paths . : adiciona DerekhFood-Windows\ ao sys.path (printer_agent vira package)
-:: --console : mantem janela de terminal visivel (facilita debug)
+:: --windowed : SEM janela de console (roda invisivel, apenas tray icon)
 :: --onefile : gera um unico .exe autocontido
-pyinstaller --noconfirm --onefile --console ^
+pyinstaller --noconfirm --onefile --windowed ^
     --name "DerekhFood-Impressora" ^
     --paths . ^
     --hidden-import printer_agent ^

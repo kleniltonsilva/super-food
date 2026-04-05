@@ -1,0 +1,136 @@
+================================================================
+  DEREKH FOOD — COMO GERAR OS EXECUTAVEIS (.EXE) NO WINDOWS
+================================================================
+
+OBJETIVO
+--------
+Gerar 2 arquivos .exe que os donos de restaurante vao baixar:
+  1. DerekhFood-Bridge.exe       (intercepta cupons de iFood/Rappi/etc)
+  2. DerekhFood-Impressora.exe   (recebe pedidos e manda pra impressora)
+
+Depois voce devolve esses .exe para o Klenilton, que faz o deploy
+e eles ficam disponiveis em: painel admin > Downloads
+
+================================================================
+  PRE-REQUISITOS (so na primeira vez)
+================================================================
+
+1. Windows 10 ou 11 (64 bits)
+
+2. Python 3.12 instalado
+   - Baixar em: https://www.python.org/downloads/
+   - IMPORTANTE: marcar "Add Python to PATH" durante a instalacao
+   - Verificar: abrir CMD e digitar "python --version"
+     Deve aparecer: Python 3.12.x
+
+3. Esta pasta DerekhFood-Windows copiada para o PC Windows
+   (pode ser via pendrive, rede, Google Drive, etc)
+
+================================================================
+  COMO GERAR OS .EXE (passo a passo)
+================================================================
+
+PASSO 1 — Abrir CMD como Administrador
+  - Menu Iniciar > digitar "cmd"
+  - Clicar com botao direito em "Prompt de Comando"
+  - Selecionar "Executar como administrador"
+
+PASSO 2 — Ir ate a pasta DerekhFood-Windows
+  No CMD, digitar (trocar pelo caminho onde voce copiou):
+
+    cd /d E:\DerekhFood-Windows
+
+  (ou C:\DerekhFood-Windows, ou D:\..., onde estiver)
+
+PASSO 3 — Compilar o Bridge Agent
+  Digitar:
+
+    bridge_agent\build.bat
+
+  Esperar terminar (cerca de 2-3 minutos). No final deve aparecer:
+
+    ============================================
+     Build completo!
+     Executavel: dist\DerekhFood-Bridge.exe
+    ============================================
+
+  Apertar qualquer tecla para fechar.
+
+PASSO 4 — Compilar o Agente de Impressora
+  Ainda no mesmo CMD, digitar:
+
+    printer_agent\build.bat
+
+  Esperar terminar (cerca de 2-3 minutos). No final deve aparecer:
+
+    ============================================
+     Build completo!
+     Executavel: dist\DerekhFood-Impressora.exe
+    ============================================
+
+PASSO 5 — Verificar que os 2 .exe foram gerados
+  Digitar:
+
+    dir dist
+
+  Deve listar:
+    DerekhFood-Bridge.exe       (~25 MB)
+    DerekhFood-Impressora.exe   (~20 MB)
+
+PASSO 6 — Copiar os .exe para o pendrive
+  Os 2 arquivos estao em:
+
+    DerekhFood-Windows\dist\DerekhFood-Bridge.exe
+    DerekhFood-Windows\dist\DerekhFood-Impressora.exe
+
+  Copiar os 2 para o pendrive (ou mandar por onde for).
+
+================================================================
+  TESTE RAPIDO (opcional — recomendado)
+================================================================
+
+Antes de mandar, testar se os .exe funcionam no proprio Windows:
+
+  1. Dois cliques em dist\DerekhFood-Bridge.exe
+     - Deve abrir uma janela de login
+     - Fechar sem logar (so para ver se abre)
+
+  2. Dois cliques em dist\DerekhFood-Impressora.exe
+     - Deve abrir uma janela de configuracao
+     - Fechar sem configurar
+
+Se as 2 janelas abriram = BUILD OK, pode mandar.
+Se deu erro "ModuleNotFoundError" ou "DLL missing" = avisar o Klenilton.
+
+================================================================
+  SE ALGO DER ERRADO
+================================================================
+
+ERRO: "python nao e reconhecido como comando"
+  -> Python nao esta no PATH. Reinstalar marcando "Add to PATH".
+
+ERRO: "pip nao e reconhecido"
+  -> Mesmo problema. Reinstalar Python.
+
+ERRO: "ModuleNotFoundError" durante o build
+  -> Alguma dependencia falhou na instalacao.
+  -> Tentar manualmente antes de rodar o .bat:
+     pip install pyinstaller pywin32 pystray Pillow requests websockets
+
+ERRO: "Access denied" ou "Permission denied"
+  -> CMD nao esta como administrador. Fechar e reabrir como admin.
+
+ERRO: Build completa mas o .exe da erro ao abrir
+  -> Avisar o Klenilton com o print da tela do erro.
+
+================================================================
+  RESUMO EM 3 LINHAS
+================================================================
+
+  1.  cd /d E:\DerekhFood-Windows
+  2.  bridge_agent\build.bat
+  3.  printer_agent\build.bat
+
+  Os .exe ficam em:  dist\
+
+================================================================
