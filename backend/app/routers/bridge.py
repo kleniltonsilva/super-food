@@ -20,6 +20,7 @@ import httpx
 from .. import models, database, auth
 from ..feature_guard import verificar_feature
 from ..utils.origem_helper import normalizar_origem
+from .auth_cliente import hash_senha
 
 logger = logging.getLogger("superfood.bridge")
 
@@ -580,11 +581,17 @@ async def criar_pedido_from_bridge(
     if not cliente_id and cliente_telefone:
         tel_limpo = re.sub(r"\D", "", cliente_telefone)
         if tel_limpo:
+            # Cliente criado pelo Bridge não faz login — gera senha aleatória só para
+            # satisfazer NOT NULL do schema (o cliente pode resetar via "esqueci senha" depois)
+            import secrets
+            senha_placeholder = secrets.token_urlsafe(16)
             novo_cliente = models.Cliente(
                 restaurante_id=rest.id,
                 nome=cliente_nome,
                 telefone=tel_limpo,
+                senha_hash=hash_senha(senha_placeholder),
                 ativo=True,
+                data_cadastro=datetime.utcnow(),
             )
             db.add(novo_cliente)
             db.flush()
@@ -593,8 +600,9 @@ async def criar_pedido_from_bridge(
             if endereco:
                 novo_endereco = models.EnderecoCliente(
                     cliente_id=novo_cliente.id,
-                    endereco=endereco,
-                    principal=True,
+                    endereco_completo=endereco,
+                    padrao=True,
+                    ativo=True,
                 )
                 db.add(novo_endereco)
 
