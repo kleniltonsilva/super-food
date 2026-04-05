@@ -1198,6 +1198,34 @@ Testes realizados com restaurante real "maia pizza" (CNPJ 03993338000180) na API
 
 ---
 
+## 13.6 Fluxos de Impressão Automática (todos os 6 caminhos)
+
+Todos os pontos onde pedidos são criados disparam `printer_manager.broadcast({"tipo": "imprimir_pedido", ...})` via WebSocket para o Printer Agent. A impressão só ocorre se **duas flags** estiverem ativas:
+
+- `ConfigRestaurante.impressao_automatica = True` (configuração global do restaurante)
+- Para o bot WhatsApp: também exige `BotConfig.impressao_automatica_bot = True`
+
+| # | Fluxo | Arquivo | Condição de disparo |
+|---|-------|---------|---------------------|
+| 1 | Site cliente (checkout) | `routers/carrinho.py:644-654` | Após `db.commit()` do pedido |
+| 2 | Admin manual (pedido balcão) | `routers/painel.py:439, 3919, 4346` (helper `_broadcast_imprimir_pedido`) | Após criar pedido manual |
+| 3 | Bridge Agent (interceptado) | `routers/bridge.py:672-682` | Após criar `bridge_intercepted_order → pedido` |
+| 4 | Integrações iFood / Open Delivery | `integrations/manager.py:328-332` | Ao receber pedido do marketplace |
+| 5 | **Bot WhatsApp** | `bot/function_calls.py:948-966` + fallback Pix em `997-1015` | Após `db.commit()` em `_criar_pedido`, se status ∈ (em_preparo, confirmado). **NÃO** imprime pedido Pix Online ainda `pendente` |
+| 6 | **Webhook Pix confirmado** | `pix/pix_service.py:439-460` | Quando pagamento Pix é confirmado e status vira em_preparo/confirmado |
+
+**Regra de ouro — Pix Online:**
+- Pedido Pix Online é criado com status `pendente` → **NÃO imprime** e **NÃO aparece no KDS** (cozinheiro não vê)
+- Cliente paga → webhook `OPENPIX:CHARGE_COMPLETED` → `processar_pagamento_confirmado()`:
+  1. Status vira `em_preparo` (se KDS ativo) ou `confirmado` (se não)
+  2. Cria `PedidoCozinha` (cozinheiro vê aparecer em tempo real via WebSocket)
+  3. Dispara `imprimir_pedido` → Printer Agent imprime a comanda
+  4. Notifica cliente via WhatsApp (se veio do bot): "Pagamento confirmado! Pedido foi pra cozinha"
+
+Isso protege o restaurante contra **pedidos fantasma** — nenhum recurso (papel, cozinha, motoboy) é gasto antes do pagamento ser confirmado.
+
+---
+
 ## 14. Bridge Printer Agent — Sprint 21
 
 ### Arquitetura
@@ -1221,6 +1249,45 @@ Testes realizados com restaurante real "maia pizza" (CNPJ 03993338000180) na API
 **Ciclo completo Bridge→Pedido→Impressão:** Quando o Bridge cria um pedido (`POST /painel/bridge/orders`), o backend automaticamente:
 1. Broadcast `novo_pedido` via WebSocket → painel admin atualiza em tempo real
 2. Broadcast `imprimir_pedido` via printer_manager → Printer Agent imprime automaticamente (se `impressao_automatica` ativo)
+
+### Proteção Anti-Loop (Bridge ↔ Printer Agent) — DUPLA CAMADA
+
+**Problema:** Se o Printer Agent imprimir na mesma impressora monitorada pelo Bridge (cenário de teste com "Termica Virtual 80mm", ou cenário real em que o restaurante usa a mesma impressora para reimpressão manual e interceptação), o Bridge veria o próprio recibo e poderia criar um pedido duplicado (loop infinito).
+
+**Solução: 2 camadas de proteção independentes.**
+
+#### Camada 1 — Filtro por nome do job no spooler (PRIMÁRIA)
+
+- **Printer Agent** sempre prefixa o nome do job com `Derekh_` antes de enviar ao spooler — `printer_agent/main.py:297`:
+  ```python
+  doc_name = f"Derekh_{doc_name_raw}" if not doc_name_raw.startswith("Derekh_") else doc_name_raw
+  ```
+- **Bridge Agent** ignora silenciosamente qualquer job cujo `pDocument` começa com `Derekh_` — `bridge_agent/spooler_monitor.py:131`:
+  ```python
+  if self.ignorar_prefixo and doc_name.startswith(self.ignorar_prefixo):
+      logger.debug(f"Ignorando job do Derekh: {doc_name}")
+      continue
+  ```
+
+**Esta camada é 100% confiável e independente do conteúdo do recibo** — funciona mesmo se o restaurante tiver um nome qualquer (ex: "Pizza Tuga") sem nenhuma referência a Derekh Food no template.
+
+#### Camada 2 — Filtro por conteúdo do texto (FALLBACK DE SEGURANÇA)
+
+- Caso o job passe pela Camada 1 (ex: alguém renomear o job externamente), o **Bridge Client** analisa o texto extraído — `bridge_agent/bridge_client.py:119-139`:
+  ```python
+  marcadores = ["derekh food", "derekh_", "superfood-api",
+                "pedido online - comanda", "www.derekhfood"]
+  if hits >= 1: return True  # Ignora
+  ```
+
+**Comportamento observado no teste de Reimpressão (pedido iFood):**
+- Usuário clica "Reimprimir" no painel admin → backend envia `imprimir_pedido` via WebSocket
+- Printer Agent recebe → chama `imprimir_raw(printer, bytes, doc_name="Derekh_Comanda")` com nome prefixado
+- Bridge vê o job no spooler, mas `pDocument` = `Derekh_Comanda` → **Camada 1 ignora instantaneamente**
+- No recibo impresso (virtual ou real) aparece o nome do restaurante (ex: "PIZZA TUGA") + badge `*** IFOOD ***` — isso é só informação visual para o cliente/cozinha, **não afeta a detecção**
+- Log Bridge: `Ignorando job do Derekh: Derekh_Comanda`
+
+**Conclusão:** A reimpressão de qualquer pedido (iFood, Rappi, manual, bot, etc.) NÃO gera loop, mesmo em restaurantes com nome sem referência ao Derekh Food, porque a proteção primária é pelo nome do job de spooler, não pelo conteúdo do recibo.
 
 ### Fluxo de Interceptação
 

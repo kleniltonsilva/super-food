@@ -943,6 +943,28 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
 
     logger.info(f"Pedido #{comanda} criado via WhatsApp Bot — restaurante={restaurante_id}, valor=R${valor_total_final:.2f}")
 
+    # Disparar impressão automática (Bridge/Printer Agent via WebSocket)
+    # Respeita 2 flags: ConfigRestaurante.impressao_automatica E BotConfig.impressao_automatica_bot
+    # NÃO imprime quando status=pendente (Pix Online ainda não pago) nem agendado
+    if pedido.status in ("em_preparo", "confirmado"):
+        try:
+            config_rest = db.query(models.ConfigRestaurante).filter(
+                models.ConfigRestaurante.restaurante_id == restaurante_id
+            ).first()
+            if (
+                config_rest
+                and config_rest.impressao_automatica
+                and bot_config.impressao_automatica_bot
+            ):
+                from ..main import printer_manager
+                await printer_manager.broadcast({
+                    "tipo": "imprimir_pedido",
+                    "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+                }, restaurante_id)
+                logger.info(f"[Bot] Broadcast imprimir_pedido disparado — pedido #{comanda}")
+        except Exception as e:
+            logger.warning(f"[Bot] Falha ao disparar broadcast de impressão para pedido #{comanda}: {e}")
+
     # Montar link de rastreamento
     codigo_acesso = restaurante.codigo_acesso if restaurante else ""
     link_rastreamento = f"{BASE_URL}/cliente/{codigo_acesso}/order/{pedido.id}" if codigo_acesso else None
@@ -1004,6 +1026,26 @@ async def _criar_pedido(db: Session, restaurante_id: int, bot_config: models.Bot
                 f"Não consegui gerar o link de pagamento, mas seu pedido foi criado! "
                 f"Você pode pagar Pix na entrega."
             )
+
+            # Fallback Pix: pedido virou em_preparo → disparar impressão
+            if pedido.status == "em_preparo":
+                try:
+                    config_rest_fb = db.query(models.ConfigRestaurante).filter(
+                        models.ConfigRestaurante.restaurante_id == restaurante_id
+                    ).first()
+                    if (
+                        config_rest_fb
+                        and config_rest_fb.impressao_automatica
+                        and bot_config.impressao_automatica_bot
+                    ):
+                        from ..main import printer_manager
+                        await printer_manager.broadcast({
+                            "tipo": "imprimir_pedido",
+                            "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda}
+                        }, restaurante_id)
+                        logger.info(f"[Bot] Broadcast imprimir_pedido (fallback Pix) — pedido #{comanda}")
+                except Exception as e:
+                    logger.warning(f"[Bot] Falha ao disparar broadcast de impressão (fallback Pix) para pedido #{comanda}: {e}")
 
     return json.dumps(resultado)
 
@@ -1679,40 +1721,50 @@ def _escalar_humano(db: Session, restaurante_id: int, args: dict, conversa: Opti
         except Exception:
             pass  # WebSocket é best-effort
 
-        # Notificar dono via WhatsApp (Evolution API) — best-effort
+        # Notificar dono via WhatsApp (Meta Cloud API) — best-effort
         try:
             import asyncio
             import os
-            from . import evolution_client
+            from . import whatsapp_client as _wa
 
             notify_number = os.environ.get("HANDOFF_NOTIFY_NUMBER", "")
             if notify_number and bot_config:
-                # Usar instância centralizada (env vars) ou a do restaurante
-                api_url = os.environ.get("HANDOFF_EVOLUTION_API_URL") or bot_config.evolution_api_url
-                api_key = os.environ.get("HANDOFF_EVOLUTION_API_KEY") or bot_config.evolution_api_key
-                instance = os.environ.get("HANDOFF_EVOLUTION_INSTANCE") or bot_config.evolution_instance
+                nome_rest = restaurante.nome if restaurante else "Restaurante"
+                nome_cliente = conversa.nome_cliente or "Cliente"
+                telefone_cliente = conversa.telefone or ""
+                motivo = conversa.handoff_motivo or "Solicitado pelo cliente"
 
-                if api_url and api_key and instance:
-                    nome_rest = restaurante.nome if restaurante else "Restaurante"
-                    nome_cliente = conversa.nome_cliente or "Cliente"
-                    telefone_cliente = conversa.telefone or ""
-                    motivo = conversa.handoff_motivo or "Solicitado pelo cliente"
+                # Buscar últimas mensagens para dar contexto ao dono
+                ultimas_msgs = db.query(models.BotMensagem).filter(
+                    models.BotMensagem.conversa_id == conversa.id,
+                ).order_by(models.BotMensagem.criado_em.desc()).limit(6).all()
 
-                    texto = (
-                        f"*HANDOFF - Atendimento Humano*\n\n"
-                        f"Restaurante: *{nome_rest}*\n"
-                        f"Cliente: *{nome_cliente}*\n"
-                        f"Telefone: {telefone_cliente}\n"
-                        f"Motivo: {motivo}\n\n"
-                        f"https://wa.me/{telefone_cliente.lstrip('+')}"
-                    )
+                contexto_conversa = ""
+                if ultimas_msgs:
+                    linhas = []
+                    for m in reversed(ultimas_msgs):
+                        quem = "Cliente" if m.direcao == "recebida" else "Ana"
+                        txt = (m.conteudo or "")[:150]
+                        linhas.append(f"  {quem}: {txt}")
+                    contexto_conversa = "\n".join(linhas)
 
-                    asyncio.get_event_loop().create_task(
-                        evolution_client.enviar_texto(
-                            notify_number, texto, instance, api_url, api_key
-                        )
-                    )
-                    logger.info(f"Handoff WA notification enviada para {notify_number[:6]}***")
+                # Link direto para WhatsApp do cliente
+                tel_limpo = "".join(c for c in telefone_cliente if c.isdigit())
+                wa_link = f"https://wa.me/{tel_limpo}"
+
+                texto = (
+                    f"*HANDOFF — Atendimento Humano*\n\n"
+                    f"*{nome_rest}*\n"
+                    f"Cliente: *{nome_cliente}*\n"
+                    f"Motivo: _{motivo}_\n\n"
+                    f"*Ultimas mensagens:*\n{contexto_conversa}\n\n"
+                    f"Falar com o cliente:\n{wa_link}"
+                )
+
+                asyncio.get_event_loop().create_task(
+                    _wa.enviar_texto(notify_number, texto, bot_config, delay_ms=0)
+                )
+                logger.info(f"Handoff WA notification (Meta) enviada para {notify_number[:6]}***")
         except Exception as e:
             logger.debug(f"Handoff WA notification falhou: {e}")
 

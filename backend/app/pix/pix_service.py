@@ -435,6 +435,30 @@ async def processar_pagamento_confirmado(
         except Exception as e:
             logger.warning(f"Erro ao enviar WebSocket pix_confirmado: {e}")
 
+    # Disparar impressão automática agora que o pagamento foi confirmado
+    # (pedido saiu de "pendente" → "em_preparo"/"confirmado")
+    if pedido and pedido.status in ("em_preparo", "confirmado"):
+        try:
+            config_rest = db.query(models.ConfigRestaurante).filter(
+                models.ConfigRestaurante.restaurante_id == pedido.restaurante_id
+            ).first()
+            if config_rest and config_rest.impressao_automatica:
+                from ..main import printer_manager
+                await printer_manager.broadcast(
+                    {
+                        "tipo": "imprimir_pedido",
+                        "dados": {"pedido_id": pedido.id, "comanda": pedido.comanda},
+                    },
+                    pedido.restaurante_id,
+                )
+                logger.info(
+                    f"[Pix] Broadcast imprimir_pedido disparado apos pagamento — pedido #{pedido.comanda}"
+                )
+        except Exception as e:
+            logger.warning(
+                f"[Pix] Falha ao disparar broadcast de impressao para pedido #{pedido.comanda}: {e}"
+            )
+
     # Se pedido veio do WhatsApp bot: notificar cliente via WhatsApp (Meta ou Evolution)
     if pedido and pedido.origem == "whatsapp_bot" and pedido.cliente_telefone:
         try:
