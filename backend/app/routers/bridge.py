@@ -277,6 +277,18 @@ async def parsear_com_ia(texto: str) -> Optional[dict]:
         logger.warning("GROQ_API_KEY não configurada — parsing IA indisponível")
         return None
 
+    # Guards: texto vazio ou muito curto não vale chamar IA
+    texto_limpo = (texto or "").strip()
+    if len(texto_limpo) < 20:
+        logger.warning(f"Texto muito curto para parse IA ({len(texto_limpo)} chars)")
+        return None
+
+    # Truncar texto muito longo (Llama 3.3 70B suporta 32k tokens, mas mantemos margem)
+    # ~4 chars por token -> 8000 chars = ~2000 tokens seguros
+    if len(texto_limpo) > 8000:
+        texto_limpo = texto_limpo[:8000]
+        logger.info(f"Texto truncado para 8000 chars (original: {len(texto)})")
+
     prompt = f"""Você é um parser especialista de cupons de delivery brasileiro.
 Extraia os dados do texto abaixo em JSON.
 
@@ -295,7 +307,7 @@ REGRAS:
 - Responda APENAS com JSON válido, sem markdown, sem explicações
 
 TEXTO DO CUPOM:
-{texto}"""
+{texto_limpo}"""
 
     for model in GROQ_MODELS:
         try:
@@ -330,10 +342,17 @@ TEXTO DO CUPOM:
             if e.response.status_code == 429:
                 logger.warning(f"Groq rate limit no modelo {model}, tentando próximo...")
                 continue
-            logger.error(f"Erro Groq HTTP ({model}): {e.response.status_code}")
+            # Log detalhado do body — 400 geralmente traz a razão no JSON da resposta
+            try:
+                error_body = e.response.json()
+                error_msg = error_body.get("error", {}).get("message", str(error_body))
+            except Exception:
+                error_msg = e.response.text[:500] if e.response.text else "sem corpo"
+            logger.error(f"Erro Groq HTTP ({model}): {e.response.status_code} — {error_msg}")
+            # 400 em modelo específico pode indicar depreciação — tenta próximo
             continue
         except Exception as e:
-            logger.error(f"Erro parsing IA Groq ({model}): {e}")
+            logger.error(f"Erro parsing IA Groq ({model}): {type(e).__name__}: {e}")
             continue
 
     return None

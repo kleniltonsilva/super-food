@@ -467,6 +467,10 @@ async def finalizar_carrinho(
     lat_entrega = finalizacao.latitude
     lng_entrega = finalizacao.longitude
 
+    # Inicializar aqui para garantir disponibilidade em todos os caminhos (demo + real)
+    taxa_entrega = 0.0
+    distancia_restaurante_km = None
+
     # Demo: auto-gerar coordenadas e taxa fixa
     if _is_demo and finalizacao.tipo_entrega == "entrega":
         if not (lat_entrega and lng_entrega) and _rest_for_demo.latitude:
@@ -485,8 +489,6 @@ async def finalizar_carrinho(
                 pass  # Segue sem coordenadas se geocoding falhar
 
         # Calcula taxa de entrega real se tem coordenadas
-        taxa_entrega = 0.0
-        distancia_restaurante_km = None
         if lat_entrega and lng_entrega and finalizacao.tipo_entrega == "entrega":
             restaurante = db.query(models.Restaurante).filter(
                 models.Restaurante.id == carrinho.restaurante_id
