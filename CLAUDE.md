@@ -655,9 +655,11 @@ super-food/
 
 **Pendente:**
 - [x] Deploy migration 033 (24/03)
-- [ ] `build.bat` → PyInstaller → `DerekhFood-Bridge.exe`
-- [ ] Super Admin dashboard impressoras
-- [ ] Groq Learning cycle (pattern auto-creation)
+- [x] `build.bat` corrigido (`--paths .` fix ImportError no .exe) — 05/04
+- [x] Groq Learning cycle — auto-aprendizado inline no `/parse` (conf 0.5 máquina, 0.7 humano) — 05/04
+- [x] Ciclo zero-touch: `auto_criar_pedido=True` default, poll 0.2s, leitura `.SPL` direto, pausa/retoma job — 05/04
+- [ ] Rebuild .exe no Windows → copiar para `backend/static/downloads/` → página `/admin/downloads` serve download real
+- [ ] Super Admin dashboard impressoras conectadas
 
 ---
 
