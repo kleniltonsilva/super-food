@@ -26,6 +26,7 @@ interface Entrega {
   valor_total?: number;
   forma_pagamento?: string;
   pix_pago?: boolean;
+  pago_online?: boolean;
   troco_para?: number;
   observacoes?: string;
   comanda?: string;
@@ -158,6 +159,23 @@ export default function MotoboyEntrega() {
     ? Math.max(0, (parseFloat(valorRecebido) || 0) - valorTotal)
     : 0;
 
+  const isPagoOnline = !!(entrega.pago_online || entrega.pix_pago);
+
+  // Etapas do progresso (menos etapas quando pago online)
+  const etapas = isPagoOnline
+    ? [
+        { key: "em_rota", label: "A caminho" },
+        { key: "confirmado", label: "Confirmar" },
+      ]
+    : [
+        { key: "em_rota", label: "A caminho" },
+        { key: "no_destino", label: "Chegou" },
+        { key: "pagamento", label: "Pagamento" },
+        { key: "confirmado", label: "Confirmar" },
+      ];
+
+  const etapaIdx = etapas.findIndex((e) => e.key === estado);
+
   return (
     <MotoboyLayout>
       <div className="p-4">
@@ -169,6 +187,18 @@ export default function MotoboyEntrega() {
           <h1 className="text-lg font-bold text-white">
             Entrega {entrega.comanda ? `#${entrega.comanda}` : `#${entrega.id}`}
           </h1>
+        </div>
+
+        {/* Progresso por etapas */}
+        <div className="mb-4 flex items-center gap-1">
+          {etapas.map((et, i) => (
+            <div key={et.key} className="flex flex-1 flex-col items-center gap-1">
+              <div className={`h-1 w-full rounded-full ${i <= etapaIdx ? "bg-green-500" : "bg-gray-800"}`} />
+              <span className={`text-[9px] font-medium ${i <= etapaIdx ? "text-green-400" : "text-gray-600"}`}>
+                {et.label}
+              </span>
+            </div>
+          ))}
         </div>
 
         {/* Card da entrega */}
@@ -210,14 +240,16 @@ export default function MotoboyEntrega() {
             </div>
           )}
 
-          {entrega.forma_pagamento && (
+          {(entrega.pago_online || entrega.pix_pago) ? (
+            <div className="rounded-lg bg-emerald-600 px-4 py-3 text-center">
+              <span className="text-lg font-bold text-white">PAGO ONLINE</span>
+              <p className="text-sm text-emerald-100 mt-0.5">Nada a receber do cliente</p>
+            </div>
+          ) : entrega.forma_pagamento && (
             <div className="flex items-center justify-between rounded-lg bg-gray-800 px-3 py-2">
               <span className="text-sm text-gray-400">Forma pagamento</span>
               <span className="text-sm font-medium text-white">
                 {entrega.forma_pagamento}
-                {entrega.pix_pago && (
-                  <span className="ml-2 rounded bg-green-600 px-1.5 py-0.5 text-xs font-bold text-white">PAGO</span>
-                )}
               </span>
             </div>
           )}
@@ -265,7 +297,7 @@ export default function MotoboyEntrega() {
           {estado === "em_rota" && (
             <Button
               className="h-14 w-full bg-blue-600 text-base font-bold hover:bg-blue-700"
-              onClick={() => setEstado("no_destino")}
+              onClick={() => setEstado(isPagoOnline ? "confirmado" : "no_destino")}
             >
               <MapPin className="mr-2 h-5 w-5" />
               CHEGUEI AO DESTINO

@@ -242,7 +242,7 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 - Cada restaurante autoriza individualmente
 
 ### 2.17 Pagamento Pix Online (Woovi/OpenPix)
-- **Adesão com consentimento:** formulário com chave Pix + tipo + aceite de termos
+- **Ativação simplificada:** chave Pix é derivada automaticamente do CNPJ (ou CPF do responsável) cadastrado no restaurante. Nome da subconta = razão social. Dono NÃO escolhe tipo/nome da chave — endpoint `GET /painel/pix/pre-ativacao` retorna dados pré-preenchidos (read-only) + aceite de termos
 - **Custo:** 0,80% sobre o valor de cada transação Pix (cobrado pela Woovi) — Derekh não cobra nada
 - **Split de pagamento:** cobrança = valor total; split restaurante = valor - 0,80% (taxa Woovi); restante fica na conta Derekh
 - **Subconta virtual:** restaurante não precisa criar conta Woovi
@@ -250,14 +250,17 @@ A sidebar do painel admin foi reorganizada de 20 itens flat para **3 grupos cola
 - **Saque manual:** com preview de taxa (grátis para saques >= R$500)
 - **Saque automático:** configura valor mínimo para saque automático
 - **Fluxo:** cliente paga Pix → webhook confirma → saldo acumula → restaurante saca
+- **Campo `pago_online`:** campo booleano no model Pedido (`pago_online`, `data_pagamento_online`) — marcado automaticamente pelo webhook Pix. Propagado para todos os apps
 - **Notificações pós-pagamento (3 canais):**
   1. **Cliente WhatsApp:** mensagem "Pix confirmado! Pedido #X já foi pra cozinha" via `whatsapp_client` unificado (Meta + Evolution)
-  2. **Admin painel:** WebSocket `pix_confirmado` → queries invalidadas + som "ka-ching" + toast + notificação OS
-  3. **Motoboy:** WebSocket `pix_confirmado` → queries invalidadas + badge verde "PAGO" no card (campo `pix_pago` na API)
-- **Badge nos pedidos:** no painel admin (Pedidos.tsx), pedidos com forma_pagamento PIX exibem badge visual:
+  2. **Admin painel:** WebSocket `pix_confirmado` → queries invalidadas + som "ka-ching" + toast + notificação OS + badge "PAGO ONLINE" verde nos pedidos + detalhe do pedido
+  3. **Motoboy:** campo `pago_online` na API → badge grande "PAGO ONLINE — Nada a receber" em verde (Home + Detalhe). Quando `pago_online`, etapa de pagamento é pulada automaticamente (A caminho → Confirmar, sem seleção de forma de pagamento)
+- **Badge nos pedidos:** no painel admin (Pedidos.tsx), pedidos com pagamento online exibem:
+  - "PAGO ONLINE" (verde emerald) — pedido com pagamento online confirmado
   - "Pix Pendente" (amarelo) — pedido pendente aguardando confirmação de pagamento
   - "PIX" (verde) — pedido com pagamento Pix confirmado
 - **WhatsApp Humanoide:** bot gera cobrança Pix via function call `gerar_cobranca_pix` e envia link de pagamento ao cliente
+- **Impressão:** cupom impresso exibe "PAGO ONLINE" quando `pago_online=True`
 
 ### 2.18 Downloads (Agentes Windows)
 - **Rota:** `/admin/downloads`
@@ -480,36 +483,54 @@ Admin escolhe:
 
 ---
 
-## 5. APP MOTOBOY (PWA)
+## 5. APP MOTOBOY (PWA + APK Nativo v1.1.0)
+
+**Disponível como:** PWA (navegador) + APK Android nativo (CapacitorJS). Ver seção 20 para detalhes do app nativo.
 
 ### 5.1 Login e Cadastro
 - Login com código do restaurante + usuário + senha
 - Cadastro: solicita ao restaurante (admin aprova)
-- PWA instalável no celular (funciona offline básico)
+- PWA instalável no celular + APK Android nativo
+- Banner de instalação no login (se acessando via navegador)
 
-### 5.2 Fila de Entregas
-- Lista de entregas atribuídas ao motoboy
-- Status visual: pendente, em rota, entregue
-- Detalhes: endereço, nome cliente, valor, forma de pagamento
+### 5.2 Fila de Entregas (MotoboyHome)
+- Banner de status dinâmico: EM ENTREGA (azul), ATRIBUÍDAS (amarelo), OFFLINE (cinza), DISPONÍVEL (verde)
+- Lista de entregas atribuídas ao motoboy (até 4 visíveis + contador)
+- Card de entrega atual com: nome, endereço, telefone, distância, valor, ganho do motoboy
+- **PAGO ONLINE:** badge grande verde "PAGO ONLINE — Nada a receber do cliente" quando pedido foi pago via Pix
+- Botões Google Maps e Waze integrados
 - Botão "Iniciar Entrega" → GPS tracking ativo
+- Som de notificação quando novas entregas chegam
 
-### 5.3 Entrega Ativa
-- Mapa com rota até o cliente
+### 5.3 Entrega Ativa (MotoboyEntrega)
+- **Barra de progresso por etapas** no topo: A caminho → Chegou → Pagamento → Confirmar
+- Quando **pago online**: progresso simplificado (A caminho → Confirmar) — etapa de pagamento é pulada automaticamente
 - Botão "Abrir no Waze/Google Maps"
-- Registro de pagamento na entrega: dinheiro, cartão, misto
-- Botão "Finalizar Entrega" com validação GPS (300m do endereço)
-- Registro de ocorrência: cliente ausente, cancelamento
+- State machine: em_rota → no_destino → pagamento → confirmado → finalizar
+- Registro de pagamento: Dinheiro (com cálculo de troco), Cartão/Pix, Misto (valores separados)
+- Registro de ocorrência: Cliente Ausente (4 motivos predefinidos), Cliente Cancelou (5 motivos)
+- GPS: captura posição + calcula distância percorrida via haversine em tempo real
 
-### 5.4 Ganhos
-- Dashboard de ganhos do dia, semana, mês
-- Histórico de entregas com valor de cada uma
-- Total de km percorridos
-- Estatísticas: entregas realizadas, tempo médio
+### 5.4 Ganhos (MotoboyGanhos)
+- **Hero card:** ganho do dia em destaque (texto 3xl), entregas e km do dia
+- Estatísticas gerais: total entregas, total ganho, total km
+- Histórico de entregas expandível com detalhes (cliente, distância, valor base + extra)
+- Visibilidade de saldo controlada pelo restaurante (`permitir_ver_saldo`)
 
-### 5.5 Perfil
-- Toggle online/offline
-- Alteração de senha
-- Atualização de dados
+### 5.5 Perfil (MotoboyPerfil)
+- Avatar com inicial do nome em gradiente verde
+- Toggle online/offline com indicador visual
+- Status de rota (em rota / sem rota ativa)
+- Alteração de senha (expansível)
+- Logout (marca offline automaticamente antes de sair)
+- Versão do app no rodapé
+
+### 5.6 Layout e UX
+- **Header:** logo Derekh + nome "Derekh Entregador" + indicador Online/Offline (com ping animado verde)
+- **Bottom nav:** 3 tabs (Entregas, Ganhos, Perfil) com indicador ativo (underline + glow)
+- **Safe area:** `env(safe-area-inset-bottom)` no nav e `env(safe-area-inset-top)` no header — evita sobreposição em smartphones "tela infinita"
+- **GPS indicator:** bolha flutuante mostrando status do GPS + velocidade (posicionada acima do nav com safe-area)
+- **Dark theme** nativo (bg-gray-950)
 
 ---
 
@@ -841,19 +862,25 @@ Renovação automática --> ATIVO
 ### 10.4 Pix Online
 ```
 Restaurante ativa Pix no painel
-    | (informa chave Pix + aceita termos)
+    | (GET /painel/pix/pre-ativacao → chave=CNPJ, nome=razão social, read-only)
+    | (aceita termos → POST /painel/pix/ativar)
     v
-Subconta virtual criada (Woovi)
+Subconta virtual criada (Woovi) — chave Pix = CNPJ ou CPF do responsável
     |
     v
-Cliente faz pedido com Pix
+Cliente faz pedido com Pix (site: QR Code | WhatsApp: link de pagamento)
     |
     v
 QR Code gerado (30min validade)
     |
     v
 Cliente paga --> Webhook confirma
-    |
+    | (pedido.pago_online = True, data_pagamento_online = now)
+    v
+Pedido criado com status "pago online" em TODOS os apps:
+    |-- Admin: badge "PAGO ONLINE" em Pedidos + PedidoDetalhe
+    |-- Motoboy: badge "PAGO ONLINE — Nada a receber" + pula etapa pagamento
+    |-- Impressão: "PAGO ONLINE" no cupom
     v
 Saldo acumula na subconta
     |
@@ -2814,18 +2841,28 @@ motoboy-app/
 ├── vite.config.ts            # Alias @ → monorepo, build ~490KB JS
 ├── tsconfig.json             # Paths para monorepo
 ├── index.html                # Entry point HTML
-├── version.json              # {"version": "1.0.0", "versionCode": 1, "minVersion": "1.0.0"}
+├── version.json              # {"version": "1.1.0", "versionCode": 3, "minVersion": "1.0.0"}
 ├── src/
 │   ├── main.tsx              # React render + registra GPS nativo
 │   ├── App.tsx               # Wrapper: update checker + background GPS
 │   └── native/
 │       ├── gps-native.ts     # Bridge GPS nativo (foreground + background)
 │       ├── update-checker.ts # Verifica versão + compara semver
-│       └── NativeUpdateBanner.tsx  # Modal bloqueante de atualização
+│       ├── NativeUpdateBanner.tsx  # Modal bloqueante de atualização
+│       └── LocationGate.tsx  # Gate de permissão GPS (bloqueia app se negado)
+├── resources/                # Assets fonte
+│   ├── logo-transparent.png  # Logo 1024x1024 sem fundo
+│   └── playstore-icon.png    # Ícone Play Store 512x512
+├── public/
+│   └── derekh-motoboy-icon.png  # Ícone web 192x192
 └── android/                  # Gerado pelo Capacitor
     └── app/src/main/
         ├── AndroidManifest.xml  # Permissões GPS, foreground service, etc.
-        └── res/              # Ícones (logo robô), splash, cores, strings
+        └── res/
+            ├── mipmap-*/ic_launcher.png      # Ícones 48-192px (logo Derekh)
+            ├── mipmap-*/ic_launcher_foreground.png  # Foreground adaptativo 108-432px
+            ├── mipmap-anydpi-v26/ic_launcher.xml    # Adaptive icon (background #0a0a0a + foreground)
+            └── drawable-port-*/splash.png    # Splash screens 480x800 a 1440x2560
 ```
 
 ### 20.3 GPS Background
@@ -2843,8 +2880,8 @@ O plugin `@capacitor-community/background-geolocation` cria um **foreground serv
 ```json
 {
   "motoboy_app": {
-    "version": "1.0.1",
-    "version_code": 2,
+    "version": "1.1.0",
+    "version_code": 3,
     "min_version": "1.0.0",
     "download_url": "/entregador/download",
     "apk_url": "/static/uploads/downloads/DerekhFood-Entregador.apk",

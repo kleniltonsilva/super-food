@@ -378,6 +378,11 @@ async def processar_pagamento_confirmado(
         models.Pedido.id == cobranca.pedido_id,
     ).first()
 
+    if pedido:
+        # Marcar como pago online
+        pedido.pago_online = True
+        pedido.data_pagamento_online = datetime.utcnow()
+
     if pedido and pedido.status == "pendente":
         # Verificar se KDS ativo para enviar direto pra cozinha
         config_kds = None

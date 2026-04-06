@@ -78,8 +78,8 @@ export default function MotoboyPerfil() {
         {/* Info do Motoboy */}
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
           <div className="mb-4 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/20">
-              <User className="h-6 w-6 text-green-500" />
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-green-500 to-green-700 text-xl font-bold text-white shadow-lg shadow-green-500/20">
+              {(motoboy.nome || "M").charAt(0).toUpperCase()}
             </div>
             <div>
               <h2 className="text-lg font-bold text-white">{motoboy.nome}</h2>
@@ -232,6 +232,11 @@ export default function MotoboyPerfil() {
           <LogOut className="mr-2 h-4 w-4" />
           Sair
         </Button>
+
+        {/* Versão do app */}
+        <p className="pt-2 text-center text-[10px] text-gray-700">
+          Derekh Entregador v1.1.0
+        </p>
       </div>
     </MotoboyLayout>
   );

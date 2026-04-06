@@ -3,7 +3,7 @@ import { useEstatisticas, useGanhosDetalhado, useHistoricoEntregas, useMotoboyCo
 import MotoboyLayout from "@/motoboy/components/MotoboyLayout";
 import { Spinner } from "@/components/ui/spinner";
 import {
-  DollarSign, Package, MapPin, Clock, ChevronDown, ChevronUp,
+  DollarSign, Package, MapPin, ChevronDown, ChevronUp,
   TrendingUp,
 } from "lucide-react";
 
@@ -88,25 +88,17 @@ export default function MotoboyGanhos() {
   return (
     <MotoboyLayout>
       <div className="space-y-4 p-4">
-        {/* Ganhos de Hoje */}
-        <div>
-          <h2 className="mb-2 text-sm font-semibold text-gray-400">Ganhos de Hoje</h2>
-          <div className="grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-gradient-to-br from-green-600/20 to-green-600/5 p-3 text-center">
-              <DollarSign className="mx-auto mb-1 h-5 w-5 text-green-400" />
-              <p className="text-lg font-bold text-green-400">R$ {ganhoHoje.toFixed(2)}</p>
-              <p className="text-[10px] text-gray-400">Total ganho</p>
-            </div>
-            <div className="rounded-xl bg-gradient-to-br from-blue-600/20 to-blue-600/5 p-3 text-center">
-              <Package className="mx-auto mb-1 h-5 w-5 text-blue-400" />
-              <p className="text-lg font-bold text-blue-400">{entregasHoje}</p>
-              <p className="text-[10px] text-gray-400">Entregas</p>
-            </div>
-            <div className="rounded-xl bg-gradient-to-br from-orange-600/20 to-orange-600/5 p-3 text-center">
-              <MapPin className="mx-auto mb-1 h-5 w-5 text-orange-400" />
-              <p className="text-lg font-bold text-orange-400">{kmHoje.toFixed(1)}</p>
-              <p className="text-[10px] text-gray-400">Km</p>
-            </div>
+        {/* Hero: Ganho de Hoje */}
+        <div className="rounded-xl bg-gradient-to-br from-green-600/30 via-green-600/10 to-transparent p-5 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wider text-green-400/70">Ganho de Hoje</p>
+          <p className="mt-1 text-3xl font-extrabold text-green-400">R$ {ganhoHoje.toFixed(2)}</p>
+          <div className="mt-3 flex items-center justify-center gap-6 text-sm">
+            <span className="flex items-center gap-1.5 text-blue-400">
+              <Package className="h-4 w-4" /> {entregasHoje} entrega{entregasHoje !== 1 ? "s" : ""}
+            </span>
+            <span className="flex items-center gap-1.5 text-orange-400">
+              <MapPin className="h-4 w-4" /> {kmHoje.toFixed(1)} km
+            </span>
           </div>
         </div>
 
@@ -137,7 +129,12 @@ export default function MotoboyGanhos() {
           <h2 className="mb-2 text-sm font-semibold text-gray-400">Histórico de Entregas</h2>
           {historico.length === 0 ? (
             <div className="rounded-lg border border-gray-800 bg-gray-900 p-6 text-center">
-              <Clock className="mx-auto mb-2 h-8 w-8 text-gray-600" />
+              <img
+                src="/derekh-motoboy-icon.png"
+                alt=""
+                className="mx-auto mb-3 h-12 w-12 opacity-20"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
               <p className="text-sm text-gray-500">Nenhuma entrega registrada</p>
             </div>
           ) : (

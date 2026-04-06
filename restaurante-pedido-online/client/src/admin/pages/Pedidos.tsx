@@ -659,7 +659,14 @@ function PedidosTabela({
                     <TableCell className="font-medium text-[var(--text-primary)]">
                       <div className="flex items-center gap-1.5">
                         R$ {Number(p.valor_total).toFixed(2)}
-                        {String(p.forma_pagamento || "").toLowerCase() === "pix" && (
+                        {p.pago_online ? (
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] px-1 py-0 bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
+                          >
+                            PAGO ONLINE
+                          </Badge>
+                        ) : String(p.forma_pagamento || "").toLowerCase() === "pix" && (
                           <Badge
                             variant="outline"
                             className={`text-[10px] px-1 py-0 ${

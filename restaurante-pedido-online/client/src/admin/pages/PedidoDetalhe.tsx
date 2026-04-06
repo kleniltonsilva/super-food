@@ -48,6 +48,7 @@ import {
   CreditCard,
   ChefHat,
   CheckCircle,
+  CheckCircle2,
   Truck,
   XCircle,
   Bike,
@@ -493,6 +494,14 @@ export default function PedidoDetalhe() {
                     <CreditCard className="h-4 w-4 text-[var(--text-muted)]" />
                     {pedido.forma_pagamento}
                     {pedido.troco_para ? ` (troco p/ R$ ${Number(pedido.troco_para).toFixed(2)})` : ""}
+                  </div>
+                )}
+                {pedido.pago_online && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-1 text-xs font-bold">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      PAGO ONLINE — Nada a receber
+                    </span>
                   </div>
                 )}
               </CardContent>

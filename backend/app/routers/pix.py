@@ -23,26 +23,7 @@ router = APIRouter(prefix="/painel/pix", tags=["Pix Online"])
 # ─── Request/Response Models ──────────────────────────────────────
 
 class AtivarPixRequest(BaseModel):
-    pix_chave: str
-    tipo_chave: Literal["cpf", "cnpj", "email", "celular", "aleatoria"]
-    nome: str
     termos_aceitos: bool
-
-    @field_validator("pix_chave")
-    @classmethod
-    def validar_chave(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Chave Pix não pode ser vazia")
-        return v
-
-    @field_validator("nome")
-    @classmethod
-    def validar_nome(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Nome da subconta não pode ser vazio")
-        return v
 
 
 class ConfigSaqueRequest(BaseModel):
@@ -71,25 +52,85 @@ class SaqueRequest(BaseModel):
 # ─── Endpoints ──────────────────────────────────────────
 
 
+@router.get("/pre-ativacao")
+def pre_ativacao_pix(
+    restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
+):
+    """Retorna dados que serão usados na ativação (CNPJ/CPF + razão social).
+    Frontend exibe para o dono confirmar antes de ativar."""
+    cnpj = (restaurante.cnpj or "").strip()
+    cpf_resp = (getattr(restaurante, "cpf_responsavel", "") or "").strip()
+    razao = (restaurante.razao_social or "").strip()
+    nome_fantasia = (restaurante.nome_fantasia or restaurante.nome or "").strip()
+
+    if cnpj:
+        pix_chave = cnpj
+        tipo_chave = "cnpj"
+        # Mascarar: 12.345.678/0001-00
+        chave_formatada = f"{cnpj[:2]}.{cnpj[2:5]}.{cnpj[5:8]}/{cnpj[8:12]}-{cnpj[12:]}" if len(cnpj) == 14 else cnpj
+    elif cpf_resp:
+        pix_chave = cpf_resp
+        tipo_chave = "cpf"
+        chave_formatada = f"{cpf_resp[:3]}.{cpf_resp[3:6]}.{cpf_resp[6:9]}-{cpf_resp[9:]}" if len(cpf_resp) == 11 else cpf_resp
+    else:
+        return {
+            "pode_ativar": False,
+            "motivo": "Cadastre o CNPJ da empresa (ou CPF do responsável) "
+                      "nas Configurações antes de ativar o Pix Online.",
+        }
+
+    return {
+        "pode_ativar": True,
+        "tipo_chave": tipo_chave,
+        "pix_chave_formatada": chave_formatada,
+        "nome_subconta": razao or nome_fantasia,
+    }
+
+
 @router.post("/ativar")
 async def ativar_pix(
     dados: AtivarPixRequest,
     restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
     db: Session = Depends(database.get_db),
 ):
-    """Ativa Pix Online para o restaurante. Cria subconta na Woovi."""
+    """Ativa Pix Online para o restaurante. Cria subconta na Woovi.
+
+    A chave Pix é obrigatoriamente o CNPJ da empresa (ou CPF do responsável
+    se não houver CNPJ). O nome da subconta é a razão social — não editável.
+    """
     if not dados.termos_aceitos:
         raise HTTPException(
             status_code=400,
             detail="É necessário aceitar os termos para ativar o Pix Online",
         )
 
+    # Derivar chave Pix e nome automaticamente do cadastro do restaurante
+    cnpj = (restaurante.cnpj or "").strip()
+    cpf_resp = (getattr(restaurante, "cpf_responsavel", "") or "").strip()
+    razao = (restaurante.razao_social or "").strip()
+    nome_fantasia = (restaurante.nome_fantasia or restaurante.nome or "").strip()
+
+    if cnpj:
+        pix_chave = cnpj
+        tipo_chave = "cnpj"
+    elif cpf_resp:
+        pix_chave = cpf_resp
+        tipo_chave = "cpf"
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Cadastre o CNPJ da empresa (ou CPF do responsável) "
+                   "nas Configurações antes de ativar o Pix Online.",
+        )
+
+    nome_subconta = razao or nome_fantasia
+
     try:
         resultado = await pix_service.ativar_pix(
             restaurante_id=restaurante.id,
-            pix_chave=dados.pix_chave,
-            tipo_chave=dados.tipo_chave,
-            nome=dados.nome,
+            pix_chave=pix_chave,
+            tipo_chave=tipo_chave,
+            nome=nome_subconta,
             db=db,
         )
         return resultado

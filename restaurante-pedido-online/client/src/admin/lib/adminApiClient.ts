@@ -730,7 +730,12 @@ export async function getPixConfig() {
   return data;
 }
 
-export async function ativarPix(payload: { pix_chave: string; tipo_chave: string; nome: string; termos_aceitos: boolean }) {
+export async function getPixPreAtivacao() {
+  const { data } = await adminApi.get("/painel/pix/pre-ativacao");
+  return data;
+}
+
+export async function ativarPix(payload: { termos_aceitos: boolean }) {
   const { data } = await adminApi.post("/painel/pix/ativar", payload);
   return data;
 }

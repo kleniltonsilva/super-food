@@ -26,7 +26,10 @@ function GPSIndicator({ ativo }: { ativo: boolean }) {
   if (!ativo) return null;
 
   return (
-    <div className={`fixed bottom-20 right-3 z-50 flex items-center gap-1.5 rounded-full ${cfg.cor} px-3 py-1.5 text-xs font-medium text-white shadow-lg`}>
+    <div
+      className={`fixed right-3 z-50 flex items-center gap-1.5 rounded-full ${cfg.cor} px-3 py-1.5 text-xs font-medium text-white shadow-lg`}
+      style={{ bottom: "calc(4.5rem + env(safe-area-inset-bottom, 0px) + 0.75rem)" }}
+    >
       <Icon className="h-3.5 w-3.5" />
       {cfg.texto}
     </div>
@@ -57,20 +60,32 @@ export default function MotoboyLayout({ children, hideNav }: MotoboyLayoutProps)
   return (
     <div className="flex min-h-screen flex-col bg-gray-950 text-white">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-gray-800 bg-gray-900/95 px-4 py-3 backdrop-blur">
+      <header
+        className="sticky top-0 z-40 border-b border-gray-800 bg-gray-900/95 px-4 py-3 backdrop-blur"
+        style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top, 0px))" }}
+      >
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Package className="h-5 w-5 text-green-500" />
-            <span className="text-sm font-semibold">Derekh Food</span>
+          <div className="flex items-center gap-2.5">
+            <img
+              src="/derekh-motoboy-icon.png"
+              alt="Derekh"
+              className="h-7 w-7 rounded-md"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+            <span className="text-sm font-bold tracking-tight">Derekh Entregador</span>
           </div>
           {motoboy && (
             <div className="flex items-center gap-2">
               {motoboy.disponivel ? (
-                <span className="flex items-center gap-1 rounded-full bg-green-500/20 px-2.5 py-0.5 text-xs font-medium text-green-400">
-                  <Wifi className="h-3 w-3" /> Online
+                <span className="flex items-center gap-1.5 rounded-full bg-green-500/20 px-3 py-1 text-xs font-semibold text-green-400">
+                  <span className="relative flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-green-400" />
+                  </span>
+                  Online
                 </span>
               ) : (
-                <span className="flex items-center gap-1 rounded-full bg-gray-700 px-2.5 py-0.5 text-xs font-medium text-gray-400">
+                <span className="flex items-center gap-1.5 rounded-full bg-gray-700/60 px-3 py-1 text-xs font-medium text-gray-400">
                   <WifiOff className="h-3 w-3" /> Offline
                 </span>
               )}
@@ -79,17 +94,23 @@ export default function MotoboyLayout({ children, hideNav }: MotoboyLayoutProps)
         </div>
       </header>
 
-      {/* Content */}
-      <main className="flex-1 overflow-y-auto pb-20">
+      {/* Content — padding bottom accounts for nav bar + safe area */}
+      <main
+        className="flex-1 overflow-y-auto"
+        style={{ paddingBottom: hideNav ? "1rem" : "calc(4.5rem + env(safe-area-inset-bottom, 0px))" }}
+      >
         {children}
       </main>
 
       {/* GPS Indicator */}
       <GPSIndicator ativo={gpsAtivo} />
 
-      {/* Bottom Navigation */}
+      {/* Bottom Navigation — respects safe-area-inset-bottom */}
       {!hideNav && (
-        <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-800 bg-gray-900/95 backdrop-blur">
+        <nav
+          className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-800 bg-gray-900/95 backdrop-blur-lg"
+          style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+        >
           <div className="flex items-center justify-around">
             {tabs.map((tab) => {
               const active = isActive(tab.path);
@@ -99,16 +120,17 @@ export default function MotoboyLayout({ children, hideNav }: MotoboyLayoutProps)
                   key={tab.path}
                   onClick={() => !tab.disabled && navigate(tab.path)}
                   disabled={tab.disabled}
-                  className={`flex flex-1 flex-col items-center gap-0.5 py-2.5 transition-colors ${
+                  className={`flex flex-1 flex-col items-center gap-1 py-2.5 transition-colors ${
                     tab.disabled
                       ? "text-gray-700 opacity-60"
                       : active
-                        ? "text-green-500"
-                        : "text-gray-500"
+                        ? "text-green-400"
+                        : "text-gray-500 active:text-gray-300"
                   }`}
                 >
-                  <Icon className="h-5 w-5" />
-                  <span className="text-[10px] font-medium">{tab.label}</span>
+                  <Icon className={`h-5 w-5 ${active ? "drop-shadow-[0_0_6px_rgba(74,222,128,0.5)]" : ""}`} />
+                  <span className={`text-[10px] font-semibold ${active ? "text-green-400" : ""}`}>{tab.label}</span>
+                  {active && <span className="h-0.5 w-5 rounded-full bg-green-400" />}
                 </button>
               );
             })}

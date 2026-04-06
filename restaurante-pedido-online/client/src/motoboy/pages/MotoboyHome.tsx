@@ -24,6 +24,7 @@ interface Entrega {
   valor_total?: number;
   forma_pagamento?: string;
   pix_pago?: boolean;
+  pago_online?: boolean;
   troco_para?: number;
   observacoes?: string;
   comanda?: string;
@@ -168,14 +169,16 @@ export default function MotoboyHome() {
                 </div>
               )}
 
-              {entregaAtual.forma_pagamento && (
+              {(entregaAtual.pago_online || entregaAtual.pix_pago) ? (
+                <div className="rounded-lg bg-emerald-600 px-4 py-3 text-center">
+                  <span className="text-lg font-bold text-white">PAGO ONLINE</span>
+                  <p className="text-sm text-emerald-100 mt-0.5">Nada a receber do cliente</p>
+                </div>
+              ) : entregaAtual.forma_pagamento && (
                 <div className="flex items-center justify-between rounded-lg bg-gray-800/50 px-3 py-2">
                   <span className="text-gray-400">Pagamento</span>
                   <span className="font-medium text-white">
                     {entregaAtual.forma_pagamento}
-                    {entregaAtual.pix_pago && (
-                      <span className="ml-2 rounded bg-green-600 px-1.5 py-0.5 text-xs font-bold text-white">PAGO</span>
-                    )}
                   </span>
                 </div>
               )}
@@ -301,15 +304,18 @@ export default function MotoboyHome() {
 
         {/* Estado vazio */}
         {!loadingPendentes && totalPendentes === 0 && !entregaAtual && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gray-800">
-              <Clock className="h-10 w-10 text-gray-600" />
-            </div>
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <img
+              src="/derekh-motoboy-icon.png"
+              alt=""
+              className="mb-6 h-24 w-24 opacity-30"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
             <h3 className="text-lg font-semibold text-gray-400">Sem entregas no momento</h3>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-2 text-sm text-gray-600 max-w-[250px]">
               {motoboy?.disponivel
                 ? "Aguardando novas entregas..."
-                : "Ative o status online para receber entregas"}
+                : "Ative o status online no Perfil para receber entregas"}
             </p>
           </div>
         )}

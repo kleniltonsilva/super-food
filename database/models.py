@@ -539,6 +539,9 @@ class Pedido(Base):
     valor_total = Column(Float, nullable=False, default=0.0)
     forma_pagamento = Column(String(50))
     troco_para = Column(Float)
+    # Pagamento online (Pix Woovi)
+    pago_online = Column(Boolean, default=False)  # True quando Pix online confirmado
+    data_pagamento_online = Column(DateTime)       # Timestamp da confirmação do pagamento
     # Pagamento real (registrado pelo motoboy na entrega)
     forma_pagamento_real = Column(String(50))  # Dinheiro, Cartão/Pix, Misto
     valor_pago_dinheiro = Column(Float, default=0.0)

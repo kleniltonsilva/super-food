@@ -2,13 +2,13 @@ import { useState } from "react";
 import AdminLayout from "@/admin/components/AdminLayout";
 import {
   usePixConfig,
+  usePixPreAtivacao,
   useAtivarPix,
   useDesativarPix,
   useSolicitarSaque,
   useConfigSaqueAuto,
   usePixSaques,
 } from "@/admin/hooks/useAdminQueries";
-import { useAdminAuth } from "@/admin/contexts/AdminAuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,16 +41,10 @@ import {
   Copy,
   AlertTriangle,
   Loader2,
+  Building2,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
-
-const TIPOS_CHAVE = [
-  { value: "cpf", label: "CPF" },
-  { value: "cnpj", label: "CNPJ" },
-  { value: "email", label: "E-mail" },
-  { value: "celular", label: "Celular" },
-  { value: "aleatoria", label: "Aleatoria" },
-] as const;
 
 const STATUS_SAQUE: Record<string, { label: string; color: string }> = {
   concluido: { label: "Concluido", color: "bg-green-500/20 text-green-400" },
@@ -71,8 +65,8 @@ function mascararChave(chave: string): string {
 }
 
 export default function PagamentoPix() {
-  const { restaurante } = useAdminAuth();
   const { data: pixConfig, isLoading } = usePixConfig();
+  const { data: preAtivacao, isLoading: loadingPre } = usePixPreAtivacao();
   const ativarPix = useAtivarPix();
   const desativarPix = useDesativarPix();
   const solicitarSaque = useSolicitarSaque();
@@ -80,9 +74,6 @@ export default function PagamentoPix() {
   const { data: saquesData } = usePixSaques(pixConfig?.ativo ? undefined : undefined);
 
   // Form de adesao
-  const [tipoChave, setTipoChave] = useState("");
-  const [chavePix, setChavePix] = useState("");
-  const [nomeSubconta, setNomeSubconta] = useState("");
   const [aceitouTermos, setAceitouTermos] = useState(false);
 
   // Saque
@@ -92,10 +83,7 @@ export default function PagamentoPix() {
   // Desativar
   const [desativarDialogOpen, setDesativarDialogOpen] = useState(false);
 
-  // Inicializar nome subconta com nome do restaurante
-  const nomeDefault = nomeSubconta || restaurante?.nome || "";
-
-  if (isLoading) {
+  if (isLoading || loadingPre) {
     return (
       <AdminLayout>
         <div className="flex items-center justify-center h-64">
@@ -107,22 +95,14 @@ export default function PagamentoPix() {
 
   // ─── Estado 1: Pix Nao Ativo ────────────────────────────
   if (!pixConfig?.ativo) {
-    const formValido = tipoChave && chavePix.trim() && nomeDefault.trim() && aceitouTermos;
+    const podeAtivar = preAtivacao?.pode_ativar;
 
     const handleAtivar = () => {
       ativarPix.mutate(
-        {
-          tipo_chave: tipoChave,
-          pix_chave: chavePix.trim(),
-          nome: nomeDefault.trim(),
-          termos_aceitos: true,
-        },
+        { termos_aceitos: true },
         {
           onSuccess: () => {
             toast.success("Pix Online ativado com sucesso!");
-            setTipoChave("");
-            setChavePix("");
-            setNomeSubconta("");
             setAceitouTermos(false);
           },
           onError: (err: any) => {
@@ -178,76 +158,83 @@ export default function PagamentoPix() {
 
               <hr className="border-[var(--border-subtle)]" />
 
-              {/* Formulario de adesao */}
+              {/* Dados da empresa para ativacao */}
               <div className="space-y-4">
                 <h3 className="text-base font-semibold text-[var(--text-primary)]">Ativar Pix Online</h3>
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-[var(--text-secondary)]">Tipo de chave Pix</label>
-                  <Select value={tipoChave} onValueChange={setTipoChave}>
-                    <SelectTrigger className="dark-input">
-                      <SelectValue placeholder="Selecione o tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {TIPOS_CHAVE.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {!podeAtivar ? (
+                  <div className="flex items-start gap-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4">
+                    <AlertTriangle className="h-5 w-5 text-yellow-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium text-yellow-400">CNPJ/CPF nao cadastrado</p>
+                      <p className="text-sm text-[var(--text-muted)] mt-1">{preAtivacao?.motivo}</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => window.location.href = "/configuracoes"}
+                      >
+                        Ir para Configuracoes
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Dados que serao usados (somente leitura) */}
+                    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 space-y-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <ShieldCheck className="h-4 w-4 text-[var(--cor-primaria)]" />
+                        <span className="text-sm font-medium text-[var(--text-primary)]">
+                          Dados da sua empresa (cadastro oficial)
+                        </span>
+                      </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-[var(--text-secondary)]">Chave Pix</label>
-                  <Input
-                    value={chavePix}
-                    onChange={(e) => setChavePix(e.target.value)}
-                    className="dark-input"
-                    placeholder={
-                      tipoChave === "cpf" ? "000.000.000-00" :
-                      tipoChave === "cnpj" ? "00.000.000/0000-00" :
-                      tipoChave === "email" ? "email@exemplo.com" :
-                      tipoChave === "celular" ? "+5511999999999" :
-                      "Chave aleatoria"
-                    }
-                  />
-                </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-[var(--text-muted)]">Chave Pix ({preAtivacao.tipo_chave === "cnpj" ? "CNPJ" : "CPF"})</span>
+                        <span className="text-sm font-mono font-medium text-[var(--text-primary)]">
+                          {preAtivacao.pix_chave_formatada}
+                        </span>
+                      </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-[var(--text-secondary)]">Nome da subconta</label>
-                  <Input
-                    value={nomeDefault}
-                    onChange={(e) => setNomeSubconta(e.target.value)}
-                    className="dark-input"
-                    placeholder="Nome do restaurante"
-                  />
-                </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-[var(--text-muted)]">Nome da subconta</span>
+                        <span className="text-sm font-medium text-[var(--text-primary)]">
+                          {preAtivacao.nome_subconta}
+                        </span>
+                      </div>
 
-                <div className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] p-3">
-                  <Checkbox
-                    id="termos-pix"
-                    checked={aceitouTermos}
-                    onCheckedChange={(checked) => setAceitouTermos(checked === true)}
-                    className="mt-0.5"
-                  />
-                  <label htmlFor="termos-pix" className="text-sm text-[var(--text-secondary)] cursor-pointer leading-relaxed">
-                    Li e concordo com as regras de pagamento Pix online. Estou ciente de que a Woovi cobra R$0,85 por transacao recebida e R$1,00 por saque (isento para saques &ge; R$500).
-                  </label>
-                </div>
+                      <p className="text-xs text-[var(--text-muted)] mt-2 flex items-center gap-1.5">
+                        <Building2 className="h-3 w-3" />
+                        Para alterar, atualize o CNPJ e Razao Social nas Configuracoes.
+                      </p>
+                    </div>
 
-                <Button
-                  className="w-full bg-[var(--cor-primaria)] hover:bg-[var(--cor-primaria)]/90"
-                  disabled={!formValido || ativarPix.isPending}
-                  onClick={handleAtivar}
-                >
-                  {ativarPix.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <QrCode className="mr-2 h-4 w-4" />
-                  )}
-                  {ativarPix.isPending ? "Ativando..." : "Ativar Pix Online"}
-                </Button>
+                    <div className="flex items-start gap-3 rounded-lg border border-[var(--border-subtle)] p-3">
+                      <Checkbox
+                        id="termos-pix"
+                        checked={aceitouTermos}
+                        onCheckedChange={(checked) => setAceitouTermos(checked === true)}
+                        className="mt-0.5"
+                      />
+                      <label htmlFor="termos-pix" className="text-sm text-[var(--text-secondary)] cursor-pointer leading-relaxed">
+                        Li e concordo com as regras de pagamento Pix online. Estou ciente de que a Woovi cobra R$0,85 por transacao recebida e R$1,00 por saque (isento para saques &ge; R$500).
+                      </label>
+                    </div>
+
+                    <Button
+                      className="w-full bg-[var(--cor-primaria)] hover:bg-[var(--cor-primaria)]/90"
+                      disabled={!aceitouTermos || ativarPix.isPending}
+                      onClick={handleAtivar}
+                    >
+                      {ativarPix.isPending ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <QrCode className="mr-2 h-4 w-4" />
+                      )}
+                      {ativarPix.isPending ? "Ativando..." : "Ativar Pix Online"}
+                    </Button>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -333,7 +320,8 @@ export default function PagamentoPix() {
     );
   };
 
-  const tipoChaveLabel = TIPOS_CHAVE.find((t) => t.value === pixConfig.tipo_chave)?.label || pixConfig.tipo_chave;
+  const TIPOS_CHAVE_MAP: Record<string, string> = { cpf: "CPF", cnpj: "CNPJ", email: "E-mail", celular: "Celular", aleatoria: "Aleatória" };
+  const tipoChaveLabel = TIPOS_CHAVE_MAP[pixConfig.tipo_chave] || pixConfig.tipo_chave;
 
   return (
     <AdminLayout>

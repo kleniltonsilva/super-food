@@ -92,17 +92,7 @@ def _entrega_to_response(entrega: models.Entrega, pedido: models.Pedido = None, 
         "motivo_finalizacao": entrega.motivo_finalizacao,
     }
     if pedido:
-        # Verificar se pagamento Pix online já foi confirmado
-        pix_pago = False
-        if db and pedido.forma_pagamento and pedido.forma_pagamento.upper() == "PIX":
-            try:
-                cobranca = db.query(models.PixCobranca).filter(
-                    models.PixCobranca.pedido_id == pedido.id,
-                    models.PixCobranca.status == "COMPLETED",
-                ).first()
-                pix_pago = cobranca is not None
-            except Exception:
-                pass
+        pago_online = bool(pedido.pago_online)
 
         data.update({
             "cliente_nome": pedido.cliente_nome,
@@ -112,7 +102,8 @@ def _entrega_to_response(entrega: models.Entrega, pedido: models.Pedido = None, 
             "longitude_entrega": pedido.longitude_entrega,
             "valor_total": pedido.valor_total,
             "forma_pagamento": pedido.forma_pagamento,
-            "pix_pago": pix_pago,
+            "pago_online": pago_online,
+            "pix_pago": pago_online,  # compatibilidade com app existente
             "troco_para": pedido.troco_para,
             "observacoes": pedido.observacoes,
             "itens": pedido.itens,

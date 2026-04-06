@@ -947,6 +947,13 @@ export function usePixConfig() {
   });
 }
 
+export function usePixPreAtivacao() {
+  return useQuery({
+    queryKey: [...ADMIN_QUERY_KEYS.pixConfig, "pre-ativacao"],
+    queryFn: api.getPixPreAtivacao,
+  });
+}
+
 export function useAtivarPix() {
   const qc = useQueryClient();
   return useMutation({
