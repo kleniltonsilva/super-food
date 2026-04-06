@@ -27,7 +27,7 @@ from crm.competitor_service import dados_mercado_cidade, concorrentes_bairro
 
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 
-FROM_EMAIL = os.environ.get("FROM_EMAIL", "contato@derekh.com.br")
+FROM_EMAIL = os.environ.get("FROM_EMAIL", "contato@derekhfood.com.br")
 FROM_NAME = os.environ.get("FROM_NAME", "Derekh Food")
 BASE_URL = os.environ.get("CRM_BASE_URL", "http://localhost:8000")
 
@@ -158,7 +158,7 @@ def _extrair_corpo_html(html: str) -> str:
 
 
 WHATSAPP_INBOUND = "5511971765565"
-LANDING_URL_DEFAULT = "https://derekh.com.br/food"
+LANDING_URL_DEFAULT = "https://derekhfood.com.br"
 
 
 def _envolver_email_branded(corpo_html: str, tracking_id: str) -> str:
@@ -257,7 +257,7 @@ def enviar_email(lead_id: int, template_id: int, campanha_id: int = None) -> dic
     # Gerar tracking
     tracking_id = gerar_tracking_id()
     pixel_url = gerar_pixel_url(tracking_id)
-    landing_url = obter_configuracao("outreach_landing_url") or "https://derekh.com.br/food"
+    landing_url = obter_configuracao("outreach_landing_url") or "https://derekhfood.com.br"
 
     variaveis = _extrair_variaveis(lead)
     assunto = _substituir_variaveis(template["assunto"], variaveis)

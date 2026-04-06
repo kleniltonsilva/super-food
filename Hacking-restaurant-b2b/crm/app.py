@@ -231,11 +231,10 @@ async def startup():
     except Exception as e:
         print(f"[STARTUP] AVISO: Pool PostgreSQL (scanner) falhou: {e}")
         print("[STARTUP] Scanner ficará indisponível até corrigir DATABASE_URL")
-    # Ativar outreach por padrão (necessário para Brain Loop funcionar)
+    # Outreach: respeitar configuração do banco (NÃO forçar ativação)
     from crm.database import obter_configuracao, salvar_configuracao
-    if not obter_configuracao("outreach_ativo") or obter_configuracao("outreach_ativo").lower() != "true":
-        salvar_configuracao("outreach_ativo", "true")
-        print("[STARTUP] outreach_ativo ativado automaticamente")
+    _outreach_status = (obter_configuracao("outreach_ativo") or "false").lower()
+    print(f"[STARTUP] outreach_ativo = {_outreach_status}")
 
     # Workers em background
     import asyncio
@@ -1276,7 +1275,7 @@ async def tracking_click(tracking_id: str, tipo: str, url: str = ""):
             atualizar_score_evento(email_reg["lead_id"], "email_clicado")
     except Exception:
         pass
-    destino = url or "https://derekh.com.br/food"
+    destino = url or "https://derekhfood.com.br"
     return RedirectResponse(url=destino, status_code=302)
 
 
@@ -1479,11 +1478,10 @@ _BOT_PHONE_NUMBERS = set()
 
 
 def _init_bot_phone_numbers():
-    """Carrega números dos bots conectados ao Evolution API."""
+    """Carrega números dos bots (Evolution legado + Meta Cloud API)."""
     import re
     nums = [
-        os.environ.get("EVOLUTION_PHONE_1", "554599713063"),    # derekh-whatsapp
-        os.environ.get("EVOLUTION_PHONE_2", "5511971765565"),   # derekh-inbound
+        "351961330536",   # Ana +351 961 330 536 (Meta Cloud API principal)
     ]
     for n in nums:
         clean = re.sub(r"\D", "", n)
@@ -1503,7 +1501,26 @@ async def wa_sales_webhook(request: Request):
     raw_body = await request.body()
     body = json.loads(raw_body)
 
+    # DEBUG: Log completo de TODOS os webhooks recebidos
+    obj_type = body.get("object", "")
     event = body.get("event", "")
+    if obj_type == "whatsapp_business_account":
+        for _entry in body.get("entry", []):
+            for _change in _entry.get("changes", []):
+                _field = _change.get("field", "?")
+                _val = _change.get("value", {})
+                _has_msgs = "messages" in _val
+                _has_statuses = "statuses" in _val
+                _contacts = _val.get("contacts", [])
+                print(f"[WA-WEBHOOK-DEBUG] field={_field} has_messages={_has_msgs} has_statuses={_has_statuses} contacts={_contacts}")
+                if _has_msgs:
+                    for _m in _val["messages"]:
+                        print(f"[WA-WEBHOOK-DEBUG] MSG: from={_m.get('from')} type={_m.get('type')} id={_m.get('id')}")
+                if _has_statuses:
+                    for _s in _val["statuses"]:
+                        print(f"[WA-WEBHOOK-DEBUG] STATUS: id={_s.get('id')} status={_s.get('status')} recipient={_s.get('recipient_id')}")
+    else:
+        print(f"[WA-WEBHOOK-DEBUG] event={event} object={obj_type} keys={list(body.keys())[:5]}")
 
     # --- EVOLUTION API FORMAT ---
     if event == "messages.upsert":
@@ -1614,21 +1631,83 @@ async def wa_sales_webhook(request: Request):
     if signature and not verificar_webhook_meta(raw_body, signature):
         return JSONResponse({"erro": "Assinatura inválida"}, status_code=403)
 
+    from crm.wa_sales_bot import (
+        _marcar_lida_cloud_api, _enviar_presenca_cloud_api,
+        baixar_audio_meta, transcrever_audio, _calcular_delay_audio,
+    )
+    import time as _t
+
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})
             for msg in value.get("messages", []):
                 numero = msg.get("from", "")
+                msg_id = msg.get("id", "")
                 msg_type = msg.get("type", "")
+
+                # Ignorar números do próprio bot
+                if numero in _BOT_PHONE_NUMBERS:
+                    continue
+
+                # Deduplicação
+                if msg_id:
+                    now = time.time()
+                    if msg_id in _webhook_msg_ids:
+                        continue
+                    _webhook_msg_ids[msg_id] = now
+                    if len(_webhook_msg_ids) > _WEBHOOK_DEDUP_MAX:
+                        _webhook_msg_ids.clear()
+
+                # Marcar como lida (ticks azuis) imediatamente
+                if msg_id:
+                    _marcar_lida_cloud_api(msg_id)
+
+                # Extrair texto por tipo de mensagem
+                texto = ""
+                tipo_msg = "texto"
+
                 if msg_type == "text":
                     texto = msg.get("text", {}).get("body", "")
                 elif msg_type == "interactive":
                     texto = (msg.get("interactive", {}).get("button_reply", {}).get("title", "")
                              or msg.get("interactive", {}).get("list_reply", {}).get("title", ""))
-                else:
+                elif msg_type == "audio":
+                    # Áudio: baixar via Meta Media API + transcrever STT
+                    from crm.database import obter_configuracao
+                    stt_ativo = (obter_configuracao("audio_stt_ativo") or "true").lower() == "true"
+                    audio_meta = msg.get("audio", {})
+                    audio_id = audio_meta.get("id", "")
+                    duracao = audio_meta.get("duration", 0) or 0
+
+                    if stt_ativo and audio_id:
+                        print(f"[WA-WEBHOOK] [META] {numero} -> [ÁUDIO] (transcrever)")
+                        audio_data = baixar_audio_meta(audio_id)
+                        if audio_data.get("base64"):
+                            transcricao = transcrever_audio(audio_data["base64"], duracao)
+                            if transcricao.get("texto"):
+                                texto = transcricao["texto"]
+                                tipo_msg = "audio"
+                                duracao_real = transcricao.get("duracao", duracao)
+                                print(f"[WA-WEBHOOK] [META] {numero} -> [ÁUDIO→TEXTO] {texto[:80]}")
+                                delay = _calcular_delay_audio(duracao_real)
+                                _t.sleep(delay)
+                            else:
+                                print(f"[WA-WEBHOOK] Transcrição falhou: {transcricao.get('erro')}")
+                        else:
+                            print(f"[WA-WEBHOOK] Download áudio Meta falhou: {audio_data.get('erro')}")
+                    else:
+                        print(f"[WA-WEBHOOK] [META] {numero} -> [ÁUDIO] STT desativado, ignorando")
+                elif msg_type in ("image", "video", "document", "sticker"):
+                    # Mídia não processada — ignorar silenciosamente
                     continue
+                elif msg_type == "reaction":
+                    continue
+
                 if numero and texto:
-                    processar_resposta_wa(numero, texto)
+                    print(f"[WA-WEBHOOK] [META] {numero} -> {texto[:80]}")
+                    # Enviar "digitando..." antes de processar
+                    _enviar_presenca_cloud_api(numero)
+                    processar_resposta_wa(numero, texto, tipo_msg=tipo_msg)
 
     return JSONResponse({"status": "ok"})
 

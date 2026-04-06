@@ -36,7 +36,7 @@ WRAPPER_END = """
 
 CTA_BUTTON = """
 <div style="text-align:center;margin:28px 0;">
-  <a href="https://derekh.com.br?utm_source=email&utm_campaign={campanha}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600;font-size:15px;">
+  <a href="https://derekhfood.com.br?utm_source=email&utm_campaign={campanha}" style="display:inline-block;background:#4f46e5;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-weight:600;font-size:15px;">
     {texto_botao}
   </a>
 </div>

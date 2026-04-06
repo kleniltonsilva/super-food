@@ -528,10 +528,10 @@ END $$;
 -- CONFIGURAÇÕES DEFAULT
 -- ============================================================
 INSERT INTO configuracoes (chave, valor) VALUES
-    ('outreach_email_dominio', '@derekh.com.br'),
+    ('outreach_email_dominio', '@derekhfood.com.br'),
     ('outreach_max_email_dia', '20'),
     ('outreach_warmup_emails_dia', '20'),
-    ('outreach_landing_url', 'https://derekh.com.br/food'),
+    ('outreach_landing_url', 'https://derekhfood.com.br'),
     ('outreach_ativo', 'false'),
     ('wa_sales_numero', ''),
     ('wa_evolution_url', ''),
@@ -645,6 +645,14 @@ ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS followup_handoff_at TIMESTAMPT
 
 -- Notas em wa_conversas (enriquecimento, agendamento, lead_falso)
 ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS notas TEXT;
+
+-- Rastreamento de notificações de handoff (evita re-notificar mesmo lead)
+-- handoff_notificado_em: quando a última notificação foi enviada ao dono
+-- handoff_notificado_score: score no momento da notificação (re-notifica só se +15 pontos)
+-- handoff_notificado_tipo: "immediate" | "warm" | "strategic" — para re-notificar se tipo muda
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS handoff_notificado_em TIMESTAMPTZ;
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS handoff_notificado_score INTEGER DEFAULT 0;
+ALTER TABLE wa_conversas ADD COLUMN IF NOT EXISTS handoff_notificado_tipo TEXT;
 
 -- P4: Event-Driven Scoring — tabela de eventos
 CREATE TABLE IF NOT EXISTS lead_eventos (

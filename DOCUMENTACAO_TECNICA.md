@@ -1660,14 +1660,17 @@ DerekhFood-Windows/
 - Máscara automática: `XXX.XXX.XXX-XX` (CPF) / `XX.XXX.XXX/XXXX-XX` (CNPJ)
 - CNPJ válido habilita botão "Consultar Receita Federal" → auto-preenche formulário
 
-### 15.4 Email de Boas-Vindas (Resend)
+### 15.4 Email (Resend)
 
-- **Serviço:** `backend/app/email_service.py` — Resend SDK
-- **Template:** `backend/app/email_templates.py` — HTML responsivo
-- Enviado automaticamente ao criar restaurante (checkbox "Enviar email" no form)
-- Conteúdo: credenciais (código de acesso + senha), botões CTA (Painel + Guia de Início), checklist
+- **Domínio verificado:** `derekhfood.com.br` (único domínio do projeto)
+- **Backend (transacional):** `noreply@derekhfood.com.br` — boas-vindas, verificação OTP, reset senha, cupons
+  - Serviço: `backend/app/email_service.py` — Resend SDK
+  - Templates: `backend/app/email_templates.py` — HTML responsivo
+- **CRM (outreach B2B):** `contato@derekhfood.com.br` — prospecção, campanhas, respostas
+  - Serviço: `Hacking-restaurant-b2b/crm/email_service.py` — Resend SDK + tracking (pixel + link + unsub)
+  - Webhook: `POST /webhooks/resend` (opens, clicks, bounces, complaints)
 - Graceful degradation: se `RESEND_API_KEY` não configurada, log warning, não quebra
-- Secrets Fly.io: `RESEND_API_KEY`, `DEREKH_FROM_EMAIL`
+- Secrets Fly.io: `RESEND_API_KEY` (full access, compartilhada entre superfood-api e derekh-crm), `DEREKH_FROM_EMAIL`
 
 ### 15.5 Trial Configurável
 
