@@ -2841,7 +2841,7 @@ motoboy-app/
 ├── vite.config.ts            # Alias @ → monorepo, build ~490KB JS
 ├── tsconfig.json             # Paths para monorepo
 ├── index.html                # Entry point HTML
-├── version.json              # {"version": "1.1.0", "versionCode": 3, "minVersion": "1.0.0"}
+├── version.json              # {"version": "1.1.1", "versionCode": 4, "minVersion": "1.0.0"}
 ├── src/
 │   ├── main.tsx              # React render + registra GPS nativo
 │   ├── App.tsx               # Wrapper: update checker + background GPS
@@ -2880,8 +2880,8 @@ O plugin `@capacitor-community/background-geolocation` cria um **foreground serv
 ```json
 {
   "motoboy_app": {
-    "version": "1.1.0",
-    "version_code": 3,
+    "version": "1.1.1",
+    "version_code": 4,
     "min_version": "1.0.0",
     "download_url": "/entregador/download",
     "apk_url": "/static/uploads/downloads/DerekhFood-Entregador.apk",
@@ -2912,9 +2912,11 @@ O plugin `@capacitor-community/background-geolocation` cria um **foreground serv
 2. `npm ci` (monorepo + motoboy-app)
 3. `npm run build` + **verificação CSS** (deve ser >100KB — garante Tailwind escaneou monorepo)
 4. `npx cap copy android` + `npx cap sync android`
-5. Decodificar keystore (secret `MOTOBOY_KEYSTORE_BASE64`)
-6. `./gradlew assembleRelease` (ou debug sem keystore)
-7. Upload artifact `derekh-entregador-apk` (90 dias retenção)
+5. Sync version.json → build.gradle (versionName + versionCode)
+6. **Decode ou gerar keystore** — se secret `MOTOBOY_KEYSTORE_BASE64` existe: decodifica. Senão: `keytool` gera novo e publica como artifact para salvar nos secrets
+7. `./gradlew assembleRelease` com caminho **absoluto** do keystore (Gradle resolve caminhos relativos a partir do daemon, não do working dir!)
+8. Upload artifact `derekh-entregador-apk` (90 dias retenção)
+9. Upload artifact `derekh-keystore-SAVE-TO-SECRETS` (se gerado — 7 dias)
 
 **Steps — Job `deploy`:**
 1. Download artifact
@@ -2922,18 +2924,37 @@ O plugin `@capacitor-community/background-geolocation` cria um **foreground serv
 3. Upload via `flyctl ssh sftp shell` (`put`)
 4. **Verificação de tamanho** — compara bytes local vs remoto
 
-**Gotchas CI/CD resolvidos (30/03):**
+### 20.5.1 Assinatura do APK — Keystore Permanente
+
+**CRÍTICO:** O APK deve ser assinado com a MESMA chave em todas as builds. Se a chave mudar, o Android **rejeita a atualização** — o usuário precisa desinstalar e reinstalar.
+
+**Estado atual:** O CI gera keystore automaticamente se os secrets não existirem. Para persistência, configure os secrets no GitHub:
+
+```bash
+# 1. Baixar keystore do artifact "derekh-keystore-SAVE-TO-SECRETS" (GitHub Actions)
+# 2. Codificar em base64 e salvar como secret:
+base64 -w 0 derekh-motoboy.jks | gh secret set MOTOBOY_KEYSTORE_BASE64
+gh secret set MOTOBOY_KEYSTORE_PASSWORD --body "DerekhFood2025Motoboy"
+gh secret set MOTOBOY_KEY_ALIAS --body "derekh-entregador"
+gh secret set MOTOBOY_KEY_PASSWORD --body "DerekhFood2025Motoboy"
+```
+
+**Sem estes secrets:** CI gera keystore novo a cada build → APK instala apenas via fresh install (nunca update). Com os secrets: mesma chave sempre → atualizações normais.
+
+**Gotchas CI/CD resolvidos:**
 - `flyctl ssh sftp put` não sobrescreve arquivos existentes → sempre `rm -f` antes
 - `flyctl ssh console -C` não interpreta `&&` como shell → envolver em `sh -c '...'`
 - Tailwind CSS incompleto no APK → verificação de tamanho mínimo (100KB) no build
 - React duplicado (monorepo vs motoboy-app) → aliases explícitos no `vite.config.ts`
 - Google Fonts `@import` bloqueava renderização → movido para `<link>` no HTML
+- Keystore sem caminho absoluto → Gradle resolvia no daemon dir → `$(pwd)/app/derekh-motoboy.jks`
+- APK debug com chave diferente a cada build → conflito instalação → SEMPRE release signed agora
 
 **Secrets necessários (GitHub):**
-- `MOTOBOY_KEYSTORE_BASE64` — keystore JKS em base64
-- `MOTOBOY_KEYSTORE_PASSWORD`
-- `MOTOBOY_KEY_ALIAS`
-- `MOTOBOY_KEY_PASSWORD`
+- `MOTOBOY_KEYSTORE_BASE64` — keystore JKS em base64 (**recomendado** — sem ele, gera nova chave a cada build)
+- `MOTOBOY_KEYSTORE_PASSWORD` — default: `DerekhFood2025Motoboy`
+- `MOTOBOY_KEY_ALIAS` — default: `derekh-entregador`
+- `MOTOBOY_KEY_PASSWORD` — default: `DerekhFood2025Motoboy`
 - `FLY_API_TOKEN` (já existente)
 
 ### 20.6 Endpoints
@@ -2978,15 +2999,36 @@ Tela bloqueante que exige permissão de localização antes de permitir uso do a
 - `requestLocationPermissions()` — mostra dialog Android (retorna boolean)
 - `registerNativeGPS()` — chamada no startup, solicita permissão proativamente
 
-### 20.9 Versão do APK
+### 20.9 Versão do APK — Checklist de Atualização
 
-Para atualizar a versão: editar `motoboy-app/version.json`:
+**Arquivo:** `motoboy-app/version.json`
 ```json
-{"version": "1.0.1", "versionCode": 2, "minVersion": "1.0.0"}
+{"version": "1.1.1", "versionCode": 4, "minVersion": "1.0.0"}
 ```
-- `version`: semver exibida ao usuário
-- `versionCode`: inteiro incremental (Android)
-- `minVersion`: versão mínima aceita (abaixo disso → update obrigatório)
+- `version`: semver exibida ao usuário (ex: "1.1.1")
+- `versionCode`: inteiro incremental (Android usa para detectar update) — **sempre incrementar!**
+- `minVersion`: versão mínima aceita (abaixo disso → modal bloqueante, app inutilizável até atualizar)
+
+**Checklist obrigatório para atualizar o APK:**
+
+1. **Incrementar versão** em `motoboy-app/version.json`: `version` (semver) + `versionCode` (+1)
+2. **Commit e push para `main`** — push em `motoboy-app/**` dispara CI automaticamente
+3. **Aguardar build:** `gh run list --limit 1` → deve mostrar `completed success`
+4. **Deploy backend:** `fly deploy` — para servir `version.json` atualizado via `/api/public/app-version`
+5. **Verificar:**
+   - `curl https://superfood-api.fly.dev/api/public/app-version` → versão nova
+   - `curl -o /dev/null -w "%{http_code}" https://superfood-api.fly.dev/static/uploads/downloads/DerekhFood-Entregador.apk` → 200
+6. **App detecta automaticamente** ao abrir ou voltar do background
+
+**Quando alterar `minVersion`:**
+- Mudanças breaking (API incompatível, schema mudou, etc.)
+- Forçar todos os entregadores a atualizar imediatamente
+- **Efeito:** app mostra modal sem botão "Lembrar depois" — bloqueante total
+
+**IMPORTANTE sobre assinatura:**
+- Se os secrets `MOTOBOY_KEYSTORE_BASE64` etc. não estiverem configurados no GitHub, o CI gera keystore novo a cada build
+- Com keystore novo: entregador precisa **desinstalar e reinstalar** (não atualiza por cima)
+- Solução permanente: baixar artifact `derekh-keystore-SAVE-TO-SECRETS` e configurar secrets (ver seção 20.5.1)
 
 ---
 
