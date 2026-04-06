@@ -235,7 +235,7 @@ export default function MotoboyPerfil() {
 
         {/* Versão do app */}
         <p className="pt-2 text-center text-[10px] text-gray-700">
-          Derekh Entregador v1.1.0
+          Derekh Entregador v1.2.0
         </p>
       </div>
     </MotoboyLayout>

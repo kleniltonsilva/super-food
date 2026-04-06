@@ -1,9 +1,10 @@
 /**
  * App wrapper Capacitor — adiciona update checker + GPS gate + background GPS sobre o MotoboyApp
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import MotoboyApp from "@/motoboy/MotoboyApp";
 import NativeUpdateBanner from "./native/NativeUpdateBanner";
+import SplashScreen from "./components/SplashScreen";
 import LocationGate from "./native/LocationGate";
 import {
   checkForUpdates,
@@ -32,8 +33,10 @@ const BG_THROTTLE_MS = 10_000;
 let lastBgSend = 0;
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>(initialStatus);
   const [dismissed, setDismissed] = useState(false);
+  const handleSplashFinish = useCallback(() => setShowSplash(false), []);
 
   // Update checker
   useEffect(() => {
@@ -94,6 +97,10 @@ export default function App() {
     !dismissed &&
     !updateStatus.checking &&
     (updateStatus.updateAvailable || updateStatus.updateRequired);
+
+  if (showSplash) {
+    return <SplashScreen onFinish={handleSplashFinish} duration={2000} />;
+  }
 
   return (
     <LocationGate>
