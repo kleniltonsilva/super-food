@@ -2734,7 +2734,7 @@ def desativar_premio(
 def relatorio_vendas(
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("relatorios_avancados")),
     db: Session = Depends(database.get_db)
 ):
     q = db.query(models.Pedido).filter(
@@ -2788,7 +2788,7 @@ def relatorio_vendas(
 def relatorio_motoboys(
     data_inicio: Optional[str] = None,
     data_fim: Optional[str] = None,
-    rest: models.Restaurante = Depends(get_rest),
+    rest: models.Restaurante = Depends(verificar_feature("relatorios_avancados")),
     db: Session = Depends(database.get_db)
 ):
     q = db.query(models.Entrega).join(models.Pedido).filter(

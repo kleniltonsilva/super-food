@@ -1376,3 +1376,80 @@ class TestHelperFunctions:
             assert ADDON_INCLUDED_TIER[feat] >= ADDON_MIN_TIER[feat], (
                 f"Add-on '{feat}': included_tier < min_tier"
             )
+
+
+# ═══════════════════════════════════════════════════════════════
+# F19. TestRelatoriosAvancados — Guard relatorios_avancados (tier 2)
+# ═══════════════════════════════════════════════════════════════
+
+class TestRelatoriosAvancados:
+    """Valida guard de relatorios_avancados nos endpoints de relatórios."""
+
+    def test_basico_403_relatorios_vendas(self, client, setup):
+        resp = client.get("/painel/relatorios/vendas", headers=_auth(setup["basico"]["token"]))
+        assert resp.status_code == 403
+        detail = resp.json()["detail"]
+        assert detail["feature"] == "relatorios_avancados"
+
+    def test_basico_403_relatorios_motoboys(self, client, setup):
+        resp = client.get("/painel/relatorios/motoboys", headers=_auth(setup["basico"]["token"]))
+        assert resp.status_code == 403
+
+    def test_essencial_acessa_relatorios_vendas(self, client, setup):
+        resp = client.get("/painel/relatorios/vendas", headers=_auth(setup["essencial"]["token"]))
+        assert resp.status_code == 200
+
+    def test_essencial_acessa_relatorios_motoboys(self, client, setup):
+        resp = client.get("/painel/relatorios/motoboys", headers=_auth(setup["essencial"]["token"]))
+        assert resp.status_code == 200
+
+    def test_trial_acessa_relatorios(self, client, setup):
+        resp = client.get("/painel/relatorios/vendas", headers=_auth(setup["trial"]["token"]))
+        assert resp.status_code == 200
+
+    def test_suspenso_403_relatorios(self, client, setup):
+        resp = client.get("/painel/relatorios/vendas", headers=_auth(setup["suspenso"]["token"]))
+        assert resp.status_code == 403
+
+
+# ═══════════════════════════════════════════════════════════════
+# F20. TestPixOnline — Guard pix_online (tier 3)
+# ═══════════════════════════════════════════════════════════════
+
+class TestPixOnline:
+    """Valida guard de pix_online nos endpoints de Pix."""
+
+    def test_basico_403_pix_status(self, client, setup):
+        resp = client.get("/painel/pix/status", headers=_auth(setup["basico"]["token"]))
+        assert resp.status_code == 403
+        detail = resp.json()["detail"]
+        assert detail["feature"] == "pix_online"
+
+    def test_essencial_403_pix_status(self, client, setup):
+        resp = client.get("/painel/pix/status", headers=_auth(setup["essencial"]["token"]))
+        assert resp.status_code == 403
+
+    def test_avancado_acessa_pix_status(self, client, setup):
+        resp = client.get("/painel/pix/status", headers=_auth(setup["avancado"]["token"]))
+        # Pode dar 502 (sem Woovi configurado) mas NÃO 403
+        assert resp.status_code != 403
+
+    def test_premium_acessa_pix_status(self, client, setup):
+        resp = client.get("/painel/pix/status", headers=_auth(setup["premium"]["token"]))
+        assert resp.status_code != 403
+
+    def test_trial_acessa_pix(self, client, setup):
+        resp = client.get("/painel/pix/status", headers=_auth(setup["trial"]["token"]))
+        assert resp.status_code != 403
+
+    def test_suspenso_403_pix(self, client, setup):
+        resp = client.get("/painel/pix/status", headers=_auth(setup["suspenso"]["token"]))
+        assert resp.status_code == 403
+
+    def test_basico_403_pix_saques(self, client, setup):
+        resp = client.get("/painel/pix/saques", headers=_auth(setup["basico"]["token"]))
+        assert resp.status_code == 403
+
+    def test_avancado_acessa_pix_saques(self, client, setup):
+        resp = client.get("/painel/pix/saques", headers=_auth(setup["avancado"]["token"]))
+        assert resp.status_code == 200

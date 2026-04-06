@@ -1084,6 +1084,8 @@ O sistema usa **comparação por tier inteiro** (1-4) com hierarquia cumulativa.
 | `analytics_avancado` | GET `/painel/relatorios/analytics` | `verificar_feature("analytics_avancado")` |
 | `kds_cozinha` | Todos `/painel/cozinha/*` + login cozinheiro | `verificar_feature("kds_cozinha")` |
 | `app_garcom` | Todos `/painel/garcom/*` + login garçom | `verificar_feature("app_garcom")` |
+| `relatorios_avancados` | GET `/painel/relatorios/vendas`, `/painel/relatorios/motoboys` | `verificar_feature("relatorios_avancados")` |
+| `pix_online` | Todos `/painel/pix/*` (ativar, status, desativar, config-saque, sacar, saques) | `verificar_feature("pix_online")` |
 | `bridge_printer` | Todos `/painel/bridge/*` | `verificar_feature("bridge_printer")` |
 | `integracoes_marketplace` | Todos `/painel/integracoes/*` | `verificar_feature("integracoes_marketplace")` |
 

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel, field_validator
 
 from .. import models, database, auth
+from ..feature_guard import verificar_feature
 from ..pix import pix_service
 
 logger = logging.getLogger("superfood.pix")
@@ -73,7 +74,7 @@ class SaqueRequest(BaseModel):
 @router.post("/ativar")
 async def ativar_pix(
     dados: AtivarPixRequest,
-    restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
+    restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
     db: Session = Depends(database.get_db),
 ):
     """Ativa Pix Online para o restaurante. Cria subconta na Woovi."""
@@ -104,7 +105,7 @@ async def ativar_pix(
 
 @router.get("/status")
 async def pix_status(
-    restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
+    restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
     db: Session = Depends(database.get_db),
 ):
     """Retorna status Pix + saldo + config saque + últimos saques."""
@@ -123,7 +124,7 @@ async def pix_status(
 
 @router.post("/desativar")
 async def desativar_pix(
-    restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
+    restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
     db: Session = Depends(database.get_db),
 ):
     """Desativa Pix Online do restaurante (não deleta subconta Woovi)."""
@@ -143,7 +144,7 @@ async def desativar_pix(
 @router.put("/config-saque")
 async def config_saque(
     dados: ConfigSaqueRequest,
-    restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
+    restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
     db: Session = Depends(database.get_db),
 ):
     """Configura saque automático (ligado/desligado + valor mínimo)."""
@@ -165,7 +166,7 @@ async def config_saque(
 @router.post("/sacar")
 async def preview_saque(
     dados: SaqueRequest,
-    restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
+    restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
     db: Session = Depends(database.get_db),
 ):
     """
@@ -212,7 +213,7 @@ async def preview_saque(
 @router.post("/sacar/confirmar")
 async def confirmar_saque(
     dados: SaqueRequest,
-    restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
+    restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
     db: Session = Depends(database.get_db),
 ):
     """Executa o saque efetivamente. Usa saque parcial se necessário."""
@@ -235,7 +236,7 @@ async def confirmar_saque(
 
 @router.get("/saques")
 def listar_saques(
-    restaurante: models.Restaurante = Depends(auth.get_current_restaurante),
+    restaurante: models.Restaurante = Depends(verificar_feature("pix_online")),
     db: Session = Depends(database.get_db),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
