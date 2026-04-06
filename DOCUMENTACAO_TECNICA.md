@@ -1,7 +1,7 @@
 # Derekh Food — Documentação Técnica Completa
 
 > Documento de referência para vendas, marketing e suporte técnico.
-> Versão 4.1.0 | Última atualização: 02/04/2026
+> Versão 4.1.0 | Última atualização: 06/04/2026
 
 ---
 
@@ -1430,7 +1430,7 @@ bridge_agent/
 ├── simulador.py         — Simulador de recibos (texto puro, modo teste)
 ├── ui/config_window.py  — Tkinter login + settings + auto-start
 ├── requirements.txt     — requests, pywin32, pystray, Pillow
-└── build.bat            — PyInstaller → .exe (--paths ., --console, hidden-imports)
+└── build.bat            — PyInstaller → .exe (--paths ., --windowed, hidden-imports pywin32 completo)
 ```
 
 ### Build dos Executáveis (PyInstaller)
@@ -1515,6 +1515,7 @@ curl -s https://superfood-api.fly.dev/api/public/downloads | python -m json.tool
 | 4 | Token sempre `null` após login | Config lia `data.get("token")` mas backend retorna `access_token` | `data.get("access_token") or data.get("token")` + save imediato (sem esperar botão Salvar) |
 | 5 | `.exe` falhava com `ImportError: attempted relative import with no known parent package` | PyInstaller adicionava `bridge_agent/` ao sys.path em vez de `DerekhFood-Windows/` | `--paths .` no PyInstaller + `cd /d "%~dp0.."` no build.bat |
 | 6 | Impressora virtual erro `HRESULT 0x80070057` | `-SNMP 0` e `-Shared $false` inválidos no `Add-PrinterPort`/`Add-Printer` | Remover ambos; desabilitar SNMP via registry após criar porta |
+| 7 | `.exe` falhava com `ModuleNotFoundError: No module named 'win32timezone'` | `win32print.EnumJobs()` retorna `datetime` que depende de `win32timezone`, mas PyInstaller não detecta | Adicionados `--hidden-import` nos `build.bat`: `win32timezone`, `win32con`, `pywintypes`, `urllib3`, `certifi`, `charset_normalizer`, `idna`, `requests.adapters`, `websockets.exceptions` |
 
 ### 14.1 Impressora Térmica Virtual (Teste E2E sem hardware)
 
@@ -3019,7 +3020,70 @@ pytest tests/test_distance_cache.py -v  # 34 testes
 
 ---
 
-*Documento gerado automaticamente pelo sistema Derekh Food v4.0.8*
-*Última atualização: 31/03/2026*
+## 24. Correções Recentes (05/04/2026)
+
+### 24.1 Fix: React hooks violation em BotWhatsApp.tsx
+
+**Erro Sentry:** `Rendered fewer hooks than expected. This may be caused by an accidental early return statement.`
+- **URL afetada:** `/admin/whatsapp-bot`
+- **Ocorrências:** 3 (Firefox 147.0, ambiente produção)
+- **Severidade:** error
+
+**Causa raiz:**
+O componente `BotWhatsApp` violava as **Rules of Hooks** do React. Cinco hooks (`useState` + 4 hooks TanStack Query de relatórios) estavam declarados **depois** de dois early returns condicionais:
+
+```tsx
+// ❌ ERRADO — hooks declarados depois de if ... return
+if (!hasFeature) return <...>;          // linha 256
+if (needsOnboarding) return <...>;      // linha 296
+
+const [periodoRelatorio, setPeriodoRelatorio] = useState("30d");
+const { data: relEficiencia } = useBotRelatorioEficiencia(periodoRelatorio);
+const { data: relSatisfacao } = useBotRelatorioSatisfacao(periodoRelatorio);
+const { data: relInativos } = useBotRelatorioClientesInativos();
+const { data: relErros } = useBotRelatorioErrosContornados(periodoRelatorio);
+```
+
+Em re-renders onde as condições `hasFeature`/`needsOnboarding` mudavam (ex: ativação do add-on em tempo real, conclusão do wizard de onboarding, resposta de refetch mudando `phoneStatusData`), o React chamava uma **quantidade diferente de hooks** entre renders → crash total da página.
+
+**Correção:**
+Todos os hooks foram movidos para o **topo do componente**, antes de qualquer early return. Agora a contagem de hooks é consistente em toda renderização.
+
+**Arquivo:** `restaurante-pedido-online/client/src/admin/pages/BotWhatsApp.tsx:170,212-215`
+
+**Regra para evitar recorrência:**
+> **Todos os hooks (`useState`, `useEffect`, `useQuery`, `useMutation`, custom hooks) DEVEM ser declarados no topo do componente, ANTES de qualquer `if (...) return`. Early returns só são permitidos depois que todos os hooks foram chamados.**
+
+### 24.2 Fix: Fluxo de impressão — 2 gaps corrigidos
+
+**Gap 1 — Bot WhatsApp não disparava impressão:**
+- **Arquivo:** `backend/app/bot/function_calls.py:948-966` (criar pedido) + `:997-1015` (fallback Pix)
+- **Problema:** `_criar_pedido` do bot criava o pedido mas não chamava `printer_manager.broadcast`
+- **Fix:** Adicionada chamada à impressora respeitando **dupla flag**: `ConfigRestaurante.impressao_automatica` E `BotConfig.impressao_automatica_bot`
+
+**Gap 2 — Webhook Pix não disparava impressão:**
+- **Arquivo:** `backend/app/pix/pix_service.py:439-460`
+- **Problema:** `processar_pagamento_confirmado` criava `PedidoCozinha` mas pulava a impressão. Pedido Pix só deve imprimir APÓS confirmação de pagamento (status `pendente` não vai pra KDS nem imprime).
+- **Fix:** Adicionada chamada `printer_manager.broadcast` dentro do handler do webhook, após confirmar pagamento.
+
+**Fluxo de impressão — 6 cenários (seção 13.6):**
+
+| # | Origem | Quando imprime | Flags respeitadas |
+|---|--------|----------------|-------------------|
+| 1 | Pedido site cliente | Criação imediata | `impressao_automatica` |
+| 2 | Pedido manual painel | Criação imediata | `impressao_automatica` |
+| 3 | Pedido bot WhatsApp | Criação imediata | `impressao_automatica` + `impressao_automatica_bot` |
+| 4 | Pedido Pix online (site) | Após webhook confirmar | `impressao_automatica` |
+| 5 | Pedido Pix online (bot) | Após webhook confirmar | `impressao_automatica` + `impressao_automatica_bot` |
+| 6 | Bridge interceptado | Nunca (só cria pedido, não reimprime) | — |
+
+**Anti-loop Bridge ↔ Printer (2 camadas independentes):**
+1. **Primária** — prefixo do job name no spooler: `Derekh_*` marca jobs criados pelo Printer Agent Derekh, e o Bridge Agent ignora (`main.py:297` + `spooler_monitor.py:131`)
+2. **Fallback** — text markers: se o prefixo falhar, o Bridge detecta marcadores no texto ESC/POS e descarta (`bridge_client.py:119`)
+
+---
+
+*Documento gerado automaticamente pelo sistema Derekh Food v4.1.0*
+*Última atualização: 05/04/2026*
 *Para suporte técnico: contato@derekhfood.com.br*
 *WhatsApp comercial: +1 555-900-4563*
