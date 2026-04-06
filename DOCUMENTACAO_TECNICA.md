@@ -1937,86 +1937,61 @@ Pedidos criados pelo bot são automaticamente marcados com `origem = "whatsapp_b
 - **Idioma:** Auto-detectado (pt por padrão)
 - **Formato:** Áudio base64 baixado via Evolution API → transcrito → texto processado
 
-### 17.8 TTS — xAI
+### 17.8 TTS — Fish Audio S2-Pro (ÚNICO provider)
 
-- **Serviço:** `xai_tts.py`
-- **Endpoint:** `POST https://api.x.ai/v1/tts` (NÃO `/v1/audio/speech`)
-- **Body:** `{text, voice_id, language, output_format: "wav"}`
-- **Vozes disponíveis:** ara, eve, leo, rex, sal, una
-- **Envio:** Via Evolution API como PTT nativo (bolinha verde) usando `sendWhatsAppAudio`
-- **Critérios para enviar áudio:** cliente mandou áudio (reciprocidade) OU conversa longa (>=8 msgs)
+> **IMPORTANTE (06/04/2026):** Grok TTS (xAI) foi **desativado permanentemente**. Todo o código xAI TTS foi removido. Fish Audio S2-Pro é o ÚNICO provider de voz da Ana.
 
-### 17.8.1 TTS Dual-Mode (Fish Audio + xAI Grok)
-
-#### Visão Geral
-
-- Sistema TTS dual-mode: Fish Audio S2-Pro (quando configurado) com fallback automático para xAI Grok
-- Zero breaking changes: default = Grok (comportamento idêntico ao anterior)
-- Toggle via config `tts_provider`: "grok" (padrão) ou "fish"
+- **Serviço:** `fish_tts.py` (sync + async)
+- **Endpoint:** `POST https://api.fish.audio/v1/tts`
+- **Auth:** Bearer token (header `Authorization`)
+- **Model:** `s2-pro` (header, NÃO body)
+- **Body:** `{text, reference_id, format, latency, mp3_bitrate}`
+- **Response:** binary audio stream (chunked)
+- **Envio:** Via Meta Cloud API como PTT nativo (bolinha verde) — MP3→OGG/Opus
+- **Critérios para enviar áudio:** cliente mandou áudio (reciprocidade) OU conversa longa (>=10 msgs) OU pediu áudio OU >=3 explicações
 
 #### Arquivos
 
 | Arquivo | Descrição |
 |---------|-----------|
-| `Hacking-restaurant-b2b/crm/fish_tts.py` | Módulo Fish Audio para Sales Bot (sync, retorna path .mp3) |
-| `backend/app/bot/fish_tts.py` | Módulo Fish Audio para Bot Restaurante (async, retorna base64 MP3) |
-| `crm/wa_sales_bot.py` | `gerar_audio_tts()` agora verifica tts_provider antes de gerar |
-| `backend/app/bot/atendente.py` | Dual-mode: Fish → fallback Grok |
-| `database/models.py` | Campo `tts_provider` em BotConfig (String, default 'grok') |
-
-#### API Fish Audio
-
-- **Endpoint:** `POST https://api.fish.audio/v1/tts`
-- **Auth:** Bearer token (header `Authorization`)
-- **Model:** `s2-pro` (header, NÃO body)
-- **Body:** `{text, reference_id, format, latency}`
-- **Response:** binary audio stream (chunked)
-- **Tags emoção S2-Pro:** livres em colchetes `[amigável]`, `[empolgado]`, etc.
-- **SDK:** `pip install fish-audio-sdk` (opcional, funciona via httpx raw)
+| `Hacking-restaurant-b2b/crm/fish_tts.py` | Módulo Fish Audio para Sales Bot (sync + async) |
+| `Hacking-restaurant-b2b/crm/audio_cache.py` | Cache inteligente de áudios por intent |
+| `Hacking-restaurant-b2b/crm/tts_queue.py` | Fila async para geração TTS |
+| `crm/wa_sales_bot.py` | `gerar_audio_tts()` usa APENAS Fish Audio |
+| `backend/app/bot/fish_tts.py` | Módulo Fish Audio para Bot Restaurante (async) |
 
 #### Variáveis de Ambiente
 
 | Variável | Descrição | Obrigatória |
 |----------|-----------|-------------|
-| `FISH_API_KEY` | API key Fish Audio | Sim (para ativar) |
-| `FISH_VOICE_ID` | Voice/reference_id clonada ou stock | Não |
+| `FISH_API_KEY` | API key Fish Audio | Sim |
+| `FISH_VOICE_ID` | Voice/reference_id (voz clonada "putinha 1") | Sim |
 
-#### Como Ativar
-
-1. Obter API key em fish.audio (plano Plus $11/mês mínimo)
-2. Definir `FISH_API_KEY` no ambiente
-3. Sales Bot: `POST /api/configuracao` → `tts_provider = "fish"`
-4. Bot Restaurante: setar `tts_provider = "fish"` no BotConfig do restaurante
-5. Opcional: `pip install fish-audio-sdk` para usar SDK em vez de API raw
-
-#### Tags de Emoção Fish Audio S2-Pro (Sales Bot — atualizado 27/03)
+#### Tags de Emoção Fish Audio S2-Pro
 
 | Contexto | Tag | Uso |
 |----------|-----|-----|
-| abertura | `[amigável]` | Primeiro contato |
+| abertura | `[amigável] [sorriso]` | Primeiro contato |
 | apresentacao | `[profissional]` | Pitch de produto |
 | beneficio | `[empolgado]` | Destacar vantagens |
-| objecao | `[compreensivo]` | Objeções do lead |
-| urgencia | `[empolgado]` | Criar senso de urgência |
-| fechamento | `[empolgado]` | Fechar venda |
+| objecao | `[compreensivo] [calmo]` | Objeções do lead |
+| urgencia | `[empolgado] [confiante]` | Criar senso de urgência |
+| fechamento | `[empolgado] [sorriso]` | Fechar venda |
 | followup | `[amigável]` | Follow-up |
-| suporte | `[calmo]` | Suporte técnico |
-| serio | `[sério]` | Contexto formal/sério |
-| profissional | `[profissional]` | Pitch B2B |
-| amigavel | `[amigável]` | Conversa casual |
-| empolgado | `[empolgado]` | Notícia boa |
-| alivio | `[aliviado]` | Resolver problema |
-| pausa | `[pausa curta]` | Pausa dramática |
-| risinhos | `[risinhos]` | Tom divertido |
+| suporte | `[calmo] [paciente]` | Suporte técnico |
+| preco | `[profissional] [confiante]` | Discussão de preço |
+| trial | `[empolgado] [animado]` | Oferta de trial |
+| despedida | `[amigável] [caloroso]` | Encerramento |
 
 Tags são livres (linguagem natural em colchetes) — Fish Audio S2-Pro interpreta qualquer tag.
 
-#### Fluxo de Fallback
+#### Fluxo TTS (sem fallback para Grok)
 
-1. Verifica `tts_provider` config
-2. Se `"fish"`: tenta Fish Audio → se falha → Grok
-3. Se `"grok"` ou vazio: Grok direto (comportamento atual)
-4. Se Grok falha: retorna `None` → fallback para texto
+1. `_gerar_e_enviar_audio_resposta()` chama `_gerar_audio_com_cache()` (Fish Audio direto)
+2. Cache hit → retorna bytes do cache
+3. Cache miss → `tts_queue.gerar_audio()` → `gerar_audio_fish_async()` → Fish API
+4. Se Fish falha → retorna `None` → caller envia **texto puro** (nunca Grok)
+5. Áudio MP3 → convertido para OGG/Opus → enviado via Meta Cloud API como PTT
 
 ### 17.9 Context Builder — 3 Camadas
 

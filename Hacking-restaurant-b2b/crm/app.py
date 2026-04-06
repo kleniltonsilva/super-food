@@ -1447,10 +1447,10 @@ async def wa_sales_enviar(lead_id: int, request: Request):
 
 
 @app.post("/wa-sales/audio/{lead_id}")
-async def wa_sales_audio(lead_id: int, voz: str = "rex"):
-    """Envia áudio TTS personalizado para um lead."""
+async def wa_sales_audio(lead_id: int):
+    """Envia áudio TTS personalizado para um lead (Fish Audio)."""
     from crm.wa_sales_bot import enviar_audio_wa
-    result = enviar_audio_wa(lead_id, voz)
+    result = enviar_audio_wa(lead_id)
     if result.get("sucesso"):
         return JSONResponse({"ok": True, "conversa_id": result["conversa_id"]})
     return JSONResponse({"ok": False, "msg": result.get("erro")}, status_code=400)
@@ -1950,7 +1950,7 @@ async def api_configuracao_toggles():
     toggles = {
         "audio_stt_ativo": configs.get("audio_stt_ativo", "true") == "true",
         "audio_tts_autonomo": configs.get("audio_tts_autonomo", "true") == "true",
-        "audio_voz": configs.get("audio_voz", "rex"),
+        "audio_voz": "fish_s2pro",  # Fish Audio S2-Pro (ÚNICO provider)
         "retry_ativo": configs.get("retry_ativo", "true") == "true",
         "retry_max": int(configs.get("retry_max", "3")),
         "cooling_ativo": configs.get("cooling_ativo", "true") == "true",

@@ -542,7 +542,7 @@ INSERT INTO configuracoes (chave, valor) VALUES
     -- Toggles Áudio STT/TTS
     ('audio_stt_ativo', 'true'),
     ('audio_tts_autonomo', 'true'),
-    ('audio_voz', 'rex'),
+    ('audio_voz', 'ara'),
     -- Toggles Retry
     ('retry_ativo', 'true'),
     ('retry_max', '3'),

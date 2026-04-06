@@ -138,7 +138,7 @@ def sugerir_estrategia(lead: dict) -> dict:
     estrategia = {
         "horario": "14:00-17:00",
         "tom": "informal",
-        "voz": "ara",
+        "voz": "fish_s2pro",
         "usar_audio": False,
         "max_followups": 3,
     }

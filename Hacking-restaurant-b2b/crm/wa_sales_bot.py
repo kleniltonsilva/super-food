@@ -77,8 +77,8 @@ _NUMEROS_EXCLUIDOS = {
     "16465894168",    # Número teste
 }
 
-# Fallback: WhatsApp Cloud API (Meta) — mantido para compatibilidade
-_GRAPH_API = "https://graph.facebook.com/v21.0"
+# WhatsApp Cloud API (Meta) — provider principal (Evolution API descontinuada)
+_GRAPH_API = "https://graph.facebook.com/v22.0"
 
 
 # ============================================================
@@ -93,28 +93,56 @@ def _get_evolution_config() -> tuple:
     return url, instance, key
 
 
-def _enviar_presenca(numero: str, presenca: str = "composing",
-                     delay_ms: int = 3000, instance_override: str = "") -> None:
-    """Envia indicador de presença para conversa (composing/recording).
-    Faz o contato ver 'digitando...' ou 'gravando áudio...' antes da resposta."""
-    url, inst, key = _get_evolution_config()
-    if instance_override:
-        inst = instance_override
-    if not url or not key:
+def _marcar_lida_cloud_api(msg_id: str) -> None:
+    """Marca mensagem como lida (ticks azuis) via Meta Cloud API."""
+    phone_id, token = _get_wa_config()
+    if not phone_id or not token or not msg_id:
         return
     try:
         httpx.post(
-            f"{url}/chat/sendPresence/{inst}",
-            headers={"apikey": key, "Content-Type": "application/json"},
-            json={"number": numero, "delay": delay_ms, "presence": presenca},
+            f"{_GRAPH_API}/{phone_id}/messages",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"messaging_product": "whatsapp", "status": "read", "message_id": msg_id},
             timeout=5,
         )
     except Exception:
-        pass  # presença é cosmética, não bloquear envio
+        pass  # cosmético, não bloquear
+
+
+def _enviar_presenca_cloud_api(numero: str) -> None:
+    """Envia indicador 'digitando...' via Meta Cloud API."""
+    phone_id, token = _get_wa_config()
+    if not phone_id or not token:
+        return
+    try:
+        httpx.post(
+            f"{_GRAPH_API}/{phone_id}/messages",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": numero,
+                "type": "typing_indicator",
+                "typing_indicator": {"type": "text"},
+            },
+            timeout=5,
+        )
+    except Exception:
+        pass  # cosmético
+
+
+def _enviar_presenca(numero: str, presenca: str = "composing",
+                     delay_ms: int = 3000, instance_override: str = "") -> None:
+    """Envia indicador de presença ('digitando...') via Meta Cloud API.
+    Fallback para Evolution API se Cloud API falhar.
+    Nota: Meta Cloud API só suporta 'digitando' (não 'gravando áudio')."""
+    # Cloud API (Meta) — provider principal
+    _enviar_presenca_cloud_api(numero)
+    # Nota: Evolution API fallback removido — não é mais necessário
 
 
 def _get_wa_config() -> tuple:
-    """Retorna (phone_number_id, access_token) do WhatsApp Cloud API (fallback)."""
+    """Retorna (phone_number_id, access_token) do WhatsApp Cloud API (Meta)."""
     phone_id = obter_configuracao("wa_phone_id") or os.environ.get("WHATSAPP_PHONE_ID", "")
     token = obter_configuracao("wa_access_token") or os.environ.get("WHATSAPP_ACCESS_TOKEN", "")
     return phone_id, token
@@ -136,6 +164,20 @@ def _limpar_telefone(tel: str) -> str:
     if not tel:
         return ""
     return re.sub(r"\D", "", tel)
+
+
+def _build_wa_chat_link(numero_lead: str, texto_prefill: str = "") -> str:
+    """Gera link wa.me clicável para o dono abrir conversa direto com o lead.
+    numero_lead: telefone do lead (já limpo ou bruto)
+    texto_prefill: mensagem pré-preenchida (opcional)
+    Retorna: https://wa.me/{numero}?text={texto} ou "" se número inválido"""
+    import urllib.parse
+    num = _limpar_telefone(numero_lead)
+    if not num or len(num) < 8:
+        return ""
+    if texto_prefill:
+        return f"https://wa.me/{num}?text={urllib.parse.quote(texto_prefill)}"
+    return f"https://wa.me/{num}"
 
 
 def _formatar_numero_wa(telefone: str) -> str:
@@ -645,7 +687,7 @@ def _enviar_via_evolution(numero: str, texto: str, instance_override: str = "") 
 
 
 def _enviar_via_cloud_api(numero: str, texto: str) -> dict:
-    """Fallback: envia via WhatsApp Cloud API (Meta)."""
+    """Envia mensagem de texto via WhatsApp Cloud API (Meta) — provider principal."""
     phone_id, token = _get_wa_config()
     if not phone_id or not token:
         return {"erro": "WhatsApp Cloud API não configurada"}
@@ -708,11 +750,11 @@ def enviar_mensagem_wa(lead_id: int, texto: str, tom: str = "informal") -> dict:
     if not numero:
         return {"erro": "Lead sem telefone válido"}
 
-    # Enviar: Evolution API (prioritário, instância outbound) → Cloud API (fallback)
-    resultado = _enviar_via_evolution(numero, texto)  # usa instância padrão (outbound)
+    # Enviar: Cloud API (Meta) prioritário → Evolution API (fallback legado)
+    resultado = _enviar_via_cloud_api(numero, texto)
     if resultado.get("erro"):
-        log.warning(f"Evolution falhou, tentando Cloud API: {resultado['erro']}")
-        resultado = _enviar_via_cloud_api(numero, texto)
+        log.warning(f"Cloud API falhou, tentando Evolution: {resultado['erro']}")
+        resultado = _enviar_via_evolution(numero, texto)
 
     if resultado.get("erro"):
         registrar_msg_wa(conversa_id, "enviada", texto, intencao="erro_envio")
@@ -828,6 +870,42 @@ def baixar_audio_evolution(msg_key_id: str, instance: str = "") -> dict:
         return {"erro": f"Download áudio: {e}"}
 
 
+def baixar_audio_meta(audio_id: str) -> dict:
+    """Baixa áudio de mensagem via Meta Cloud API (Media Download).
+    Retorna {"base64": "...", "mimetype": "..."} ou {"erro": "..."}."""
+    phone_id, token = _get_wa_config()
+    if not phone_id or not token:
+        return {"erro": "Cloud API não configurada"}
+
+    try:
+        # 1. Obter URL do áudio
+        resp = httpx.get(
+            f"{_GRAPH_API}/{audio_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        media_url = resp.json().get("url", "")
+        mime = resp.json().get("mime_type", "audio/ogg")
+        if not media_url:
+            return {"erro": "URL do áudio não encontrada"}
+
+        # 2. Baixar conteúdo binário
+        resp_dl = httpx.get(
+            media_url,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=20,
+        )
+        resp_dl.raise_for_status()
+        audio_bytes = resp_dl.content
+        b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        log.info(f"Áudio Meta baixado: {len(b64)} chars base64, mime={mime}")
+        return {"base64": b64, "mimetype": mime}
+    except Exception as e:
+        log.error(f"Erro ao baixar áudio Meta: {e}")
+        return {"erro": f"Download áudio Meta: {e}"}
+
+
 def _calcular_delay_audio(duracao_seg: int) -> float:
     """Calcula delay proporcional para simular escuta do áudio (1.5x speed).
     Mínimo 5s, máximo 120s."""
@@ -874,21 +952,50 @@ def _enviar_audio_evolution(numero: str, audio_base64: str, instance: str = "",
         return {"erro": f"Envio áudio Evolution: {e}"}
 
 
+def _mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes | None:
+    """Converte MP3 → OGG/Opus via ffmpeg (necessário para PTT no Meta Cloud API)."""
+    import subprocess
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-i", "pipe:0", "-c:a", "libopus", "-b:a", "64k",
+             "-f", "ogg", "pipe:1", "-loglevel", "error"],
+            input=mp3_bytes, capture_output=True, timeout=15,
+        )
+        if proc.returncode != 0:
+            log.error(f"ffmpeg OGG/Opus falhou: {proc.stderr.decode()[:200]}")
+            return None
+        return proc.stdout
+    except Exception as e:
+        log.error(f"ffmpeg não disponível ou erro: {e}")
+        return None
+
+
 def _enviar_audio_cloud_api(numero: str, audio_bytes: bytes) -> dict:
-    """Fallback: envia áudio via WhatsApp Cloud API (Meta).
-    Faz upload do áudio e envia como mensagem de áudio (não PTT)."""
+    """Envia áudio como PTT (bolinha verde) via WhatsApp Cloud API (Meta).
+    Converte MP3 → OGG/Opus, faz upload e envia com voice=true."""
     phone_id, token = _get_wa_config()
     if not phone_id or not token:
         return {"erro": "WhatsApp Cloud API não configurada para áudio"}
 
     try:
-        # Upload do áudio para Meta
         import io
+
+        # 1. Converter MP3 → OGG/Opus (obrigatório para PTT)
+        ogg_bytes = _mp3_to_ogg_opus(audio_bytes)
+        if not ogg_bytes:
+            log.warning("Conversão OGG/Opus falhou — enviando MP3 como arquivo normal")
+            upload_data = ("audio.mp3", io.BytesIO(audio_bytes), "audio/mpeg")
+            use_ptt = False
+        else:
+            upload_data = ("audio.ogg", io.BytesIO(ogg_bytes), "audio/ogg")
+            use_ptt = True
+
+        # 2. Upload do áudio para Meta
         resp_upload = httpx.post(
             f"{_GRAPH_API}/{phone_id}/media",
             headers={"Authorization": f"Bearer {token}"},
-            files={"file": ("audio.mp3", io.BytesIO(audio_bytes), "audio/mpeg")},
-            data={"messaging_product": "whatsapp", "type": "audio/mpeg"},
+            files={"file": upload_data},
+            data={"messaging_product": "whatsapp", "type": upload_data[2]},
             timeout=30,
         )
         resp_upload.raise_for_status()
@@ -896,9 +1003,13 @@ def _enviar_audio_cloud_api(numero: str, audio_bytes: bytes) -> dict:
         if not media_id:
             return {"erro": "Upload áudio Cloud API falhou (sem media_id)"}
 
-        log.info(f"Áudio uploaded para Cloud API: media_id={media_id}")
+        log.info(f"Áudio uploaded para Cloud API: media_id={media_id} (ogg={use_ptt})")
 
-        # Enviar mensagem de áudio
+        # 3. Enviar como PTT (bolinha verde) ou áudio normal
+        audio_payload = {"id": media_id}
+        if use_ptt:
+            audio_payload["voice"] = True
+
         resp_msg = httpx.post(
             f"{_GRAPH_API}/{phone_id}/messages",
             headers={
@@ -909,14 +1020,14 @@ def _enviar_audio_cloud_api(numero: str, audio_bytes: bytes) -> dict:
                 "messaging_product": "whatsapp",
                 "to": numero,
                 "type": "audio",
-                "audio": {"id": media_id},
+                "audio": audio_payload,
             },
             timeout=15,
         )
         resp_msg.raise_for_status()
         wa_msg_id = (resp_msg.json().get("messages") or [{}])[0].get("id", "")
-        log.info(f"Áudio enviado via Cloud API: wa_msg_id={wa_msg_id}")
-        return {"sucesso": True, "wa_msg_id": wa_msg_id, "via": "cloud_api_audio"}
+        log.info(f"Áudio PTT enviado via Cloud API: wa_msg_id={wa_msg_id}")
+        return {"sucesso": True, "wa_msg_id": wa_msg_id, "via": "cloud_api_ptt" if use_ptt else "cloud_api_audio"}
     except Exception as e:
         log.error(f"Erro envio áudio Cloud API: {e}")
         return {"erro": f"Cloud API áudio: {e}"}
@@ -1061,68 +1172,44 @@ def _inferir_emocao_contexto(intencao: str, resposta: str, mensagem_cliente: str
 def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
                                     conversa_id: int, instance: str = "",
                                     emocao: str = "") -> dict:
-    """Gera TTS do texto da resposta e envia via Evolution API.
+    """Gera TTS via Fish Audio S2-Pro e envia como PTT (bolinha verde) via Meta Cloud API.
 
-    Se tts_provider="fish": usa _gerar_audio_com_cache (fila + cache inteligente).
-    Senão: usa gerar_audio_tts (Grok TTS legado).
-
+    Fish Audio é o ÚNICO provider TTS — Grok TTS desativado permanentemente.
+    Cloud API: converte MP3→OGG/Opus, upload, enviar com voice=true.
     Retorna sucesso/erro."""
-    tts_provider = (obter_configuracao("tts_provider") or "grok").lower().strip()
-    voz = obter_configuracao("audio_voz") or "rex"
-
     audio_bytes = None
-    audio_path = None
 
-    # --- Fish Audio com cache + fila ---
-    if tts_provider == "fish":
-        audio_bytes = _gerar_audio_com_cache(texto_resposta, conversa_id, emocao=emocao)
-        if not audio_bytes:
-            return {"erro": "Fish Audio falhou — fallback texto"}
-    else:
-        # --- Grok TTS legado ---
-        audio_path = gerar_audio_tts(texto_resposta, voz=voz, emocao=emocao)
-        if not audio_path:
-            return {"erro": "Falha ao gerar áudio TTS"}
-        try:
-            with open(audio_path, "rb") as f:
-                audio_bytes = f.read()
-        except Exception as e:
-            return {"erro": f"Erro leitura áudio: {e}"}
+    # --- Fish Audio com cache + fila (ÚNICO provider) ---
+    audio_bytes = _gerar_audio_com_cache(texto_resposta, conversa_id, emocao=emocao)
+    if not audio_bytes:
+        return {"erro": "Fish Audio falhou — fallback texto"}
 
     try:
-        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        # Enviar "gravando áudio..." antes do envio
+        _enviar_presenca_cloud_api(numero)
 
-        # Verificar se Evolution está configurada
-        evo_instance = (obter_configuracao("evolution_instance") or "").strip()
-        if evo_instance:
-            # Enviar via Evolution (PTT nativo)
-            resultado = _enviar_audio_evolution(numero, audio_b64, instance=instance)
-            # Fallback: Cloud API (áudio normal, não PTT)
-            if not resultado.get("sucesso"):
-                log.warning(f"Evolution áudio falhou, tentando Cloud API: {resultado.get('erro', '')}")
-                resultado = _enviar_audio_cloud_api(numero, audio_bytes)
-        else:
-            # Evolution desabilitada — enviar direto via Cloud API
-            resultado = _enviar_audio_cloud_api(numero, audio_bytes)
+        # Cloud API (Meta) — PTT com OGG/Opus + voice=true
+        resultado = _enviar_audio_cloud_api(numero, audio_bytes)
+
+        # Fallback: Evolution API (legado, se Cloud API falhar)
+        if not resultado.get("sucesso"):
+            evo_instance = (obter_configuracao("evolution_instance") or "").strip()
+            if evo_instance:
+                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+                log.warning(f"Cloud API áudio falhou, tentando Evolution: {resultado.get('erro', '')}")
+                resultado = _enviar_audio_evolution(numero, audio_b64, instance=instance)
 
         if resultado.get("sucesso"):
             registrar_msg_wa(conversa_id, "enviada",
                              f"[ÁUDIO] {texto_resposta[:100]}...", tipo="audio")
-            provider_label = "fish" if tts_provider == "fish" else f"grok/{voz}"
-            via = resultado.get("via", "evolution")
-            atualizar_conversa_wa(conversa_id, usou_audio=True, voz_usada=f"{provider_label}/{via}")
-            log.info(f"Áudio TTS enviado para conversa {conversa_id} (provider={provider_label}, via={via})")
+            via = resultado.get("via", "cloud_api")
+            atualizar_conversa_wa(conversa_id, usou_audio=True, voz_usada=f"fish/{via}")
+            log.info(f"Áudio PTT enviado para conversa {conversa_id} (provider=fish, via={via})")
         return resultado
 
     except Exception as e:
         log.error(f"Erro gerar/enviar áudio TTS: {e}")
         return {"erro": str(e)}
-    finally:
-        if audio_path:
-            try:
-                os.unlink(audio_path)
-            except Exception:
-                pass
 
 
 def gerar_script_audio(lead: dict) -> str:
@@ -1504,75 +1591,30 @@ def _preparar_texto_para_audio(texto: str) -> str:
     return texto.strip()
 
 
-def gerar_audio_tts(texto: str, voz: str = "rex", emocao: str = "") -> Optional[str]:
-    """Gera áudio TTS. Dual-mode: Fish Audio (se configurado) ou Grok (padrão).
+def gerar_audio_tts(texto: str, emocao: str = "") -> Optional[str]:
+    """Gera áudio TTS via Fish Audio S2-Pro (ÚNICO provider).
 
-    Provider controlado por config 'tts_provider':
-      - "fish": usa Fish Audio S2-Pro (requer FISH_API_KEY) + fila
-      - "grok" ou vazio: usa xAI Grok TTS (padrão, sem breaking changes)
+    Grok TTS desativado permanentemente — Ana usa APENAS voz Fish Audio.
 
     Args:
         texto: Texto para converter em áudio
-        voz: Voice ID (Grok: rex/ara/etc, Fish: reference_id)
         emocao: Tag de emoção Fish Audio (ex: "abertura", "objecao")
 
     Returns:
         Path do arquivo .mp3 temporário ou None em caso de erro.
     """
-    # Verificar provider configurado
-    tts_provider = (obter_configuracao("tts_provider") or "grok").lower().strip()
-
-    # --- Fish Audio (se ativo) ---
-    if tts_provider == "fish":
-        try:
-            from crm.fish_tts import gerar_audio_fish
-            resultado = gerar_audio_fish(texto, emocao=emocao)
-            if resultado:
-                return resultado
-            # Fish falhou — fallback para texto puro (sem Grok — economia)
-            log.warning("Fish Audio falhou — fallback texto puro")
-            return None
-        except ImportError:
-            log.warning("fish_tts.py não encontrado — fallback texto puro")
-            return None
-        except Exception as e:
-            log.warning(f"Fish Audio erro ({e}) — fallback texto puro")
-            return None
-
-    # --- Grok TTS (padrão — quando tts_provider != "fish") ---
-    texto = _preparar_texto_tts(texto)
-    xai_key = _get_xai_key()
-    if not xai_key:
-        log.error("XAI_API_KEY não configurada")
-        return None
-
-    if httpx is None:
-        log.error("httpx não instalado")
-        return None
-
     try:
-        resp = httpx.post(
-            "https://api.x.ai/v1/tts",
-            headers={"Authorization": f"Bearer {xai_key}"},
-            json={
-                "text": texto,
-                "voice_id": voz,
-                "language": "pt-BR",
-                "output_format": {"codec": "mp3", "sample_rate": 24000, "bit_rate": 128000},
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-
-        # Salvar áudio
-        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
-        tmp.write(resp.content)
-        tmp.close()
-        log.info(f"Áudio TTS gerado: {tmp.name} ({len(resp.content)} bytes)")
-        return tmp.name
-
+        from crm.fish_tts import gerar_audio_fish
+        resultado = gerar_audio_fish(texto, emocao=emocao)
+        if resultado:
+            return resultado
+        log.warning("Fish Audio falhou — fallback texto puro")
+        return None
+    except ImportError:
+        log.warning("fish_tts.py não encontrado — fallback texto puro")
+        return None
     except Exception as e:
-        log.error(f"Erro Grok TTS: {e}")
+        log.warning(f"Fish Audio erro ({e}) — fallback texto puro")
         return None
 
 
@@ -1716,8 +1758,8 @@ def _upload_media_wa(audio_path: str) -> Optional[str]:
         return None
 
 
-def enviar_audio_wa(lead_id: int, voz: str = "rex") -> dict:
-    """Gera áudio personalizado e envia via WhatsApp Cloud API."""
+def enviar_audio_wa(lead_id: int) -> dict:
+    """Gera áudio personalizado e envia via WhatsApp Cloud API (Fish Audio)."""
     lead = obter_lead(lead_id)
     if not lead:
         return {"erro": "Lead não encontrado"}
@@ -1730,11 +1772,11 @@ def enviar_audio_wa(lead_id: int, voz: str = "rex") -> dict:
     if not numero:
         return {"erro": "Lead sem telefone"}
 
-    # Gerar script e áudio
+    # Gerar script e áudio via Fish Audio (ÚNICO provider)
     script = gerar_script_audio(lead)
-    audio_path = gerar_audio_tts(script, voz)
+    audio_path = gerar_audio_tts(script)
     if not audio_path:
-        return {"erro": "Falha ao gerar áudio TTS"}
+        return {"erro": "Falha ao gerar áudio Fish Audio"}
 
     phone_id, token = _get_wa_config()
     if not phone_id or not token:
@@ -1745,7 +1787,7 @@ def enviar_audio_wa(lead_id: int, voz: str = "rex") -> dict:
     if conversa:
         conversa_id = conversa["id"]
     else:
-        conversa_id = criar_conversa_wa(lead_id, numero, voz=voz)
+        conversa_id = criar_conversa_wa(lead_id, numero, voz="fish")
 
     # Upload áudio para Meta e enviar
     try:
@@ -1779,8 +1821,8 @@ def enviar_audio_wa(lead_id: int, voz: str = "rex") -> dict:
 
     # Registrar
     msg_id = registrar_msg_wa(conversa_id, "enviada", f"[ÁUDIO] {script[:100]}...", tipo="audio")
-    atualizar_conversa_wa(conversa_id, usou_audio=True, voz_usada=voz)
-    registrar_interacao(lead_id, "whatsapp", "whatsapp", f"Áudio WA enviado (voz: {voz})", "enviado")
+    atualizar_conversa_wa(conversa_id, usou_audio=True, voz_usada="fish")
+    registrar_interacao(lead_id, "whatsapp", "whatsapp", "Áudio WA enviado (Fish Audio)", "enviado")
 
     log.info(f"Áudio enviado para lead {lead_id}")
     return {"sucesso": True, "conversa_id": conversa_id, "msg_id": msg_id}
@@ -2428,6 +2470,11 @@ def avaliar_handoff(conversa_id: int) -> tuple:
     if not conversa:
         return None, ""
 
+    # GUARD: Se já foi feito handoff nesta conversa (handoff_motivo preenchido),
+    # não re-disparar — evita notificações duplicadas e loops
+    if conversa.get("handoff_motivo") or conversa.get("handoff_at"):
+        return None, ""
+
     msgs_recebidas = conversa.get("msgs_recebidas", 0)
     score = conversa.get("lead_score", 0)
 
@@ -2490,7 +2537,7 @@ def avaliar_handoff(conversa_id: int) -> tuple:
     restaurante_confirmado = _verificar_restaurante_confirmado(conversa)
 
     # 0. HANDOFF IMEDIATO — lead aceitou/disse "sim" 2+ vezes (Conv 84 pattern)
-    # Se lead responde afirmativamente sem dar detalhes, precisa de humano
+    # Só dispara se restaurante confirmado (evita handoff em contatos vagos)
     respostas_afirmativas = 0
     for msg in (conversa.get("mensagens") or []):
         if msg["direcao"] == "recebida":
@@ -2499,31 +2546,32 @@ def avaliar_handoff(conversa_id: int) -> tuple:
                         "com certeza", "claro", "vamos lá", "vamos la",
                         "pode", "aceito", "top", "fechou", "beleza"):
                 respostas_afirmativas += 1
-    if respostas_afirmativas >= 2:
+    if respostas_afirmativas >= 2 and restaurante_confirmado:
         _enviar_trial_link_se_necessario(conversa, lead)
         return "warm", f"Lead aceitou {respostas_afirmativas}x — precisa de humano para converter"
 
-    # 1. HANDOFF IMEDIATO — pediu demo ou humano
+    # 1. HANDOFF IMEDIATO — pediu demo ou humano (exige restaurante confirmado)
     if pediu_demo or pediu_humano:
-        if not restaurante_confirmado and msgs_recebidas >= 2:
+        if not restaurante_confirmado:
             log.info(f"Handoff adiado para conv {conversa_id} — restaurante não confirmado")
             return None, ""
         _enviar_trial_link_se_necessario(conversa, lead)
         motivo = "Lead pediu demo/reunião" if pediu_demo else "Lead pediu atendente humano"
         return "immediate", motivo
 
-    # 2. HANDOFF QUENTE — lead muito engajado
-    if intent_score_acumulado >= 60 and msgs_recebidas >= 3:
+    # 2. HANDOFF QUENTE — lead muito engajado (score contextual + múltiplas msgs)
+    if intent_score_acumulado >= 60 and msgs_recebidas >= 4 and restaurante_confirmado:
         _enviar_trial_link_se_necessario(conversa, lead)
         return "warm", f"Lead engajado (score acumulado={intent_score_acumulado}, {msgs_recebidas} msgs)"
 
-    # 3. HANDOFF QUENTE — score CRM alto
-    if score >= 85 and msgs_recebidas >= 1:
+    # 3. HANDOFF QUENTE — score CRM alto (exige 3+ msgs e restaurante confirmado)
+    # Antes: msgs_recebidas >= 1 — muito agressivo, disparava handoff no primeiro "oi"
+    if score >= 85 and msgs_recebidas >= 3 and restaurante_confirmado:
         _enviar_trial_link_se_necessario(conversa, lead)
-        return "warm", f"Lead HOT (score CRM={score}) respondeu"
+        return "warm", f"Lead HOT (score CRM={score}) respondeu {msgs_recebidas}x"
 
-    # 4. HANDOFF ESTRATÉGICO — objeções não resolvidas
-    if objecoes_nao_resolvidas >= 2:
+    # 4. HANDOFF ESTRATÉGICO — objeções não resolvidas (3+, era 2+)
+    if objecoes_nao_resolvidas >= 3:
         _enviar_trial_link_se_necessario(conversa, lead)
         return "strategic", f"Lead com {objecoes_nao_resolvidas} objeções — escalar para gerente"
 
@@ -2672,19 +2720,22 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
             if row:
                 old_status = row["status"]
                 # Reativar conversa — contexto persistente!
-                cur.execute("UPDATE wa_conversas SET status = 'ativo' WHERE id = %s", (row["id"],))
+                # Limpa handoff_motivo para não re-disparar handoff guard em avaliar_handoff
+                cur.execute(
+                    "UPDATE wa_conversas SET status = 'ativo' WHERE id = %s",
+                    (row["id"],)
+                )
                 conn.commit()
                 log.info(f"Conversa {row['id']} REATIVADA para {numero} (era {old_status})")
 
-                # Se era handoff, NÃO deixar o bot responder — notificar humano
+                # Se era handoff, notificar dono 1x com link clicável, MAS bot CONTINUA respondendo
+                # (evita silêncio se dono não entrou em contato em tempo)
                 if old_status == "handoff":
-                    registrar_msg_wa(row["id"], "recebida", mensagem, intencao="pos_handoff")
                     _notificar_handoff(row["lead_id"], numero,
                                        f"Lead respondeu após handoff: {mensagem[:80]}",
                                        instance)
-                    log.info(f"Lead {row['lead_id']} respondeu pós-handoff — notificando humano, bot NÃO responde")
-                    _liberar_lock_resposta(numero)
-                    return {"processado": True, "pos_handoff": True, "lead_id": row["lead_id"]}
+                    log.info(f"Lead {row['lead_id']} respondeu pós-handoff — dono notificado, bot continua respondendo")
+                    # NÃO retorna aqui — bot vai continuar processando e responder ao cliente
 
     if not row:
         # --- NOVO CONTATO (nunca conversou antes): criar lead + conversa ---
@@ -2918,8 +2969,11 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
 
         # Avaliar handoff gradual
         handoff_tipo, motivo = avaliar_handoff(conversa_id)
+        from datetime import datetime as _dt_handoff
         if handoff_tipo == "immediate":
-            atualizar_conversa_wa(conversa_id, status="handoff", handoff_motivo=motivo)
+            atualizar_conversa_wa(conversa_id, status="handoff",
+                                  handoff_motivo=motivo,
+                                  handoff_at=_dt_handoff.now())
             # P4.1: Event scoring — lead pediu demo/reunião
             try:
                 if "demo" in motivo.lower() or "reunião" in motivo.lower():
@@ -2938,7 +2992,9 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
                              "Olha, deixa eu te passar pro time técnico que eles conseguem "
                              "te mostrar o sistema ao vivo, rapidinho. Já já alguém te chama!",
                              instance=instance)
-            atualizar_conversa_wa(conversa_id, status="handoff", handoff_motivo=motivo)
+            atualizar_conversa_wa(conversa_id, status="handoff",
+                                  handoff_motivo=motivo,
+                                  handoff_at=_dt_handoff.now())
             _notificar_handoff(lead_id, numero, motivo, instance)
             log.info(f"HANDOFF QUENTE lead {lead_id}: {motivo}")
 
@@ -2948,7 +3004,9 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
                              "Sabe o que, vou pedir pro meu gerente te dar um toque, "
                              "ele explica melhor essa parte. Pode ser?",
                              instance=instance)
-            atualizar_conversa_wa(conversa_id, status="handoff", handoff_motivo=motivo)
+            atualizar_conversa_wa(conversa_id, status="handoff",
+                                  handoff_motivo=motivo,
+                                  handoff_at=_dt_handoff.now())
             _notificar_handoff(lead_id, numero, motivo, instance)
             log.info(f"HANDOFF ESTRATÉGICO lead {lead_id}: {motivo}")
 
@@ -2971,24 +3029,20 @@ def _enviar_e_salvar(conversa_id: int, numero: str, texto: str, grok: bool = Fal
 
 def _enviar_direto(numero: str, texto: str, instance: str = "") -> dict:
     """Envia mensagem direta para um número (sem precisar de lead_id).
-    Prioridade: Evolution API → Cloud API.
-    Se instance fornecido, usa essa instância Evolution específica."""
-    # Verificar se Evolution está configurada
-    evo_instance = (obter_configuracao("evolution_instance") or "").strip()
-    if evo_instance or instance:
-        # Tentar Evolution API primeiro
-        resultado = _enviar_via_evolution(numero, texto, instance_override=instance)
-        if resultado.get("sucesso"):
-            log.info(f"Mensagem direta enviada via Evolution ({instance or 'default'}) para {numero}")
-            return resultado
-
-    # Cloud API (direto se Evolution desabilitada, fallback se falhou)
+    Prioridade: Cloud API (Meta) → Evolution API (fallback legado)."""
+    # Cloud API (Meta) — provider principal
     resultado = _enviar_via_cloud_api(numero, texto)
     if resultado.get("sucesso"):
-        log.info(f"Mensagem direta enviada via Cloud API para {numero}")
         return resultado
 
-    log.error(f"Falha envio direto {numero}: Evolution e Cloud API falharam")
+    # Fallback: Evolution API (legado, só se configurada)
+    evo_instance = (obter_configuracao("evolution_instance") or "").strip()
+    if evo_instance or instance:
+        resultado = _enviar_via_evolution(numero, texto, instance_override=instance)
+        if resultado.get("sucesso"):
+            return resultado
+
+    log.error(f"Falha envio direto {numero}: Cloud API e Evolution falharam")
     return resultado
 
 
@@ -3046,14 +3100,24 @@ def _notificar_trial(lead_id: int, numero_lead: str, instance: str = ""):
         log.warning("Não há número do dono configurado para notificação de trial")
         return
 
-    texto = (
-        f"🔔 LEAD QUENTE!\n\n"
-        f"*{nome_rest}*"
-        + (f" ({cidade})" if cidade else "") +
-        f" quer iniciar teste grátis de 15 dias!\n\n"
-        f"Número: {numero_lead}\n"
-        f"Lead ID: {lead_id}"
-    )
+    # Link wa.me clicável para o dono abrir conversa direto com o lead
+    prefill = "Olá! Sou da Derekh Food, vi que você tem interesse no nosso sistema. Posso te ajudar?"
+    wa_link = _build_wa_chat_link(numero_lead, prefill)
+
+    linhas = [
+        f"🔔 LEAD QUENTE!",
+        f"",
+        f"*{nome_rest}*" + (f" ({cidade})" if cidade else "") + " quer iniciar teste grátis de 15 dias!",
+        f"",
+        f"Número: {numero_lead}",
+        f"Lead ID: {lead_id}",
+    ]
+    if wa_link:
+        linhas.append("")
+        linhas.append(f"👉 Clique para falar direto com o lead:")
+        linhas.append(wa_link)
+
+    texto = "\n".join(linhas)
 
     resultado = _enviar_direto(numero_dono, texto, instance=instance)
     if resultado.get("sucesso"):
@@ -3063,7 +3127,16 @@ def _notificar_trial(lead_id: int, numero_lead: str, instance: str = ""):
 
 
 def _notificar_handoff(lead_id: int, numero_lead: str, motivo: str, instance: str = ""):
-    """Notifica o dono quando um lead precisa de atendimento humano."""
+    """Notifica o dono quando um lead precisa de atendimento humano.
+    Inclui link wa.me clicável para o dono abrir conversa direto com o lead.
+
+    GUARD ANTI-DUPLICATA:
+    - Só notifica se NUNCA foi notificado antes (handoff_notificado_em IS NULL)
+    - OU se lead_score subiu drasticamente (+15) desde última notificação
+    """
+    from datetime import datetime as _dt
+    from crm.database import obter_conversa_wa_por_lead, atualizar_conversa_wa
+
     lead = obter_lead(lead_id)
     nome_rest = "Restaurante"
     cidade = ""
@@ -3071,25 +3144,69 @@ def _notificar_handoff(lead_id: int, numero_lead: str, motivo: str, instance: st
         nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "Restaurante"
         cidade = lead.get("cidade") or ""
 
+    # GUARD: Buscar conversa para verificar se já foi notificada
+    conversa = obter_conversa_wa_por_lead(lead_id)
+    score_atual = (lead or {}).get("lead_score", 0) or 0
+    conversa_id = (conversa or {}).get("id")
+
+    if conversa:
+        notificado_em = conversa.get("handoff_notificado_em")
+        if notificado_em:
+            score_anterior = conversa.get("handoff_notificado_score", 0) or 0
+            delta = score_atual - score_anterior
+            if delta < 15:
+                log.info(
+                    f"Handoff lead {lead_id} já notificado (score={score_anterior}, "
+                    f"atual={score_atual}, delta={delta}) — suprimido"
+                )
+                return
+            log.info(
+                f"Handoff lead {lead_id} re-notificado: score subiu {score_anterior}→{score_atual} (+{delta})"
+            )
+
     numero_dono = obter_configuracao("telefone_usuario") or os.environ.get("WA_SALES_NUMERO", "")
     numero_dono = _limpar_telefone(numero_dono)
     if not numero_dono:
         log.warning("Não há número do dono configurado para notificação de handoff")
         return
 
-    texto = (
-        f"🔥 HANDOFF!\n\n"
-        f"*{nome_rest}*"
-        + (f" ({cidade})" if cidade else "") +
-        f"\nMotivo: {motivo}\n\n"
-        f"Número: {numero_lead}\n"
-        f"Lead ID: {lead_id}\n\n"
-        f"⚡ Esse lead precisa de atenção AGORA!"
-    )
+    # Link wa.me clicável: dono clica e abre WA direto com o lead
+    prefill = "Oi! Sou o Klenilton da Derekh Food. Vi que você tem interesse e quero te ajudar pessoalmente."
+    wa_link = _build_wa_chat_link(numero_lead, prefill)
+
+    linhas = [
+        f"🔥 HANDOFF — LEAD QUENTE!",
+        f"",
+        f"*{nome_rest}*" + (f" ({cidade})" if cidade else ""),
+        f"Motivo: {motivo}",
+        f"",
+        f"Número: {numero_lead}",
+        f"Lead ID: {lead_id}",
+        f"Score: {score_atual}/100",
+        f"",
+        f"⚡ Esse lead precisa de atenção AGORA!",
+    ]
+    if wa_link:
+        linhas.append("")
+        linhas.append(f"👉 Clique para falar direto com o lead:")
+        linhas.append(wa_link)
+
+    texto = "\n".join(linhas)
 
     resultado = _enviar_direto(numero_dono, texto, instance=instance)
     if resultado.get("sucesso"):
         log.info(f"Notificação handoff enviada ao dono para lead {lead_id}")
+        # Marcar conversa como notificada para não duplicar alertas
+        if conversa_id:
+            try:
+                atualizar_conversa_wa(
+                    conversa_id,
+                    handoff_notificado_em=_dt.now(),
+                    handoff_notificado_score=score_atual,
+                    handoff_notificado_tipo="immediate" if "imediato" in motivo.lower() else "warm",
+                )
+            except Exception as e:
+                log.warning(f"Falha ao marcar handoff_notificado conversa {conversa_id}: {e}")
     else:
         log.warning(f"Falha ao notificar dono sobre handoff lead {lead_id}: {resultado.get('erro')}")
 
