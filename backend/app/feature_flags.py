@@ -169,10 +169,13 @@ def has_feature(
     min_tier = FEATURE_TIERS.get(feature_key, 1)
 
     # Check add-on: se feature disponível via add-on e add-on ativo
+    # Respeita ADDON_MIN_TIER: tier deve ser >= min_tier do addon
     if tier < min_tier and addons and feature_key in ADDON_FEATURES:
-        addon_field = ADDON_FEATURES[feature_key]
-        if addons.get(addon_field):
-            return True
+        addon_min = ADDON_MIN_TIER.get(feature_key, 1)
+        if tier >= addon_min:
+            addon_field = ADDON_FEATURES[feature_key]
+            if addons.get(addon_field):
+                return True
 
     return tier >= min_tier
 
@@ -207,8 +210,9 @@ def get_all_features(
         elif tier >= min_tier:
             result[feature_key] = True
         elif addons and feature_key in ADDON_FEATURES:
+            addon_min = ADDON_MIN_TIER.get(feature_key, 1)
             addon_field = ADDON_FEATURES[feature_key]
-            result[feature_key] = bool(addons.get(addon_field))
+            result[feature_key] = bool(tier >= addon_min and addons.get(addon_field))
         else:
             result[feature_key] = False
     return result

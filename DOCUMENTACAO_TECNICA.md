@@ -1028,11 +1028,22 @@ O sistema usa **comparação por tier inteiro** (1-4) com hierarquia cumulativa.
 
 **Fluxo:**
 1. Restaurante se cadastra → `plano_tier = 1` (Básico)
-2. Inicia trial → `plano_tier = 4` (Premium, acesso total)
+2. Inicia trial → `billing_status = "trial"` → acesso total (todas features desbloqueadas)
 3. Seleciona plano → `plano_tier` atualizado automaticamente
 4. Acessa endpoint protegido → `verificar_feature()` compara tier
 5. Feature bloqueada → 403 `{"type": "feature_blocked", ...}`
 6. Super Admin pode dar override via `features_override` (JSON)
+7. Add-on ativo → desbloqueia feature **somente se tier >= ADDON_MIN_TIER**
+8. `billing_status = "suspended_billing"` ou `"canceled_billing"` → 403 em TODOS endpoints protegidos
+
+**Regras de prioridade (em ordem):**
+1. Billing suspenso/cancelado → 403 genérico (bloqueia tudo)
+2. Trial → acesso total (ignora tier/addon)
+3. `features_override` → prioridade absoluta sobre tier e addon
+4. Add-on ativo + `tier >= ADDON_MIN_TIER` → desbloqueia feature
+5. `tier >= min_tier` da feature → acesso normal
+
+**Testes:** `tests/test_e2e_feature_flags.py` — 150 testes validando TODA a matriz 22 features × 4 tiers + add-ons + overrides + trial + billing suspenso + login gates + limite motoboys
 
 ### 13.2 Tabela Features por Plano
 
