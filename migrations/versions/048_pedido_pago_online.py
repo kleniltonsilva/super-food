@@ -8,8 +8,8 @@ painel admin, motoboy, site cliente.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "048"
-down_revision = "047"
+revision = "048_pedido_pago_online"
+down_revision = "047_addon_billing_separado"
 branch_labels = None
 depends_on = None
 
