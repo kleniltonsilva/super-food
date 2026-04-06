@@ -508,6 +508,202 @@ def phone_status(
     }
 
 
+@router.post("/painel/bot/phone/contratar-addon")
+async def phone_contratar_addon(
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    db: Session = Depends(database.get_db),
+):
+    """Cria cobrança do add-on WhatsApp Humanoide (PIX/Boleto).
+
+    Usado por restaurantes Essencial/Avançado que precisam pagar antes de conectar.
+    """
+    from ..feature_flags import ADDON_INCLUDED_TIER, ADDON_MIN_TIER
+    plano_map = {"basico": 1, "essencial": 2, "avancado": 3, "premium": 4}
+    tier = plano_map.get((restaurante.plano or "basico").lower(), 1)
+
+    min_tier = ADDON_MIN_TIER.get("bot_whatsapp", 2)
+    if tier < min_tier:
+        raise HTTPException(status_code=403, detail="WhatsApp Humanoide disponível a partir do plano Essencial.")
+
+    included_tier = ADDON_INCLUDED_TIER.get("bot_whatsapp", 4)
+    if tier >= included_tier or getattr(restaurante, "addon_bot_whatsapp", False):
+        return {"sucesso": True, "ja_liberado": True, "mensagem": "Add-on já está ativo ou incluso no plano."}
+
+    try:
+        from ..billing.billing_service import criar_cobranca_addon_bot
+        resultado = await criar_cobranca_addon_bot(restaurante.id, db)
+    except Exception as e:
+        logger.error(f"Erro ao criar cobrança add-on bot_whatsapp: {e}")
+        raise HTTPException(status_code=402, detail=f"Erro ao criar cobrança: {e}")
+
+    config = _get_or_create_bot_config(db, restaurante.id)
+    config.phone_registration_status = "pending_payment"
+    config.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    return {
+        "sucesso": True,
+        "aguardando_pagamento": True,
+        "pix_qr_code": resultado.get("pix_qr_code"),
+        "pix_copia_cola": resultado.get("pix_copia_cola"),
+        "boleto_url": resultado.get("boleto_url"),
+        "invoice_url": resultado.get("invoice_url"),
+        "valor": resultado.get("valor"),
+        "mensagem": "Cobrança criada! Após o pagamento, conecte seu WhatsApp pelo Facebook.",
+    }
+
+
+@router.get("/painel/bot/phone/embedded-signup-config")
+def embedded_signup_config(
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+):
+    """Retorna IDs necessários para o Facebook SDK carregar o Embedded Signup."""
+    app_id = os.getenv("META_APP_ID", "874086172333541")
+    config_id = os.getenv("META_EMBEDDED_SIGNUP_CONFIG_ID", "")
+    if not config_id:
+        raise HTTPException(status_code=503, detail="Embedded Signup não configurado. Contate o suporte.")
+    return {
+        "app_id": app_id,
+        "config_id": config_id,
+        "api_version": "v22.0",
+    }
+
+
+@router.post("/painel/bot/phone/embedded-signup")
+async def embedded_signup_callback(
+    request: Request,
+    restaurante: models.Restaurante = Depends(get_current_restaurante),
+    db: Session = Depends(database.get_db),
+):
+    """Callback do Meta Embedded Signup.
+
+    Recebe code + waba_id + phone_number_id do frontend após popup Facebook.
+    Troca code por BISU token, inscreve app na WABA, registra Cloud API.
+    """
+    body = await request.json()
+    code = (body.get("code") or "").strip()
+    waba_id = (body.get("waba_id") or "").strip()
+    phone_number_id = (body.get("phone_number_id") or "").strip()
+
+    if not code or not waba_id or not phone_number_id:
+        raise HTTPException(status_code=400, detail="code, waba_id e phone_number_id são obrigatórios")
+
+    # Verificar tier mínimo (Básico bloqueado)
+    from ..feature_flags import ADDON_INCLUDED_TIER, ADDON_MIN_TIER
+    plano_map = {"basico": 1, "essencial": 2, "avancado": 3, "premium": 4}
+    tier = plano_map.get((restaurante.plano or "basico").lower(), 1)
+
+    min_tier = ADDON_MIN_TIER.get("bot_whatsapp", 2)
+    if tier < min_tier:
+        raise HTTPException(
+            status_code=403,
+            detail="WhatsApp Humanoide disponível a partir do plano Essencial.",
+        )
+
+    included_tier = ADDON_INCLUDED_TIER.get("bot_whatsapp", 4)
+
+    if tier < included_tier:
+        addon_ativo = getattr(restaurante, "addon_bot_whatsapp", False)
+        if not addon_ativo:
+            # Criar cobrança avulsa
+            try:
+                from ..billing.billing_service import criar_cobranca_addon_bot
+                resultado = await criar_cobranca_addon_bot(restaurante.id, db)
+            except Exception as e:
+                logger.error(f"Erro ao criar cobrança add-on bot_whatsapp: {e}")
+                raise HTTPException(status_code=402, detail=f"Erro ao criar cobrança: {e}")
+
+            # Salvar dados parciais para retomar após pagamento
+            config = _get_or_create_bot_config(db, restaurante.id)
+            config.phone_registration_status = "pending_payment"
+            config.atualizado_em = datetime.utcnow()
+            db.commit()
+
+            return {
+                "sucesso": True,
+                "aguardando_pagamento": True,
+                "pix_qr_code": resultado.get("pix_qr_code"),
+                "pix_copia_cola": resultado.get("pix_copia_cola"),
+                "boleto_url": resultado.get("boleto_url"),
+                "invoice_url": resultado.get("invoice_url"),
+                "valor": resultado.get("valor"),
+                "mensagem": "Cobrança criada! Após o pagamento, conecte novamente pelo Facebook.",
+            }
+
+    # Premium ou add-on ativo → processar Embedded Signup
+    from ..bot.meta_phone_manager import (
+        trocar_code_por_token,
+        inscrever_app_na_waba,
+        listar_telefones_waba,
+        registrar_cloud_api,
+        MetaApiError,
+    )
+    import secrets as _secrets
+
+    # 1. Trocar code por BISU token
+    try:
+        bisu_token = await trocar_code_por_token(code)
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao obter token: {e.message}")
+
+    # 2. Gerar verify_token e inscrever app na WABA
+    verify_token = _secrets.token_urlsafe(24)
+    callback_url = "https://superfood-api.fly.dev/webhooks/meta-whatsapp"
+    try:
+        await inscrever_app_na_waba(waba_id, bisu_token, callback_url, verify_token)
+    except MetaApiError as e:
+        raise HTTPException(status_code=400, detail=f"Erro ao inscrever app: {e.message}")
+
+    # 3. Listar telefones para obter display_phone_number e verified_name
+    display_phone = ""
+    verified_name = ""
+    try:
+        phones = await listar_telefones_waba(waba_id, bisu_token)
+        for p in phones:
+            if p.get("id") == phone_number_id:
+                display_phone = p.get("display_phone_number", "")
+                verified_name = p.get("verified_name", "")
+                break
+    except MetaApiError as e:
+        logger.warning(f"Erro ao listar telefones (não-crítico): {e.message}")
+
+    # 4. Registrar na Cloud API
+    try:
+        await registrar_cloud_api(phone_number_id, token=bisu_token)
+    except MetaApiError as e:
+        logger.warning(f"Erro ao registrar Cloud API (pode já estar registrado): {e.message}")
+
+    # 5. Salvar tudo no BotConfig
+    config = _get_or_create_bot_config(db, restaurante.id)
+    config.whatsapp_provider = "meta"
+    config.meta_phone_number_id = phone_number_id
+    config.meta_access_token = bisu_token
+    config.meta_waba_id = waba_id
+    config.meta_app_secret = os.getenv("META_APP_SECRET", "")
+    config.meta_webhook_verify_token = verify_token
+    config.whatsapp_numero = display_phone.replace("+", "").replace(" ", "").replace("-", "")
+    config.phone_display_name = verified_name or restaurante.nome_fantasia
+    config.phone_registration_status = "active"
+    config.phone_registered_at = datetime.utcnow()
+    config.bot_ativo = True
+    config.atualizado_em = datetime.utcnow()
+    db.commit()
+
+    logger.info(
+        f"Embedded Signup concluído: restaurante={restaurante.id}, "
+        f"waba={waba_id}, phone={phone_number_id}"
+    )
+
+    return {
+        "sucesso": True,
+        "phone_number_id": phone_number_id,
+        "display_phone_number": display_phone,
+        "verified_name": verified_name,
+        "registration_status": "active",
+        "mensagem": "WhatsApp conectado com sucesso via Facebook!",
+    }
+
+
 @router.post("/painel/bot/phone/registrar")
 async def phone_registrar(
     request: Request,
@@ -751,7 +947,7 @@ async def phone_perfil(
     nome_atendente = (body.get("nome_atendente") or "").strip()
     ativar = body.get("ativar", False)
 
-    # Atualizar perfil na Meta API
+    # Atualizar perfil na Meta API (usa token per-restaurante se disponível)
     from ..bot.meta_phone_manager import atualizar_perfil, MetaApiError
 
     try:
@@ -760,6 +956,7 @@ async def phone_perfil(
             about=about,
             description=description,
             vertical="RESTAURANT",
+            token=config.meta_access_token,
         )
     except MetaApiError as e:
         raise HTTPException(status_code=400, detail=f"Erro ao atualizar perfil: {e.message}")
@@ -816,7 +1013,7 @@ async def phone_foto(
     from ..bot.meta_phone_manager import upload_foto_perfil, MetaApiError
 
     try:
-        await upload_foto_perfil(config.meta_phone_number_id, image_bytes, content_type)
+        await upload_foto_perfil(config.meta_phone_number_id, image_bytes, content_type, token=config.meta_access_token)
     except MetaApiError as e:
         raise HTTPException(status_code=400, detail=f"Erro ao enviar foto: {e.message}")
 
@@ -1807,6 +2004,7 @@ def listar_instancias_bot(
     result = []
     for c in configs:
         rest = db.query(models.Restaurante).filter(models.Restaurante.id == c.restaurante_id).first()
+        meta_token = getattr(c, "meta_access_token", None) or ""
         result.append({
             "id": c.id,
             "restaurante_id": c.restaurante_id,
@@ -1815,8 +2013,14 @@ def listar_instancias_bot(
             "whatsapp_provider": getattr(c, "whatsapp_provider", "evolution") or "evolution",
             "whatsapp_numero": c.whatsapp_numero,
             "evolution_instance": c.evolution_instance,
+            "evolution_api_url": getattr(c, "evolution_api_url", None),
+            "evolution_api_key": getattr(c, "evolution_api_key", None),
             "meta_phone_number_id": getattr(c, "meta_phone_number_id", None),
+            "meta_waba_id": getattr(c, "meta_waba_id", None),
+            "meta_access_token": ("***" + meta_token[-4:]) if len(meta_token) > 4 else ("***" if meta_token else None),
+            "phone_registration_status": getattr(c, "phone_registration_status", None),
             "nome_atendente": c.nome_atendente,
+            "voz_tts": getattr(c, "voz_tts", "ara"),
             "tokens_usados_hoje": c.tokens_usados_hoje,
             "criado_em": c.criado_em.isoformat() if c.criado_em else None,
         })

@@ -1094,20 +1094,22 @@ Add-ons são funcionalidades contratáveis à parte, com **billing separado** da
 |--------|-----|-----------|:------------:|:----------:|---------|
 | WhatsApp Humanoide | `bot_whatsapp` | R$99,45 | Essencial (T2) | Premium (T4) | Separado (cobrança avulsa mensal) |
 
-**Fluxo de ativação (billing separado):**
-1. Restaurante clica "Registrar Número" no wizard WhatsApp Humanoide
+**Fluxo de ativação (billing separado — atualizado para Embedded Signup):**
+1. Restaurante clica "Conectar WhatsApp" no wizard WhatsApp Humanoide
 2. Se tier < 4 (não-Premium) e add-on inativo:
-   - `billing_service.criar_cobranca_addon_bot()` cria cobrança avulsa Asaas R$99,45
+   - `POST /painel/bot/phone/contratar-addon` cria cobrança avulsa Asaas R$99,45
    - Frontend exibe QR Code Pix + link boleto (`phone_registration_status = "pending_payment"`)
    - Polling a cada 5s via `GET /painel/bot/phone/payment-status`
 3. Restaurante paga (Pix ou Boleto)
 4. Webhook Asaas `PAYMENT_RECEIVED` → `processar_addon_pago()`:
    - Marca `addon_bot_whatsapp = True`
    - Define `ciclo_inicio` e `proximo_vencimento` (+1 mês)
-   - Registra número na Meta WABA automaticamente
-   - Muda `phone_registration_status` para `pending_code`
-5. Frontend detecta via polling → avança para verificação de código SMS
-6. Se tier >= 4 (Premium) → registro direto, sem cobrança
+   - Muda `phone_registration_status` para `pending_signup`
+5. Frontend detecta via polling → avança para Meta Embedded Signup (popup Facebook)
+6. Restaurante completa Embedded Signup → `POST /painel/bot/phone/embedded-signup` → status `active`
+7. Se tier >= 4 (Premium) → Embedded Signup direto, sem cobrança
+
+> **Ver seção 17.26** para detalhes completos do fluxo Meta Embedded Signup.
 
 **Recorrência mensal:**
 - Task periódica (30min) verifica `addon_bot_proximo_vencimento <= hoje`
@@ -1778,6 +1780,7 @@ backend/app/bot/
 ├── function_calls.py     — 24 funções que o LLM pode chamar
 ├── evolution_client.py   — Client Evolution API (texto/áudio/presença/digitando)
 ├── meta_cloud_client.py  — Client Meta Cloud API (templates, redirect, verificação webhook)
+├── meta_phone_manager.py — Embedded Signup + registro número Meta (Graph API v22.0)
 ├── xai_llm.py            — Client xAI Grok (chat completion + function calling)
 ├── xai_tts.py            — Client xAI TTS (gerar áudio com voz)
 ├── groq_stt.py           — Client Groq Whisper STT (transcrever áudio)
@@ -2030,6 +2033,9 @@ Tags são livres (linguagem natural em colchetes) — Fish Audio S2-Pro interpre
 | POST | `/painel/bot/conversas/{id}/recusar-handoff` | Recusar handoff — bot sugere ligar para restaurante |
 | POST | `/painel/bot/conversas/{id}/devolver-bot` | Devolver conversa ao bot |
 | GET | `/painel/bot/dashboard` | Dashboard — estatísticas (conversas, pedidos, faturamento, avaliação) |
+| GET | `/painel/bot/phone/embedded-signup-config` | Config para Facebook SDK (app_id, config_id, api_version) |
+| POST | `/painel/bot/phone/embedded-signup` | Callback Embedded Signup (code → token → WABA → webhook → active) |
+| POST | `/painel/bot/phone/contratar-addon` | Criar cobrança PIX/Boleto para add-on (Essencial/Avançado) |
 
 **Super Admin (requer JWT admin):**
 
@@ -2100,6 +2106,9 @@ Na página "Gerenciar Restaurantes" do Super Admin:
 |--------|-----------|
 | `XAI_API_KEY` | API key xAI para Grok LLM + TTS |
 | `GROQ_API_KEY` | API key Groq para Whisper STT |
+| `META_APP_ID` | App ID do Meta Business (Facebook for Developers) — Embedded Signup |
+| `META_APP_SECRET` | App Secret para OAuth code exchange (BISU token) — Embedded Signup |
+| `META_EMBEDDED_SIGNUP_CONFIG_ID` | Configuration ID do Embedded Signup (Meta Business) |
 
 ### 17.15 Bugs Corrigidos no Deploy
 
@@ -2339,7 +2348,7 @@ Identifica restaurante por meta_phone_number_id
 processar_webhook_meta(payload) → mark as read → STT/texto → LLM loop → TTS
     |
     v
-Resposta via Graph API v21.0:
+Resposta via Graph API v22.0:
   - Texto: POST /{phone_number_id}/messages type=text
   - Áudio PTT: MP3→OGG/Opus (ffmpeg) → upload media → send voice:true
   - Typing: POST type=typing_indicator (25s)
@@ -2434,6 +2443,139 @@ Cenários cobertos por função:
 - Busca por nome (case-insensitive, parcial, normalização acentos)
 - Cupons (expirado, esgotado, exclusivo, pedido mínimo)
 - Pix (cobrança ativa, expirada, pagamento confirmado)
+
+### 17.26 Meta Embedded Signup — Onboarding Self-Service (06/04)
+
+#### Contexto
+
+O fluxo anterior de registro de número WhatsApp usava a Graph API v21.0 com `POST /{WABA_ID}/phone_numbers` (BSP — Business Solution Provider). Esse endpoint retornava **403 Forbidden** para contas que não possuem papel de BSP. O fluxo foi substituído pelo **Meta Embedded Signup**, onde o restaurante conecta sua conta via popup do Facebook e recebe um token BISU (Business Integration System User) permanente e exclusivo por restaurante.
+
+#### Decisão Técnica
+
+- Graph API atualizada de **v21.0 → v22.0** em todo o módulo `meta_phone_manager.py`
+- Token deixa de ser global (System User Token do Super Admin) e passa a ser **per-restaurante** (BISU token obtido via OAuth code exchange)
+- Fluxo 100% self-service: restaurante faz tudo pelo wizard no painel, sem intervenção do Super Admin
+
+#### Arquivos Modificados/Criados
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `backend/app/bot/meta_phone_manager.py` | 3 funções novas + 5 refatoradas (token per-restaurante) |
+| `backend/app/routers/bot_whatsapp.py` | 3 novos endpoints (Embedded Signup) |
+| `restaurante-pedido-online/client/src/admin/pages/BotWhatsApp.tsx` | PhoneOnboardingWizard redesenhado com Facebook SDK |
+
+#### Novas Funções em `meta_phone_manager.py`
+
+| Função | Descrição |
+|--------|-----------|
+| `trocar_code_por_token(code)` | Troca authorization code OAuth por BISU token permanente via `GET /oauth/access_token` |
+| `inscrever_app_na_waba(waba_id, token)` | `POST /{WABA_ID}/subscribed_apps` — inscreve o app na WABA para receber webhooks |
+| `listar_telefones_waba(waba_id, token)` | `GET /{WABA_ID}/phone_numbers` — lista números registrados na WABA do restaurante |
+
+#### Funções Refatoradas (token per-restaurante)
+
+5 funções existentes agora aceitam parâmetro `token` opcional. Quando fornecido, usa o BISU token do restaurante; quando omitido, fallback para `META_ACCESS_TOKEN` global (compatibilidade com config antiga):
+
+- `registrar_numero_telefone()`
+- `verificar_numero_telefone()`
+- `configurar_webhook_meta()`
+- `definir_perfil_negocio()`
+- `buscar_status_numero()`
+
+#### Novos Endpoints
+
+**Painel Restaurante (requer JWT + feature flag `bot_whatsapp`):**
+
+| Método | Rota | Descrição |
+|--------|------|-----------|
+| GET | `/painel/bot/phone/embedded-signup-config` | Retorna `app_id`, `config_id`, `api_version` para inicializar Facebook SDK no frontend |
+| POST | `/painel/bot/phone/embedded-signup` | Callback completo: recebe `code` do Facebook → troca por BISU token → inscreve app na WABA → configura webhook → habilita Cloud API → salva tudo no BotConfig |
+| POST | `/painel/bot/phone/contratar-addon` | Cria cobrança PIX/Boleto via Asaas para planos Essencial/Avançado (R$99,45/mês) |
+
+#### Fluxo Embedded Signup (Callback `POST /embedded-signup`)
+
+```
+Frontend: FB.login() com scope business_management,whatsapp_business_management
+    |
+    v
+Facebook popup → restaurante autoriza → retorna authorization code
+    |
+    v
+POST /painel/bot/phone/embedded-signup { code, waba_id, phone_number_id }
+    |
+    v
+Backend:
+  1. trocar_code_por_token(code) → BISU token permanente
+  2. inscrever_app_na_waba(waba_id, token) → app recebe webhooks
+  3. listar_telefones_waba(waba_id, token) → confirma phone_number_id
+  4. Configura webhook Meta (verify_token gerado aleatoriamente)
+  5. Habilita Cloud API no número
+  6. Salva no BotConfig:
+     - meta_access_token = BISU token
+     - meta_waba_id = waba_id
+     - meta_phone_number_id = phone_number_id
+     - whatsapp_provider = 'meta'
+     - phone_registration_status = 'active'
+     - bot_ativo = True
+```
+
+#### Status Flow por Plano
+
+**Premium (Tier 4) — incluso grátis:**
+```
+none → (Embedded Signup) → active
+```
+
+**Essencial (Tier 2) / Avançado (Tier 3) — add-on R$99,45/mês:**
+```
+none → (contratar addon) → pending_payment → (pagar PIX/Boleto) → pending_signup → (Embedded Signup) → active
+```
+
+**Basico (Tier 1):**
+```
+Bloqueado — plano mínimo Essencial
+```
+
+**Diferença do fluxo anterior:** Após pagamento do add-on, o status muda para `pending_signup` (antes era `pending_code` com verificação SMS). O restaurante então completa o Embedded Signup pelo wizard. Não há mais etapa de código SMS.
+
+#### Frontend — PhoneOnboardingWizard
+
+O wizard em `BotWhatsApp.tsx` foi redesenhado para usar o Facebook SDK:
+
+1. **Carrega Facebook SDK** (`window.fbAsyncInit` + script `connect.facebook.net/pt_BR/sdk.js`)
+2. **Inicializa** com `FB.init({ appId, cookie: true, xfbml: true, version: api_version })` usando dados de `/embedded-signup-config`
+3. **Botão "Conectar com Facebook"** → `FB.login()` com scopes `business_management`, `whatsapp_business_management`
+4. **Callback** extrai `code` da resposta → `POST /embedded-signup` → wizard avança para "Ativo"
+5. **Estados visuais:** pending_payment (QR Code Pix), pending_signup (botão Facebook), active (badge verde)
+
+#### Frontend Super Admin — Modal Bot Atualizado
+
+O modal de criar/editar instância bot agora inclui:
+
+- **Seletor Provider:** dropdown com "Meta Cloud API" ou "Evolution API"
+- **Campos condicionais:** quando Meta selecionado, exibe campos `meta_phone_number_id`, `meta_waba_id`, `meta_access_token`; quando Evolution, exibe campos `evolution_instance`, `evolution_api_url`, `evolution_api_key`
+- Toggle ativar/desativar mantido
+
+#### Secrets Fly.io (Embedded Signup)
+
+| Secret | Descrição | Obrigatório |
+|--------|-----------|-------------|
+| `META_EMBEDDED_SIGNUP_CONFIG_ID` | Configuration ID do Embedded Signup (Meta Business) | Sim |
+| `META_APP_ID` | App ID do Meta Business (Facebook for Developers) | Sim |
+| `META_APP_SECRET` | App Secret para OAuth code exchange (BISU token) | Sim |
+
+> **Nota:** `META_ACCESS_TOKEN` (System User Token global) continua existindo como fallback para restaurantes configurados manualmente pelo Super Admin, mas novos restaurantes usam BISU token exclusivo via Embedded Signup.
+
+#### Migração do Fluxo Antigo
+
+| Aspecto | Antes (BSP) | Depois (Embedded Signup) |
+|---------|-------------|--------------------------|
+| API Version | Graph API v21.0 | Graph API v22.0 |
+| Registro número | `POST /{WABA_ID}/phone_numbers` (403 para não-BSP) | Popup Facebook + OAuth code exchange |
+| Token | Global (System User Token) | Per-restaurante (BISU token permanente) |
+| Verificação | Código SMS (`POST /{phone}/verify_code`) | Automática via Embedded Signup |
+| Intervenção admin | Necessária (config manual) | Self-service (restaurante faz tudo) |
+| Status pós-pagamento | `pending_code` (aguardando SMS) | `pending_signup` (aguardando Embedded Signup) |
 
 ---
 

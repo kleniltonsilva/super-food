@@ -151,9 +151,13 @@ export default function GerenciarRestaurantes() {
   const [novoDominio, setNovoDominio] = useState("");
   const [botModal, setBotModal] = useState<Restaurante | null>(null);
   const [botForm, setBotForm] = useState({
+    whatsapp_provider: "meta" as "meta" | "evolution",
     evolution_instance: "",
     evolution_api_url: "https://derekh-evolution.fly.dev",
     evolution_api_key: "",
+    meta_phone_number_id: "",
+    meta_waba_id: "",
+    meta_access_token: "",
     whatsapp_numero: "",
     nome_atendente: "Bia",
     voz_tts: "ara",
@@ -188,9 +192,13 @@ export default function GerenciarRestaurantes() {
     const existing = getBotForRestaurante(r.id);
     if (existing) {
       setBotForm({
+        whatsapp_provider: existing.whatsapp_provider || "meta",
         evolution_instance: existing.evolution_instance || "",
         evolution_api_url: existing.evolution_api_url || "https://derekh-evolution.fly.dev",
         evolution_api_key: existing.evolution_api_key || "",
+        meta_phone_number_id: existing.meta_phone_number_id || "",
+        meta_waba_id: existing.meta_waba_id || "",
+        meta_access_token: existing.meta_access_token || "",
         whatsapp_numero: existing.whatsapp_numero || "",
         nome_atendente: existing.nome_atendente || "Bia",
         voz_tts: existing.voz_tts || "ara",
@@ -198,9 +206,13 @@ export default function GerenciarRestaurantes() {
       });
     } else {
       setBotForm({
+        whatsapp_provider: "meta",
         evolution_instance: "",
         evolution_api_url: "https://derekh-evolution.fly.dev",
         evolution_api_key: "",
+        meta_phone_number_id: "",
+        meta_waba_id: "",
+        meta_access_token: "",
         whatsapp_numero: "",
         nome_atendente: "Bia",
         voz_tts: "ara",
@@ -834,34 +846,108 @@ export default function GerenciarRestaurantes() {
                 </Button>
               </div>
             )}
+
+            {/* Provider selector */}
             <div className="space-y-2">
-              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Instância Evolution</label>
-              <Input
-                value={botForm.evolution_instance}
-                onChange={(e) => setBotForm({ ...botForm, evolution_instance: e.target.value })}
-                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
-                placeholder="nome-da-instancia"
-              />
+              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Provider</label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setBotForm({ ...botForm, whatsapp_provider: "meta" })}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors border ${
+                    botForm.whatsapp_provider === "meta"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-[var(--sa-bg-hover)] text-[var(--sa-text-secondary)] border-[var(--sa-border-input)]"
+                  }`}
+                >
+                  Meta Cloud API
+                </button>
+                <button
+                  onClick={() => setBotForm({ ...botForm, whatsapp_provider: "evolution" })}
+                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors border ${
+                    botForm.whatsapp_provider === "evolution"
+                      ? "bg-green-600 text-white border-green-600"
+                      : "bg-[var(--sa-bg-hover)] text-[var(--sa-text-secondary)] border-[var(--sa-border-input)]"
+                  }`}
+                >
+                  Evolution API
+                </button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">URL Evolution API</label>
-              <Input
-                value={botForm.evolution_api_url}
-                onChange={(e) => setBotForm({ ...botForm, evolution_api_url: e.target.value })}
-                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
-                placeholder="https://derekh-evolution.fly.dev"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-[var(--sa-text-secondary)]">API Key Evolution</label>
-              <Input
-                type="password"
-                value={botForm.evolution_api_key}
-                onChange={(e) => setBotForm({ ...botForm, evolution_api_key: e.target.value })}
-                className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
-                placeholder="API key"
-              />
-            </div>
+
+            {/* Campos Meta */}
+            {botForm.whatsapp_provider === "meta" && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Phone Number ID</label>
+                  <Input
+                    value={botForm.meta_phone_number_id}
+                    readOnly={!!getBotForRestaurante(botModal?.id ?? 0)?.meta_phone_number_id}
+                    onChange={(e) => setBotForm({ ...botForm, meta_phone_number_id: e.target.value })}
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                    placeholder="Preenchido pelo Embedded Signup"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">WABA ID</label>
+                  <Input
+                    value={botForm.meta_waba_id}
+                    readOnly={!!getBotForRestaurante(botModal?.id ?? 0)?.meta_waba_id}
+                    onChange={(e) => setBotForm({ ...botForm, meta_waba_id: e.target.value })}
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                    placeholder="Preenchido pelo Embedded Signup"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Access Token</label>
+                  <Input
+                    value={botForm.meta_access_token}
+                    readOnly
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-muted)]"
+                    placeholder="Token BISU (preenchido pelo Embedded Signup)"
+                  />
+                </div>
+                {getBotForRestaurante(botModal?.id ?? 0)?.phone_registration_status && (
+                  <div className="text-xs text-[var(--sa-text-muted)]">
+                    Status: <span className="font-mono">{getBotForRestaurante(botModal?.id ?? 0)?.phone_registration_status}</span>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Campos Evolution */}
+            {botForm.whatsapp_provider === "evolution" && (
+              <>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Instância Evolution</label>
+                  <Input
+                    value={botForm.evolution_instance}
+                    onChange={(e) => setBotForm({ ...botForm, evolution_instance: e.target.value })}
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                    placeholder="nome-da-instancia"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">URL Evolution API</label>
+                  <Input
+                    value={botForm.evolution_api_url}
+                    onChange={(e) => setBotForm({ ...botForm, evolution_api_url: e.target.value })}
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                    placeholder="https://derekh-evolution.fly.dev"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-[var(--sa-text-secondary)]">API Key Evolution</label>
+                  <Input
+                    type="password"
+                    value={botForm.evolution_api_key}
+                    onChange={(e) => setBotForm({ ...botForm, evolution_api_key: e.target.value })}
+                    className="border-[var(--sa-border-input)] bg-[var(--sa-bg-hover)] text-[var(--sa-text-primary)]"
+                    placeholder="API key"
+                  />
+                </div>
+              </>
+            )}
+
             <div className="space-y-2">
               <label className="text-sm font-medium text-[var(--sa-text-secondary)]">Número WhatsApp</label>
               <Input
@@ -905,7 +991,10 @@ export default function GerenciarRestaurantes() {
             <Button
               className="bg-green-600 hover:bg-green-700 text-white"
               onClick={handleSaveBot}
-              disabled={criarBot.isPending || !botForm.evolution_instance}
+              disabled={criarBot.isPending || (
+                botForm.whatsapp_provider === "evolution" ? !botForm.evolution_instance :
+                !botForm.meta_phone_number_id
+              )}
             >
               {criarBot.isPending ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Salvando...</>

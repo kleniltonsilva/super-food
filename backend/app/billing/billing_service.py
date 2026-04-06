@@ -822,40 +822,14 @@ async def processar_addon_pago(addon_cobranca: "models.AddonCobranca", db: Sessi
     restaurante.addon_bot_proximo_vencimento = hoje + relativedelta(months=1)
     restaurante.addon_bot_asaas_payment_id = addon_cobranca.asaas_payment_id
 
-    # Registrar número na Meta WABA automaticamente
+    # Após pagamento, marcar como pending_signup para restaurante fazer Embedded Signup no frontend
     bot_config = db.query(models.BotConfig).filter(
         models.BotConfig.restaurante_id == restaurante.id
     ).first()
 
     if bot_config and getattr(bot_config, "phone_registration_status", "") == "pending_payment":
-        numero = bot_config.whatsapp_numero
-        display_name = bot_config.phone_display_name or restaurante.nome_fantasia
-
-        if numero:
-            try:
-                from ..bot.meta_phone_manager import registrar_numero, solicitar_codigo
-                result = await registrar_numero(numero, display_name)
-                phone_number_id = result["phone_number_id"]
-
-                import os
-                bot_config.meta_phone_number_id = phone_number_id
-                bot_config.meta_access_token = os.getenv("META_ACCESS_TOKEN", "")
-                bot_config.meta_waba_id = os.getenv("META_WABA_ID", "")
-                bot_config.meta_app_secret = os.getenv("META_APP_SECRET", "")
-                bot_config.meta_webhook_verify_token = os.getenv("META_WEBHOOK_VERIFY_TOKEN", "")
-                bot_config.whatsapp_provider = "meta"
-                bot_config.phone_registration_status = "pending_code"
-
-                # Solicitar código SMS
-                try:
-                    await solicitar_codigo(phone_number_id, "SMS")
-                except Exception as e:
-                    logger.warning(f"Erro ao solicitar SMS após pagamento addon: {e}")
-
-                logger.info(f"Número {numero} registrado na WABA após pagamento addon (restaurante {restaurante.id})")
-            except Exception as e:
-                logger.error(f"Erro ao registrar número após pagamento addon: {e}")
-                bot_config.phone_registration_status = "pending_code"
+        bot_config.phone_registration_status = "pending_signup"
+        logger.info(f"Add-on pago — restaurante {restaurante.id} pronto para Embedded Signup")
 
     # Audit
     addon_audit = models.AddonAuditLog(

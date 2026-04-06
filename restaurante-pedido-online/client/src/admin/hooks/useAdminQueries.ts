@@ -60,6 +60,7 @@ export const ADMIN_QUERY_KEYS = {
   botRepescagemHistorico: ["admin", "bot", "repescagem", "historico"] as const,
   phoneStatus: ["admin", "bot", "phone", "status"] as const,
   addonPaymentStatus: ["admin", "bot", "phone", "payment-status"] as const,
+  embeddedSignupConfig: ["admin", "bot", "phone", "embedded-signup-config"] as const,
   addons: ["admin", "billing", "addons"] as const,
 };
 
@@ -1453,6 +1454,36 @@ export function useTrocarNumero() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: api.trocarNumeroPhone,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.phoneStatus });
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConfig });
+    },
+  });
+}
+
+export function useContratarAddonBot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.contratarAddonBot,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.phoneStatus });
+    },
+  });
+}
+
+export function useEmbeddedSignupConfig(enabled: boolean = true) {
+  return useQuery({
+    queryKey: ADMIN_QUERY_KEYS.embeddedSignupConfig,
+    queryFn: api.getEmbeddedSignupConfig,
+    enabled,
+    staleTime: 300_000,
+  });
+}
+
+export function useEmbeddedSignupCallback() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.embeddedSignupCallback,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.phoneStatus });
       qc.invalidateQueries({ queryKey: ADMIN_QUERY_KEYS.botConfig });

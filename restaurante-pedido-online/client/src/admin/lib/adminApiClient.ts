@@ -955,6 +955,21 @@ export async function trocarNumeroPhone(numero_novo: string) {
   return data;
 }
 
+export async function contratarAddonBot() {
+  const { data } = await adminApi.post("/painel/bot/phone/contratar-addon");
+  return data;
+}
+
+export async function getEmbeddedSignupConfig() {
+  const { data } = await adminApi.get("/painel/bot/phone/embedded-signup-config");
+  return data;
+}
+
+export async function embeddedSignupCallback(payload: { code: string; waba_id: string; phone_number_id: string }) {
+  const { data } = await adminApi.post("/painel/bot/phone/embedded-signup", payload);
+  return data;
+}
+
 export async function uploadImagem(file: File, tipo: string = "produto") {
   // Obter restaurante_id do localStorage
   const restauranteStr = localStorage.getItem("sf_admin_restaurante");

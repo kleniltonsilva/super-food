@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import AdminLayout from "@/admin/components/AdminLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -95,6 +95,9 @@ import {
   useAtualizarPerfilPhone,
   useUploadFotoPerfilPhone,
   useTrocarNumero,
+  useEmbeddedSignupConfig,
+  useEmbeddedSignupCallback,
+  useContratarAddonBot,
 } from "@/admin/hooks/useAdminQueries";
 import { useFeatureFlag } from "@/admin/hooks/useFeatureFlag";
 import { cn } from "@/lib/utils";
@@ -167,6 +170,7 @@ export default function BotWhatsApp() {
   const [buscaDebounced, setBuscaDebounced] = useState("");
   const [showEditarPerfil, setShowEditarPerfil] = useState(false);
   const [showTrocarNumero, setShowTrocarNumero] = useState(false);
+  const [periodoRelatorio, setPeriodoRelatorio] = useState("30d");
 
   // Auto-selecionar conversa vinda da notificação (?conversa=ID)
   useEffect(() => {
@@ -208,6 +212,11 @@ export default function BotWhatsApp() {
   const recusarHandoff = useRecusarHandoffBot();
   const devolverBot = useDevolverBotConversa();
 
+  const { data: relEficiencia } = useBotRelatorioEficiencia(periodoRelatorio);
+  const { data: relSatisfacao } = useBotRelatorioSatisfacao(periodoRelatorio);
+  const { data: relInativos } = useBotRelatorioClientesInativos();
+  const { data: relErros } = useBotRelatorioErrosContornados(periodoRelatorio);
+
   // Merge config do servidor com alterações locais
   const cfg = { ...(botConfig || {}), ...configLocal };
 
@@ -246,8 +255,9 @@ export default function BotWhatsApp() {
     }
   }
 
-  // Feature bloqueada
-  if (!hasFeature) {
+  // Feature bloqueada — só bloquear se NÃO pode contratar addon (plano Basico)
+  // Essencial/Avançado sem addon: deixar entrar no wizard (backend cuida do billing inline)
+  if (!hasFeature && !canSubscribeAddon) {
     return (
       <AdminLayout>
         <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -257,27 +267,14 @@ export default function BotWhatsApp() {
           </h2>
           <p className="text-[var(--text-secondary)] mb-4 max-w-md">
             Atendimento inteligente por WhatsApp com IA.
-            {canSubscribeAddon
-              ? " Disponivel como add-on por R$99,45/mes ou incluso no plano Premium."
-              : ` Disponivel no plano ${requiredPlano}.`}
+            {` Disponivel a partir do plano ${requiredPlano}.`}
           </p>
-          <div className="flex gap-3">
-            {canSubscribeAddon && (
-              <Button
-                onClick={() => (window.location.href = "/admin/billing")}
-                style={{ backgroundColor: "var(--cor-primaria)" }}
-              >
-                Contratar add-on (R$99,45/mes)
-              </Button>
-            )}
-            <Button
-              variant={canSubscribeAddon ? "outline" : "default"}
-              onClick={() => (window.location.href = "/admin/billing/planos")}
-              style={canSubscribeAddon ? undefined : { backgroundColor: "var(--cor-primaria)" }}
-            >
-              Ver planos
-            </Button>
-          </div>
+          <Button
+            onClick={() => (window.location.href = "/admin/billing/planos")}
+            style={{ backgroundColor: "var(--cor-primaria)" }}
+          >
+            Ver planos
+          </Button>
         </div>
       </AdminLayout>
     );
@@ -295,17 +292,11 @@ export default function BotWhatsApp() {
           regStatus={regStatus}
           refetchPhone={refetchPhone}
           refetchConfig={refetchConfig}
+          addonLiberado={hasFeature}
         />
       </AdminLayout>
     );
   }
-
-  const [periodoRelatorio, setPeriodoRelatorio] = useState("30d");
-
-  const { data: relEficiencia } = useBotRelatorioEficiencia(periodoRelatorio);
-  const { data: relSatisfacao } = useBotRelatorioSatisfacao(periodoRelatorio);
-  const { data: relInativos } = useBotRelatorioClientesInativos();
-  const { data: relErros } = useBotRelatorioErrosContornados(periodoRelatorio);
 
   const tabs: { id: TabType; label: string; icon: typeof Bot }[] = [
     { id: "dashboard", label: "Dashboard", icon: TrendingUp },
@@ -1801,36 +1792,44 @@ function PhoneOnboardingWizard({
   regStatus,
   refetchPhone,
   refetchConfig,
+  addonLiberado,
 }: {
   phoneStatus: any;
   regStatus: string;
   refetchPhone: () => void;
   refetchConfig: () => void;
+  addonLiberado: boolean;
 }) {
-  const [numero, setNumero] = useState("");
-  const [displayName, setDisplayName] = useState("");
+  // ── Todos os hooks no TOPO (antes de qualquer early return) ──
   const [codigo, setCodigo] = useState("");
   const [about, setAbout] = useState("");
   const [description, setDescription] = useState("");
   const [nomeAtendente, setNomeAtendente] = useState("Bia");
   const [cooldown, setCooldown] = useState(0);
+  const [connectingFb, setConnectingFb] = useState(false);
 
-  const registrar = useRegistrarPhone();
   const solicitar = useSolicitarCodigo();
   const verificar = useVerificarCodigo();
   const atualizarPerfil = useAtualizarPerfilPhone();
   const uploadFoto = useUploadFotoPerfilPhone();
+  const contratarAddon = useContratarAddonBot();
   const [paymentTab, setPaymentTab] = useState<"pix" | "boleto">("pix");
   const [paymentData, setPaymentData] = useState<any>(null);
   const [copiedPix, setCopiedPix] = useState(false);
 
+  const showFbButton = addonLiberado && (regStatus === "none" || regStatus === "pending_signup");
+  const signupConfig = useEmbeddedSignupConfig(showFbButton);
+  const signupCallback = useEmbeddedSignupCallback();
+
   // Polling pagamento add-on (só ativo quando pending_payment)
   const addonPayment = useAddonPaymentStatus(regStatus === "pending_payment");
+
+  const fbSdkLoaded = useRef(false);
 
   // Auto-transicionar quando pagamento confirmado
   useEffect(() => {
     if (addonPayment.data?.status === "confirmed") {
-      toast.success("Pagamento confirmado! Numero sendo registrado...");
+      toast.success("Pagamento confirmado! Agora conecte pelo Facebook.");
       refetchPhone();
     }
   }, [addonPayment.data?.status]);
@@ -1842,25 +1841,115 @@ function PhoneOnboardingWizard({
     return () => clearTimeout(t);
   }, [cooldown]);
 
-  async function handleRegistrar() {
-    if (!numero || numero.length < 10) {
-      toast.error("Numero de telefone invalido");
+  // Carregar Facebook SDK
+  useEffect(() => {
+    if (fbSdkLoaded.current) return;
+    if (!signupConfig.data?.app_id) return;
+
+    const appId = signupConfig.data.app_id;
+
+    // Listener para sessionInfo do Embedded Signup (captura waba_id + phone_number_id)
+    (window as any).__fbEmbeddedSignupInfo = null;
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== "https://www.facebook.com" && event.origin !== "https://web.facebook.com") return;
+      try {
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (data.type === "WA_EMBEDDED_SIGNUP") {
+          (window as any).__fbEmbeddedSignupInfo = {
+            phone_number_id: data.data?.phone_number_id,
+            waba_id: data.data?.waba_id,
+          };
+        }
+      } catch { /* ignore non-JSON messages */ }
+    };
+    window.addEventListener("message", handleMessage);
+
+    // Carregar SDK
+    (window as any).fbAsyncInit = function () {
+      (window as any).FB.init({
+        appId,
+        autoLogAppEvents: true,
+        xfbml: false,
+        version: "v22.0",
+      });
+    };
+
+    if (!document.getElementById("facebook-jssdk")) {
+      const script = document.createElement("script");
+      script.id = "facebook-jssdk";
+      script.src = "https://connect.facebook.net/en_US/sdk.js";
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
+
+    fbSdkLoaded.current = true;
+    return () => window.removeEventListener("message", handleMessage);
+  }, [signupConfig.data?.app_id]);
+
+  const processSignupResponse = useCallback(async (response: any) => {
+    if (response.authResponse?.code) {
+      const code = response.authResponse.code;
+      // Aguardar sessionInfoListener capturar waba_id/phone_number_id
+      await new Promise((r) => setTimeout(r, 500));
+      const info = (window as any).__fbEmbeddedSignupInfo || {};
+      const waba_id = info.waba_id || "";
+      const phone_number_id = info.phone_number_id || "";
+
+      if (!waba_id || !phone_number_id) {
+        toast.error("Nao foi possivel obter dados do WhatsApp. Tente novamente.");
+        setConnectingFb(false);
+        return;
+      }
+
+      try {
+        const result = await signupCallback.mutateAsync({ code, waba_id, phone_number_id });
+        if (result.aguardando_pagamento) {
+          setPaymentData(result);
+          toast.success("Cobranca criada! Efetue o pagamento para continuar.");
+        } else {
+          toast.success(result.mensagem || "WhatsApp conectado com sucesso!");
+        }
+        refetchPhone();
+        refetchConfig();
+      } catch (err: any) {
+        toast.error(err?.response?.data?.detail || "Erro ao conectar WhatsApp");
+      }
+    } else {
+      toast.error("Login cancelado ou falhou.");
+    }
+    setConnectingFb(false);
+  }, [signupCallback, refetchPhone, refetchConfig]);
+
+  const handleEmbeddedSignup = useCallback(() => {
+    const FB = (window as any).FB;
+    if (!FB) {
+      toast.error("Facebook SDK nao carregou. Recarregue a pagina.");
       return;
     }
-    try {
-      const result = await registrar.mutateAsync({ numero, display_name: displayName || "Restaurante" });
-      if (result.aguardando_pagamento) {
-        setPaymentData(result);
-        toast.success("Cobranca criada! Efetue o pagamento para continuar.");
-      } else {
-        setCooldown(60);
-        toast.success("Numero registrado! Verifique o SMS.");
-      }
-      refetchPhone();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Erro ao registrar numero");
+    const configId = signupConfig.data?.config_id;
+    if (!configId) {
+      toast.error("Configuracao do Embedded Signup nao disponivel.");
+      return;
     }
-  }
+
+    setConnectingFb(true);
+    (window as any).__fbEmbeddedSignupInfo = null;
+
+    FB.login(
+      (response: any) => { processSignupResponse(response); },
+      {
+        config_id: configId,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: {
+          feature: "whatsapp_embedded_signup",
+          version: 2,
+          sessionInfoVersion: 2,
+        },
+      },
+    );
+  }, [signupConfig.data?.config_id, processSignupResponse]);
 
   async function handleVerificar() {
     if (!codigo || codigo.length !== 6) {
@@ -1902,8 +1991,68 @@ function PhoneOnboardingWizard({
     }
   }
 
-  // Estado 1: Nenhum número registrado
-  if (regStatus === "none") {
+  // Estado 0: Precisa contratar add-on primeiro (Essencial/Avançado sem addon)
+  if (regStatus === "none" && !addonLiberado) {
+    return (
+      <div className="max-w-xl mx-auto py-12 space-y-6">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-green-500/10">
+            <Bot className="h-8 w-8 text-green-400" />
+          </div>
+          <h2 className="text-2xl font-bold text-[var(--text-primary)]">
+            WhatsApp Humanoide
+          </h2>
+          <p className="text-[var(--text-secondary)] max-w-md mx-auto">
+            Atendimento inteligente por WhatsApp com IA para seu restaurante.
+          </p>
+        </div>
+
+        <Card className="p-6 bg-[var(--bg-card)] border-[var(--border-subtle)] space-y-4">
+          <div className="text-center space-y-2">
+            <p className="text-3xl font-bold text-[var(--text-primary)]">R$ 99,45<span className="text-sm font-normal text-[var(--text-muted)]">/mes</span></p>
+            <p className="text-sm text-[var(--text-secondary)]">Add-on — cobranca separada da sua assinatura</p>
+          </div>
+
+          <div className="space-y-2 text-sm text-[var(--text-secondary)]">
+            <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" /> Atendente IA 24/7 no WhatsApp</div>
+            <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" /> Cria pedidos automaticamente</div>
+            <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" /> Responde duvidas e envia cardapio</div>
+            <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" /> Avaliacao e repescagem de clientes</div>
+          </div>
+
+          <Button
+            className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3"
+            onClick={async () => {
+              try {
+                const result = await contratarAddon.mutateAsync();
+                if (result.ja_liberado) {
+                  toast.success("Add-on ja esta ativo!");
+                  refetchPhone();
+                  return;
+                }
+                setPaymentData(result);
+                toast.success("Cobranca criada! Efetue o pagamento.");
+                refetchPhone();
+              } catch (err: any) {
+                toast.error(err?.response?.data?.detail || "Erro ao criar cobranca");
+              }
+            }}
+            disabled={contratarAddon.isPending}
+          >
+            {contratarAddon.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <ShoppingBag className="h-4 w-4 mr-2" />
+            )}
+            Contratar WhatsApp Humanoide
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Estado 1: Addon liberado, conectar via Facebook (Premium, addon ativo, ou pós-pagamento)
+  if (regStatus === "none" || regStatus === "pending_signup") {
     return (
       <div className="max-w-xl mx-auto py-12 space-y-6">
         <div className="text-center space-y-3">
@@ -1911,59 +2060,51 @@ function PhoneOnboardingWizard({
             <Smartphone className="h-8 w-8 text-green-400" />
           </div>
           <h2 className="text-2xl font-bold text-[var(--text-primary)]">
-            Ativar WhatsApp Humanoide
+            Conectar WhatsApp Business
           </h2>
           <p className="text-[var(--text-secondary)] max-w-md mx-auto">
-            Conecte o numero de WhatsApp do seu restaurante para ativar a atendente IA.
-            Um codigo de verificacao sera enviado por SMS.
+            Conecte a conta WhatsApp Business do seu restaurante para ativar a atendente IA.
           </p>
         </div>
 
         <Card className="p-6 bg-[var(--bg-card)] border-[var(--border-subtle)] space-y-4">
-          <div className="space-y-2">
-            <Label className="text-[var(--text-primary)]">Numero de telefone (com DDD)</Label>
-            <Input
-              placeholder="5511999999999"
-              value={numero}
-              onChange={(e) => setNumero(e.target.value.replace(/\D/g, ""))}
-              className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
-              maxLength={15}
-            />
-            <p className="text-xs text-[var(--text-muted)]">
-              Formato: codigo do pais + DDD + numero (ex: 5511999999999)
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-[var(--text-primary)]">Nome do negocio no WhatsApp</Label>
-            <Input
-              placeholder="Nome do seu restaurante"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-primary)]"
-              maxLength={200}
-            />
-          </div>
-
           <div className="p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
             <p className="text-xs text-blue-300">
-              <strong>Como funciona:</strong> Um codigo de verificacao sera enviado por SMS para o numero informado.
-              Apos a verificacao, voce podera configurar o perfil da atendente e ativa-la.
+              <strong>Processo seguro:</strong> A conexao e feita diretamente pelo Facebook.
+              Seu numero sera vinculado automaticamente ao Derekh Food.
             </p>
+          </div>
+
+          <div className="space-y-2 text-sm text-[var(--text-secondary)]">
+            <p className="font-medium text-[var(--text-primary)]">Como funciona:</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Clique no botao abaixo para abrir o Facebook</li>
+              <li>Faca login e selecione sua conta Business</li>
+              <li>Escolha ou crie uma conta WhatsApp Business</li>
+              <li>Selecione o numero de telefone do seu restaurante</li>
+            </ol>
           </div>
 
           <Button
-            className="w-full bg-green-600 hover:bg-green-700 text-white"
-            onClick={handleRegistrar}
-            disabled={registrar.isPending || !numero}
+            className="w-full bg-[#1877F2] hover:bg-[#166FE5] text-white font-medium py-3"
+            onClick={handleEmbeddedSignup}
+            disabled={connectingFb || signupCallback.isPending || !signupConfig.data?.config_id}
           >
-            {registrar.isPending ? (
+            {(connectingFb || signupCallback.isPending) ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
-              <ArrowRight className="h-4 w-4 mr-2" />
+              <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              </svg>
             )}
-            Registrar Numero
+            Conectar com Facebook
           </Button>
+
+          {signupConfig.isError && (
+            <p className="text-xs text-red-400 text-center">
+              Embedded Signup nao configurado. Contate o suporte.
+            </p>
+          )}
         </Card>
       </div>
     );
@@ -2085,7 +2226,7 @@ function PhoneOnboardingWizard({
           <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
             <Loader2 className="h-4 w-4 animate-spin text-amber-400 shrink-0" />
             <p className="text-xs text-amber-300">
-              Aguardando pagamento... Apos a confirmacao, seu numero sera registrado automaticamente.
+              Aguardando pagamento... Apos a confirmacao, voce podera conectar seu WhatsApp pelo Facebook.
             </p>
           </div>
         </Card>
