@@ -94,9 +94,11 @@ jobs:
           PASS="${KEYSTORE_PASSWORD:-DerekhFood2025Motoboy}"
           ALIAS="${KEY_ALIAS:-derekh-entregador}"
           KPASS="${KEY_PASSWORD:-DerekhFood2025Motoboy}"
+          KEYSTORE_PATH="$(pwd)/app/derekh-motoboy.jks"
+          echo "Keystore path: $KEYSTORE_PATH"
           echo "Building signed release APK..."
           ./gradlew assembleRelease \
-            -Pandroid.injected.signing.store.file=derekh-motoboy.jks \
+            -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
             -Pandroid.injected.signing.store.password="$PASS" \
             -Pandroid.injected.signing.key.alias="$ALIAS" \
             -Pandroid.injected.signing.key.password="$KPASS"
