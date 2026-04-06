@@ -57,32 +57,50 @@ jobs:
           sed -i "s/versionCode .*/versionCode ${VERSION_CODE}/" android/app/build.gradle
           sed -i "s/versionName .*/versionName \"${VERSION}\"/" android/app/build.gradle
 
-      - name: Decode keystore
-        if: env.KEYSTORE_BASE64 != ''
+      - name: Decode or generate keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.MOTOBOY_KEYSTORE_BASE64 }}
-        run: echo "$KEYSTORE_BASE64" | base64 -d > motoboy-app/android/app/derekh-motoboy.jks
+          KEYSTORE_PASSWORD: ${{ secrets.MOTOBOY_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.MOTOBOY_KEY_ALIAS }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding existing keystore from secret..."
+            echo "$KEYSTORE_BASE64" | base64 -d > motoboy-app/android/app/derekh-motoboy.jks
+          else
+            echo "Generating new keystore (save to secrets for consistency!)..."
+            PASS="${KEYSTORE_PASSWORD:-DerekhFood2025Motoboy}"
+            ALIAS="${KEY_ALIAS:-derekh-entregador}"
+            keytool -genkeypair -v \
+              -keystore motoboy-app/android/app/derekh-motoboy.jks \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -alias "$ALIAS" \
+              -storepass "$PASS" -keypass "$PASS" \
+              -dname "CN=Derekh Food, OU=Mobile, O=Derekh Food, L=Fortaleza, ST=CE, C=BR"
+            echo ""
+            echo "⚠️  IMPORTANT: Save this keystore as GitHub secret to keep consistent signing!"
+            echo "Run: base64 motoboy-app/android/app/derekh-motoboy.jks | gh secret set MOTOBOY_KEYSTORE_BASE64"
+            echo "Also set: MOTOBOY_KEYSTORE_PASSWORD=$PASS  MOTOBOY_KEY_ALIAS=$ALIAS  MOTOBOY_KEY_PASSWORD=$PASS"
+            # Upload keystore as artifact for extraction
+            cp motoboy-app/android/app/derekh-motoboy.jks /tmp/derekh-motoboy.jks
+          fi
 
-      - name: Build APK
+      - name: Build APK (always release signed)
         working-directory: motoboy-app/android
         env:
           KEYSTORE_PASSWORD: ${{ secrets.MOTOBOY_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.MOTOBOY_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.MOTOBOY_KEY_PASSWORD }}
         run: |
-          if [ -f "app/derekh-motoboy.jks" ] && [ -n "$KEYSTORE_PASSWORD" ]; then
-            echo "Building signed release APK..."
-            ./gradlew assembleRelease \
-              -Pandroid.injected.signing.store.file=derekh-motoboy.jks \
-              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
-              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
-            cp app/build/outputs/apk/release/app-release.apk ../DerekhFood-Entregador.apk
-          else
-            echo "Building debug APK (no keystore configured)..."
-            ./gradlew assembleDebug
-            cp app/build/outputs/apk/debug/app-debug.apk ../DerekhFood-Entregador.apk
-          fi
+          PASS="${KEYSTORE_PASSWORD:-DerekhFood2025Motoboy}"
+          ALIAS="${KEY_ALIAS:-derekh-entregador}"
+          KPASS="${KEY_PASSWORD:-DerekhFood2025Motoboy}"
+          echo "Building signed release APK..."
+          ./gradlew assembleRelease \
+            -Pandroid.injected.signing.store.file=derekh-motoboy.jks \
+            -Pandroid.injected.signing.store.password="$PASS" \
+            -Pandroid.injected.signing.key.alias="$ALIAS" \
+            -Pandroid.injected.signing.key.password="$KPASS"
+          cp app/build/outputs/apk/release/app-release.apk ../DerekhFood-Entregador.apk
 
       - name: Clean keystore
         if: always()
@@ -94,6 +112,14 @@ jobs:
           name: derekh-entregador-apk
           path: motoboy-app/DerekhFood-Entregador.apk
           retention-days: 90
+
+      - name: Upload keystore (if generated)
+        if: hashFiles('/tmp/derekh-motoboy.jks') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: derekh-keystore-SAVE-TO-SECRETS
+          path: /tmp/derekh-motoboy.jks
+          retention-days: 7
 
   deploy:
     needs: build
