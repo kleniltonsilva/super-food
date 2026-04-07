@@ -66,15 +66,13 @@ _EVOLUTION_API_URL = os.environ.get("EVOLUTION_API_URL", "https://derekh-evoluti
 _EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE", "derekh-whatsapp")
 _EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")
 
-# Número inbound (para incluir nos emails como "Fale Conosco")
-WHATSAPP_INBOUND_NUMBER = os.environ.get("WHATSAPP_INBOUND_NUMBER", "5511971765565")
+# Número da Ana (ÚNICO número ativo — usado em emails, botão WA, inbound)
+WHATSAPP_INBOUND_NUMBER = os.environ.get("WHATSAPP_INBOUND_NUMBER", "351961330536")
 
-# Números excluídos da prospecção (dono, bots, números internos)
+# Números excluídos da prospecção (dono, bot Ana)
 _NUMEROS_EXCLUIDOS = {
     "351933358929",   # Klenilton (dono) — Portugal
-    "554599713063",   # Bot outbound (derekh-whatsapp)
-    "5511971765565",  # Bot inbound (derekh-inbound)
-    "16465894168",    # Número teste
+    "351961330536",   # Ana (Meta Cloud API) — ÚNICO bot ativo
 }
 
 # WhatsApp Cloud API (Meta) — provider principal (Evolution API descontinuada)
@@ -1968,11 +1966,13 @@ def _build_lead_context(conversa: dict, lead: dict) -> str:
     # Cenário
     cenario = ""
     if not tem_ifood:
-        cenario = "\nCenário: restaurante SEM delivery online — oportunidade de ter delivery próprio + entrar nas plataformas."
+        cenario = "\nCenário: restaurante sem delivery online — oportunidade de ter delivery próprio com 0% comissão."
     elif ifood_rating and ifood_rating >= 4.5:
-        cenario = f"\nCenário: nota excelente no iFood ({ifood_rating}★) — já tem clientela, falta marca própria pra fidelizar + centralizar pedidos."
+        cenario = f"\nCenário: nota excelente no iFood ({ifood_rating}★) — iFood é vitrine, Derekh Food complementa com 0% comissão + marca própria."
     elif ifood_reviews and ifood_reviews >= 500:
-        cenario = f"\nCenário: restaurante popular ({ifood_reviews} avaliações) — precisa centralizar tudo num painel só e ter marca própria."
+        cenario = f"\nCenário: restaurante popular ({ifood_reviews} avaliações) — iFood = vitrine, Derekh Food = canal próprio sem comissão, centraliza tudo."
+    else:
+        cenario = "\nCenário: Derekh Food complementa o delivery atual — 0% comissão por venda, canal próprio do restaurante."
 
     # Histórico de interações
     msgs = conversa.get("mensagens") or []
@@ -2176,7 +2176,7 @@ COMO EXPLICAR FUNCIONALIDADES (use exemplos práticos, NUNCA liste features):
 
 CREDIBILIDADE (use quando perguntarem "quem é vocês?" ou desconfiarem):
 - Site oficial: https://www.derekhfood.com.br — podem verificar
-- "Achei seu restaurante no Google Maps, vi que não tem delivery próprio e entrei em contato"
+- "Achei seu restaurante no Google Maps e entrei em contato pra apresentar a Derekh Food"
 - "A gente trabalha com mais de 50 restaurantes em todo Brasil"
 - "Pode pesquisar a gente, estamos no Google. Derekh Food, sistema de delivery"
 - Se pedirem CNPJ: "Claro, posso te mandar. Somos empresa registrada em São Paulo"
@@ -3306,11 +3306,11 @@ def _gerar_abertura_outbound(lead: dict) -> str:
         pass
 
     # Cenário
-    cenario = "sem delivery online — oportunidade de ter delivery próprio"
+    cenario = "delivery próprio com 0% comissão — complemento ou solução completa"
     if tem_ifood and tem_rappi:
-        cenario = "já está no iFood e Rappi — pode fidelizar com marca própria sem comissão"
+        cenario = "já está no iFood e Rappi — iFood é vitrine, Derekh Food complementa com 0% comissão + marca própria"
     elif tem_ifood:
-        cenario = "está no iFood — pode complementar com delivery próprio sem 27% de comissão"
+        cenario = "está no iFood — iFood é vitrine, Derekh Food complementa com delivery próprio sem 27% de comissão"
 
     system = """Você é Ana, vendedora da Derekh Food. Escreva UMA mensagem curta de WhatsApp (máx 4 linhas)
 para abordar um restaurante pela primeira vez. Seja natural, sem parecer robô.

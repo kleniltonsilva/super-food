@@ -157,7 +157,7 @@ def _extrair_corpo_html(html: str) -> str:
     return html
 
 
-WHATSAPP_INBOUND = "5511971765565"
+WHATSAPP_INBOUND = "351961330536"  # Ana — ÚNICO número ativo
 LANDING_URL_DEFAULT = "https://derekhfood.com.br"
 
 
