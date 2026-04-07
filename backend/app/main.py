@@ -1152,13 +1152,16 @@ async def serve_root(request: Request):
     return templates.TemplateResponse(request, "landing.html")
 
 
-@app.get("/solicitar-teste-gratis-formulario", response_class=HTMLResponse)
+@app.get("/solicitar-teste-gratis-formulario")
 async def solicitar_teste_gratis_form(request: Request):
-    """Formulário de solicitação de teste grátis.
-    URL: derekhfood.com.br/solicitar-teste-gratis-formulario
-    POST vai para /api/public/solicitar-cadastro → super admin aprova no painel.
+    """Redireciona para o formulário de cadastro existente em /onboarding.
+    URL amigável: derekhfood.com.br/solicitar-teste-gratis-formulario
+    Formulário POST /api/public/solicitar-cadastro → super admin aprova no painel.
     """
-    return templates.TemplateResponse(request, "solicitar-teste.html")
+    from starlette.responses import RedirectResponse
+    query = str(request.query_params)
+    suffix = f"?{query}" if query else ""
+    return RedirectResponse(url=f"/onboarding{suffix}", status_code=302)
 
 
 @app.get("/privacidade", response_class=HTMLResponse)
