@@ -1830,6 +1830,50 @@ Detectar intenção (scoring contextual)
                     |-- strategic → escala para gerente
 ```
 
+### 16.10 Fila Autônoma WA — Outreach Semi-Autônomo (07/04/2026)
+
+O brain loop gera mensagens personalizadas via Grok IA e **enfileira** para envio manual pelo dono, em vez de enviar diretamente via Cloud API. Isso evita o custo de Template Messages do Meta (outbound cobra ~$0.05-0.08/conversa) e contorna a restrição de janela 24h.
+
+**Fluxo:**
+1. Brain loop (`ciclo_brain()`) identifica leads sem outreach com `wa_existe = true`
+2. `_iniciar_wa_outbound()` chama `wa_outreach_manual.gerar_mensagem_outreach_manual()` (Grok IA personaliza)
+3. Mensagem é salva na tabela `wa_outreach_fila` com status `pendente`
+4. Dono acessa `/wa-outreach-auto` no CRM e vê lista de mensagens pendentes
+5. Dono clica "Enviar no WhatsApp" → abre `wa.me/{telefone}?text={msg}` no WhatsApp dele
+6. Lead recebe mensagem com link para falar com Ana (`wa.me/351961330536`)
+7. Quando lead responde pelo link, webhook captura → bot reconhece e conversa normalmente
+
+**Tabela `wa_outreach_fila`:**
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| `id` | SERIAL PK | ID |
+| `lead_id` | FK leads | Lead alvo |
+| `mensagem` | TEXT | Texto personalizado gerado por Grok |
+| `wa_enviar_link` | TEXT | Link wa.me com msg pré-preenchida |
+| `wa_ana_link` | TEXT | Link wa.me para Ana (dentro da msg) |
+| `status` | TEXT | `pendente` / `enviado` / `descartado` / `expirado` |
+| `gerado_por` | TEXT | `brain_loop` / `reengajamento` |
+| `enviado_at` | TIMESTAMPTZ | Quando dono clicou enviar |
+
+**Anti-duplicata:** Máximo 1 item `pendente` por lead. Itens >7 dias são auto-expirados (etapa 8 do brain loop).
+
+**Emails continuam 100% automáticos** — sem mudança no fluxo de email outreach.
+
+**Endpoints:**
+| Método | Rota | Função |
+|--------|------|--------|
+| `GET` | `/wa-outreach-auto` | Página da fila (pendentes/enviados) |
+| `POST` | `/api/wa-outreach-auto/enviado/{fila_id}` | Marca enviado + registra interação |
+| `POST` | `/api/wa-outreach-auto/descartar/{fila_id}` | Descarta item da fila |
+
+**Arquivos:**
+- `crm/brain_loop.py` — `_iniciar_wa_outbound()` e `_reengajar_via_wa()` agora enfileiram
+- `crm/database.py` — CRUD: `inserir_outreach_fila`, `listar_outreach_fila`, `marcar_outreach_fila_enviado`, `descartar_outreach_fila`, `contar_outreach_fila_pendente`, `limpar_outreach_fila_expirados`
+- `crm/wa_outreach_manual.py` — Geração de msg personalizada (reutilizado)
+- `crm/templates/wa_outreach_auto.html` — UI da fila
+- `crm/templates/base.html` — Badge no sidebar com count pendentes
+- `crm/app.py` — 3 rotas + global Jinja2 `fila_pendente_count()`
+
 ---
 
 ## 17. Bot WhatsApp Humanoide — Sprint 16
