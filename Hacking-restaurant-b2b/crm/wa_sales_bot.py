@@ -1240,9 +1240,10 @@ def _inferir_emocao_contexto(intencao: str, resposta: str, mensagem_cliente: str
 
 
 # ============================================================
-# FILTRO DE HUMANIDADE — verificação automática de qualidade TTS
-# Transcreve áudio gerado → compara com texto original →
-# detecta divergências → aprende pronúncias → regenera se necessário
+# FILTRO DE HUMANIDADE v2 — 3 CAMADAS
+# Camada 1: ffmpeg analisa áudio REAL (volume, silêncios, ritmo)
+# Camada 2: Transcrição inteligente (reverter normalizações Whisper)
+# Camada 3: Grok LLM como juiz semântico (só quando necessário)
 # ============================================================
 
 def transcrever_audio_bytes(audio_bytes: bytes) -> dict:
@@ -1289,28 +1290,255 @@ def transcrever_audio_bytes(audio_bytes: bytes) -> dict:
                 pass
 
 
+# --- Camada 1: Análise de áudio com ffmpeg (analisa o SOM, não texto) ---
+
+# Limiares de naturalidade para TTS (calibrados com Fish Audio S2-Pro)
+# CALIBRAÇÃO: Fish Audio normaliza áudio para ~-0.5dB max (padrão broadcast MP3)
+# Isto NÃO é clipping — é normalização profissional.
+_AUDIO_LIMITES = {
+    "volume_min_db": -35.0,      # Áudio muito baixo = problema
+    "volume_max_db": 0.0,        # Só acima de 0dB é clipping real (Fish Audio usa ~-0.5dB)
+    "silencio_max_ratio": 0.50,  # Máximo 50% de silêncio (áudio travado/vazio)
+    "duracao_min_s": 1.0,        # Áudio muito curto = provavelmente erro
+    "duracao_max_s": 120.0,      # Mais de 2min = provavelmente loop
+    "duracao_min_pausas_s": 12.0, # Só verificar "sem pausas" em áudios > 12s
+    "palavras_por_seg_min": 1.0, # Fala muito lenta
+    "palavras_por_seg_max": 5.0, # Fala muito rápida (ininteligível)
+}
+
+
+def _analisar_audio_ffmpeg(audio_bytes: bytes) -> dict:
+    """Camada 1: Analisa áudio REAL com ffmpeg (não texto).
+
+    Extrai métricas acústicas:
+    - Volume máximo e médio (dB)
+    - Quantidade e padrão de silêncios (pausas naturais)
+    - Duração total
+    - Taxa de fala estimada (palavras/seg baseado em duração)
+
+    Retorna dict com métricas + veredicto {"aprovado": bool, "problemas": [...]}
+    Leve: ~50ms no servidor, sem rede, sem API externa."""
+    import subprocess
+
+    tmp_path = None
+    resultado = {
+        "aprovado": True,
+        "problemas": [],
+        "duracao_s": 0,
+        "volume_max_db": 0,
+        "volume_mean_db": 0,
+        "silencios": 0,
+        "silencio_total_s": 0,
+        "silencio_ratio": 0,
+    }
+
+    try:
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        tmp.write(audio_bytes)
+        tmp.close()
+        tmp_path = tmp.name
+
+        # 1. ffprobe — duração
+        probe = subprocess.run(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "csv=p=0", tmp_path],
+            capture_output=True, text=True, timeout=10
+        )
+        duracao = float(probe.stdout.strip()) if probe.stdout.strip() else 0
+        resultado["duracao_s"] = round(duracao, 2)
+
+        # 2. volumedetect — volume máximo e médio
+        vol = subprocess.run(
+            ["ffmpeg", "-i", tmp_path, "-af", "volumedetect", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=10
+        )
+        vol_output = vol.stderr
+        max_vol_match = re.search(r'max_volume:\s*([-\d.]+)\s*dB', vol_output)
+        mean_vol_match = re.search(r'mean_volume:\s*([-\d.]+)\s*dB', vol_output)
+        if max_vol_match:
+            resultado["volume_max_db"] = float(max_vol_match.group(1))
+        if mean_vol_match:
+            resultado["volume_mean_db"] = float(mean_vol_match.group(1))
+
+        # 3. silencedetect — pausas naturais (threshold -30dB, min 0.3s)
+        sil = subprocess.run(
+            ["ffmpeg", "-i", tmp_path, "-af",
+             "silencedetect=noise=-30dB:d=0.3", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=10
+        )
+        sil_output = sil.stderr
+        silencios = re.findall(
+            r'silence_end:\s*([\d.]+)\s*\|\s*silence_duration:\s*([\d.]+)',
+            sil_output
+        )
+        resultado["silencios"] = len(silencios)
+        silencio_total = sum(float(d) for _, d in silencios)
+        resultado["silencio_total_s"] = round(silencio_total, 2)
+        resultado["silencio_ratio"] = round(silencio_total / duracao, 3) if duracao > 0 else 0
+
+        # --- Verificar limiares ---
+        limites = _AUDIO_LIMITES
+        problemas = []
+
+        # Volume
+        if resultado["volume_max_db"] < limites["volume_min_db"]:
+            problemas.append(f"volume_baixo ({resultado['volume_max_db']:.1f}dB)")
+        if resultado["volume_max_db"] > limites["volume_max_db"]:
+            problemas.append(f"clipping ({resultado['volume_max_db']:.1f}dB)")
+
+        # Duração
+        if duracao < limites["duracao_min_s"]:
+            problemas.append(f"muito_curto ({duracao:.1f}s)")
+        if duracao > limites["duracao_max_s"]:
+            problemas.append(f"muito_longo ({duracao:.1f}s)")
+
+        # Silêncios (naturalidade) — só flaggear em áudios longos
+        if resultado["silencio_ratio"] > limites["silencio_max_ratio"]:
+            problemas.append(f"excesso_silencio ({resultado['silencio_ratio']:.0%})")
+        if duracao > limites["duracao_min_pausas_s"] and resultado["silencios"] == 0:
+            problemas.append("sem_pausas_naturais")
+
+        resultado["problemas"] = problemas
+        resultado["aprovado"] = len(problemas) == 0
+
+    except subprocess.TimeoutExpired:
+        log.warning("ffmpeg timeout (10s) na análise de áudio")
+        resultado["aprovado"] = True  # Na dúvida, aprovar
+    except FileNotFoundError:
+        log.warning("ffmpeg não encontrado — Camada 1 desativada")
+        resultado["aprovado"] = True
+    except Exception as e:
+        log.warning(f"Erro análise ffmpeg: {e}")
+        resultado["aprovado"] = True  # Falha segura
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+    return resultado
+
+
+# --- Camada 2: Transcrição inteligente (reverter normalizações Whisper) ---
+
+# Whisper converte números falados → dígitos. Reverter antes de comparar.
+_WHISPER_REVERSOES = [
+    # Moeda: "R$ 49,90" → "quarenta e nove reais e noventa centavos"
+    (r'R\$\s*(\d+)[.,](\d{2})', None),  # Tratado por função especial
+    (r'R\$\s*(\d+)', None),              # Tratado por função especial
+    # Porcentagem
+    (r'(\d+)%', None),                   # Tratado por função especial
+    # Informal → formal (Whisper formaliza)
+    (r'\bpara\b', 'pra'),
+    (r'\bestá\b', 'tá'),
+    (r'\bestou\b', 'tô'),
+    (r'\bestava\b', 'tava'),
+    (r'\bvocê\b', 'cê'),
+    (r'\bnão é\b', 'né'),
+    (r'\bcom o\b', 'co'),
+    (r'\bcom a\b', 'ca'),
+    (r'\bvamos\b', 'vamo'),
+    (r'\bpode\b', 'pode'),
+    (r'\bmuito\b', 'muito'),
+    (r'\bporque\b', 'porque'),
+    (r'\btrabalhar\b', 'trabalhá'),
+    (r'\bfalar\b', 'falá'),
+    (r'\bcobrar\b', 'cobrá'),
+    (r'\bpagar\b', 'pagá'),
+    (r'\bajudar\b', 'ajudá'),
+    (r'\busar\b', 'usá'),
+]
+
+
 def _normalizar_para_comparacao(texto: str) -> str:
     """Normaliza texto para comparação de similaridade.
-    Remove pontuação, tags de emoção, lowercase."""
+    Remove pontuação, tags de emoção, acentos, lowercase.
+    CRÍTICO: remover acentos para evitar falsos positivos
+    (Whisper adiciona acentos que o texto original pode não ter)."""
     import unicodedata
     t = texto.lower()
     # Remover tags de emoção [amigável], [empolgado], etc.
     t = re.sub(r'\[[^\]]+\]', '', t)
     # Remover pontuação
     t = re.sub(r'[.,!?;:"\'\-—–()…]', ' ', t)
-    # Normalizar acentos para comparação flexível
+    # REMOVER ACENTOS — evita "voce" vs "você", "cardapio" vs "cardápio"
+    t = unicodedata.normalize('NFKD', t)
+    t = ''.join(c for c in t if not unicodedata.combining(c))
     t = re.sub(r'\s+', ' ', t).strip()
     return t
 
 
-def _calcular_similaridade(texto_original: str, transcricao: str) -> tuple:
+def _reverter_whisper(transcricao: str) -> str:
+    """Reverte normalizações que o Whisper faz ao transcrever:
+    - Números: "49" → "quarenta e nove"
+    - Formalização: "para" → "pra", "está" → "tá"
+    - Whisper remove $ de R$: "R49,90" → "quarenta e nove reais..."
+    Permite comparação justa com o texto preparado para TTS."""
+    t = transcricao
+
+    # 1. Reverter moedas — Whisper pode escrever: R$ 49,90 / R$49,90 / R49,90 / R 49,90
+    def _rev_moeda(m):
+        inteiro = int(m.group(1))
+        centavos_str = m.group(2) if m.lastindex >= 2 and m.group(2) else None
+        ext = _numero_para_extenso(inteiro)
+        result = f"{ext} reais"
+        if centavos_str:
+            centavos = int(centavos_str)
+            if centavos > 0:
+                result += f" e {_numero_para_extenso(centavos)} centavos"
+        return result
+    # Com $: R$ 49,90 ou R$49,90
+    t = re.sub(r'R\$\s*(\d+)[.,](\d{2})', _rev_moeda, t)
+    t = re.sub(r'R\$\s*(\d+)\b', lambda m: f"{_numero_para_extenso(int(m.group(1)))} reais", t)
+    # Sem $ (Whisper remove): R49,90 ou R 49,90
+    t = re.sub(r'\bR\s*(\d+)[.,](\d{2})', _rev_moeda, t)
+    t = re.sub(r'\bR\s*(\d+)\b', lambda m: f"{_numero_para_extenso(int(m.group(1)))} reais", t)
+
+    # 2. Reverter porcentagens: "100%" → "cem por cento"
+    t = re.sub(r'(\d+)%', lambda m: f"{_numero_para_extenso(int(m.group(1)))} por cento", t)
+
+    # 3. Reverter números com unidade: "15 dias" → "quinze dias"
+    def _rev_num_unidade(m):
+        n = int(m.group(1))
+        unidade = m.group(2)
+        return f"{_numero_para_extenso(n)} {unidade}"
+    t = re.sub(r'(\d+)\s*(dias?|horas?|meses?|minutos?|segundos?|anos?|semanas?|vezes?|reais?)',
+               _rev_num_unidade, t, flags=re.IGNORECASE)
+
+    # 4. Reverter números soltos restantes (2-4 dígitos)
+    def _rev_num(m):
+        n = int(m.group(0))
+        if n > 9999:
+            return m.group(0)
+        return _numero_para_extenso(n)
+    t = re.sub(r'\b\d{1,4}\b', _rev_num, t)
+
+    # 5. Reverter formalizações (Whisper: "pra" → "para", TTS usa "pra")
+    for formal, informal in _WHISPER_REVERSOES:
+        if informal is None:
+            continue  # Já tratado acima
+        t = re.sub(formal, informal, t, flags=re.IGNORECASE)
+
+    return t
+
+
+def _calcular_similaridade(texto_original: str, transcricao: str,
+                            usar_reversao: bool = True) -> tuple:
     """Compara texto original vs transcrição do áudio.
+
+    Camada 2: Antes de comparar, reverte normalizações do Whisper
+    (números → extenso, formal → informal) para comparação justa.
+
     Retorna (score 0-1, lista_divergencias).
     Divergência = (palavra_original, palavra_transcrita, posição)."""
     from difflib import SequenceMatcher
 
     norm_orig = _normalizar_para_comparacao(texto_original)
-    norm_trans = _normalizar_para_comparacao(transcricao)
+
+    # Camada 2: reverter normalizações Whisper na transcrição
+    trans_processada = _reverter_whisper(transcricao) if usar_reversao else transcricao
+    norm_trans = _normalizar_para_comparacao(trans_processada)
 
     # Score global
     score = SequenceMatcher(None, norm_orig, norm_trans).ratio()
@@ -1336,58 +1564,233 @@ def _calcular_similaridade(texto_original: str, transcricao: str) -> tuple:
     return score, divergencias
 
 
+# --- Camada 3: Grok LLM como juiz semântico ---
+
+def _juiz_semantico_grok(texto_original: str, transcricao: str,
+                          divergencias: list) -> dict:
+    """Camada 3: Usa Grok LLM para avaliar se as divergências são REAIS
+    (problemas de pronúncia) ou FALSAS (reformulação Whisper).
+
+    Só chamado quando Camada 2 detecta divergências — NÃO para todo áudio.
+    Custo: ~200 tokens por chamada (~0.001 USD).
+
+    Retorna {"reais": [...], "falsas": [...], "score_semantico": 0-1}."""
+    # Usar xAI Grok (mesmo provider do bot — já funciona no servidor)
+    grok_key = os.environ.get("XAI_API_KEY", "")
+    if not grok_key:
+        # Tentar via config do banco
+        try:
+            grok_key = obter_configuracao("xai_api_key") or ""
+        except Exception:
+            pass
+    if not grok_key:
+        return {"reais": divergencias, "falsas": [], "score_semantico": 0.5}
+
+    # Preparar divergências para o prompt (max 8)
+    divs_texto = []
+    for orig, trans, pos in divergencias[:8]:
+        divs_texto.append(f"- Original: \"{orig}\" -> Transcricao: \"{trans}\"")
+    divs_str = "\n".join(divs_texto)
+
+    prompt = (
+        "Voce e um juiz de qualidade de audio TTS em portugues brasileiro.\n\n"
+        f"Texto ORIGINAL enviado ao TTS: \"{texto_original[:300]}\"\n"
+        f"Transcricao do audio gerado (Whisper): \"{transcricao[:300]}\"\n\n"
+        f"Divergencias detectadas entre original e transcricao:\n{divs_str}\n\n"
+        "Para CADA divergencia, classifique como:\n"
+        "- REAL: O TTS pronunciou errado (ex: orcamento virou orcamento sem cedilha, palavra cortada)\n"
+        "- FALSA: O Whisper reformulou mas o sentido e igual (ex: pra vs para, ta vs esta, numero extenso vs digito, acentuacao)\n\n"
+        "IMPORTANTE: Diferencas de acentuacao (mes vs mes, promocao vs promocao) sao FALSAS — Whisper adiciona acentos.\n"
+        "Diferencas de nome proprio (Derekh vs Derrick) sao FALSAS — Whisper interpreta nomes.\n\n"
+        "Responda APENAS em JSON:\n"
+        "{\"reais\": [[\"palavra_original\", \"como_tts_falou\"]], \"falsas\": [[\"original\", \"transcrito\"]], \"score_semantico\": 0.0_a_1.0}\n\n"
+        "score_semantico: 1.0 = audio perfeito, 0.0 = totalmente errado. Considere apenas divergencias REAIS."
+    )
+
+    try:
+        # Usar xAI Grok (mesmo do bot — confiável)
+        api_url = "https://api.x.ai/v1/chat/completions"
+        model = "grok-3-mini-fast"
+
+        resp = httpx.post(
+            api_url,
+            headers={
+                "Authorization": f"Bearer {grok_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0.1,
+                "max_tokens": 300,
+            },
+            timeout=25,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        # Limpar markdown se Grok envolveu em ```json ... ```
+        content = re.sub(r'^```json\s*', '', content.strip())
+        content = re.sub(r'\s*```$', '', content.strip())
+        resultado = json.loads(content)
+
+        # Validar formato
+        reais = resultado.get("reais", [])
+        falsas = resultado.get("falsas", [])
+        score_sem = float(resultado.get("score_semantico", 0.5))
+
+        decision_log.info(f"JUIZ_SEMANTICO reais={len(reais)} falsas={len(falsas)} "
+                           f"score={score_sem:.2f}")
+        return {"reais": reais, "falsas": falsas, "score_semantico": score_sem}
+
+    except Exception as e:
+        log.warning(f"Juiz semântico falhou: {e}")
+        return {"reais": divergencias, "falsas": [], "score_semantico": 0.5}
+
+
+# --- Filtro principal: orquestra as 3 camadas ---
+
 def _filtro_humanidade(audio_bytes: bytes, texto_original: str,
                         conversa_id: int = 0, emocao: str = "") -> tuple:
-    """Filtro de humanidade: verifica qualidade do áudio TTS.
+    """Filtro de humanidade v2 — 3 camadas inteligentes.
 
-    Fluxo:
-    1. Transcreve áudio gerado (Groq Whisper)
-    2. Compara com texto original
-    3. Se score >= 0.85 → APROVADO
-    4. Se score < 0.85 → detecta divergências, aprende pronúncias, regenera
+    Camada 1 (ffmpeg): Analisa áudio REAL — volume, silêncios, ritmo.
+       Se problemas acústicos → regenera imediatamente.
+
+    Camada 2 (Whisper + reversão): Transcreve e reverte normalizações.
+       Compara texto de forma justa (sem falsos positivos de Whisper).
+       Se score >= 0.80 → APROVADO.
+
+    Camada 3 (Grok juiz): Só quando score < 0.80 E há divergências.
+       LLM classifica divergências como REAIS vs FALSAS.
+       Se score semântico >= 0.75 → APROVADO (divergências eram falsas).
+       Se reais > 0 → aprende pronúncias + regenera (1 retry).
 
     Retorna (audio_bytes_final, passou_filtro: bool).
-    Máximo 1 regeneração para não entrar em loop."""
+    Custo: ~50ms ffmpeg + 1 Groq STT (grátis) + raramente 1 Groq LLM (grátis)."""
     from crm.database import salvar_pronuncia_aprendida
 
-    # 1. Transcrever áudio gerado
-    resultado = transcrever_audio_bytes(audio_bytes)
-    if resultado.get("erro"):
-        log.warning(f"Filtro humanidade: falha na transcrição — {resultado['erro']}")
-        return audio_bytes, True  # Enviar sem filtro se STT falhar
+    decision_log.info(f"FILTRO_v2 início conversa={conversa_id} "
+                       f"texto='{texto_original[:60]}...' bytes={len(audio_bytes)}")
 
-    transcricao = resultado["texto"]
-    decision_log.info(f"FILTRO_HUMANIDADE texto_original='{texto_original[:80]}...' "
+    # ========== CAMADA 1: Análise acústica (ffmpeg) ==========
+    analise = _analisar_audio_ffmpeg(audio_bytes)
+    decision_log.info(f"CAMADA1 duracao={analise['duracao_s']}s "
+                       f"vol_max={analise['volume_max_db']}dB "
+                       f"silencios={analise['silencios']} "
+                       f"ratio={analise['silencio_ratio']:.2f} "
+                       f"problemas={analise['problemas']}")
+
+    if not analise["aprovado"]:
+        log.warning(f"Filtro C1: problemas acústicos — {analise['problemas']}")
+        # Problema grave (clipping, vazio, muito curto) → regenerar
+        problemas_graves = {"clipping", "muito_curto", "excesso_silencio", "volume_baixo"}
+        tem_grave = any(p.split("(")[0].strip("_") in problemas_graves
+                        or any(g in p for g in problemas_graves)
+                        for p in analise["problemas"])
+        if tem_grave:
+            audio_novo = _tentar_regenerar(texto_original, emocao)
+            if audio_novo:
+                analise2 = _analisar_audio_ffmpeg(audio_novo)
+                if analise2["aprovado"]:
+                    decision_log.info("CAMADA1 regeneração resolveu problema acústico")
+                    return audio_novo, True
+                # Se ainda com problema, enviar o melhor dos dois
+                return audio_novo if len(audio_novo) > len(audio_bytes) else audio_bytes, False
+
+    # ========== CAMADA 2: Transcrição inteligente ==========
+    resultado_stt = transcrever_audio_bytes(audio_bytes)
+    if resultado_stt.get("erro"):
+        log.warning(f"Filtro C2: STT falhou — {resultado_stt['erro']}")
+        # Camada 1 já validou acústica, enviar sem C2/C3
+        return audio_bytes, analise["aprovado"]
+
+    transcricao = resultado_stt["texto"]
+    duracao_stt = resultado_stt.get("duracao", 0) or analise["duracao_s"]
+
+    # Calcular taxa de fala (validação adicional C1)
+    n_palavras = len(texto_original.split())
+    if duracao_stt > 0:
+        taxa_fala = n_palavras / duracao_stt
+        limites = _AUDIO_LIMITES
+        if taxa_fala < limites["palavras_por_seg_min"]:
+            decision_log.info(f"CAMADA2 fala_lenta ({taxa_fala:.1f} pal/s)")
+        elif taxa_fala > limites["palavras_por_seg_max"]:
+            decision_log.info(f"CAMADA2 fala_rapida ({taxa_fala:.1f} pal/s)")
+
+    # Comparar COM reversão Whisper
+    score_rev, div_rev = _calcular_similaridade(texto_original, transcricao,
+                                                 usar_reversao=True)
+    # Comparar SEM reversão (para ver o delta)
+    score_raw, div_raw = _calcular_similaridade(texto_original, transcricao,
+                                                 usar_reversao=False)
+
+    # Usar o MELHOR score — se a reversão piorou, ignorar reversão
+    if score_rev >= score_raw:
+        score = score_rev
+        divergencias = div_rev
+    else:
+        score = score_raw
+        divergencias = div_raw
+
+    decision_log.info(f"CAMADA2 score_raw={score_raw:.2f} score_rev={score_rev:.2f} "
+                       f"best={score:.2f} "
+                       f"divergencias={len(divergencias)} "
                        f"transcricao='{transcricao[:80]}...'")
 
-    # 2. Comparar
-    score, divergencias = _calcular_similaridade(texto_original, transcricao)
-    decision_log.info(f"FILTRO_HUMANIDADE score={score:.2f} divergencias={len(divergencias)}")
-
-    if score >= 0.85:
-        log.info(f"Filtro humanidade: APROVADO (score={score:.2f})")
+    if score >= 0.80:
+        log.info(f"Filtro C2: APROVADO (score={score:.2f}, raw={score_raw:.2f})")
         return audio_bytes, True
 
-    # 3. Score baixo — aprender com as divergências
+    # ========== CAMADA 3: Juiz semântico (só quando necessário) ==========
+    if not divergencias:
+        # Score baixo mas sem divergências claras → aprovar (reformulação global)
+        log.info(f"Filtro C2: score baixo ({score:.2f}) mas sem divergências claras — aprovado")
+        return audio_bytes, True
+
+    juiz = _juiz_semantico_grok(texto_original, transcricao, divergencias)
+    decision_log.info(f"CAMADA3 reais={len(juiz['reais'])} falsas={len(juiz['falsas'])} "
+                       f"score_sem={juiz['score_semantico']:.2f}")
+
+    if juiz["score_semantico"] >= 0.75:
+        log.info(f"Filtro C3: APROVADO pelo juiz (score_sem={juiz['score_semantico']:.2f}, "
+                 f"divergências eram falsas)")
+        return audio_bytes, True
+
+    # AUTO-APRENDIZADO DESATIVADO — a comparação texto/transcrição não é confiável
+    # o suficiente para aprender regras de pronúncia automaticamente.
+    # Whisper reformula, renomeia, formaliza — regras aprendidas são frequentemente
+    # ERRADAS (ex: 'ate' → 'atimpressao', 'derekh' → 'derrick').
+    # Pronúncias devem ser adicionadas MANUALMENTE em fish_tts._TTS_PRONUNCIA
+    # ou via admin em tts_pronuncia_aprendida (origem='manual').
     novas_regras = 0
-    for palavra_orig, palavra_trans, pos in divergencias[:5]:  # Max 5 regras por vez
-        if not palavra_orig or not palavra_trans:
-            continue
-        # Se a transcrição diz algo diferente, o TTS está lendo errado
-        # Salvar: quando vir palavra_orig, substituir por versão que soa melhor
-        # A transcrição mostra como o TTS realmente pronunciou
-        salvar_pronuncia_aprendida(
-            escrita=palavra_orig,
-            pronuncia=palavra_trans,
-            contexto=texto_original[:200]
-        )
-        novas_regras += 1
-        decision_log.info(f"FILTRO_HUMANIDADE aprendeu: '{palavra_orig}' → '{palavra_trans}'")
+    n_reais = len(juiz["reais"]) if isinstance(juiz["reais"], list) else 0
+    if n_reais > 0:
+        decision_log.info(f"CAMADA3 divergências reais: {juiz['reais'][:5]} "
+                           "(auto-aprendizado desativado, apenas log)")
 
-    log.info(f"Filtro humanidade: REPROVADO (score={score:.2f}), "
-             f"{novas_regras} regras aprendidas. Regenerando áudio...")
+    log.info(f"Filtro C3: {novas_regras} regras aprendidas. Regenerando...")
 
-    # 4. Regenerar áudio com regras atualizadas (1 retry)
+    # Regenerar com regras atualizadas (1 retry)
+    audio_novo = _tentar_regenerar(texto_original, emocao)
+    if audio_novo:
+        # Verificar melhoria (só C2, sem C3 recursivo)
+        resultado2 = transcrever_audio_bytes(audio_novo)
+        if not resultado2.get("erro"):
+            score2, _ = _calcular_similaridade(texto_original, resultado2["texto"])
+            decision_log.info(f"CAMADA3 retry score={score2:.2f} "
+                               f"(melhoria: {score:.2f}→{score2:.2f})")
+            if score2 > score:
+                log.info(f"Filtro: regeneração MELHOROU ({score:.2f}→{score2:.2f})")
+                return audio_novo, score2 >= 0.80
+        return audio_novo, False
+
+    return audio_bytes, False
+
+
+def _tentar_regenerar(texto_original: str, emocao: str = "") -> bytes | None:
+    """Helper: regenera áudio via Fish Audio (1 tentativa).
+    Retorna bytes do novo áudio ou None."""
     try:
         from crm.fish_tts import gerar_audio_fish_async
         import asyncio
@@ -1407,23 +1810,10 @@ def _filtro_humanidade(audio_bytes: bytes, texto_original: str,
             audio_novo = asyncio.run(gerar_audio_fish_async(texto_original, emocao))
 
         if audio_novo and len(audio_novo) > 100:
-            # Verificar o novo áudio (sem recursão — apenas logar)
-            resultado2 = transcrever_audio_bytes(audio_novo)
-            if not resultado2.get("erro"):
-                score2, _ = _calcular_similaridade(texto_original, resultado2["texto"])
-                decision_log.info(f"FILTRO_HUMANIDADE retry score={score2:.2f} "
-                                   f"(melhoria: {score:.2f}→{score2:.2f})")
-                if score2 > score:
-                    log.info(f"Filtro humanidade: áudio regenerado MELHOR (score {score:.2f}→{score2:.2f})")
-                    return audio_novo, score2 >= 0.85
-            # Se não melhorou, retornar o novo mesmo assim (regras já atualizadas)
-            return audio_novo, False
-
+            return audio_novo
     except Exception as e:
-        log.warning(f"Filtro humanidade: regeneração falhou — {e}")
-
-    # 5. Se regeneração falhar, enviar o original
-    return audio_bytes, False
+        log.warning(f"Regeneração áudio falhou: {e}")
+    return None
 
 
 def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
@@ -1437,12 +1827,17 @@ def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
     Retorna sucesso/erro."""
     audio_bytes = None
 
+    # --- Preparar texto para áudio (números extenso, dicção informal, limpeza) ---
+    texto_audio = _preparar_texto_para_audio(texto_resposta)
+
     # --- Fish Audio com cache + fila (ÚNICO provider) ---
-    audio_bytes = _gerar_audio_com_cache(texto_resposta, conversa_id, emocao=emocao)
+    audio_bytes = _gerar_audio_com_cache(texto_audio, conversa_id, emocao=emocao)
     if not audio_bytes:
         return {"erro": "Fish Audio falhou — fallback texto"}
 
     # --- FILTRO DE HUMANIDADE — verificar qualidade antes de enviar ---
+    # Comparar com texto_resposta ORIGINAL (Whisper transcreve em formato escrito,
+    # mais próximo do original do que do texto preparado para TTS)
     filtro_ativo = (obter_configuracao("audio_filtro_humanidade") or "true").lower() == "true"
     if filtro_ativo:
         audio_bytes, passou = _filtro_humanidade(
@@ -1999,8 +2394,11 @@ def _preparar_texto_para_audio(texto: str) -> str:
             # o melhor é logar e deixar (a fonte são as obrigatórias que são seguras)
 
     # --- 9. Tag de emoção de abertura ---
-    tag_abertura = _TAGS_EMOCAO.get(contexto, '[amigável]')
-    texto = f"{tag_abertura} {texto}"
+    # NOTA: NÃO adicionar tag aqui — fish_tts._preparar_texto_fish() já adiciona
+    # a tag correta baseada no parâmetro `emocao`. Adicionar aqui causava DUPLA tag
+    # ([empolgado] [profissional]) que confundia o Fish Audio S2-Pro.
+    # tag_abertura = _TAGS_EMOCAO.get(contexto, '[amigável]')
+    # texto = f"{tag_abertura} {texto}"
 
     # --- Limpeza final ---
     texto = _re_audio.sub(r'  +', ' ', texto)
@@ -2514,6 +2912,7 @@ QUEM VOCÊ É:
 - Tem personalidade: é animada mas não forçada, direta mas acolhedora
 - Tom amigável e natural, mas sem abreviações de internet (NÃO use "vc", "tbm", "kkk", "blz")
 - Frases curtas e objetivas, como conversa real no WhatsApp
+- NUNCA comece resposta com cumprimento (Olá, Oi, Opa, E aí, Hey). Pessoas reais no WhatsApp vão direto ao ponto. Comece pelo CONTEÚDO da resposta. Exemplo correto: "O sistema custa..." em vez de "Olá! O sistema custa..."
 
 {lead_context}
 
@@ -2646,7 +3045,8 @@ FECHAMENTO AGRESSIVO (IMPORTANTÍSSIMO — o que diferencia vendedor mediano de 
 
 ENCERRAMENTO APÓS CONFIRMAÇÃO (CRÍTICO — evitar loop infinito):
 - Quando o lead ACEITAR o teste/demo, encerre em NO MÁXIMO 1 mensagem.
-- Diga: "Perfeito! Vou configurar tudo e te mando o acesso por aqui. Qualquer coisa, é só chamar! 🤙" e PARE.
+- ENVIE O LINK DO FORMULÁRIO: "Perfeito! Preenche esse formulário rapidinho que a gente já ativa seu teste: https://www.derekhfood.com.br/solicitar-teste-gratis-formulario — Leva 1 minutinho e em 48h tá tudo rodando! 🤙"
+- NUNCA diga "vou configurar tudo", "vou te mandar o acesso", "já já volta" — isso gera EXPECTATIVA sem ação. Sempre envie o link concreto.
 - Se o lead diz "tá confirmado", "tudo certo", "aguardando", "obrigado", "valeu" — ele JÁ FECHOU. NÃO responda mais.
 - PROIBIDO ficar em loop de cortesia ("que bom que está animado", "fico contente que...").
 - Se o lead diz "aguardando o acesso", NÃO mande mais nada. A venda já está feita.
@@ -2659,7 +3059,7 @@ COMO INSISTIR SEM SER CHATO:
 - Se disse "vou pensar", responda "tranquilo! Mas olha, posso deixar o teste ativo pra você ir vendo sem pressa. Me passa o nome do restaurante?"
 - Se disse "não tenho interesse" de forma vaga, sonde: "entendo! Curiosidade: você já usa algum sistema próprio?" e tente achar uma dor.
 - Se disse "NÃO" firme ou pediu para parar, encerre com classe.
-- Se demonstrou interesse MAS não fechou: insista UMA vez com urgência — "consigo configurar tudo hoje se você quiser. Amanhã minha agenda complica."
+- Se demonstrou interesse MAS não fechou: insista UMA vez com urgência — "consigo liberar seu teste hoje. Amanhã minha agenda complica. É só preencher aqui: derekhfood.com.br/solicitar-teste-gratis-formulario"
 
 REGRA OBRIGATÓRIA — IDENTIFICAÇÃO (Fix #3):
 - Se você NÃO sabe o nome da pessoa (proprietário/sócio), PERGUNTE na primeira oportunidade: "Com quem estou falando?" ou "Qual o seu nome?"
@@ -2702,8 +3102,9 @@ FORMATO (OBRIGATÓRIO — REGRAS INVIOLÁVEIS):
 - PROIBIDO REPETIR: nunca use a mesma palavra/frase de abertura 2x seguidas. Varie entre "olha", "então", "ah", "bom", direto no assunto. Se já disse "Ótimo" na msg anterior, use OUTRA palavra.
 - PROIBIDO repetir argumento: se já mencionou "teste grátis de 15 dias" em msgs anteriores, NÃO repita ipsis litteris. Reformule ou não mencione de novo.
 - NÃO termine TODA mensagem com "O que acha? 😊". Varie os fechamentos. Às vezes termine com afirmação, às vezes com pergunta diferente, às vezes sem emoji.
+- CUMPRIMENTOS (REGRA CRÍTICA): NÃO inicie mensagens com "Olá", "Oi", "Opa", "E aí" a partir da 2ª mensagem. Pessoas reais no WhatsApp NÃO dizem olá toda hora. Comece direto no assunto: "Então...", "Sobre isso...", "O sistema...", "Legal!", responda direto sem saudação. Cumprimento APENAS na 1ª interação. Depois NUNCA MAIS.
 
-{"PRIMEIRA INTERAÇÃO: cumprimente, diga seu nome e pergunte como pode ajudar. NÃO liste preços nem features." if n_turnos <= 1 else "Você JÁ se apresentou. NÃO se apresente de novo. Continue a conversa naturalmente de onde parou."}
+{"PRIMEIRA INTERAÇÃO: cumprimente, diga seu nome e pergunte como pode ajudar. NÃO liste preços nem features." if n_turnos <= 1 else "PROIBIDO CUMPRIMENTAR: Você JÁ se apresentou. NÃO diga Olá, Oi, Opa, E aí. Comece DIRETO no assunto. Continue a conversa de onde parou."}
 {"PERGUNTE O NOME: Você ainda não sabe o nome do cliente. Na próxima oportunidade natural, pergunte casualmente ('aliás, como posso te chamar?' ou 'qual teu nome?'). NÃO force, encaixe organicamente." if n_turnos <= 3 else "Se já souber o nome do cliente, USE-O nas mensagens para criar conexão pessoal."}
 {"Se o cliente voltou depois de dias/semanas, retome naturalmente: 'e aí, conseguiu pensar sobre aquilo?'" if n_turnos > 3 else ""}"""
 
@@ -2714,30 +3115,24 @@ def _build_system_prompt_inbound() -> str:
     kb_extra = _carregar_knowledge_base()
     kb_section = f"\nINFO ATUALIZADA DO SISTEMA:\n{kb_extra}\n" if kb_extra else ""
 
-    return f"""Você é Ana, vendedora da Derekh Food. Alguém mandou mensagem pela primeira vez.
+    return f"""Você é Ana, vendedora da Derekh Food. Este é um número DESCONHECIDO — você não tem dados sobre esta pessoa no CRM.
 
 PERSONALIDADE: vendedora humana, amigável, WhatsApp. Você NÃO é robô.
 Escreve em português correto, sem abreviações de internet. Tom natural e acolhedor.
 
-PRIMEIRA MENSAGEM — ESCOLHA UMA ABORDAGEM (não siga sempre a mesma):
-Opção A: "Olá! Ana aqui da Derekh Food 🤙 em que posso te ajudar?"
-Opção B: "Oi! Sou a Ana, tudo bem? Vi que mandou mensagem, me conta o que você está buscando"
-Opção C: "Opa, tudo bem? Ana aqui! Me diz como posso te ajudar"
-(Varie entre elas, não use sempre a mesma)
+COMO RESPONDER (número desconhecido):
+- Se a pessoa disse "oi/olá" sem contexto: "Ana aqui da Derekh Food 🤙 me conta, você tem restaurante?"
+- Se a pessoa disse algo sobre restaurante/delivery: responda diretamente ao que ela disse, sem cumprimento genérico
+- Se a pessoa perguntou algo específico: responda a pergunta dela, depois se apresente brevemente
+- NUNCA comece com "Olá! Como posso te ajudar?" — é genérico demais, parece bot
+- Seja DIRETA: responda ao que a pessoa falou, não a um script
 
-REGRA DE OURO: na primeira mensagem NÃO fale preço, features, nada. Só cumprimente e pergunte.
+REGRA: nesta primeira mensagem, NÃO liste preços nem features. Entenda primeiro o que a pessoa busca.
 
-DEPOIS DA PRIMEIRA:
-- Faça perguntas para entender a DOR antes de oferecer solução
-- "Você tem delivery próprio ou usa iFood/Rappi?"
-- "Qual o maior desafio do seu delivery hoje?"
-- Só fale do sistema quando souber o que a pessoa precisa
-
-COLETA NATURAL (não faça formulário):
-- Na SEGUNDA ou TERCEIRA mensagem (nunca na primeira), pergunte o nome: "aliás, como posso te chamar?" ou "qual seu nome?" de forma casual
-- Depois de saber o nome, USE-O nas mensagens seguintes (gera conexão)
-- Ao longo da conversa, descubra: nome do restaurante, cidade, tipo de comida
-- Mas de forma orgânica, não "qual seu nome? qual sua cidade?"
+COLETA NATURAL:
+- Na primeira ou segunda mensagem, pergunte casualmente o nome e se tem restaurante
+- "me conta, você tem restaurante?" ou "qual o nome do seu negócio?" — orgânico
+- NÃO faça formulário ("qual seu nome? qual sua cidade? qual seu telefone?")
 
 SOBRE A DEREKH FOOD (use só quando perguntarem):
 - Sistema de gestão e delivery PRÓPRIO — a marca do restaurante
@@ -2939,10 +3334,10 @@ def avaliar_handoff(conversa_id: int) -> tuple:
         if not numero:
             return
         lid = lead_data.get("id")
-        link = f"https://derekhfood.com.br/onboarding?ref={lid}&utm_source=wa_bot"
+        link = f"https://www.derekhfood.com.br/solicitar-teste-gratis-formulario?ref={lid}&utm_source=wa_bot"
         texto = (
-            f"Enquanto nosso time prepara tudo, você já pode experimentar grátis por 15 dias:\n\n"
-            f"{link}\n\nSem compromisso, sem cartão! 😊"
+            f"Preenche esse formulário rapidinho que a gente já ativa seu teste de 15 dias:\n\n"
+            f"{link}\n\nLeva 1 minutinho, sem cartão! 🤙"
         )
         _enviar_direto(numero, texto)
         from crm.database import marcar_trial_link_enviado, registrar_interacao
@@ -3175,10 +3570,23 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         # Debounce: agregar msgs que chegaram durante o delay
         mensagem_agregada = _agregar_mensagens_pendentes(conversa_id, mensagem)
 
-        # Responder com IA (prompt de boas-vindas)
-        resultado_ia = _responder_inbound(conversa_id, mensagem_agregada)
+        # Verificar se é lead CONHECIDO (já existia no CRM) ou desconhecido
+        lead_data = obter_lead(lead_id)
+        lead_conhecido = lead_data and not (lead_data.get("cnpj") or "").startswith("WA_")
+
+        if lead_conhecido:
+            # LEAD CONHECIDO — Ana já sabe quem é, usar contexto completo
+            conversa_full = obter_conversa_wa(conversa_id)
+            lead_context = _build_lead_context(conversa_full or {}, lead_data)
+            system_prompt = _build_system_prompt_conversa(lead_context, n_turnos=0)
+            log.info(f"Inbound CONHECIDO: lead #{lead_id} ({lead_data.get('nome_fantasia')})")
+            resultado_ia = responder_com_ia(conversa_id, mensagem_agregada)
+        else:
+            # DESCONHECIDO — prompt genérico de boas-vindas
+            log.info(f"Inbound DESCONHECIDO: lead #{lead_id} (número novo)")
+            resultado_ia = _responder_inbound(conversa_id, mensagem_agregada)
+
         if resultado_ia.get("sucesso"):
-            # Inbound é sempre texto — LLM já gera português correto
             resposta = resultado_ia["resposta"]
             enviado = _enviar_direto(numero, resposta, instance=instance)
             registrar_msg_wa(conversa_id, "enviada", resposta, grok=True)
@@ -3362,15 +3770,16 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
         if enviar_audio:
             # Truncar áudio para max ~30s
             audio_part, texto_extra = _truncar_para_audio(resposta_crua)
-            # ÁUDIO: transformar português correto → dicção falada brasileira
-            resposta_audio = _preparar_texto_para_audio(audio_part)
+            # NÃO chamar _preparar_texto_para_audio aqui —
+            # _gerar_e_enviar_audio_resposta já faz isso internamente (linha 1831).
+            # Chamar 2x causava double-processing (números extenso duplo, fillers duplos).
             # Inferir emoção S2-Pro pelo contexto da conversa
             emocao_ctx = _inferir_emocao_contexto(intencao, resposta_crua, mensagem)
             log.info(f"Emoção S2-Pro inferida: {emocao_ctx} (intenção={intencao})")
             # Presença "gravando..." antes do TTS (~5-15s)
             _enviar_presenca(numero_envio, "recording", delay_ms=15000, instance_override=instance)
             audio_result = _gerar_e_enviar_audio_resposta(
-                numero_envio, resposta_audio, conversa_id,
+                numero_envio, audio_part, conversa_id,
                 instance=instance, emocao=emocao_ctx)
             if audio_result.get("sucesso"):
                 # Texto complementar (dados numéricos ou resto do texto)

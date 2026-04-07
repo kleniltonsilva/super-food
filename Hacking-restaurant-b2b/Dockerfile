@@ -2,9 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Dependências do sistema
+# Dependências do sistema (ffmpeg para conversão áudio MP3→OGG/Opus PTT)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq-dev gcc \
+    libpq-dev gcc ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependências Python

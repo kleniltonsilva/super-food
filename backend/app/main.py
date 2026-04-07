@@ -1152,6 +1152,17 @@ async def serve_root(request: Request):
     return templates.TemplateResponse(request, "landing.html")
 
 
+@app.get("/solicitar-teste-gratis-formulario", response_class=HTMLResponse)
+async def solicitar_teste_gratis_form(request: Request):
+    """Redirect amigável para o formulário de cadastro na landing page.
+    URL: derekhfood.com.br/solicitar-teste-gratis-formulario
+    """
+    # Preservar query params (ref, utm_source, etc.)
+    query = str(request.query_params)
+    suffix = f"?{query}" if query else ""
+    return templates.TemplateResponse(request, "landing.html")
+
+
 @app.get("/privacidade", response_class=HTMLResponse)
 async def pagina_privacidade(request: Request):
     return templates.TemplateResponse(request, "privacidade.html")

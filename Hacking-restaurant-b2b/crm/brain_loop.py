@@ -271,15 +271,49 @@ async def _criar_sequencia_email(lead: dict) -> bool:
 async def _etapa_monitorar_handoff() -> dict:
     """Verifica conversas WA ativas com score alto → notificar dono.
     Score >= 80: handoff imediato
-    Score >= 50: notificação quente"""
+    Score >= 50: notificação quente
+
+    GUARD ANTI-DUPLICATA (obrigatório por regra de negócio):
+    - Só notifica se NUNCA foi notificado antes (handoff_notificado_em IS NULL)
+    - OU se score aumentou DRASTICAMENTE (+15 pontos) desde última notificação
+    - OU se tipo escalou (quente → imediato)
+    """
     from crm.database import conversas_wa_quentes
 
-    result = {"handoffs": 0, "notificacoes": 0}
+    result = {"handoffs": 0, "notificacoes": 0, "suprimidos": 0}
+
+    # Delta mínimo de score para re-notificar (aumento drástico)
+    SCORE_DELTA_REFIRE = 15
+
+    def _deve_notificar(conv: dict, tipo_atual: str) -> bool:
+        """Retorna True se a notificação deve ser enviada."""
+        notificado_em = conv.get("handoff_notificado_em")
+        # Nunca notificado → enviar
+        if not notificado_em:
+            return True
+
+        score_atual = conv.get("intent_score", 0) or 0
+        score_anterior = conv.get("handoff_notificado_score", 0) or 0
+        tipo_anterior = conv.get("handoff_notificado_tipo") or ""
+
+        # Escalou de "quente" → "imediato" → re-notificar (mudança de urgência)
+        if tipo_anterior == "quente" and tipo_atual == "imediato":
+            return True
+
+        # Score subiu drasticamente (+15) → re-notificar
+        if (score_atual - score_anterior) >= SCORE_DELTA_REFIRE:
+            return True
+
+        # Caso contrário, suprimir (lead já notificado, sem mudança drástica)
+        return False
 
     # Handoff imediato (score >= 80)
     conversas_hot = await asyncio.to_thread(conversas_wa_quentes, SCORE_HANDOFF_IMEDIATO)
     for conv in conversas_hot:
         try:
+            if not _deve_notificar(conv, "imediato"):
+                result["suprimidos"] += 1
+                continue
             await asyncio.to_thread(_notificar_dono_handoff, conv, "imediato")
             result["handoffs"] += 1
         except Exception as e:
@@ -290,22 +324,31 @@ async def _etapa_monitorar_handoff() -> dict:
     for conv in conversas_warm:
         if conv.get("intent_score", 0) < SCORE_HANDOFF_IMEDIATO:
             try:
+                if not _deve_notificar(conv, "quente"):
+                    result["suprimidos"] += 1
+                    continue
                 await asyncio.to_thread(_notificar_dono_handoff, conv, "quente")
                 result["notificacoes"] += 1
             except Exception:
                 pass
 
-    if result["handoffs"] > 0 or result["notificacoes"] > 0:
-        log.info(f"Handoff: {result['handoffs']} imediatos, {result['notificacoes']} quentes")
+    if result["handoffs"] > 0 or result["notificacoes"] > 0 or result["suprimidos"] > 0:
+        log.info(f"Handoff: {result['handoffs']} imediatos, "
+                 f"{result['notificacoes']} quentes, "
+                 f"{result['suprimidos']} suprimidos (já notificados)")
 
     return result
 
 
 def _notificar_dono_handoff(conversa: dict, urgencia: str = "quente"):
-    """Notifica o dono via WA sobre lead quente/hot."""
+    """Notifica o dono via WA sobre lead quente/hot.
+    Marca conversa como notificada (handoff_notificado_em/score/tipo) após envio
+    para evitar notificações duplicadas em ciclos subsequentes do brain_loop.
+    """
     import os
-    from crm.database import obter_configuracao
-    from crm.wa_sales_bot import _enviar_direto, _limpar_telefone
+    from datetime import datetime as _dt
+    from crm.database import obter_configuracao, atualizar_conversa_wa
+    from crm.wa_sales_bot import _enviar_direto, _limpar_telefone, _build_wa_chat_link
 
     numero_dono = obter_configuracao("telefone_usuario") or os.environ.get("WA_SALES_NUMERO", "")
     numero_dono = _limpar_telefone(numero_dono)
@@ -314,9 +357,10 @@ def _notificar_dono_handoff(conversa: dict, urgencia: str = "quente"):
 
     nome_rest = conversa.get("nome_fantasia") or conversa.get("razao_social") or "Restaurante"
     cidade = conversa.get("cidade") or ""
-    score = conversa.get("intent_score", 0)
+    score = conversa.get("intent_score", 0) or 0
     intencao = conversa.get("intencao_detectada") or "interesse"
     numero_lead = conversa.get("numero_envio") or ""
+    conversa_id = conversa.get("id")
 
     if urgencia == "imediato":
         emoji = "🔥"
@@ -325,17 +369,39 @@ def _notificar_dono_handoff(conversa: dict, urgencia: str = "quente"):
         emoji = "🟡"
         titulo = "LEAD QUENTE — Atenção"
 
-    texto = (
-        f"{emoji} {titulo}\n\n"
-        f"*{nome_rest}*"
-        + (f" ({cidade})" if cidade else "") +
-        f"\nScore: {score}/100 | Intenção: {intencao}\n"
-        f"Número: {numero_lead}\n"
-        f"Lead ID: {conversa.get('lead_id')}\n\n"
-        f"{'Esse lead precisa de atenção AGORA!' if urgencia == 'imediato' else 'Considere entrar em contato.'}"
-    )
+    # Link wa.me clicável — dono abre conversa direto com o lead
+    prefill = "Oi! Sou o Klenilton da Derekh Food. Vi que você tem interesse e quero te ajudar pessoalmente."
+    wa_link = _build_wa_chat_link(numero_lead, prefill)
 
-    _enviar_direto(numero_dono, texto)
+    linhas = [
+        f"{emoji} {titulo}",
+        f"",
+        f"*{nome_rest}*" + (f" ({cidade})" if cidade else ""),
+        f"Score: {score}/100 | Intenção: {intencao}",
+        f"Número: {numero_lead}",
+        f"Lead ID: {conversa.get('lead_id')}",
+        f"",
+        f"{'Esse lead precisa de atenção AGORA!' if urgencia == 'imediato' else 'Considere entrar em contato.'}",
+    ]
+    if wa_link:
+        linhas.append("")
+        linhas.append("👉 Clique para falar direto com o lead:")
+        linhas.append(wa_link)
+
+    texto = "\n".join(linhas)
+
+    resultado = _enviar_direto(numero_dono, texto)
+    # Só marca como notificado se o envio foi bem sucedido (evita marcar em caso de falha)
+    if resultado.get("sucesso") and conversa_id:
+        try:
+            atualizar_conversa_wa(
+                conversa_id,
+                handoff_notificado_em=_dt.now(),
+                handoff_notificado_score=score,
+                handoff_notificado_tipo=urgencia,
+            )
+        except Exception as e:
+            log.warning(f"Falha ao marcar handoff_notificado conversa {conversa_id}: {e}")
 
 
 # ============================================================

@@ -10,7 +10,7 @@ import urllib.parse
 
 import httpx
 
-from crm.database import obter_lead, obter_socios
+from crm.database import obter_lead, obter_socios_lead as obter_socios
 
 log = logging.getLogger("wa_outreach")
 
@@ -50,17 +50,36 @@ def _extrair_nome_display(lead: dict) -> str:
 
 
 def _build_lead_context(lead: dict) -> str:
-    """Monta contexto do lead para o prompt."""
+    """Monta contexto COMPLETO do lead para o prompt.
+    Inclui TODOS os dados disponíveis para personalização máxima."""
     parts = []
-    nome = lead.get("nome_fantasia") or lead.get("razao_social") or "Restaurante"
-    parts.append(f"Restaurante: {nome}")
 
+    # --- Identificação (prioridade: sócio > fantasia > razão social) ---
+    nome_socio = _extrair_nome_socio(lead)
+    nome_fantasia = lead.get("nome_fantasia") or ""
+    razao_social = lead.get("razao_social") or ""
+
+    if nome_socio:
+        parts.append(f"CHAMAR POR: {nome_socio} (sócio)")
+    elif nome_fantasia and len(nome_fantasia) > 2:
+        parts.append(f"CHAMAR POR: {nome_fantasia} (nome fantasia)")
+    elif razao_social and len(razao_social) > 2:
+        parts.append(f"CHAMAR POR: {razao_social} (razão social)")
+    else:
+        parts.append("CHAMAR POR: (desconhecido — usar saudação genérica)")
+
+    if nome_fantasia:
+        parts.append(f"Nome fantasia: {nome_fantasia}")
+    if razao_social and razao_social != nome_fantasia:
+        parts.append(f"Razão social: {razao_social}")
+
+    # --- Localização ---
     if lead.get("cidade"):
         parts.append(f"Cidade: {lead['cidade']}/{lead.get('uf', '')}")
     if lead.get("bairro"):
         parts.append(f"Bairro: {lead['bairro']}")
 
-    # Delivery
+    # --- Delivery ---
     delivery = []
     if lead.get("tem_ifood"):
         delivery.append("iFood")
@@ -71,18 +90,44 @@ def _build_lead_context(lead: dict) -> str:
     if delivery:
         parts.append(f"Delivery atual: {', '.join(delivery)}")
     else:
-        parts.append("Delivery: nenhum detectado")
+        parts.append("Delivery: NENHUM detectado — oportunidade de delivery próprio")
 
+    # --- Avaliações (valores EXATOS) ---
     if lead.get("rating"):
-        parts.append(f"Google: ★{lead['rating']} ({lead.get('total_reviews', 0)} avaliações)")
+        parts.append(f"Google Maps: EXATAMENTE {lead['rating']} estrelas ({lead.get('total_reviews', 0)} avaliações)")
     if lead.get("ifood_rating"):
-        parts.append(f"iFood: ★{lead['ifood_rating']}")
+        parts.append(f"iFood: EXATAMENTE {lead['ifood_rating']} estrelas ({lead.get('ifood_reviews', 0)} avaliações)")
     if lead.get("ifood_categorias"):
-        parts.append(f"Categorias: {lead['ifood_categorias']}")
+        parts.append(f"Categorias iFood: {lead['ifood_categorias']}")
+    if lead.get("ifood_preco"):
+        parts.append(f"Faixa preço iFood: {lead['ifood_preco']}")
 
-    nome_socio = _extrair_nome_socio(lead)
-    if nome_socio:
-        parts.append(f"Nome sócio: {nome_socio}")
+    # --- Empresa ---
+    if lead.get("porte"):
+        parts.append(f"Porte: {lead['porte']}")
+    if lead.get("capital_social") and lead["capital_social"] > 0:
+        parts.append(f"Capital social: R$ {lead['capital_social']:,.2f}")
+    if lead.get("simples") == "S":
+        parts.append("Regime: Simples Nacional")
+    if lead.get("mei") == "S":
+        parts.append("Regime: MEI")
+
+    # --- Sócios ---
+    socios_data = obter_socios(lead["id"]) if lead.get("id") else []
+    if socios_data:
+        nomes_socios = []
+        for s in socios_data[:3]:  # Máx 3
+            n = s.get("nome") or s.get("nome_socio") or ""
+            if n and len(n) > 2:
+                nomes_socios.append(n.strip().title())
+        if nomes_socios:
+            parts.append(f"Sócios: {', '.join(nomes_socios)}")
+
+    # --- Contato ---
+    if lead.get("email") and "@" in (lead.get("email") or ""):
+        parts.append(f"Email: {lead['email']}")
+    if lead.get("website"):
+        parts.append(f"Site: {lead['website']}")
 
     return "\n".join(parts)
 
@@ -112,14 +157,14 @@ def gerar_mensagem_outreach_manual(lead_id: int) -> dict:
 
     system_prompt = f"""Você é Ana, vendedora da Derekh Food. Gere UMA mensagem curta para WhatsApp.
 
-DADOS DO LEAD:
+DADOS DO LEAD (use EXATAMENTE estes valores — NUNCA arredonde ou invente):
 {lead_context}
 
 REGRAS OBRIGATÓRIAS:
 1. MÁXIMO 4 linhas — ninguém lê mensagem longa no WhatsApp
-2. Cite o NOME DO SÓCIO se disponível, senão nome do restaurante
-3. Mencione 1 dado REAL do lead (ex: rating, cidade, plataforma que usa)
-4. Tom amigável, direto, como se fosse uma vendedora humana
+2. Use o campo "CHAMAR POR" para saudar: se tem nome do sócio, use o primeiro nome. Se não, use nome fantasia. Se não tem nada, use saudação genérica ("Oi!")
+3. Mencione 1 dado REAL E EXATO do lead (ex: se rating é 4.8, diga 4.8 — NUNCA arredonde para 5)
+4. Tom amigável, direto, como vendedora humana no WhatsApp
 5. NUNCA use "Prezado", "Estimado" ou formalidades mortas
 6. Inclua o link do site: derekhfood.com.br
 7. A ÚLTIMA linha DEVE ser: "Quer testar 15 dias grátis? Me chama aqui: [LINK_ANA]"
@@ -129,7 +174,9 @@ REGRAS OBRIGATÓRIAS:
 11. A Derekh Food é sistema de delivery próprio, 0% comissão
 12. Se tem iFood: "complemento sem comissão ao iFood"
 13. Se não tem delivery: "começar delivery próprio sem depender de marketplace"
-14. Gere APENAS o texto da mensagem, nada mais"""
+14. Gere APENAS o texto da mensagem, nada mais
+15. PROIBIDO inventar dados. Se não tem rating, NÃO mencione avaliação. Se não tem nome, NÃO invente.
+16. PROIBIDO arredondar números. 4.8 é 4.8, não é 5. 4.3 é 4.3, não é "mais de 4"."""
 
     try:
         with httpx.Client(timeout=25) as client:

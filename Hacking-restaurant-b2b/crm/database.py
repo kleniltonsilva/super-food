@@ -1272,8 +1272,10 @@ def deletar_outreach_regra(regra_id: int) -> bool:
 
 
 def leads_novos_sem_outreach(limite: int = 50) -> list:
-    """Leads criados nos últimos 7 dias SEM ações na outreach_sequencia.
-    Elegíveis: com email, sem opt_out, sem email_invalido."""
+    """Leads SEM ações na outreach_sequencia.
+    Elegíveis: com email, sem opt_out, sem email_invalido.
+    Ordenados por lead_score DESC — melhores leads primeiro.
+    SEM filtro de data: processa toda a base progressivamente."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -1282,24 +1284,26 @@ def leads_novos_sem_outreach(limite: int = 50) -> list:
                    l.lead_score, l.segmento, l.tier,
                    l.tem_ifood, l.tem_rappi, l.tem_99food
             FROM leads l
-            WHERE l.created_at >= NOW() - INTERVAL '7 days'
-              AND l.opt_out_email = FALSE
+            WHERE l.opt_out_email = FALSE
+              AND l.lead_falso = FALSE
+              AND l.status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso')
               AND l.email IS NOT NULL AND l.email != ''
               AND l.email_invalido = 0
               AND NOT EXISTS (
                   SELECT 1 FROM outreach_sequencia o
                   WHERE o.lead_id = l.id AND o.cancelado = FALSE
               )
-            ORDER BY l.lead_score DESC
+            ORDER BY l.lead_score DESC NULLS LAST
             LIMIT %s
         """, (limite,))
         return [dict(r) for r in cur.fetchall()]
 
 
 def leads_novos_sem_outreach_v2(limite: int = 50) -> list:
-    """Leads recentes SEM ações de outreach.
+    """Leads SEM ações de outreach — TODA a base, sem filtro de data.
     Inclui leads com email E/OU telefone (não só email).
-    Usado pelo Brain Loop para orquestrar outreach multi-canal."""
+    Usado pelo Brain Loop para orquestrar outreach multi-canal.
+    Ordenados por lead_score DESC — processa os melhores primeiro."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -1310,8 +1314,10 @@ def leads_novos_sem_outreach_v2(limite: int = 50) -> list:
                    l.tem_ifood, l.tem_rappi, l.tem_99food,
                    l.wa_verificado, l.wa_existe, l.canal_primario
             FROM leads l
-            WHERE l.created_at >= NOW() - INTERVAL '7 days'
-              AND l.opt_out_email = FALSE
+            WHERE l.opt_out_email = FALSE
+              AND l.opt_out_wa = FALSE
+              AND l.lead_falso = FALSE
+              AND l.status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso')
               AND (
                   (l.email IS NOT NULL AND l.email != '' AND l.email_invalido = 0)
                   OR (l.telefone1 IS NOT NULL AND l.telefone1 != '')
@@ -1321,7 +1327,11 @@ def leads_novos_sem_outreach_v2(limite: int = 50) -> list:
                   SELECT 1 FROM outreach_sequencia o
                   WHERE o.lead_id = l.id AND o.cancelado = FALSE
               )
-            ORDER BY l.lead_score DESC
+              AND NOT EXISTS (
+                  SELECT 1 FROM wa_conversas c
+                  WHERE c.lead_id = l.id
+              )
+            ORDER BY l.lead_score DESC NULLS LAST
             LIMIT %s
         """, (limite,))
         return [dict(r) for r in cur.fetchall()]
@@ -1329,19 +1339,23 @@ def leads_novos_sem_outreach_v2(limite: int = 50) -> list:
 
 def leads_pendentes_validacao(limite: int = 50) -> list:
     """Leads sem contato validado (contato_validado_at IS NULL).
-    Usado pelo Brain Loop para etapa de validação."""
+    Usado pelo Brain Loop para etapa de validação.
+    Exclui leads falsos, perdidos e opt-out."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT l.id, l.email, l.telefone1, l.telefone_proprietario
             FROM leads l
             WHERE l.contato_validado_at IS NULL
+              AND l.lead_falso = FALSE
+              AND l.status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso')
+              AND l.opt_out_wa = FALSE
               AND (
                   (l.email IS NOT NULL AND l.email != '')
                   OR (l.telefone1 IS NOT NULL AND l.telefone1 != '')
                   OR (l.telefone_proprietario IS NOT NULL AND l.telefone_proprietario != '')
               )
-            ORDER BY l.lead_score DESC
+            ORDER BY l.lead_score DESC NULLS LAST
             LIMIT %s
         """, (limite,))
         return [dict(r) for r in cur.fetchall()]
@@ -1399,7 +1413,7 @@ def marcar_outreach_manual_enviado(lead_id: int) -> bool:
         return found
 
 
-def conversas_wa_quentes(score_minimo: int = 80) -> list:
+def conversas_wa_quentes(score_minimo: int = 80, limite: int = 50) -> list:
     """Conversas WA ativas com lead_score alto — candidatas a handoff.
     Usado pelo Brain Loop para monitorar e notificar dono.
     Retorna também campos de rastreio de notificação para evitar duplicar alerta."""
@@ -1415,9 +1429,11 @@ def conversas_wa_quentes(score_minimo: int = 80) -> list:
             JOIN leads l ON l.id = c.lead_id
             WHERE c.status = 'ativo'
               AND l.lead_score >= %s
+              AND l.lead_falso = FALSE
+              AND l.opt_out_wa = FALSE
             ORDER BY l.lead_score DESC
-            LIMIT 20
-        """, (score_minimo,))
+            LIMIT %s
+        """, (score_minimo, limite))
         return [dict(r) for r in cur.fetchall()]
 
 
@@ -1428,6 +1444,8 @@ def leads_para_outreach(cidade: str = None, uf: str = None,
         cur = conn.cursor()
         where = [
             "l.opt_out_email = FALSE",
+            "l.lead_falso = FALSE",
+            "l.status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso')",
             "l.email IS NOT NULL",
             "l.email != ''",
             "l.email_invalido = 0",
@@ -1771,14 +1789,14 @@ def criar_decisao(tipo: str, descricao: str, dados: dict = None) -> int:
         return new_id
 
 
-def listar_decisoes_pendentes() -> list:
+def listar_decisoes_pendentes(limite: int = 100) -> list:
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT * FROM agente_decisoes
             WHERE aprovado IS NULL
-            ORDER BY created_at DESC LIMIT 20
-        """)
+            ORDER BY created_at DESC LIMIT %s
+        """, (limite,))
         return [dict(r) for r in cur.fetchall()]
 
 
@@ -2662,7 +2680,7 @@ def marcar_trial_link_enviado(lead_id: int):
         conn.commit()
 
 
-def conversas_handoff_sem_resposta(horas: int = 24) -> list:
+def conversas_handoff_sem_resposta(horas: int = 24, limite: int = 50) -> list:
     """Conversas em status 'handoff' sem resposta do humano há N horas.
     Usadas para follow-up automático pós-handoff."""
     with get_conn() as conn:
@@ -2679,9 +2697,10 @@ def conversas_handoff_sem_resposta(horas: int = 24) -> list:
               AND c.handoff_at <= NOW() - INTERVAL '%s hours'
               AND COALESCE(c.followup_handoff_etapa, 0) < 3
               AND l.opt_out_wa = FALSE
+              AND l.lead_falso = FALSE
             ORDER BY c.handoff_at ASC
-            LIMIT 20
-        """, (horas,))
+            LIMIT %s
+        """, (horas, limite))
         return [dict(r) for r in cur.fetchall()]
 
 
@@ -2741,7 +2760,7 @@ def marcar_reengajamento(lead_id: int):
 
 def leads_para_desistencia(max_tentativas: int = 5) -> list:
     """Leads com N+ tentativas de outreach (WA + email) sem nenhuma resposta.
-    Candidatos a 'frio_permanente'."""
+    Candidatos a 'frio_permanente'. Exclui opt-out (já optaram por sair)."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -2752,6 +2771,9 @@ def leads_para_desistencia(max_tentativas: int = 5) -> list:
             WHERE o.executado = TRUE
               AND o.resultado IN ('enviado', 'erro')
               AND l.status_pipeline NOT IN ('cliente', 'perdido', 'lead_falso', 'respondeu', 'demo_agendada')
+              AND l.lead_falso = FALSE
+              AND l.opt_out_wa = FALSE
+              AND l.opt_out_email = FALSE
               AND NOT EXISTS (
                   SELECT 1 FROM wa_conversas wc
                   WHERE wc.lead_id = l.id AND wc.msgs_recebidas > 0

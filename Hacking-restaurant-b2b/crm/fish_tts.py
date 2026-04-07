@@ -28,6 +28,9 @@ except ImportError:
 # ============================================================
 FISH_API_URL = "https://api.fish.audio/v1/tts"
 FISH_MODEL = "s2-pro"
+# Voice ID "putinha1" — HARDCODED para garantir consistência.
+# Se env/DB falharem, usa este fallback (nunca voz default do Fish Audio).
+FISH_VOICE_FALLBACK = "1573caa3d6444e16a28eab1f094e1416"
 
 # Mapeamento de emoções por contexto de venda (S2-Pro tags livres)
 EMOTION_TAGS = {
@@ -141,7 +144,11 @@ def _get_fish_key() -> str:
 
 
 def _get_fish_voice() -> str:
-    """Retorna voice/reference_id do Fish Audio."""
+    """Retorna voice/reference_id do Fish Audio (putinha1).
+
+    Prioridade: env → DB → FALLBACK hardcoded.
+    NUNCA retorna vazio — sempre usa putinha1.
+    """
     voice = os.environ.get("FISH_VOICE_ID", "")
     if not voice:
         try:
@@ -149,6 +156,9 @@ def _get_fish_voice() -> str:
             voice = obter_configuracao("fish_voice_id") or ""
         except Exception:
             pass
+    if not voice:
+        voice = FISH_VOICE_FALLBACK
+        logger.warning(f"FISH_VOICE_ID não encontrado em env/DB — usando fallback putinha1: {voice}")
     return voice
 
 
@@ -179,12 +189,11 @@ async def gerar_audio_fish_async(texto: str, emocao: str = "") -> bytes | None:
 
     payload = {
         "text": texto_preparado,
+        "reference_id": voice_id,
         "format": "mp3",
         "latency": "balanced",
         "mp3_bitrate": 128,
     }
-    if voice_id:
-        payload["reference_id"] = voice_id
 
     try:
         async with _httpx.AsyncClient(timeout=30) as client:

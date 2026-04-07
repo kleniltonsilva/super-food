@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS leads (
     opt_out_at TIMESTAMPTZ,
     tier TEXT DEFAULT 'cold',
     wa_outreach_manual_at TIMESTAMPTZ,
+    lead_falso BOOLEAN DEFAULT FALSE,
 
     -- Controle
     synced_at TIMESTAMP DEFAULT NOW(),

@@ -357,4 +357,20 @@ requirements-crm.txt    # FastAPI, psycopg2-binary, resend, uvicorn, jinja2
   - Pipeline `lead_falso` excluído de 6 queries + brain loop
   - Modelo: `grok-3-mini-fast` (~8K tokens contexto, 68 tokens resposta média)
   - Dual-provider: Evolution API fallback → Cloud API (Meta)
+- (x) **Fase 7.3**: Handoff Guard + Anti-Duplicata + wa.me Link (05/04):
+  - **3 novas colunas** em `wa_conversas`: `handoff_notificado_em`, `handoff_notificado_score`, `handoff_notificado_tipo` (migration aplicada direto em produção)
+  - **`_build_wa_chat_link(numero, prefill)`** em `wa_sales_bot.py`: gera link `https://wa.me/{numero}?text=...` clicável
+  - **`_notificar_trial` + `_notificar_handoff`** agora incluem link wa.me pré-preenchido (dono clica e abre conversa direto com o lead)
+  - **Regra de anti-duplicata** (1x por lead): notifica só se `handoff_notificado_em IS NULL` OU score subiu ≥15 pontos OU urgência escalou (quente→imediato)
+  - **Guard em `avaliar_handoff()`**: retorna `None` se `handoff_motivo` ou `handoff_at` já preenchidos (evita loop)
+  - **Regras menos agressivas**:
+    - Rule 3 (score CRM alto): `msgs_recebidas >= 3` (era `>= 1`) + exige `restaurante_confirmado`
+    - Rule 2 (score contextual): `msgs_recebidas >= 4` (era `>= 3`) + `restaurante_confirmado`
+    - Rule 0 (respostas afirmativas): exige `restaurante_confirmado`
+    - Rule 4 (objeções): `>= 3` (era `>= 2`)
+  - **Post-handoff sem silêncio**: bot CONTINUA respondendo ao cliente após handoff (antes ficava mudo), dono é notificado 1x com link para tomar ação
+  - **`brain_loop._etapa_monitorar_handoff`** agora tem `_deve_notificar(conv, tipo)` com mesma regra de delta ≥15
+  - **`_notificar_dono_handoff` (brain_loop)**: inclui link wa.me + marca `handoff_notificado_em/score/tipo` após envio bem-sucedido
+  - **`handoff_at=NOW()`** setado em todos os handoffs automáticos (corrige brain_loop follow-up)
+  - Campos novos registrados em `database.atualizar_conversa_wa.campos_validos` + `conversas_wa_quentes()` select
 - ( ) **Fase 8**: Agente de auditoria (revisao de codigo + performance + seguranca)
