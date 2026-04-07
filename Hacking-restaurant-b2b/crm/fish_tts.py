@@ -96,9 +96,18 @@ _TTS_PRONUNCIA = [
 
 
 def _preparar_texto_fish(texto: str, emocao: str = "") -> str:
-    """Prepara texto para Fish Audio: pronúncia + tag de emoção."""
+    """Prepara texto para Fish Audio: pronúncia estática + aprendida + tag de emoção."""
+    # 1. Regras estáticas (hardcoded)
     for escrita, pronuncia in _TTS_PRONUNCIA:
         texto = texto.replace(escrita, pronuncia)
+
+    # 2. Regras aprendidas do banco de dados (auto-aprendizado)
+    try:
+        from crm.database import obter_pronuncias_aprendidas
+        for escrita, pronuncia in obter_pronuncias_aprendidas():
+            texto = texto.replace(escrita, pronuncia)
+    except Exception:
+        pass  # DB indisponível — usar apenas estáticas
 
     if emocao:
         tag = EMOTION_TAGS.get(emocao, f"[{emocao}]")

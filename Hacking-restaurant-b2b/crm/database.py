@@ -3013,3 +3013,59 @@ def upsert_leads_batch(leads_data: list, source: str = "sync_api") -> dict:
         conn.commit()
 
     return stats
+
+
+# ============================================================
+# TTS PRONÚNCIA APRENDIDA — auto-aprendizado de fala
+# ============================================================
+
+_pronuncias_cache: list = []
+_pronuncias_cache_ts: float = 0
+
+
+def obter_pronuncias_aprendidas() -> list:
+    """Retorna lista de (escrita, pronuncia) aprendidas. Cache 5 min."""
+    import time
+    global _pronuncias_cache, _pronuncias_cache_ts
+    agora = time.time()
+    if _pronuncias_cache and (agora - _pronuncias_cache_ts) < 300:
+        return _pronuncias_cache
+
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT escrita, pronuncia FROM tts_pronuncia_aprendida
+                ORDER BY vezes_corrigido DESC
+            """)
+            _pronuncias_cache = [(r["escrita"], r["pronuncia"]) for r in cur.fetchall()]
+            _pronuncias_cache_ts = agora
+            return _pronuncias_cache
+    except Exception as e:
+        log.warning(f"Erro ao carregar pronúncias aprendidas: {e}")
+        return _pronuncias_cache or []
+
+
+def salvar_pronuncia_aprendida(escrita: str, pronuncia: str, contexto: str = "") -> bool:
+    """UPSERT pronúncia aprendida. Incrementa vezes_corrigido se já existe."""
+    global _pronuncias_cache_ts
+    try:
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO tts_pronuncia_aprendida (escrita, pronuncia, exemplo_contexto)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (escrita) DO UPDATE SET
+                    pronuncia = EXCLUDED.pronuncia,
+                    vezes_corrigido = tts_pronuncia_aprendida.vezes_corrigido + 1,
+                    exemplo_contexto = EXCLUDED.exemplo_contexto,
+                    atualizado_em = NOW()
+                RETURNING id
+            """, (escrita, pronuncia, contexto[:200] if contexto else None))
+            conn.commit()
+            _pronuncias_cache_ts = 0  # Invalidar cache
+            log.info(f"Pronúncia aprendida: '{escrita}' → '{pronuncia}'")
+            return True
+    except Exception as e:
+        log.warning(f"Erro ao salvar pronúncia: {e}")
+        return False

@@ -1239,6 +1239,193 @@ def _inferir_emocao_contexto(intencao: str, resposta: str, mensagem_cliente: str
     return "abertura"
 
 
+# ============================================================
+# FILTRO DE HUMANIDADE — verificação automática de qualidade TTS
+# Transcreve áudio gerado → compara com texto original →
+# detecta divergências → aprende pronúncias → regenera se necessário
+# ============================================================
+
+def transcrever_audio_bytes(audio_bytes: bytes) -> dict:
+    """Transcreve áudio a partir de bytes (MP3/OGG). Usa Groq Whisper.
+    Retorna {"texto": "...", "duracao": N} ou {"erro": "..."}."""
+    groq_key = _get_groq_key()
+    if not groq_key:
+        return {"erro": "GROQ_API_KEY não configurada"}
+    if httpx is None:
+        return {"erro": "httpx não instalado"}
+
+    tmp_path = None
+    try:
+        tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+        tmp.write(audio_bytes)
+        tmp.close()
+        tmp_path = tmp.name
+
+        with open(tmp_path, "rb") as f:
+            resp = httpx.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": f"Bearer {groq_key}"},
+                files={"file": ("audio.mp3", f, "audio/mpeg")},
+                data={
+                    "model": "whisper-large-v3-turbo",
+                    "language": "pt",
+                    "response_format": "verbose_json",
+                },
+                timeout=30,
+            )
+        resp.raise_for_status()
+        data = resp.json()
+        texto = data.get("text", "").strip()
+        dur = data.get("duration", 0) or 0
+        return {"texto": texto, "duracao": int(dur)}
+    except Exception as e:
+        log.error(f"Erro transcrever_audio_bytes: {e}")
+        return {"erro": str(e)}
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+def _normalizar_para_comparacao(texto: str) -> str:
+    """Normaliza texto para comparação de similaridade.
+    Remove pontuação, tags de emoção, lowercase."""
+    import unicodedata
+    t = texto.lower()
+    # Remover tags de emoção [amigável], [empolgado], etc.
+    t = re.sub(r'\[[^\]]+\]', '', t)
+    # Remover pontuação
+    t = re.sub(r'[.,!?;:"\'\-—–()…]', ' ', t)
+    # Normalizar acentos para comparação flexível
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t
+
+
+def _calcular_similaridade(texto_original: str, transcricao: str) -> tuple:
+    """Compara texto original vs transcrição do áudio.
+    Retorna (score 0-1, lista_divergencias).
+    Divergência = (palavra_original, palavra_transcrita, posição)."""
+    from difflib import SequenceMatcher
+
+    norm_orig = _normalizar_para_comparacao(texto_original)
+    norm_trans = _normalizar_para_comparacao(transcricao)
+
+    # Score global
+    score = SequenceMatcher(None, norm_orig, norm_trans).ratio()
+
+    # Detecção de divergências palavra por palavra
+    palavras_orig = norm_orig.split()
+    palavras_trans = norm_trans.split()
+    divergencias = []
+
+    matcher = SequenceMatcher(None, palavras_orig, palavras_trans)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == 'replace':
+            for k, (po, pt) in enumerate(zip(
+                palavras_orig[i1:i2], palavras_trans[j1:j2]
+            )):
+                if po != pt and len(po) > 2 and len(pt) > 2:
+                    divergencias.append((po, pt, i1 + k))
+        elif tag == 'delete':
+            for k, po in enumerate(palavras_orig[i1:i2]):
+                if len(po) > 2:
+                    divergencias.append((po, '', i1 + k))
+
+    return score, divergencias
+
+
+def _filtro_humanidade(audio_bytes: bytes, texto_original: str,
+                        conversa_id: int = 0, emocao: str = "") -> tuple:
+    """Filtro de humanidade: verifica qualidade do áudio TTS.
+
+    Fluxo:
+    1. Transcreve áudio gerado (Groq Whisper)
+    2. Compara com texto original
+    3. Se score >= 0.85 → APROVADO
+    4. Se score < 0.85 → detecta divergências, aprende pronúncias, regenera
+
+    Retorna (audio_bytes_final, passou_filtro: bool).
+    Máximo 1 regeneração para não entrar em loop."""
+    from crm.database import salvar_pronuncia_aprendida
+
+    # 1. Transcrever áudio gerado
+    resultado = transcrever_audio_bytes(audio_bytes)
+    if resultado.get("erro"):
+        log.warning(f"Filtro humanidade: falha na transcrição — {resultado['erro']}")
+        return audio_bytes, True  # Enviar sem filtro se STT falhar
+
+    transcricao = resultado["texto"]
+    decision_log.info(f"FILTRO_HUMANIDADE texto_original='{texto_original[:80]}...' "
+                       f"transcricao='{transcricao[:80]}...'")
+
+    # 2. Comparar
+    score, divergencias = _calcular_similaridade(texto_original, transcricao)
+    decision_log.info(f"FILTRO_HUMANIDADE score={score:.2f} divergencias={len(divergencias)}")
+
+    if score >= 0.85:
+        log.info(f"Filtro humanidade: APROVADO (score={score:.2f})")
+        return audio_bytes, True
+
+    # 3. Score baixo — aprender com as divergências
+    novas_regras = 0
+    for palavra_orig, palavra_trans, pos in divergencias[:5]:  # Max 5 regras por vez
+        if not palavra_orig or not palavra_trans:
+            continue
+        # Se a transcrição diz algo diferente, o TTS está lendo errado
+        # Salvar: quando vir palavra_orig, substituir por versão que soa melhor
+        # A transcrição mostra como o TTS realmente pronunciou
+        salvar_pronuncia_aprendida(
+            escrita=palavra_orig,
+            pronuncia=palavra_trans,
+            contexto=texto_original[:200]
+        )
+        novas_regras += 1
+        decision_log.info(f"FILTRO_HUMANIDADE aprendeu: '{palavra_orig}' → '{palavra_trans}'")
+
+    log.info(f"Filtro humanidade: REPROVADO (score={score:.2f}), "
+             f"{novas_regras} regras aprendidas. Regenerando áudio...")
+
+    # 4. Regenerar áudio com regras atualizadas (1 retry)
+    try:
+        from crm.fish_tts import gerar_audio_fish_async
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                audio_novo = pool.submit(
+                    asyncio.run, gerar_audio_fish_async(texto_original, emocao)
+                ).result(timeout=35)
+        else:
+            audio_novo = asyncio.run(gerar_audio_fish_async(texto_original, emocao))
+
+        if audio_novo and len(audio_novo) > 100:
+            # Verificar o novo áudio (sem recursão — apenas logar)
+            resultado2 = transcrever_audio_bytes(audio_novo)
+            if not resultado2.get("erro"):
+                score2, _ = _calcular_similaridade(texto_original, resultado2["texto"])
+                decision_log.info(f"FILTRO_HUMANIDADE retry score={score2:.2f} "
+                                   f"(melhoria: {score:.2f}→{score2:.2f})")
+                if score2 > score:
+                    log.info(f"Filtro humanidade: áudio regenerado MELHOR (score {score:.2f}→{score2:.2f})")
+                    return audio_novo, score2 >= 0.85
+            # Se não melhorou, retornar o novo mesmo assim (regras já atualizadas)
+            return audio_novo, False
+
+    except Exception as e:
+        log.warning(f"Filtro humanidade: regeneração falhou — {e}")
+
+    # 5. Se regeneração falhar, enviar o original
+    return audio_bytes, False
+
+
 def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
                                     conversa_id: int, instance: str = "",
                                     emocao: str = "") -> dict:
@@ -1246,6 +1433,7 @@ def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
 
     Fish Audio é o ÚNICO provider TTS — Grok TTS desativado permanentemente.
     Cloud API: converte MP3→OGG/Opus, upload, enviar com voice=true.
+    Inclui FILTRO DE HUMANIDADE: verifica qualidade antes de enviar.
     Retorna sucesso/erro."""
     audio_bytes = None
 
@@ -1253,6 +1441,15 @@ def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
     audio_bytes = _gerar_audio_com_cache(texto_resposta, conversa_id, emocao=emocao)
     if not audio_bytes:
         return {"erro": "Fish Audio falhou — fallback texto"}
+
+    # --- FILTRO DE HUMANIDADE — verificar qualidade antes de enviar ---
+    filtro_ativo = (obter_configuracao("audio_filtro_humanidade") or "true").lower() == "true"
+    if filtro_ativo:
+        audio_bytes, passou = _filtro_humanidade(
+            audio_bytes, texto_resposta, conversa_id=conversa_id, emocao=emocao
+        )
+        if not passou:
+            log.warning(f"Áudio conversa {conversa_id} não passou no filtro — enviando melhor versão")
 
     try:
         # Enviar "gravando áudio..." antes do envio
@@ -1387,6 +1584,155 @@ def _preparar_texto_tts(texto: str) -> str:
 # + tags de emoção para Fish Audio S2-Pro.
 # ============================================================
 import re as _re_audio
+
+# ============================================================
+# CONVERSOR DE NÚMEROS POR EXTENSO (para áudio natural)
+# Regra: TTS NUNCA lê dígitos — sempre extenso.
+# ============================================================
+
+_UNIDADES = {
+    0: '', 1: 'um', 2: 'dois', 3: 'três', 4: 'quatro', 5: 'cinco',
+    6: 'seis', 7: 'sete', 8: 'oito', 9: 'nove', 10: 'dez',
+    11: 'onze', 12: 'doze', 13: 'treze', 14: 'quatorze', 15: 'quinze',
+    16: 'dezesseis', 17: 'dezessete', 18: 'dezoito', 19: 'dezenove',
+}
+_DEZENAS = {
+    2: 'vinte', 3: 'trinta', 4: 'quarenta', 5: 'cinquenta',
+    6: 'sessenta', 7: 'setenta', 8: 'oitenta', 9: 'noventa',
+}
+_CENTENAS = {
+    1: 'cento', 2: 'duzentos', 3: 'trezentos', 4: 'quatrocentos',
+    5: 'quinhentos', 6: 'seiscentos', 7: 'setecentos', 8: 'oitocentos',
+    9: 'novecentos',
+}
+
+
+def _numero_para_extenso(n: int) -> str:
+    """Converte inteiro 0-999999 para extenso em pt-BR."""
+    if n < 0:
+        return 'menos ' + _numero_para_extenso(-n)
+    if n == 0:
+        return 'zero'
+    if n == 100:
+        return 'cem'
+
+    partes = []
+
+    if n >= 1000:
+        milhares = n // 1000
+        resto = n % 1000
+        if milhares == 1:
+            partes.append('mil')
+        else:
+            partes.append(_numero_para_extenso(milhares) + ' mil')
+        if resto > 0:
+            if resto < 100:
+                partes.append('e ' + _numero_para_extenso(resto))
+            else:
+                partes.append(_numero_para_extenso(resto))
+        return ' '.join(partes)
+
+    if n >= 100:
+        centena = n // 100
+        resto = n % 100
+        if n == 100:
+            return 'cem'
+        partes.append(_CENTENAS[centena])
+        if resto > 0:
+            partes.append('e ' + _numero_para_extenso(resto))
+        return ' '.join(partes)
+
+    if n >= 20:
+        dezena = n // 10
+        unidade = n % 10
+        partes.append(_DEZENAS[dezena])
+        if unidade > 0:
+            partes.append('e ' + _UNIDADES[unidade])
+        return ' '.join(partes)
+
+    return _UNIDADES.get(n, str(n))
+
+
+def _numeros_por_extenso(texto: str) -> str:
+    """Converte TODOS os números em texto para extenso (pt-BR).
+    Usado APENAS para áudio — nunca em texto escrito.
+
+    Exemplos:
+      "R$ 49,90"       → "quarenta e nove reais e noventa centavos"
+      "100%"           → "cem por cento"
+      "15 dias"        → "quinze dias"
+      "24 horas"       → "vinte e quatro horas"
+      "3.000"          → "três mil"
+      "0,02"           → "zero vírgula zero dois"
+    """
+    # 1. R$ / € com centavos: R$ 49,90 ou R$49.90 ou € 5,00
+    def _moeda(m):
+        simbolo = m.group(1)
+        inteiro_str = m.group(2).replace('.', '')
+        centavos_str = m.group(3) or '00'
+        inteiro = int(inteiro_str)
+        centavos = int(centavos_str)
+        moeda_nome = 'reais' if 'R' in simbolo else 'euros'
+        moeda_sing = 'real' if 'R' in simbolo else 'euro'
+        cent_nome = 'centavos' if 'R' in simbolo else 'cêntimos'
+        cent_sing = 'centavo' if 'R' in simbolo else 'cêntimo'
+
+        ext_int = _numero_para_extenso(inteiro)
+        result = f"{ext_int} {moeda_nome if inteiro != 1 else moeda_sing}"
+        if centavos > 0:
+            ext_cent = _numero_para_extenso(centavos)
+            result += f" e {ext_cent} {cent_nome if centavos != 1 else cent_sing}"
+        return result
+
+    texto = _re_audio.sub(
+        r'(R\$|€)\s*(\d{1,3}(?:\.\d{3})*)(?:[,.](\d{2}))?',
+        _moeda, texto
+    )
+
+    # 2. Porcentagens: 100% → cem por cento
+    def _porcento(m):
+        n = int(m.group(1).replace('.', ''))
+        return _numero_para_extenso(n) + ' por cento'
+    texto = _re_audio.sub(r'(\d{1,6})%', _porcento, texto)
+
+    # 3. Números com unidade temporal: 15 dias, 24 horas, 3 meses, 48 horas
+    def _num_unidade(m):
+        n = int(m.group(1).replace('.', ''))
+        unidade = m.group(2)
+        return _numero_para_extenso(n) + ' ' + unidade
+    texto = _re_audio.sub(
+        r'(\d{1,6})\s*(dias?|horas?|meses?|minutos?|segundos?|anos?|semanas?|vezes?|reais?|leads?)',
+        _num_unidade, texto, flags=_re_audio.IGNORECASE
+    )
+
+    # 4. Números com pontos de milhar: 3.000 → três mil
+    def _milhar(m):
+        n_str = m.group(0).replace('.', '')
+        n = int(n_str)
+        return _numero_para_extenso(n)
+    texto = _re_audio.sub(r'\b\d{1,3}(?:\.\d{3})+\b', _milhar, texto)
+
+    # 5. Decimais com vírgula: 0,02 → zero vírgula zero dois
+    def _decimal(m):
+        inteiro = int(m.group(1))
+        decimais = m.group(2)
+        ext_int = _numero_para_extenso(inteiro)
+        ext_dec_parts = []
+        for d in decimais:
+            ext_dec_parts.append(_numero_para_extenso(int(d)))
+        return f"{ext_int} vírgula {' '.join(ext_dec_parts)}"
+    texto = _re_audio.sub(r'\b(\d+),(\d+)\b', _decimal, texto)
+
+    # 6. Números soltos restantes (2-6 dígitos, não telefone)
+    def _num_solto(m):
+        n = int(m.group(0))
+        if n > 999999:
+            return m.group(0)  # Muito grande — manter dígitos
+        return _numero_para_extenso(n)
+    texto = _re_audio.sub(r'\b\d{1,6}\b', _num_solto, texto)
+
+    return texto
+
 
 # ---------- CONVERSÕES OBRIGATÓRIAS (sempre aplicar) ----------
 _DICCAO_OBRIGATORIAS = [
@@ -1556,6 +1902,9 @@ def _preparar_texto_para_audio(texto: str) -> str:
     8. Verificação de segurança (proibidos, plurais, subjuntivo)
     9. Adicionar tag de emoção de abertura
     """
+
+    # --- 1.5. Converter números para extenso ---
+    texto = _numeros_por_extenso(texto)
 
     # --- 2. Remover elementos visuais ---
     texto = _re_audio.sub(r'https?://\S+', '', texto)

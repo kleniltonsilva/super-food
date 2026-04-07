@@ -688,3 +688,21 @@ CREATE INDEX IF NOT EXISTS idx_conversoes_canal ON conversoes(canal_atribuicao, 
 
 -- Outreach Manual WA — tracking de envios manuais
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS wa_outreach_manual_at TIMESTAMPTZ;
+
+-- ============================================================
+-- TTS PRONÚNCIA APRENDIDA — auto-aprendizado de fala natural
+-- O filtro de humanidade detecta pronúncias erradas, salva aqui,
+-- e nas próximas gerações aplica automaticamente.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS tts_pronuncia_aprendida (
+    id SERIAL PRIMARY KEY,
+    escrita TEXT NOT NULL UNIQUE,
+    pronuncia TEXT NOT NULL,
+    origem TEXT DEFAULT 'auto',
+    vezes_corrigido INT DEFAULT 1,
+    exemplo_contexto TEXT,
+    criado_em TIMESTAMPTZ DEFAULT NOW(),
+    atualizado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_tts_pronuncia_escrita ON tts_pronuncia_aprendida(escrita);
