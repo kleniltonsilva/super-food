@@ -3845,24 +3845,45 @@ def _enviar_com_fallback_template(numero: str, texto: str, template_name: str,
 
 
 # ============================================================
+# TELEGRAM — Notificações ao dono (grátis, sem limites)
+# ============================================================
+
+def _enviar_telegram(texto: str) -> dict:
+    """Envia notificação via Telegram Bot API (grátis, sem limites)."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat_id:
+        log.warning("Telegram não configurado (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID)")
+        return {"erro": "Telegram não configurado"}
+    if httpx is None:
+        log.warning("httpx não instalado — Telegram indisponível")
+        return {"erro": "httpx não instalado"}
+    try:
+        resp = httpx.post(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": texto},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        log.info("Notificação Telegram enviada com sucesso")
+        return {"sucesso": True, "via": "telegram"}
+    except Exception as e:
+        log.error(f"Erro Telegram: {e}")
+        return {"erro": f"Telegram: {e}"}
+
+
+# ============================================================
 # NOTIFICAÇÕES
 # ============================================================
 
 def _notificar_trial(lead_id: int, numero_lead: str, instance: str = ""):
-    """Notifica o dono quando lead pede teste grátis."""
+    """Notifica o dono quando lead pede teste grátis (via Telegram)."""
     lead = obter_lead(lead_id)
     nome_rest = "Restaurante"
     cidade = ""
     if lead:
         nome_rest = lead.get("nome_fantasia") or lead.get("razao_social") or "Restaurante"
         cidade = lead.get("cidade") or ""
-
-    # Número do dono: config ou env
-    numero_dono = obter_configuracao("telefone_usuario") or os.environ.get("WA_SALES_NUMERO", "")
-    numero_dono = _limpar_telefone(numero_dono)
-    if not numero_dono:
-        log.warning("Não há número do dono configurado para notificação de trial")
-        return
 
     # Link wa.me clicável para o dono abrir conversa direto com o lead
     prefill = "Olá! Sou da Derekh Food, vi que você tem interesse no nosso sistema. Posso te ajudar?"
@@ -3883,18 +3904,9 @@ def _notificar_trial(lead_id: int, numero_lead: str, instance: str = ""):
 
     texto = "\n".join(linhas)
 
-    # Template params: {{1}} = nome + cidade + score
-    score = (lead or {}).get("lead_score", 0) or 0
-    template_param1 = f"{nome_rest}" + (f" de {cidade}" if cidade else "") + f" (Score {score})"
-
-    resultado = _enviar_com_fallback_template(
-        numero_dono, texto,
-        template_name="notificacao_trial",
-        template_params=[template_param1],
-        instance=instance
-    )
+    resultado = _enviar_telegram(texto)
     if resultado.get("sucesso"):
-        log.info(f"Notificação trial enviada ao dono para lead {lead_id} (via {resultado.get('via', '?')})")
+        log.info(f"Notificação trial enviada ao dono para lead {lead_id} (via telegram)")
     else:
         log.warning(f"Falha ao notificar dono sobre trial lead {lead_id}: {resultado.get('erro')}")
 
@@ -3937,12 +3949,6 @@ def _notificar_handoff(lead_id: int, numero_lead: str, motivo: str, instance: st
                 f"Handoff lead {lead_id} re-notificado: score subiu {score_anterior}→{score_atual} (+{delta})"
             )
 
-    numero_dono = obter_configuracao("telefone_usuario") or os.environ.get("WA_SALES_NUMERO", "")
-    numero_dono = _limpar_telefone(numero_dono)
-    if not numero_dono:
-        log.warning("Não há número do dono configurado para notificação de handoff")
-        return
-
     # Link wa.me clicável: dono clica e abre WA direto com o lead
     prefill = "Oi! Sou o Klenilton da Derekh Food. Vi que você tem interesse e quero te ajudar pessoalmente."
     wa_link = _build_wa_chat_link(numero_lead, prefill)
@@ -3966,18 +3972,9 @@ def _notificar_handoff(lead_id: int, numero_lead: str, motivo: str, instance: st
 
     texto = "\n".join(linhas)
 
-    # Template params: {{1}} = nome + cidade + score, {{2}} = motivo
-    template_param1 = f"{nome_rest}" + (f" de {cidade}" if cidade else "") + f" (Score {score_atual})"
-    template_param2 = motivo[:100]  # Meta limita tamanho
-
-    resultado = _enviar_com_fallback_template(
-        numero_dono, texto,
-        template_name="handoff_lead_quente",
-        template_params=[template_param1, template_param2],
-        instance=instance
-    )
+    resultado = _enviar_telegram(texto)
     if resultado.get("sucesso"):
-        log.info(f"Notificação handoff enviada ao dono para lead {lead_id} (via {resultado.get('via', '?')})")
+        log.info(f"Notificação handoff enviada ao dono para lead {lead_id} (via telegram)")
         # Marcar conversa como notificada para não duplicar alertas
         if conversa_id:
             try:

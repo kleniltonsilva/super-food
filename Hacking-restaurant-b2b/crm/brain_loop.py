@@ -379,19 +379,13 @@ async def _etapa_monitorar_handoff() -> dict:
 
 
 def _notificar_dono_handoff(conversa: dict, urgencia: str = "quente"):
-    """Notifica o dono via WA sobre lead quente/hot.
+    """Notifica o dono via Telegram sobre lead quente/hot.
     Marca conversa como notificada (handoff_notificado_em/score/tipo) após envio
     para evitar notificações duplicadas em ciclos subsequentes do brain_loop.
     """
-    import os
     from datetime import datetime as _dt
-    from crm.database import obter_configuracao, atualizar_conversa_wa
-    from crm.wa_sales_bot import _enviar_direto, _limpar_telefone, _build_wa_chat_link
-
-    numero_dono = obter_configuracao("telefone_usuario") or os.environ.get("WA_SALES_NUMERO", "")
-    numero_dono = _limpar_telefone(numero_dono)
-    if not numero_dono:
-        return
+    from crm.database import atualizar_conversa_wa
+    from crm.wa_sales_bot import _enviar_telegram, _build_wa_chat_link
 
     nome_rest = conversa.get("nome_fantasia") or conversa.get("razao_social") or "Restaurante"
     cidade = conversa.get("cidade") or ""
@@ -428,7 +422,7 @@ def _notificar_dono_handoff(conversa: dict, urgencia: str = "quente"):
 
     texto = "\n".join(linhas)
 
-    resultado = _enviar_direto(numero_dono, texto)
+    resultado = _enviar_telegram(texto)
     # Só marca como notificado se o envio foi bem sucedido (evita marcar em caso de falha)
     if resultado.get("sucesso") and conversa_id:
         try:

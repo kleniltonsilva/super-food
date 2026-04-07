@@ -1792,7 +1792,7 @@ Classificação: score >= 50 = interesse_alto, >= 30 = interesse, objeções = o
 2. **Warm:** score acumulado >= 60 + 3 msgs, ou CRM score >= 85 → bot faz transição natural ("deixa eu te passar pro time técnico")
 3. **Strategic:** 2+ objeções não resolvidas → "vou pedir pro meu gerente te dar um toque"
 
-Todos os handoffs disparam `_notificar_handoff()` — envia WA ao dono com nome do restaurante, cidade, motivo e número do lead.
+Todos os handoffs disparam `_notificar_handoff()` — envia notificação via **Telegram** ao dono (@Derekh_Handoffbot) com nome do restaurante, cidade, motivo, número do lead e link wa.me clicável. Migrado de WhatsApp para Telegram em 07/04/2026 — elimina custo de Template Messages e limitação de janela 24h.
 
 ### 16.6 Delay Humano
 
@@ -1873,6 +1873,25 @@ O brain loop gera mensagens personalizadas via Grok IA e **enfileira** para envi
 - `crm/templates/wa_outreach_auto.html` — UI da fila
 - `crm/templates/base.html` — Badge no sidebar com count pendentes
 - `crm/app.py` — 3 rotas + global Jinja2 `fila_pendente_count()`
+
+### 16.11 Notificações Handoff via Telegram (07/04/2026)
+
+Notificações de handoff ao dono migradas de WhatsApp (Meta Cloud API) para **Telegram Bot API** — 100% grátis, sem limite de mensagens, sem janela de 24h.
+
+**Bot Telegram:** @Derekh_Handoffbot
+
+**Secrets Fly.io (derekh-crm):** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
+
+**Funções migradas:**
+| Função | Arquivo | Antes | Depois |
+|--------|---------|-------|--------|
+| `_notificar_trial()` | `wa_sales_bot.py` | `_enviar_com_fallback_template()` | `_enviar_telegram()` |
+| `_notificar_handoff()` | `wa_sales_bot.py` | `_enviar_com_fallback_template()` | `_enviar_telegram()` |
+| `_notificar_dono_handoff()` | `brain_loop.py` | `_enviar_direto()` | `_enviar_telegram()` |
+
+**Helper `_enviar_telegram(texto)`** (wa_sales_bot.py): POST para `api.telegram.org/bot{token}/sendMessage` via httpx, sem parse_mode (evita conflito com caracteres especiais nos textos).
+
+**O que NÃO mudou:** envio de mensagens para leads (continua via WhatsApp Cloud API), lógica anti-duplicata, links wa.me clicáveis, formato das mensagens.
 
 ---
 
