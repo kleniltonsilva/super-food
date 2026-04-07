@@ -3153,6 +3153,82 @@ def _responder_inbound(conversa_id: int, mensagem: str) -> dict:
 
 
 # ============================================================
+# TEMPLATE MESSAGES (envio fora da janela 24h)
+# ============================================================
+
+# Templates Meta aprovados — IDs atualizados após aprovação
+_TEMPLATES = {
+    "handoff_lead_quente": {"id": "2124725858365686", "params": 2},
+    "notificacao_trial": {"id": "2102387146985030", "params": 1},
+    "recontacto_ana": {"id": "4464704067179912", "params": 2},
+}
+
+
+def _enviar_template_cloud_api(numero: str, template_name: str, params: list) -> dict:
+    """Envia mensagem via Template Message (funciona FORA da janela 24h).
+    params: lista de strings para preencher {{1}}, {{2}}, etc."""
+    phone_id, token = _get_wa_config()
+    if not phone_id or not token:
+        return {"erro": "WhatsApp Cloud API não configurada"}
+
+    components = []
+    if params:
+        components.append({
+            "type": "body",
+            "parameters": [{"type": "text", "text": str(p)} for p in params]
+        })
+
+    try:
+        resp = httpx.post(
+            f"{_GRAPH_API}/{phone_id}/messages",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "messaging_product": "whatsapp",
+                "to": numero,
+                "type": "template",
+                "template": {
+                    "name": template_name,
+                    "language": {"code": "pt_BR"},
+                    "components": components,
+                },
+            },
+            timeout=15,
+        )
+        data = resp.json()
+        if resp.status_code >= 400:
+            err = data.get("error", {}).get("message", str(data))
+            log.warning(f"Template '{template_name}' falhou: {err}")
+            return {"erro": f"Template: {err}"}
+
+        wa_msg_id = data.get("messages", [{}])[0].get("id", "")
+        log.info(f"Template '{template_name}' enviado via Cloud API: wa_msg_id={wa_msg_id}")
+        return {"sucesso": True, "wa_msg_id": wa_msg_id, "via": "template"}
+    except Exception as e:
+        log.error(f"Erro envio template '{template_name}': {e}")
+        return {"erro": f"Template: {e}"}
+
+
+def _enviar_com_fallback_template(numero: str, texto: str, template_name: str,
+                                   template_params: list, instance: str = "") -> dict:
+    """Tenta enviar texto normal (dentro da janela 24h).
+    Se falhar (erro 131026 = janela expirada), usa Template Message como fallback."""
+    resultado = _enviar_direto(numero, texto, instance=instance)
+    if resultado.get("sucesso"):
+        return resultado
+
+    # Fallback: template message (funciona fora da janela 24h)
+    erro = resultado.get("erro", "")
+    if "131026" in str(erro) or "Re-engagement" in str(erro) or "24" in str(erro) or not resultado.get("sucesso"):
+        log.info(f"Tentando template '{template_name}' como fallback para {numero}")
+        return _enviar_template_cloud_api(numero, template_name, template_params)
+
+    return resultado
+
+
+# ============================================================
 # NOTIFICAÇÕES
 # ============================================================
 
@@ -3191,9 +3267,18 @@ def _notificar_trial(lead_id: int, numero_lead: str, instance: str = ""):
 
     texto = "\n".join(linhas)
 
-    resultado = _enviar_direto(numero_dono, texto, instance=instance)
+    # Template params: {{1}} = nome + cidade + score
+    score = (lead or {}).get("lead_score", 0) or 0
+    template_param1 = f"{nome_rest}" + (f" de {cidade}" if cidade else "") + f" (Score {score})"
+
+    resultado = _enviar_com_fallback_template(
+        numero_dono, texto,
+        template_name="notificacao_trial",
+        template_params=[template_param1],
+        instance=instance
+    )
     if resultado.get("sucesso"):
-        log.info(f"Notificação trial enviada ao dono para lead {lead_id}")
+        log.info(f"Notificação trial enviada ao dono para lead {lead_id} (via {resultado.get('via', '?')})")
     else:
         log.warning(f"Falha ao notificar dono sobre trial lead {lead_id}: {resultado.get('erro')}")
 
@@ -3265,9 +3350,18 @@ def _notificar_handoff(lead_id: int, numero_lead: str, motivo: str, instance: st
 
     texto = "\n".join(linhas)
 
-    resultado = _enviar_direto(numero_dono, texto, instance=instance)
+    # Template params: {{1}} = nome + cidade + score, {{2}} = motivo
+    template_param1 = f"{nome_rest}" + (f" de {cidade}" if cidade else "") + f" (Score {score_atual})"
+    template_param2 = motivo[:100]  # Meta limita tamanho
+
+    resultado = _enviar_com_fallback_template(
+        numero_dono, texto,
+        template_name="handoff_lead_quente",
+        template_params=[template_param1, template_param2],
+        instance=instance
+    )
     if resultado.get("sucesso"):
-        log.info(f"Notificação handoff enviada ao dono para lead {lead_id}")
+        log.info(f"Notificação handoff enviada ao dono para lead {lead_id} (via {resultado.get('via', '?')})")
         # Marcar conversa como notificada para não duplicar alertas
         if conversa_id:
             try:
