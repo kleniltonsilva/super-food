@@ -707,3 +707,31 @@ CREATE TABLE IF NOT EXISTS tts_pronuncia_aprendida (
 );
 
 CREATE INDEX IF NOT EXISTS idx_tts_pronuncia_escrita ON tts_pronuncia_aprendida(escrita);
+
+-- ============================================================
+-- WA OUTREACH FILA — Mensagens geradas autonomamente pelo brain_loop
+-- Pendentes de envio manual pelo dono via wa.me link.
+-- Brain loop gera msg personalizada → salva aqui → dono vê na UI →
+-- clica "Enviar no WhatsApp" (wa.me link) → marca como enviado.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS wa_outreach_fila (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    mensagem TEXT NOT NULL,
+    wa_enviar_link TEXT NOT NULL,
+    wa_ana_link TEXT,
+    nome_lead TEXT,
+    cidade TEXT,
+    uf TEXT,
+    telefone TEXT,
+    tem_ifood BOOLEAN DEFAULT FALSE,
+    lead_score INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'pendente',         -- pendente, enviado, expirado, descartado
+    gerado_por TEXT DEFAULT 'brain_loop',   -- brain_loop, reengajamento
+    enviado_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wa_outreach_fila_status ON wa_outreach_fila(status, created_at DESC)
+    WHERE status = 'pendente';
+CREATE INDEX IF NOT EXISTS idx_wa_outreach_fila_lead ON wa_outreach_fila(lead_id);

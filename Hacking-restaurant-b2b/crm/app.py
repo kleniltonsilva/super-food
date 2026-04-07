@@ -216,6 +216,16 @@ templates.env.globals["PIPELINE_LABELS"] = PIPELINE_LABELS
 templates.env.globals["SEGMENTO_LABELS"] = SEGMENTO_LABELS
 templates.env.globals["SEGMENTO_CORES"] = SEGMENTO_CORES
 
+def _fila_pendente_count():
+    """Callable para o Jinja2 mostrar badge de fila pendente no sidebar."""
+    try:
+        from crm.database import contar_outreach_fila_pendente
+        return contar_outreach_fila_pendente()
+    except Exception:
+        return 0
+
+templates.env.globals["fila_pendente_count"] = _fila_pendente_count
+
 
 # ============================================================
 # LIFECYCLE
@@ -1482,6 +1492,49 @@ async def api_marcar_outreach_enviado(lead_id: int):
     if ok:
         registrar_interacao(lead_id, "whatsapp", "whatsapp",
                             "Outreach manual WA — mensagem enviada via browser", "enviado")
+    return JSONResponse({"ok": ok})
+
+
+# ============================================================
+# FILA AUTÔNOMA WA — Mensagens geradas pelo Brain Loop
+# ============================================================
+
+@app.get("/wa-outreach-auto", response_class=HTMLResponse)
+async def wa_outreach_auto_page(request: Request, status: str = "pendente"):
+    """Página da fila autônoma — mensagens geradas pelo brain loop pendentes de envio."""
+    from crm.database import listar_outreach_fila
+    items = listar_outreach_fila(status=status, limite=100)
+    return templates.TemplateResponse("wa_outreach_auto.html", {
+        "request": request,
+        "pagina_ativa": "wa_outreach_auto",
+        "items": items,
+        "filtro_status": status,
+    })
+
+
+@app.post("/api/wa-outreach-auto/enviado/{fila_id}")
+async def api_outreach_auto_enviado(fila_id: int):
+    """Marca item da fila autônoma como enviado (dono clicou no wa.me link)."""
+    from crm.database import marcar_outreach_fila_enviado
+    ok = marcar_outreach_fila_enviado(fila_id)
+    if ok:
+        # Buscar lead_id para registrar interação
+        from crm.database import get_conn
+        with get_conn() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT lead_id FROM wa_outreach_fila WHERE id = %s", (fila_id,))
+            row = cur.fetchone()
+            if row:
+                registrar_interacao(row["lead_id"], "whatsapp", "whatsapp",
+                                    "Outreach autônomo WA — mensagem enviada via fila brain loop", "enviado")
+    return JSONResponse({"ok": ok})
+
+
+@app.post("/api/wa-outreach-auto/descartar/{fila_id}")
+async def api_outreach_auto_descartar(fila_id: int):
+    """Descarta item da fila autônoma (dono decidiu não enviar)."""
+    from crm.database import descartar_outreach_fila
+    ok = descartar_outreach_fila(fila_id)
     return JSONResponse({"ok": ok})
 
 

@@ -1413,6 +1413,108 @@ def marcar_outreach_manual_enviado(lead_id: int) -> bool:
         return found
 
 
+def inserir_outreach_fila(lead_id: int, mensagem: str, wa_enviar_link: str,
+                          wa_ana_link: str = "", nome_lead: str = "",
+                          cidade: str = "", uf: str = "", telefone: str = "",
+                          tem_ifood: bool = False, lead_score: int = 0,
+                          gerado_por: str = "brain_loop") -> int:
+    """Insere mensagem WA na fila de outreach autônomo (pendente de envio manual).
+    Retorna o ID da fila ou 0 se já existe pendente para este lead."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        # Evitar duplicata — só 1 pendente por lead
+        cur.execute("""
+            SELECT id FROM wa_outreach_fila
+            WHERE lead_id = %s AND status = 'pendente'
+        """, (lead_id,))
+        if cur.fetchone():
+            return 0
+        cur.execute("""
+            INSERT INTO wa_outreach_fila
+                (lead_id, mensagem, wa_enviar_link, wa_ana_link, nome_lead,
+                 cidade, uf, telefone, tem_ifood, lead_score, gerado_por)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (lead_id, mensagem, wa_enviar_link, wa_ana_link, nome_lead,
+              cidade, uf, telefone, tem_ifood, lead_score, gerado_por))
+        row = cur.fetchone()
+        conn.commit()
+        return row["id"] if row else 0
+
+
+def listar_outreach_fila(status: str = "pendente", limite: int = 50) -> list:
+    """Lista mensagens na fila de outreach autônomo (mais recentes primeiro)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT f.*, l.rating, l.nome_fantasia as nome_fantasia_atual,
+                   l.socios_json, l.bairro
+            FROM wa_outreach_fila f
+            JOIN leads l ON l.id = f.lead_id
+            WHERE f.status = %s
+            ORDER BY f.lead_score DESC, f.created_at DESC
+            LIMIT %s
+        """, (status, limite))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def marcar_outreach_fila_enviado(fila_id: int) -> bool:
+    """Marca item da fila como enviado (dono clicou no wa.me link)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE wa_outreach_fila
+            SET status = 'enviado', enviado_at = NOW()
+            WHERE id = %s AND status = 'pendente'
+            RETURNING lead_id
+        """, (fila_id,))
+        row = cur.fetchone()
+        if row:
+            # Atualizar lead wa_outreach_manual_at
+            cur.execute("""
+                UPDATE leads SET wa_outreach_manual_at = NOW() WHERE id = %s
+            """, (row["lead_id"],))
+            conn.commit()
+            return True
+        conn.commit()
+        return False
+
+
+def descartar_outreach_fila(fila_id: int) -> bool:
+    """Descarta item da fila (dono decidiu não enviar)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE wa_outreach_fila SET status = 'descartado'
+            WHERE id = %s AND status = 'pendente' RETURNING id
+        """, (fila_id,))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def contar_outreach_fila_pendente() -> int:
+    """Conta total de mensagens pendentes na fila."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as n FROM wa_outreach_fila WHERE status = 'pendente'")
+        return cur.fetchone()["n"]
+
+
+def limpar_outreach_fila_expirados(dias: int = 7) -> int:
+    """Marca como expirados itens pendentes com mais de N dias."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE wa_outreach_fila SET status = 'expirado'
+            WHERE status = 'pendente'
+              AND created_at < NOW() - INTERVAL '%s days'
+        """, (dias,))
+        n = cur.rowcount
+        conn.commit()
+        return n
+
+
 def conversas_wa_quentes(score_minimo: int = 80, limite: int = 50) -> list:
     """Conversas WA ativas com lead_score alto — candidatas a handoff.
     Usado pelo Brain Loop para monitorar e notificar dono.

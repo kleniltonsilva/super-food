@@ -135,6 +135,15 @@ async def ciclo_brain() -> dict:
         log.error(f"Etapa 7 (score decay) falhou: {e}")
         stats["erros"] += 1
 
+    # Etapa 8: Limpar fila WA outreach expirada (>7 dias pendente)
+    try:
+        from crm.database import limpar_outreach_fila_expirados
+        expirados = await asyncio.to_thread(limpar_outreach_fila_expirados, 7)
+        if expirados > 0:
+            log.info(f"Fila WA outreach: {expirados} itens expirados limpos")
+    except Exception:
+        pass
+
     return stats
 
 
@@ -227,27 +236,48 @@ async def _etapa_orquestrar_leads(limite: int) -> dict:
             log.warning(f"Erro orquestrando lead {lead['id']}: {e}")
             result["erros"] += 1
 
-    log.info(f"Orquestração: {result['wa_iniciados']} WA, {result['emails_enviados']} emails")
+    log.info(f"Orquestração: {result['wa_iniciados']} WA enfileirados, {result['emails_enviados']} emails")
     return result
 
 
 async def _iniciar_wa_outbound(lead: dict) -> bool:
-    """Inicia conversa WA proativa com Ana via Grok.
-    Retorna True se enviou com sucesso. Roda em thread para não bloquear event loop."""
-    from crm.wa_sales_bot import iniciar_conversa_outbound
+    """Gera mensagem WA personalizada e enfileira para envio manual pelo dono.
+    NÃO envia diretamente — Meta cobra por mensagem outbound (Template Messages).
+    O dono vê as mensagens pendentes em /wa-outreach-auto e envia via wa.me link.
+    Retorna True se enfileirou com sucesso."""
+    from crm.wa_outreach_manual import gerar_mensagem_outreach_manual
+    from crm.database import inserir_outreach_fila
 
     try:
-        result = await asyncio.to_thread(iniciar_conversa_outbound, lead["id"])
-        if result.get("sucesso"):
-            log.info(f"WA outbound lead {lead['id']} ({lead.get('nome_fantasia', '?')})")
-            return True
-        elif result.get("erro"):
-            if "opt-out" in str(result["erro"]).lower() or "conversa ativa" in str(result["erro"]).lower():
+        result = await asyncio.to_thread(gerar_mensagem_outreach_manual, lead["id"])
+        if result.get("erro"):
+            if "sem telefone" in str(result["erro"]).lower():
                 return False
-            log.warning(f"WA outbound lead {lead['id']} falhou: {result['erro']}")
-        return False
+            log.warning(f"WA outreach fila lead {lead['id']} falhou: {result['erro']}")
+            return False
+
+        fila_id = await asyncio.to_thread(
+            inserir_outreach_fila,
+            lead_id=lead["id"],
+            mensagem=result["mensagem"],
+            wa_enviar_link=result["wa_enviar_link"],
+            wa_ana_link=result.get("wa_ana_link", ""),
+            nome_lead=result.get("nome", ""),
+            cidade=result.get("cidade", ""),
+            uf=result.get("uf", ""),
+            telefone=result.get("telefone", ""),
+            tem_ifood=result.get("tem_ifood", False),
+            lead_score=lead.get("lead_score", 0),
+            gerado_por="brain_loop",
+        )
+        if fila_id:
+            log.info(f"WA outreach ENFILEIRADO lead {lead['id']} ({lead.get('nome_fantasia', '?')}) → fila #{fila_id}")
+            return True
+        else:
+            # Já existe pendente para este lead
+            return False
     except Exception as e:
-        log.warning(f"Erro WA outbound lead {lead['id']}: {e}")
+        log.warning(f"Erro WA outreach fila lead {lead['id']}: {e}")
         return False
 
 
@@ -549,42 +579,34 @@ async def _etapa_reengajamento() -> dict:
 
 
 async def _reengajar_via_wa(lead: dict) -> bool:
-    """Reengaja lead via WA com mensagem diferente da original."""
-    from crm.wa_sales_bot import enviar_mensagem_wa
-    from crm.scoring import personalizar_abordagem
+    """Reengaja lead via WA — enfileira mensagem personalizada para envio manual.
+    Usa wa_outreach_manual para gerar msg com IA, salva na fila autônoma."""
+    from crm.wa_outreach_manual import gerar_mensagem_outreach_manual
+    from crm.database import inserir_outreach_fila
 
-    pers = personalizar_abordagem(lead)
-    nome = pers.get("nome_dono") or ""
-    # Limpar nome do restaurante (evitar CNPJ/razão social)
-    from crm.wa_sales_bot import _limpar_nome_restaurante
-    nome_rest = _limpar_nome_restaurante(lead)
-    if not nome:
-        nome = nome_rest  # Usar nome do restaurante em vez de "proprietário"
+    try:
+        result = await asyncio.to_thread(gerar_mensagem_outreach_manual, lead["id"])
+        if result.get("erro"):
+            return False
 
-    # Variar mensagem de reengajamento
-    import random
-    templates_reeng = [
-        (
-            f"Oi {nome}! Faz um tempo que conversamos. "
-            f"O {nome_rest} continua sendo uma ótima oportunidade pra delivery próprio! "
-            f"A Derekh evoluiu muito — agora tem WhatsApp Humanoide, KDS, app garçom... "
-            f"Quer saber mais? 😊"
-        ),
-        (
-            f"Oi {nome}! Lembrei do {nome_rest} e queria compartilhar: "
-            f"restaurantes como o seu estão faturando 30% mais com delivery próprio. "
-            f"Sem comissão do iFood. Posso te mostrar como?"
-        ),
-        (
-            f"Oi {nome}! Novidades na Derekh Food que acho que vão te interessar: "
-            f"agora temos atendimento automático por WhatsApp, cardápio digital "
-            f"e setup em 48h. Tudo isso com 15 dias grátis. Bora conversar?"
-        ),
-    ]
-
-    texto = random.choice(templates_reeng)
-    resultado = await asyncio.to_thread(enviar_mensagem_wa, lead["id"], texto)
-    return resultado.get("sucesso", False)
+        fila_id = await asyncio.to_thread(
+            inserir_outreach_fila,
+            lead_id=lead["id"],
+            mensagem=result["mensagem"],
+            wa_enviar_link=result["wa_enviar_link"],
+            wa_ana_link=result.get("wa_ana_link", ""),
+            nome_lead=result.get("nome", ""),
+            cidade=result.get("cidade", ""),
+            uf=result.get("uf", ""),
+            telefone=result.get("telefone", ""),
+            tem_ifood=result.get("tem_ifood", False),
+            lead_score=lead.get("lead_score", 0),
+            gerado_por="reengajamento",
+        )
+        return fila_id > 0
+    except Exception as e:
+        log.warning(f"Erro reengajamento WA fila lead {lead.get('id')}: {e}")
+        return False
 
 
 def _reengajar_via_email(lead: dict) -> bool:
