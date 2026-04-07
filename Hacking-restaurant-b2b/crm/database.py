@@ -985,6 +985,35 @@ def emails_enviados_hoje() -> int:
         return cur.fetchone()["c"]
 
 
+def emails_enviados_mes() -> int:
+    """Conta emails enviados no mês corrente (quota Resend)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) as c FROM emails_enviados
+            WHERE horario_enviado >= DATE_TRUNC('month', NOW())
+        """)
+        return cur.fetchone()["c"]
+
+
+def email_quota_resend() -> dict:
+    """Retorna quota Resend: enviados hoje, mês, limites e restante.
+    Free plan: 3000/mês, 100/dia."""
+    hoje = emails_enviados_hoje()
+    mes = emails_enviados_mes()
+    limite_dia = 100
+    limite_mes = 3000
+    return {
+        "enviados_hoje": hoje,
+        "enviados_mes": mes,
+        "limite_dia": limite_dia,
+        "limite_mes": limite_mes,
+        "restante_hoje": max(limite_dia - hoje, 0),
+        "restante_mes": max(limite_mes - mes, 0),
+        "percentual_mes": round(mes / limite_mes * 100, 1),
+    }
+
+
 def stats_outreach(periodo_dias: int = 7) -> dict:
     """Stats de outreach do período: emails enviados, abertos, clicados, bounced."""
     with get_conn() as conn:
@@ -1316,13 +1345,15 @@ def leads_pendentes_validacao(limite: int = 50) -> list:
 
 def conversas_wa_quentes(score_minimo: int = 80) -> list:
     """Conversas WA ativas com lead_score alto — candidatas a handoff.
-    Usado pelo Brain Loop para monitorar e notificar dono."""
+    Usado pelo Brain Loop para monitorar e notificar dono.
+    Retorna também campos de rastreio de notificação para evitar duplicar alerta."""
     with get_conn() as conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT c.id, c.lead_id, c.numero_envio,
                    l.lead_score as intent_score,
                    c.intencao_detectada, c.status, c.updated_at,
+                   c.handoff_notificado_em, c.handoff_notificado_score, c.handoff_notificado_tipo,
                    l.nome_fantasia, l.razao_social, l.cidade
             FROM wa_conversas c
             JOIN leads l ON l.id = c.lead_id
@@ -1517,7 +1548,8 @@ def atualizar_conversa_wa(conversa_id: int, **kwargs) -> bool:
                       "voz_usada", "tom_usado", "usou_audio",
                       "cache_ids_usados", "intents_usadas",
                       "persona_detectada", "followup_handoff_etapa", "followup_handoff_at",
-                      "notas"}
+                      "notas",
+                      "handoff_notificado_em", "handoff_notificado_score", "handoff_notificado_tipo"}
     sets = []
     params = []
     for k, v in kwargs.items():

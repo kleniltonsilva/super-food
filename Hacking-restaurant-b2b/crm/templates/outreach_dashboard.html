@@ -1,0 +1,257 @@
+{% extends "base.html" %}
+{% set pagina_ativa = "outreach" %}
+{% block title %}Outreach — Derekh CRM{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-6">
+        <div>
+            <h2 style="font-size:20px; font-weight:700; color:#fff;">Sales Autopilot</h2>
+            <p style="font-size:13px; color:#7d8590; margin-top:4px;">Motor de outreach automatizado</p>
+        </div>
+        <div class="flex gap-2">
+            {% if stats.outreach_ativo %}
+            <span class="selo" style="background:#3fb95018; color:#3fb950; padding:6px 12px;">Ativo</span>
+            {% else %}
+            <span class="selo" style="background:#484f5818; color:#7d8590; padding:6px 12px;">Desativado</span>
+            {% endif %}
+            <button onclick="forcarExecucao()" class="btn btn-secondary text-xs">Forcar Execucao</button>
+        </div>
+    </div>
+
+    <!-- KPIs -->
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+        <div class="card text-center">
+            <p style="font-size:20px; font-weight:700; color:#00d4aa;">{{ stats.total_enviados or 0 }}</p>
+            <p style="font-size:11px; color:#7d8590; margin-top:4px;">Emails (7d)</p>
+        </div>
+        <div class="card text-center">
+            <p style="font-size:20px; font-weight:700; color:#3fb950;">{{ stats.open_rate or 0 }}%</p>
+            <p style="font-size:11px; color:#7d8590; margin-top:4px;">Open Rate</p>
+        </div>
+        <div class="card text-center">
+            <p style="font-size:20px; font-weight:700; color:#d29922;">{{ stats.ctr or 0 }}%</p>
+            <p style="font-size:11px; color:#7d8590; margin-top:4px;">CTR</p>
+        </div>
+        <div class="card text-center">
+            <p style="font-size:20px; font-weight:700; color:#f85149;">{{ stats.bounce_rate or 0 }}%</p>
+            <p style="font-size:11px; color:#7d8590; margin-top:4px;">Bounce Rate</p>
+        </div>
+        <div class="card text-center">
+            <p style="font-size:20px; font-weight:700; color:#e6edf3;">{{ stats.total_unsub or 0 }}</p>
+            <p style="font-size:11px; color:#7d8590; margin-top:4px;">Opt-outs</p>
+        </div>
+        <div class="card text-center">
+            <p style="font-size:20px; font-weight:700; color:{% if stats.emails_hoje >= stats.max_email_dia %}#f85149{% else %}#e6edf3{% endif %};">
+                {{ stats.emails_hoje }}/{{ stats.max_email_dia }}
+            </p>
+            <p style="font-size:11px; color:#7d8590; margin-top:4px;">Emails Hoje</p>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Importar Leads -->
+        <div class="card">
+            <h3 style="font-size:13px; font-weight:600; color:#e6edf3; margin-bottom:12px;">Importar Leads</h3>
+            <form id="formImportar" onsubmit="importarLeads(event)">
+                <div class="space-y-3">
+                    <div>
+                        <label style="font-size:11px; color:#7d8590;">Cidade (UPPERCASE)</label>
+                        <input type="text" id="imp_cidade" class="input" placeholder="SAO PAULO">
+                    </div>
+                    <div>
+                        <label style="font-size:11px; color:#7d8590;">UF</label>
+                        <input type="text" id="imp_uf" class="input" placeholder="SP" maxlength="2">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <div>
+                            <label style="font-size:11px; color:#7d8590;">Score min</label>
+                            <input type="number" id="imp_score" class="input" value="50">
+                        </div>
+                        <div>
+                            <label style="font-size:11px; color:#7d8590;">Limite</label>
+                            <input type="number" id="imp_limite" class="input" value="50">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-full">Importar</button>
+                </div>
+            </form>
+            <div id="importResult" class="mt-3 text-xs hidden" style="color:#7d8590;"></div>
+        </div>
+
+        <!-- Distribuicao por Tier -->
+        <div class="card">
+            <h3 style="font-size:13px; font-weight:600; color:#e6edf3; margin-bottom:12px;">Leads por Tier</h3>
+            {% if dist_tier %}
+            {% for item in dist_tier %}
+            <div class="flex items-center justify-between py-2" style="border-bottom:1px solid #1e2531;">
+                <div class="flex items-center gap-2">
+                    <span style="width:12px; height:12px; border-radius:50%; display:inline-block;
+                        background:{% if item.tier == 'hot' %}#f85149{% elif item.tier == 'warm' %}#d18616{% elif item.tier == 'cool' %}#58a6ff{% else %}#484f58{% endif %};
+                    "></span>
+                    <span style="font-size:13px; font-weight:500; color:#e6edf3;">{{ TIER_LABELS.get(item.tier, item.tier) }}</span>
+                </div>
+                <span style="font-size:13px; font-weight:700; color:#e6edf3;">{{ item.total|format_number }}</span>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p style="font-size:13px; color:#484f58;">Nenhum lead com tier calculado.</p>
+            {% endif %}
+        </div>
+
+        <!-- Warmup Progress -->
+        <div class="card">
+            <h3 style="font-size:13px; font-weight:600; color:#e6edf3; margin-bottom:12px;">Warmup de Email</h3>
+            {% set pct = (stats.emails_hoje / stats.max_email_dia * 100) if stats.max_email_dia > 0 else 0 %}
+            <div class="mb-4">
+                <div class="flex justify-between mb-1" style="font-size:11px; color:#7d8590;">
+                    <span>{{ stats.emails_hoje }} enviados</span>
+                    <span>{{ stats.max_email_dia }} limite</span>
+                </div>
+                <div style="width:100%; background:#1e2736; border-radius:99px; height:12px;">
+                    <div style="height:12px; border-radius:99px; transition:all .3s;
+                        background:{% if pct >= 90 %}#f85149{% elif pct >= 70 %}#d29922{% else %}#3fb950{% endif %};
+                        width:{{ [pct, 100]|min }}%;"></div>
+                </div>
+            </div>
+            <div style="font-size:11px; color:#7d8590;" class="space-y-1">
+                <p>Bounce rate: <strong style="color:{% if stats.bounce_rate > 4 %}#f85149{% else %}#3fb950{% endif %};">{{ stats.bounce_rate }}%</strong> (max 4%)</p>
+                <p>Status: {% if stats.outreach_ativo %}<strong style="color:#3fb950;">Ativo</strong>{% else %}<strong style="color:#484f58;">Desativado</strong>{% endif %}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quota Resend -->
+    {% if quota %}
+    <div class="card mt-6" style="border-left:3px solid {% if quota.percentual_mes > 90 %}#f85149{% elif quota.percentual_mes > 70 %}#d29922{% else %}#00d4aa{% endif %};">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+            <h3 style="font-size:13px; font-weight:600; color:#e6edf3;">Quota Resend (Plano Free)</h3>
+            <span style="font-size:10px; color:#484f58;">3.000/mês · 100/dia</span>
+        </div>
+        <div style="display:flex; gap:24px; align-items:center;">
+            <div style="text-align:center;">
+                <p style="font-size:11px; color:#7d8590; margin-bottom:4px;">Hoje</p>
+                <p style="font-size:18px; font-weight:700; color:{% if quota.restante_hoje < 20 %}#f85149{% elif quota.restante_hoje < 50 %}#d29922{% else %}#e6edf3{% endif %};">
+                    {{ quota.enviados_hoje }}<span style="font-size:12px; color:#484f58;">/{{ quota.limite_dia }}</span>
+                </p>
+            </div>
+            <div style="flex:1;">
+                <div style="display:flex; justify-content:space-between; font-size:10px; color:#7d8590; margin-bottom:4px;">
+                    <span>Mês: {{ quota.enviados_mes }} enviados</span>
+                    <span>{{ quota.restante_mes }} restantes</span>
+                </div>
+                <div style="width:100%; background:#1e2736; border-radius:99px; height:10px;">
+                    <div style="height:10px; border-radius:99px; transition:all .3s;
+                        background:{% if quota.percentual_mes > 90 %}#f85149{% elif quota.percentual_mes > 70 %}#d29922{% else %}#00d4aa{% endif %};
+                        width:{{ [quota.percentual_mes, 100]|min }}%;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Acoes Pendentes e Futuras -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+        <!-- Pendentes -->
+        <div class="card">
+            <h3 style="font-size:13px; font-weight:600; color:#e6edf3; margin-bottom:12px;">
+                Acoes Pendentes
+                <span class="badge" style="background:#d2992218; color:#d29922; margin-left:8px;">{{ pendentes|length }}</span>
+            </h3>
+            {% if pendentes %}
+            <div class="overflow-x-auto">
+                <table class="table w-full">
+                    <thead><tr>
+                        <th>Lead</th><th>Acao</th><th>Tier</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for a in pendentes[:10] %}
+                    <tr>
+                        <td>
+                            <a href="/lead/{{ a.lead_id }}" style="color:#00d4aa; font-size:11px; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+                                {{ a.nome_fantasia or 'Lead #'~a.lead_id }}
+                            </a>
+                        </td>
+                        <td><span style="font-size:11px;">{{ ACOES_OUTREACH_LABELS.get(a.acao, a.acao) }}</span></td>
+                        <td>
+                            <span class="tag" style="
+                                {% if a.tier == 'hot' %}background:#f8514918; color:#f85149;{% elif a.tier == 'warm' %}background:#d1861618; color:#d18616;{% else %}background:#58a6ff18; color:#58a6ff;{% endif %}
+                            ">{{ a.tier }}</span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p style="font-size:13px; color:#484f58;">Nenhuma acao pendente.</p>
+            {% endif %}
+        </div>
+
+        <!-- Futuras -->
+        <div class="card">
+            <h3 style="font-size:13px; font-weight:600; color:#e6edf3; margin-bottom:12px;">
+                Proximas Acoes
+                <span class="badge" style="background:#58a6ff18; color:#58a6ff; margin-left:8px;">{{ futuras|length }}</span>
+            </h3>
+            {% if futuras %}
+            <div class="overflow-x-auto">
+                <table class="table w-full">
+                    <thead><tr>
+                        <th>Lead</th><th>Acao</th><th>Agendado</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for a in futuras[:10] %}
+                    <tr>
+                        <td>
+                            <a href="/lead/{{ a.lead_id }}" style="color:#00d4aa; font-size:11px; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+                                {{ a.nome_fantasia or 'Lead #'~a.lead_id }}
+                            </a>
+                        </td>
+                        <td><span style="font-size:11px;">{{ ACOES_OUTREACH_LABELS.get(a.acao, a.acao) }}</span></td>
+                        <td><span style="font-size:11px; color:#7d8590;">{{ a.agendado_para|format_datetime }}</span></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p style="font-size:13px; color:#484f58;">Nenhuma acao futura agendada.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+async function importarLeads(e) {
+    e.preventDefault();
+    const res = await fetch('/api/outreach/importar', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            cidade: document.getElementById('imp_cidade').value,
+            uf: document.getElementById('imp_uf').value,
+            score_min: parseInt(document.getElementById('imp_score').value),
+            limite: parseInt(document.getElementById('imp_limite').value),
+        })
+    });
+    const data = await res.json();
+    const el = document.getElementById('importResult');
+    el.classList.remove('hidden');
+    if (data.ok) {
+        el.innerHTML = `<strong style="color:#3fb950;">${data.importados} leads importados.</strong>`;
+        setTimeout(() => location.reload(), 1500);
+    } else {
+        el.innerHTML = `<strong style="color:#f85149;">Erro: ${data.msg || 'desconhecido'}</strong>`;
+    }
+}
+
+async function forcarExecucao() {
+    const res = await fetch('/api/outreach/forcar-execucao', {method: 'POST'});
+    const data = await res.json();
+    alert(`Executadas: ${data.stats.executadas}, Erros: ${data.stats.erros}`);
+    location.reload();
+}
+</script>
+{% endblock %}

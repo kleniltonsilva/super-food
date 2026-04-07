@@ -568,7 +568,7 @@ def processar_email_inbound(payload: dict) -> dict:
         anexos_json=anexos if anexos else None,
     )
 
-    return {
+    result = {
         "processado": True,
         "thread_id": thread_id,
         "msg_id": msg_id,
@@ -576,6 +576,136 @@ def processar_email_inbound(payload: dict) -> dict:
         "lead_id": lead_id,
         "de": de_email,
     }
+
+    # Auto-resposta da Ana se lead/cliente conhecido e auto-reply ativo
+    try:
+        auto_reply = (obter_configuracao("email_auto_reply") or "true").lower() == "true"
+        if auto_reply and categoria in ("cliente", "urgente") and lead_id:
+            resposta = _ana_gerar_resposta_email(
+                thread_id=thread_id,
+                lead_id=lead_id,
+                mensagem_recebida=corpo_texto or corpo_html or "",
+                assunto=assunto,
+                nome_remetente=de_nome,
+            )
+            if resposta and not resposta.get("erro"):
+                result["auto_reply"] = True
+                result["reply_message_id"] = resposta.get("message_id")
+    except Exception as e:
+        import logging
+        logging.getLogger("email_inbound").warning(f"Auto-reply falhou: {e}")
+
+    return result
+
+
+def _ana_gerar_resposta_email(thread_id: int, lead_id: int,
+                               mensagem_recebida: str, assunto: str,
+                               nome_remetente: str = "") -> dict:
+    """Ana gera resposta inteligente para email recebido via Grok LLM.
+    Busca dados do lead no CRM para personalizar a resposta."""
+    import httpx
+    import json as _json
+
+    xai_key = os.environ.get("XAI_API_KEY", "")
+    if not xai_key:
+        return {"erro": "XAI_API_KEY não configurada"}
+
+    lead = obter_lead(lead_id)
+    if not lead:
+        return {"erro": "Lead não encontrado"}
+
+    # Contexto do lead
+    nome_restaurante = lead.get("nome_fantasia") or lead.get("razao_social") or "Restaurante"
+    cidade = lead.get("cidade") or ""
+    uf = lead.get("uf") or ""
+
+    lead_info_parts = [f"Restaurante: {nome_restaurante}"]
+    if cidade:
+        lead_info_parts.append(f"Cidade: {cidade}/{uf}")
+    if lead.get("tem_ifood"):
+        lead_info_parts.append("Já tem iFood")
+    if lead.get("tem_rappi"):
+        lead_info_parts.append("Já tem Rappi")
+    if lead.get("lead_score"):
+        lead_info_parts.append(f"Score CRM: {lead['lead_score']}")
+
+    lead_context = "\n".join(lead_info_parts)
+
+    # Buscar histórico da thread
+    from crm.database import obter_email_thread
+    thread = obter_email_thread(thread_id)
+    historico_msgs = ""
+    if thread and thread.get("mensagens"):
+        for msg in thread["mensagens"][-6:]:  # Últimas 6 mensagens
+            direcao = "LEAD" if msg["direcao"] == "recebido" else "ANA"
+            texto = msg.get("corpo_texto") or msg.get("corpo_html") or ""
+            # Limpar HTML se necessário
+            if "<" in texto and ">" in texto:
+                texto = _html_para_texto(texto)
+            historico_msgs += f"\n[{direcao}]: {texto[:500]}"
+
+    system_prompt = f"""Você é Ana, vendedora da Derekh Food, respondendo por EMAIL.
+
+DADOS DO LEAD:
+{lead_context}
+
+REGRAS:
+1. Tom profissional mas acolhedor — email é mais formal que WhatsApp
+2. Responda DIRETAMENTE à pergunta/assunto do email
+3. Máximo 150 palavras — conciso e direto
+4. SEMPRE ofereça o teste grátis de 15 dias quando relevante
+5. Derekh Food: sistema de delivery próprio, 0% comissão, complemento ao iFood
+6. Se o lead já tem iFood: "iFood é vitrine, Derekh é canal próprio sem comissão"
+7. NÃO use HTML — apenas texto puro, será formatado depois
+8. Assinatura: "Ana | Derekh Food"
+9. Se o lead perguntou preço: Básico R$169,90/mês, mas ofereça trial primeiro
+10. NUNCA admita ser IA/bot — você é Ana, vendedora humana
+11. Fale o nome do restaurante quando souber
+
+HISTÓRICO DA CONVERSA:{historico_msgs if historico_msgs else ' (primeira interação por email)'}
+
+Gere APENAS o texto da resposta, sem JSON, sem HTML."""
+
+    user_msg = f"Email recebido de {nome_remetente or 'lead'}:\nAssunto: {assunto}\n\n{mensagem_recebida[:1000]}"
+
+    try:
+        xai_model = os.environ.get("XAI_MODEL", "grok-3-mini")
+        with httpx.Client(timeout=30) as client:
+            resp = client.post(
+                "https://api.x.ai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {xai_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": xai_model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "temperature": 0.7,
+                    "max_tokens": 500,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        resposta_texto = data["choices"][0]["message"]["content"].strip()
+
+        # Converter texto em HTML simples
+        paragrafos = resposta_texto.split("\n\n")
+        corpo_html = ""
+        for p in paragrafos:
+            p = p.strip()
+            if p:
+                corpo_html += f"<p style='margin:0 0 12px;color:#374151;line-height:1.6;'>{p.replace(chr(10), '<br>')}</p>"
+
+        # Enviar resposta via thread
+        resultado = responder_email(thread_id, corpo_html, resposta_texto)
+        return resultado
+
+    except Exception as e:
+        return {"erro": str(e)}
 
 
 def responder_email(thread_id: int, corpo_html: str, corpo_texto: str = None) -> dict:

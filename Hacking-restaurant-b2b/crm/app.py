@@ -852,6 +852,8 @@ async def emails_inbox_page(request: Request,
         offset=offset,
     )
     contadores = contar_threads_por_categoria()
+    from crm.database import email_quota_resend
+    quota = email_quota_resend()
 
     return templates.TemplateResponse("emails_inbox.html", {
         "request": request,
@@ -861,6 +863,7 @@ async def emails_inbox_page(request: Request,
         "categoria_ativa": categoria,
         "busca": busca,
         "pagina": pagina,
+        "quota": quota,
     })
 
 
@@ -1315,10 +1318,19 @@ async def tracking_unsub(tracking_id: str, request: Request):
 @app.get("/api/outreach/stats")
 async def api_outreach_stats(dias: int = 7):
     """Stats de outreach (emails enviados, abertos, clicados, bounce)."""
+    from crm.database import email_quota_resend
     stats = stats_outreach(dias)
     stats["emails_hoje"] = emails_enviados_hoje()
     stats["max_email_dia"] = int(obter_configuracoes_todas().get("outreach_max_email_dia", "20"))
+    stats["quota"] = email_quota_resend()
     return JSONResponse(stats)
+
+
+@app.get("/api/emails/quota")
+async def api_email_quota():
+    """Quota Resend: enviados hoje/mês, limites, restante."""
+    from crm.database import email_quota_resend
+    return JSONResponse(email_quota_resend())
 
 
 @app.get("/api/outreach/pendentes")
@@ -1415,12 +1427,16 @@ async def outreach_dashboard(request: Request):
         """)
         dist_tier = [dict(r) for r in cur.fetchall()]
 
+    from crm.database import email_quota_resend
+    quota = email_quota_resend()
+
     return templates.TemplateResponse("outreach_dashboard.html", {
         "request": request,
         "stats": stats,
         "pendentes": pendentes,
         "futuras": futuras,
         "dist_tier": dist_tier,
+        "quota": quota,
         "TIER_LABELS": TIER_LABELS,
         "TIER_CORES": TIER_CORES,
         "ACOES_OUTREACH_LABELS": ACOES_OUTREACH_LABELS,
