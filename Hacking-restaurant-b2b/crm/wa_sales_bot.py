@@ -362,9 +362,11 @@ def _detectar_contador(mensagem: str) -> bool:
 # ============================================================
 
 def _enriquecer_lead_conversa(lead_id: int, conversa_id: int, mensagem: str):
-    """Extrai informações da conversa e atualiza o lead no banco."""
+    """Extrai informações da conversa e atualiza o lead no banco.
+    Atualiza CAMPOS ESTRUTURADOS (tem_ifood, etc.) além das notas."""
     from crm.database import get_conn
-    updates = {}
+    updates_notas = {}
+    updates_campos = {}
     msg_lower = mensagem.lower()
 
     # Detectar nome da pessoa (quando se apresenta)
@@ -376,8 +378,31 @@ def _enriquecer_lead_conversa(lead_id: int, conversa_id: int, mensagem: str):
     if match_nome:
         nome = match_nome.group(1).strip()
         if len(nome) > 2:
-            updates["nome_contato_wa"] = nome
+            updates_notas["nome_contato_wa"] = nome
             decision_log.info(f"ENRICH lead={lead_id} nome_contato={nome}")
+
+    # Detectar plataformas de delivery (atualiza campos estruturados)
+    if any(kw in msg_lower for kw in ("ifood", "i-food", "i food")):
+        if any(kw in msg_lower for kw in ("tenho", "temos", "uso", "usamos", "estou no", "estamos no", "já tem", "sim")):
+            updates_campos["tem_ifood"] = True
+            decision_log.info(f"ENRICH lead={lead_id} tem_ifood=TRUE (detectado na conversa)")
+    if any(kw in msg_lower for kw in ("rappi",)):
+        if any(kw in msg_lower for kw in ("tenho", "temos", "uso", "usamos", "estou no", "estamos no", "sim")):
+            updates_campos["tem_rappi"] = True
+            decision_log.info(f"ENRICH lead={lead_id} tem_rappi=TRUE")
+    if any(kw in msg_lower for kw in ("99food", "99 food", "aí que fome", "aiqfome")):
+        if any(kw in msg_lower for kw in ("tenho", "temos", "uso", "usamos", "estou no", "estamos no", "sim")):
+            updates_campos["tem_99food"] = True
+            decision_log.info(f"ENRICH lead={lead_id} tem_99food=TRUE")
+
+    # Detectar que NÃO tem delivery
+    if any(kw in msg_lower for kw in ("não tenho delivery", "nao tenho delivery", "não faço entrega",
+                                        "nao faco entrega", "não temos delivery", "nao temos delivery",
+                                        "não trabalho com delivery", "nao trabalho com delivery")):
+        updates_campos["tem_ifood"] = False
+        updates_campos["tem_rappi"] = False
+        updates_campos["tem_99food"] = False
+        decision_log.info(f"ENRICH lead={lead_id} sem_delivery (detectado na conversa)")
 
     # Detectar tipo de comida
     tipos_comida = {
@@ -394,8 +419,33 @@ def _enriquecer_lead_conversa(lead_id: int, conversa_id: int, mensagem: str):
     }
     for tipo, keywords in tipos_comida.items():
         if any(kw in msg_lower for kw in keywords):
-            updates["tipo_comida_detectado"] = tipo
+            updates_notas["tipo_comida_detectado"] = tipo
             break
+
+    # Detectar cidade/localização
+    match_cidade = re.search(
+        r'(?:moro em|fico em|sou de|estou em|aqui em|aqui é|minha cidade|loja fica em)\s+'
+        r'([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)',
+        mensagem, re.IGNORECASE
+    )
+    if match_cidade:
+        cidade_detectada = match_cidade.group(1).strip()
+        if len(cidade_detectada) > 2:
+            updates_campos["cidade"] = cidade_detectada.upper()
+            decision_log.info(f"ENRICH lead={lead_id} cidade={cidade_detectada}")
+
+    # Detectar nome do restaurante
+    match_rest = re.search(
+        r'(?:meu restaurante|minha lanchonete|minha pizzaria|meu negócio|meu negocio|'
+        r'se chama|o nome é|o nome e)\s+'
+        r'([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+)*)',
+        mensagem, re.IGNORECASE
+    )
+    if match_rest:
+        nome_rest = match_rest.group(1).strip()
+        if len(nome_rest) > 2:
+            updates_campos["nome_fantasia"] = nome_rest
+            decision_log.info(f"ENRICH lead={lead_id} nome_restaurante={nome_rest}")
 
     # Detectar novo número (contato do dono fornecido pelo contador)
     if any(w in msg_lower for w in ("contato", "número", "whatsapp", "zap", "telefone")):
@@ -403,25 +453,47 @@ def _enriquecer_lead_conversa(lead_id: int, conversa_id: int, mensagem: str):
         if match_tel:
             novo_numero = re.sub(r'\D', '', match_tel.group(0))
             if len(novo_numero) >= 10:
-                updates["telefone_dono_wa"] = novo_numero
+                updates_notas["telefone_dono_wa"] = novo_numero
+                updates_campos["telefone_proprietario"] = novo_numero
                 decision_log.info(f"ENRICH lead={lead_id} novo_telefone_dono={novo_numero}")
 
-    if updates:
+    if updates_campos or updates_notas:
         try:
             with get_conn() as conn:
                 cur = conn.cursor()
-                notas_extra = json.dumps(updates, ensure_ascii=False)
-                cur.execute("""
-                    UPDATE leads SET notas = COALESCE(notas, '') || %s, updated_at = NOW()
-                    WHERE id = %s
-                """, (f"\n[ENRICH] {notas_extra}", lead_id))
-                if "nome_contato_wa" in updates:
+
+                # Atualizar campos estruturados
+                if updates_campos:
+                    set_parts = []
+                    params = []
+                    for campo, valor in updates_campos.items():
+                        # Só atualizar se campo está vazio/null (não sobrescrever dados existentes)
+                        set_parts.append(f"{campo} = COALESCE(NULLIF({campo}::text, ''), %s)::{'boolean' if isinstance(valor, bool) else 'text'}" if not isinstance(valor, bool) else f"{campo} = %s")
+                        params.append(valor)
+                    set_parts.append("updated_at = NOW()")
+                    params.append(lead_id)
+                    cur.execute(
+                        f"UPDATE leads SET {', '.join(set_parts)} WHERE id = %s",
+                        params
+                    )
+                    log.info(f"Lead {lead_id} campos atualizados: {list(updates_campos.keys())}")
+
+                # Atualizar notas
+                if updates_notas:
+                    notas_extra = json.dumps(updates_notas, ensure_ascii=False)
+                    cur.execute("""
+                        UPDATE leads SET notas = COALESCE(notas, '') || %s, updated_at = NOW()
+                        WHERE id = %s
+                    """, (f"\n[ENRICH] {notas_extra}", lead_id))
+
+                if "nome_contato_wa" in updates_notas:
                     cur.execute("""
                         UPDATE wa_conversas SET notas = COALESCE(notas, '') || %s
                         WHERE id = %s
-                    """, (f"\n[NOME] {updates['nome_contato_wa']}", conversa_id))
+                    """, (f"\n[NOME] {updates_notas['nome_contato_wa']}", conversa_id))
                 conn.commit()
-                log.info(f"Lead {lead_id} enriquecido pela conversa: {list(updates.keys())}")
+                all_updates = {**updates_campos, **updates_notas}
+                log.info(f"Lead {lead_id} enriquecido pela conversa: {list(all_updates.keys())}")
         except Exception as e:
             log.warning(f"Erro ao enriquecer lead {lead_id}: {e}")
 

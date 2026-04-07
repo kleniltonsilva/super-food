@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block title %}WA Outreach Manual — Derekh CRM{% endblock %}
+
+{% block page_title %}Outreach Manual WhatsApp{% endblock %}
+
+{% block header_actions %}
+<div style="display:flex; align-items:center; gap:12px;">
+    <span style="font-size:11px; color:#7d8590;">Mensagens geradas pela Ana — copie e envie pelo WhatsApp Web</span>
+    {% if quota %}
+    <div style="padding:3px 8px; background:#151c26; border-radius:5px; border:1px solid #1e2531; font-size:10px; color:#7d8590;">
+        Emails mês: <strong style="color:#e6edf3;">{{ quota.enviados_mes }}/{{ quota.limite_mes }}</strong>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+    .lead-card {
+        background: #0d1219; border: 1px solid #1e2531; border-radius: 12px;
+        padding: 16px; margin-bottom: 12px; transition: border-color .15s;
+    }
+    .lead-card:hover { border-color: #00d4aa40; }
+    .lead-card.enviado { opacity: 0.5; border-color: #3fb95040; }
+
+    .lead-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 10px;
+    }
+    .lead-name { font-size: 14px; font-weight: 700; color: #e6edf3; }
+    .lead-meta { font-size: 11px; color: #7d8590; }
+
+    .badge-delivery {
+        display: inline-block; padding: 2px 6px; border-radius: 4px;
+        font-size: 9px; font-weight: 700; text-transform: uppercase;
+    }
+    .badge-ifood { background: #f8514920; color: #f85149; }
+    .badge-rappi { background: #d2992220; color: #d29922; }
+    .badge-sem { background: #3fb95020; color: #3fb950; }
+
+    .msg-box {
+        background: #151c26; border: 1px solid #1e2531; border-radius: 8px;
+        padding: 12px; font-size: 13px; line-height: 1.6; color: #e6edf3;
+        white-space: pre-wrap; margin: 10px 0; min-height: 60px;
+        position: relative;
+    }
+    .msg-placeholder {
+        color: #484f58; font-style: italic; cursor: pointer;
+    }
+
+    .btn-gerar {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+        cursor: pointer; border: 1px solid #00d4aa40; background: #00d4aa15;
+        color: #00d4aa; transition: all .15s;
+    }
+    .btn-gerar:hover { background: #00d4aa30; }
+    .btn-gerar:disabled { opacity: .4; cursor: wait; }
+
+    .btn-copiar {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+        cursor: pointer; border: 1px solid #58a6ff40; background: #58a6ff15;
+        color: #58a6ff; transition: all .15s;
+    }
+    .btn-copiar:hover { background: #58a6ff30; }
+
+    .btn-enviar {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+        cursor: pointer; border: 1px solid #25D36640; background: #25D36615;
+        color: #25D366; transition: all .15s; text-decoration: none;
+        display: inline-flex; align-items: center; gap: 4px;
+    }
+    .btn-enviar:hover { background: #25D36630; }
+
+    .btn-enviado {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 700;
+        border: 1px solid #3fb95040; background: #3fb95015; color: #3fb950;
+        cursor: default;
+    }
+
+    .loading-spinner {
+        display: inline-block; width: 14px; height: 14px;
+        border: 2px solid #00d4aa40; border-top-color: #00d4aa;
+        border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .stats-bar {
+        display: flex; gap: 16px; padding: 12px 16px; margin-bottom: 16px;
+        background: #0d1219; border: 1px solid #1e2531; border-radius: 8px;
+    }
+    .stat-item { text-align: center; }
+    .stat-num { font-size: 18px; font-weight: 700; color: #e6edf3; }
+    .stat-label { font-size: 10px; color: #7d8590; }
+
+    .filter-bar {
+        display: flex; gap: 8px; align-items: center; margin-bottom: 16px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stats rápidos -->
+<div class="stats-bar">
+    <div class="stat-item">
+        <div class="stat-num">{{ leads|length }}</div>
+        <div class="stat-label">Leads disponíveis</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-num" id="totalGeradas">0</div>
+        <div class="stat-label">Msgs geradas</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-num" id="totalEnviadas">0</div>
+        <div class="stat-label">Enviadas</div>
+    </div>
+</div>
+
+<!-- Filtro cidade -->
+<div class="filter-bar">
+    <form action="/wa-outreach" method="get" style="display:flex; gap:8px; align-items:center;">
+        <input name="cidade" value="{{ cidade_filtro }}" placeholder="Filtrar por cidade (ex: SAO PAULO)"
+               class="input" style="font-size:12px; padding:7px 12px; width:260px;">
+        <button type="submit" class="btn-gerar">Filtrar</button>
+    </form>
+    <button onclick="gerarTodas()" class="btn-gerar" style="margin-left:auto;">
+        Gerar todas as mensagens
+    </button>
+</div>
+
+<!-- Lista de leads -->
+<div id="leadsList">
+{% if leads %}
+    {% for lead in leads %}
+    <div class="lead-card" id="card-{{ lead.id }}">
+        <div class="lead-header">
+            <div>
+                <a href="/lead/{{ lead.id }}" class="lead-name" style="text-decoration:none; color:#e6edf3;"
+                   onmouseover="this.style.color='#00d4aa'" onmouseout="this.style.color='#e6edf3'">
+                    {{ lead.nome_fantasia or lead.razao_social or 'Lead #' ~ lead.id }}
+                </a>
+                <div class="lead-meta">
+                    {{ lead.cidade or '' }}{% if lead.uf %}/{{ lead.uf }}{% endif %}
+                    {% if lead.bairro %} · {{ lead.bairro }}{% endif %}
+                    {% if lead.lead_score %} · Score: {{ lead.lead_score }}{% endif %}
+                    {% if lead.rating %} · ★{{ lead.rating }}{% endif %}
+                </div>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                {% if lead.tem_ifood %}
+                <span class="badge-delivery badge-ifood">iFood</span>
+                {% endif %}
+                {% if lead.tem_rappi %}
+                <span class="badge-delivery badge-rappi">Rappi</span>
+                {% endif %}
+                {% if not lead.tem_ifood and not lead.tem_rappi and not lead.tem_99food %}
+                <span class="badge-delivery badge-sem">Sem delivery</span>
+                {% endif %}
+                <span style="font-size:11px; color:#7d8590;">📱 {{ lead.telefone1 or lead.telefone_proprietario }}</span>
+            </div>
+        </div>
+
+        <!-- Sócios -->
+        {% if lead.socios_json %}
+        <div style="font-size:11px; color:#58a6ff; margin-bottom:8px;">
+            👤 {% set socios_data = lead.socios_json %}
+            {% if socios_data is string %}
+                {% set socios_list = [] %}
+            {% else %}
+                {% set socios_list = socios_data %}
+            {% endif %}
+            {% if socios_list %}
+                {% for s in socios_list[:2] %}
+                    {{ s.nome or s.nome_socio or '' }}{% if not loop.last %}, {% endif %}
+                {% endfor %}
+            {% else %}
+                (sócios disponíveis)
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Box da mensagem -->
+        <div class="msg-box" id="msg-{{ lead.id }}">
+            <span class="msg-placeholder" onclick="gerarMsg({{ lead.id }})">
+                Clique em "Gerar Mensagem" para Ana criar uma mensagem personalizada...
+            </span>
+        </div>
+
+        <!-- Ações -->
+        <div style="display:flex; gap:8px; align-items:center;" id="actions-{{ lead.id }}">
+            <button class="btn-gerar" onclick="gerarMsg({{ lead.id }})" id="btnGerar-{{ lead.id }}">
+                ✨ Gerar Mensagem
+            </button>
+            <button class="btn-copiar" onclick="copiarMsg({{ lead.id }})" id="btnCopiar-{{ lead.id }}" style="display:none;">
+                📋 Copiar
+            </button>
+            <a href="#" class="btn-enviar" id="btnEnviar-{{ lead.id }}" style="display:none;"
+               target="_blank" rel="noopener">
+                💬 Enviar no WhatsApp
+            </a>
+            <button class="btn-enviado" id="btnEnviado-{{ lead.id }}" style="display:none;">
+                ✅ Enviado
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div style="text-align:center; padding:40px; color:#484f58;">
+        <p style="font-size:16px;">Nenhum lead disponível para outreach manual.</p>
+        <p style="font-size:12px; margin-top:8px;">Todos os leads com telefone já foram contatados ou não há leads com telefone.</p>
+    </div>
+{% endif %}
+</div>
+
+<script>
+let mensagensGeradas = {};
+let totalGeradas = 0;
+let totalEnviadas = 0;
+
+async function gerarMsg(leadId) {
+    const btn = document.getElementById('btnGerar-' + leadId);
+    const msgBox = document.getElementById('msg-' + leadId);
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Gerando...';
+    msgBox.innerHTML = '<span class="loading-spinner"></span> Ana está criando a mensagem...';
+
+    try {
+        const resp = await fetch('/api/wa-outreach/gerar-msg/' + leadId, { method: 'POST' });
+        const data = await resp.json();
+
+        if (data.sucesso) {
+            msgBox.innerHTML = '';
+            msgBox.textContent = data.mensagem;
+            mensagensGeradas[leadId] = data;
+
+            // Mostrar botões
+            document.getElementById('btnCopiar-' + leadId).style.display = '';
+            const btnEnviar = document.getElementById('btnEnviar-' + leadId);
+            btnEnviar.style.display = '';
+            btnEnviar.href = data.wa_enviar_link;
+            btnEnviar.onclick = function(e) {
+                marcarEnviado(leadId);
+            };
+
+            btn.innerHTML = '🔄 Regerar';
+            btn.disabled = false;
+
+            totalGeradas++;
+            document.getElementById('totalGeradas').textContent = totalGeradas;
+        } else {
+            msgBox.innerHTML = '<span style="color:#f85149;">' + (data.erro || 'Erro ao gerar') + '</span>';
+            btn.innerHTML = '✨ Gerar Mensagem';
+            btn.disabled = false;
+        }
+    } catch (e) {
+        msgBox.innerHTML = '<span style="color:#f85149;">Erro de conexão</span>';
+        btn.innerHTML = '✨ Gerar Mensagem';
+        btn.disabled = false;
+    }
+}
+
+function copiarMsg(leadId) {
+    const data = mensagensGeradas[leadId];
+    if (!data) return;
+
+    navigator.clipboard.writeText(data.mensagem).then(() => {
+        const btn = document.getElementById('btnCopiar-' + leadId);
+        btn.innerHTML = '✅ Copiado!';
+        btn.style.background = '#3fb95020';
+        btn.style.color = '#3fb950';
+        setTimeout(() => {
+            btn.innerHTML = '📋 Copiar';
+            btn.style.background = '';
+            btn.style.color = '';
+        }, 2000);
+    });
+}
+
+async function marcarEnviado(leadId) {
+    try {
+        await fetch('/api/wa-outreach/marcar-enviado/' + leadId, { method: 'POST' });
+        const card = document.getElementById('card-' + leadId);
+        card.classList.add('enviado');
+
+        // Trocar botões
+        document.getElementById('btnGerar-' + leadId).style.display = 'none';
+        document.getElementById('btnCopiar-' + leadId).style.display = 'none';
+        document.getElementById('btnEnviar-' + leadId).style.display = 'none';
+        document.getElementById('btnEnviado-' + leadId).style.display = '';
+
+        totalEnviadas++;
+        document.getElementById('totalEnviadas').textContent = totalEnviadas;
+    } catch (e) {
+        console.error('Erro ao marcar enviado:', e);
+    }
+}
+
+async function gerarTodas() {
+    const cards = document.querySelectorAll('.lead-card:not(.enviado)');
+    for (const card of cards) {
+        const leadId = card.id.replace('card-', '');
+        if (!mensagensGeradas[leadId]) {
+            await gerarMsg(parseInt(leadId));
+            // Delay entre gerações (rate limit)
+            await new Promise(r => setTimeout(r, 1500));
+        }
+    }
+}
+</script>
+
+{% endblock %}

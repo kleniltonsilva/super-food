@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS leads (
     opt_out_wa BOOLEAN DEFAULT FALSE,
     opt_out_at TIMESTAMPTZ,
     tier TEXT DEFAULT 'cold',
+    wa_outreach_manual_at TIMESTAMPTZ,
 
     -- Controle
     synced_at TIMESTAMP DEFAULT NOW(),
@@ -684,3 +685,6 @@ CREATE TABLE IF NOT EXISTS conversoes (
 CREATE INDEX IF NOT EXISTS idx_conversoes_lead ON conversoes(lead_id);
 CREATE INDEX IF NOT EXISTS idx_conversoes_cnpj ON conversoes(cnpj);
 CREATE INDEX IF NOT EXISTS idx_conversoes_canal ON conversoes(canal_atribuicao, conversao_at DESC);
+
+-- Outreach Manual WA — tracking de envios manuais
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS wa_outreach_manual_at TIMESTAMPTZ;

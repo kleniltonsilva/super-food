@@ -5,6 +5,7 @@ import sys
 import os
 import json
 import math
+import asyncio
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -1441,6 +1442,47 @@ async def outreach_dashboard(request: Request):
         "TIER_CORES": TIER_CORES,
         "ACOES_OUTREACH_LABELS": ACOES_OUTREACH_LABELS,
     })
+
+
+# ============================================================
+# OUTREACH MANUAL WA — Mensagens personalizadas pela Ana
+# ============================================================
+
+@app.get("/wa-outreach", response_class=HTMLResponse)
+async def wa_outreach_page(request: Request, cidade: str = "", pagina: int = 1):
+    """Página de outreach manual WA — lista leads com telefone + msg gerada pela Ana."""
+    from crm.database import leads_para_outreach_manual, email_quota_resend
+    limite = 20
+    leads = leads_para_outreach_manual(limite=limite, cidade=cidade or None)
+    quota = email_quota_resend()
+    return templates.TemplateResponse("wa_outreach.html", {
+        "request": request,
+        "pagina_ativa": "wa_outreach",
+        "leads": leads,
+        "cidade_filtro": cidade,
+        "quota": quota,
+    })
+
+
+@app.post("/api/wa-outreach/gerar-msg/{lead_id}")
+async def api_gerar_msg_outreach(lead_id: int):
+    """Gera mensagem personalizada pela Ana (Grok) para outreach manual WA."""
+    from crm.wa_outreach_manual import gerar_mensagem_outreach_manual
+    resultado = await asyncio.get_event_loop().run_in_executor(
+        None, gerar_mensagem_outreach_manual, lead_id
+    )
+    return JSONResponse(json.loads(json.dumps(resultado, default=str)))
+
+
+@app.post("/api/wa-outreach/marcar-enviado/{lead_id}")
+async def api_marcar_outreach_enviado(lead_id: int):
+    """Marca lead como contatado via outreach manual WA."""
+    from crm.database import marcar_outreach_manual_enviado
+    ok = marcar_outreach_manual_enviado(lead_id)
+    if ok:
+        registrar_interacao(lead_id, "whatsapp", "whatsapp",
+                            "Outreach manual WA — mensagem enviada via browser", "enviado")
+    return JSONResponse({"ok": ok})
 
 
 # ============================================================

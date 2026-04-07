@@ -4,9 +4,13 @@ Usa pool de conexões psycopg2. DATABASE_URL via env var.
 """
 import json
 import os
+import re
+import logging
 from datetime import date, datetime
 from typing import Optional
 from contextlib import contextmanager
+
+log = logging.getLogger("database")
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -1343,6 +1347,58 @@ def leads_pendentes_validacao(limite: int = 50) -> list:
         return [dict(r) for r in cur.fetchall()]
 
 
+def leads_para_outreach_manual(limite: int = 50, cidade: str = None) -> list:
+    """Leads COM telefone para outreach manual via WhatsApp.
+    Exclui leads já contatados por WA nos últimos 7 dias.
+    Retorna dados completos incluindo sócios para personalização."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        where_extra = ""
+        params = []
+        if cidade:
+            where_extra = "AND UPPER(l.cidade) = %s"
+            params.append(cidade.upper())
+        params.append(limite)
+        cur.execute(f"""
+            SELECT l.id, l.cnpj, l.nome_fantasia, l.razao_social,
+                   l.cidade, l.uf, l.bairro, l.email, l.telefone1,
+                   l.telefone_proprietario, l.telefone2,
+                   l.lead_score, l.segmento, l.tier,
+                   l.tem_ifood, l.tem_rappi, l.tem_99food,
+                   l.rating, l.total_reviews, l.socios_json,
+                   l.ifood_rating, l.ifood_categorias,
+                   l.porte, l.capital_social,
+                   l.wa_outreach_manual_at
+            FROM leads l
+            WHERE l.lead_falso = FALSE
+              AND l.opt_out_wa = FALSE
+              AND (l.telefone1 IS NOT NULL AND l.telefone1 != '')
+              AND l.wa_outreach_manual_at IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM wa_conversas c
+                  WHERE c.lead_id = l.id
+                    AND c.created_at >= NOW() - INTERVAL '7 days'
+              )
+              {where_extra}
+            ORDER BY l.lead_score DESC NULLS LAST
+            LIMIT %s
+        """, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
+def marcar_outreach_manual_enviado(lead_id: int) -> bool:
+    """Marca lead como contatado via outreach manual WA (timestamp)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE leads SET wa_outreach_manual_at = NOW(), updated_at = NOW()
+            WHERE id = %s RETURNING id
+        """, (lead_id,))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
 def conversas_wa_quentes(score_minimo: int = 80) -> list:
     """Conversas WA ativas com lead_score alto — candidatas a handoff.
     Usado pelo Brain Loop para monitorar e notificar dono.
@@ -1429,17 +1485,60 @@ def atualizar_tier_lead(lead_id: int, tier: str) -> bool:
 # WHATSAPP — CONVERSAS E MENSAGENS
 # ============================================================
 
+def buscar_lead_por_telefone(numero: str) -> Optional[dict]:
+    """Busca lead existente por número de telefone (qualquer campo).
+    Normaliza número removendo +, espaços, hífens para comparação.
+    Retorna dict com dados do lead ou None."""
+    num_limpo = re.sub(r'\D', '', numero)
+    if len(num_limpo) < 8:
+        return None
+
+    # Variantes de busca: com/sem prefixo 55, com/sem 9 extra
+    variantes = {num_limpo}
+    if num_limpo.startswith("55") and len(num_limpo) > 10:
+        variantes.add(num_limpo[2:])  # sem 55
+    else:
+        variantes.add(f"55{num_limpo}")  # com 55
+
+    with get_conn() as conn:
+        cur = conn.cursor()
+        for num in variantes:
+            cur.execute("""
+                SELECT * FROM leads
+                WHERE REPLACE(REPLACE(REPLACE(COALESCE(telefone1,''), '-', ''), ' ', ''), '+', '') LIKE %s
+                   OR REPLACE(REPLACE(REPLACE(COALESCE(telefone2,''), '-', ''), ' ', ''), '+', '') LIKE %s
+                   OR REPLACE(REPLACE(REPLACE(COALESCE(telefone_proprietario,''), '-', ''), ' ', ''), '+', '') LIKE %s
+                   OR REPLACE(REPLACE(REPLACE(COALESCE(telefone_maps,''), '-', ''), ' ', ''), '+', '') LIKE %s
+                LIMIT 1
+            """, (f"%{num[-8:]}",) * 4)
+            row = cur.fetchone()
+            if row:
+                return dict(row)
+    return None
+
+
 def criar_lead_inbound(numero: str) -> int:
-    """Cria lead mínimo a partir de número WhatsApp inbound.
-    CNPJ = 'WA_' + numero (placeholder). Retorna lead_id."""
+    """Cria ou vincula lead a partir de número WhatsApp inbound.
+    PRIMEIRO busca por telefone no banco (lead existente).
+    Se não encontrar, cria placeholder com CNPJ = 'WA_' + numero.
+    Retorna lead_id."""
+    # 1. Buscar lead existente por telefone
+    lead_existente = buscar_lead_por_telefone(numero)
+    if lead_existente:
+        log.info(f"Lead existente encontrado para {numero}: #{lead_existente['id']} "
+                 f"({lead_existente.get('nome_fantasia') or lead_existente.get('razao_social')})")
+        return lead_existente["id"]
+
+    # 2. Buscar por CNPJ placeholder (conversa anterior)
     cnpj_placeholder = f"WA_{numero}"[:14]
     with get_conn() as conn:
         cur = conn.cursor()
-        # Verificar se já existe
         cur.execute("SELECT id FROM leads WHERE cnpj = %s", (cnpj_placeholder,))
         row = cur.fetchone()
         if row:
             return row["id"]
+
+        # 3. Criar lead mínimo
         cur.execute("""
             INSERT INTO leads (cnpj, nome_fantasia, telefone1, status_pipeline, segmento, tier)
             VALUES (%s, %s, %s, 'novo', 'inbound_wa', 'hot')
@@ -1447,6 +1546,7 @@ def criar_lead_inbound(numero: str) -> int:
         """, (cnpj_placeholder, f"WhatsApp {numero[-4:]}", numero))
         new_id = cur.fetchone()["id"]
         conn.commit()
+        log.info(f"Novo lead inbound criado: #{new_id} para {numero}")
         return new_id
 
 

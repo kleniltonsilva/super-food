@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Sales Autopilot{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        dk: {
+                            bg: '#060a10',
+                            bg2: '#0d1219',
+                            bg3: '#151c26',
+                            bg4: '#1e2736',
+                            accent: '#00d4aa',
+                            accentD: '#009977',
+                            text: '#e6edf3',
+                            dim: '#7d8590',
+                            mute: '#484f58',
+                            border: '#1e2531',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @keyframes pS{0%,100%{opacity:1}50%{opacity:.7}}
+        @keyframes pD{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+        ::-webkit-scrollbar{width:4px}
+        ::-webkit-scrollbar-thumb{background:#21262d;border-radius:2px}
+        ::-webkit-scrollbar-track{background:transparent}
+
+        .sidebar-link {
+            display:flex; align-items:center; gap:12px;
+            padding:10px 16px; border-radius:10px;
+            font-size:13px; font-weight:500;
+            color:#7d8590; transition:all .15s;
+        }
+        .sidebar-link:hover { background:#151c26; color:#e6edf3; }
+        .sidebar-link.active { background:#00d4aa; color:#060a10; font-weight:700; }
+        .sidebar-link.active svg { stroke:#060a10; }
+
+        .card {
+            background:#0d1219; border:1px solid #1e2531;
+            border-radius:14px; padding:16px;
+        }
+        .badge {
+            display:inline-flex; align-items:center;
+            padding:3px 8px; border-radius:6px;
+            font-size:10px; font-weight:700;
+        }
+        .btn {
+            display:inline-flex; align-items:center; justify-content:center;
+            padding:10px 18px; border-radius:10px;
+            font-size:13px; font-weight:700;
+            transition:all .15s; cursor:pointer; border:none;
+            font-family:inherit;
+        }
+        .btn-primary {
+            background:linear-gradient(135deg,#009977,#00d4aa);
+            color:#060a10;
+        }
+        .btn-primary:hover { opacity:.9; }
+        .btn-secondary {
+            background:#151c26; color:#7d8590;
+            border:1px solid #1e2531;
+        }
+        .btn-secondary:hover { color:#e6edf3; background:#1e2736; }
+        .btn-success {
+            background:#3fb95018; color:#3fb950;
+            border:1px solid #3fb95033;
+        }
+        .btn-danger {
+            background:#f8514918; color:#f85149;
+            border:1px solid #f8514933;
+        }
+
+        .input, .select {
+            display:block; width:100%;
+            padding:10px 14px; border-radius:10px;
+            border:1px solid #1e2531; background:#060a10;
+            color:#e6edf3; font-size:13px;
+            outline:none; font-family:inherit;
+        }
+        .input:focus, .select:focus {
+            border-color:#00d4aa; box-shadow:0 0 0 1px #00d4aa33;
+        }
+        .select { appearance:auto; }
+
+        .table th {
+            padding:10px 14px; text-align:left;
+            font-size:10px; font-weight:700;
+            color:#484f58; text-transform:uppercase;
+            letter-spacing:.05em;
+        }
+        .table td {
+            padding:10px 14px; font-size:12px; color:#e6edf3;
+        }
+        .table tr { border-bottom:1px solid #1e2531; }
+        .table tr:hover { background:#151c2680; }
+        .table thead { background:#0d1219; }
+
+        .selo {
+            display:inline-flex; align-items:center;
+            padding:3px 10px; border-radius:99px;
+            font-size:10px; font-weight:700;
+        }
+        .tag {
+            display:inline-flex; align-items:center;
+            padding:3px 8px; border-radius:6px;
+            font-size:10px; font-weight:700;
+        }
+    </style>
+    {% block head %}{% endblock %}
+</head>
+<body style="background:#060a10; color:#e6edf3; font-family:'Segoe UI',-apple-system,sans-serif; margin:0;">
+    <div class="flex h-screen">
+        <!-- Sidebar -->
+        <aside style="width:240px; background:#0d1219; border-right:1px solid #1e2531; display:flex; flex-direction:column; flex-shrink:0; position:fixed; height:100%; z-index:30;">
+            <!-- Logo -->
+            <div style="padding:20px 20px 16px; border-bottom:1px solid #1e2531;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:18px;">🚀</span>
+                    <h1 style="font-size:18px; font-weight:800; color:#fff; margin:0;">Sales Autopilot</h1>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; margin-top:6px;">
+                    <span class="selo" style="background:#3fb95018; color:#3fb950; animation:pS 2s infinite;">AUTONOMO</span>
+                    <span style="font-size:10px; color:#484f58;">Derekh Food B2B</span>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <nav style="flex:1; padding:12px 10px; overflow-y:auto;">
+                <a href="/" class="sidebar-link {% if pagina_ativa == 'dashboard' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+                    Painel
+                </a>
+                <a href="/busca" class="sidebar-link {% if pagina_ativa == 'busca' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    Busca de Leads
+                </a>
+                <a href="/pipeline" class="sidebar-link {% if pagina_ativa == 'pipeline' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7"/></svg>
+                    Pipeline
+                </a>
+
+                <div style="padding:16px 16px 6px; font-size:10px; font-weight:700; color:#484f58; text-transform:uppercase; letter-spacing:.05em;">Marketing</div>
+                <a href="/emails" class="sidebar-link {% if pagina_ativa == 'emails' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5"/></svg>
+                    Emails
+                    <span id="emailBadge" style="background:#f8514930; color:#f85149; padding:1px 6px; border-radius:10px; font-size:10px; font-weight:700; display:none;"></span>
+                </a>
+                <a href="/email/templates" class="sidebar-link {% if pagina_ativa == 'email_templates' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    Email Templates
+                </a>
+                <a href="/email/campanhas" class="sidebar-link {% if pagina_ativa == 'email_campanhas' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>
+                    Campanhas
+                </a>
+                <a href="/email/sequencias" class="sidebar-link {% if pagina_ativa == 'email_sequencias' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    Sequencias
+                </a>
+                <a href="/whatsapp" class="sidebar-link {% if pagina_ativa == 'whatsapp' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                    WhatsApp
+                </a>
+
+                <div style="padding:16px 16px 6px; font-size:10px; font-weight:700; color:#484f58; text-transform:uppercase; letter-spacing:.05em;">Vendas</div>
+                <a href="/autopilot" class="sidebar-link {% if pagina_ativa == 'autopilot' %}active{% endif %}" style="background:linear-gradient(135deg,#00997722,#00d4aa11);border:1px solid #00d4aa33">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    🚀 Autopilot
+                </a>
+                <a href="/outreach" class="sidebar-link {% if pagina_ativa == 'outreach' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    Outreach
+                </a>
+                <a href="/wa-sales/conversas" class="sidebar-link {% if pagina_ativa == 'wa_conversas' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"/></svg>
+                    WA Vendas
+                </a>
+                <a href="/wa-outreach" class="sidebar-link {% if pagina_ativa == 'wa_outreach' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                    WA Outreach
+                </a>
+                <a href="/agente" class="sidebar-link {% if pagina_ativa == 'agente' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>
+                    Agente IA
+                </a>
+                <a href="/brain" class="sidebar-link {% if pagina_ativa == 'brain' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                    Brain
+                </a>
+
+                <div style="padding:16px 16px 6px; font-size:10px; font-weight:700; color:#484f58; text-transform:uppercase; letter-spacing:.05em;">Captacao</div>
+                <a href="/scanner" class="sidebar-link {% if pagina_ativa == 'scanner' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    Scanner
+                </a>
+
+                <div style="padding:16px 16px 6px; font-size:10px; font-weight:700; color:#484f58; text-transform:uppercase; letter-spacing:.05em;">Sistema</div>
+                <a href="/configuracoes" class="sidebar-link {% if pagina_ativa == 'configuracoes' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    Configuracoes
+                </a>
+            </nav>
+
+            <!-- Footer -->
+            <div style="padding:12px 16px; border-top:1px solid #1e2531;">
+                <p style="font-size:10px; color:#484f58; margin:0;">Derekh Food &copy; 2026</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main style="flex:1; margin-left:240px; overflow-y:auto; min-height:100vh;">
+            <!-- Top bar -->
+            <header style="background:#0d1219; border-bottom:1px solid #1e2531; padding:14px 24px; position:sticky; top:0; z-index:20;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <h2 style="font-size:16px; font-weight:700; color:#fff; margin:0;">{% block page_title %}Painel{% endblock %}</h2>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        {% block header_actions %}{% endblock %}
+                    </div>
+                </div>
+            </header>
+
+            <!-- Flash messages -->
+            {% if flash %}
+            <div style="padding:0 24px; margin-top:16px;">
+                <div class="card" style="
+                    {% if flash.type == 'error' %}background:#f8514918; border-color:#f8514933; color:#f85149;
+                    {% elif flash.type == 'success' %}background:#3fb95018; border-color:#3fb95033; color:#3fb950;
+                    {% else %}background:#58a6ff18; border-color:#58a6ff33; color:#58a6ff;{% endif %}
+                    padding:12px 16px; font-size:13px;">
+                    {{ flash.message }}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Content -->
+            <div style="padding:20px 24px;">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+
+    {% block scripts %}{% endblock %}
+    <script>
+    // Carregar badge de emails não-lidos
+    (async () => {
+        try {
+            const resp = await fetch('/api/emails/contadores');
+            const data = await resp.json();
+            const total = (data.urgente?.nao_lidas || 0) + (data.cliente?.nao_lidas || 0) + (data.desconhecido?.nao_lidas || 0);
+            const badge = document.getElementById('emailBadge');
+            if (badge && total > 0) {
+                badge.textContent = total;
+                badge.style.display = 'inline';
+            }
+        } catch(e) {}
+    })();
+    </script>
+</body>
+</html>
