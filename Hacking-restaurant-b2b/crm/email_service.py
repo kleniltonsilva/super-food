@@ -28,8 +28,27 @@ from crm.competitor_service import dados_mercado_cidade, concorrentes_bairro
 resend.api_key = os.environ.get("RESEND_API_KEY", "")
 
 FROM_EMAIL = os.environ.get("FROM_EMAIL", "contato@derekhfood.com.br")
-FROM_NAME = os.environ.get("FROM_NAME", "Derekh Food")
+FROM_NAME = os.environ.get("FROM_NAME", "Ana | Derekh Food")
 BASE_URL = os.environ.get("CRM_BASE_URL", "http://localhost:8000")
+
+
+def _html_para_texto(html: str) -> str:
+    """Converte HTML para plain text para multipart email (melhora deliverability)."""
+    texto = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    texto = re.sub(r'<script[^>]*>.*?</script>', '', texto, flags=re.DOTALL | re.IGNORECASE)
+    texto = re.sub(r'<br\s*/?>', '\n', texto, flags=re.IGNORECASE)
+    texto = re.sub(r'</p>', '\n\n', texto, flags=re.IGNORECASE)
+    texto = re.sub(r'</tr>', '\n', texto, flags=re.IGNORECASE)
+    texto = re.sub(r'</td>', ' | ', texto, flags=re.IGNORECASE)
+    texto = re.sub(r'<a[^>]+href="([^"]*)"[^>]*>([^<]*)</a>', r'\2 (\1)', texto, flags=re.IGNORECASE)
+    texto = re.sub(r'<[^>]+>', '', texto)
+    texto = re.sub(r'&nbsp;', ' ', texto)
+    texto = re.sub(r'&amp;', '&', texto)
+    texto = re.sub(r'&lt;', '<', texto)
+    texto = re.sub(r'&gt;', '>', texto)
+    texto = re.sub(r'\n{3,}', '\n\n', texto)
+    texto = re.sub(r'[ \t]+', ' ', texto)
+    return texto.strip()
 
 
 # ============================================================
@@ -212,9 +231,11 @@ def _envolver_email_branded(corpo_html: str, tracking_id: str) -> str:
 </td></tr>
 
 <!-- FOOTER -->
-<tr><td style="padding:16px 28px;background:#f9fafb;text-align:center;font-size:11px;color:#9ca3af;">
-  <p style="margin:0 0 4px;">Derekh Food · Delivery sem comissão para restaurantes</p>
-  <p style="margin:0;"><a href="{unsub}" style="color:#6b7280;text-decoration:underline;">Cancelar inscrição</a></p>
+<tr><td style="padding:20px 28px;background:#f9fafb;text-align:center;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;">
+  <p style="margin:0 0 8px;">Derekh Food · Sistema de Delivery Próprio para Restaurantes</p>
+  <p style="margin:0 0 8px;">Você recebeu este email porque seu restaurante foi encontrado em uma pesquisa de mercado.</p>
+  <p style="margin:0;"><a href="{unsub}" style="color:#ef4444;text-decoration:underline;font-weight:600;font-size:13px;">Cancelar inscrição a qualquer momento</a></p>
+  <p style="margin:6px 0 0;font-size:10px;color:#bbb;">Se não quiser mais receber nossos emails, clique acima e será removido imediatamente.</p>
 </td></tr>
 
 </table>
@@ -266,12 +287,20 @@ def enviar_email(lead_id: int, template_id: int, campanha_id: int = None) -> dic
     # Injetar tracking
     corpo = _injetar_tracking(corpo, tracking_id, landing_url)
 
+    unsub_url = gerar_link_unsub(tracking_id)
+
     try:
         resultado = resend.Emails.send({
             "from": f"{FROM_NAME} <{FROM_EMAIL}>",
             "to": [email_dest],
             "subject": assunto,
             "html": corpo,
+            "text": _html_para_texto(corpo),
+            "headers": {
+                "List-Unsubscribe": f"<{unsub_url}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                "X-Entity-Ref-ID": tracking_id,
+            },
         })
 
         message_id = resultado.get("id", "")
@@ -331,6 +360,7 @@ def enviar_email_personalizado(lead_id: int, assunto: str, corpo: str,
 
     # Injetar tracking no corpo
     corpo_final = _injetar_tracking(corpo, tracking_id)
+    unsub_url = gerar_link_unsub(tracking_id)
 
     try:
         resultado = resend.Emails.send({
@@ -338,6 +368,12 @@ def enviar_email_personalizado(lead_id: int, assunto: str, corpo: str,
             "to": [email_dest],
             "subject": assunto,
             "html": corpo_final,
+            "text": _html_para_texto(corpo_final),
+            "headers": {
+                "List-Unsubscribe": f"<{unsub_url}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                "X-Entity-Ref-ID": tracking_id,
+            },
         })
 
         message_id = resultado.get("id", "")
