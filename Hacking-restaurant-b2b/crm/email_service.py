@@ -202,45 +202,35 @@ def _envolver_email_branded(corpo_html: str, tracking_id: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="pt-BR">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:24px 0;">
-<tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+<div style="max-width:580px;margin:0 auto;padding:20px;">
 
 <!-- HEADER -->
-<tr><td style="background:linear-gradient(135deg,#00b894,#00d4aa);padding:20px 28px;">
-  <table width="100%" cellpadding="0" cellspacing="0"><tr>
-    <td style="font-size:22px;font-weight:800;color:#ffffff;font-family:'Segoe UI',Helvetica,sans-serif;">Derekh Food</td>
-    <td align="right" style="font-size:11px;color:#ffffffcc;font-family:'Segoe UI',Helvetica,sans-serif;">Delivery sem comissão</td>
-  </tr></table>
-</td></tr>
+<div style="background:#00b894;padding:16px 24px;border-radius:8px 8px 0 0;">
+  <h1 style="margin:0;color:#fff;font-size:20px;">Derekh Food</h1>
+  <p style="margin:4px 0 0;color:#ffffffcc;font-size:12px;">Delivery sem comissão</p>
+</div>
 
 <!-- CORPO -->
-<tr><td style="padding:28px 28px 20px;font-size:14px;line-height:1.7;color:#374151;">
+<div style="padding:24px;background:#fff;border:1px solid #e5e7eb;border-top:0;font-size:14px;line-height:1.7;color:#374151;">
 {corpo_html}
-</td></tr>
+</div>
 
-<!-- DIVIDER -->
-<tr><td style="padding:0 28px;"><div style="border-top:1px solid #e5e7eb;"></div></td></tr>
-
-<!-- CTA: SITE + WHATSAPP -->
-<tr><td style="padding:20px 28px;text-align:center;">
-  <p style="margin:0 0 14px;font-size:13px;color:#6b7280;">Conheça a Derekh Food — delivery próprio para seu restaurante</p>
-  <a href="{link_site}" style="display:inline-block;padding:10px 24px;background:#00d4aa;color:#ffffff;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;margin-right:8px;">Visitar Site</a>
-  <a href="{link_wa}" style="display:inline-block;padding:10px 24px;background:#25D366;color:#ffffff;border-radius:8px;font-weight:700;font-size:13px;text-decoration:none;">💬 Fale no WhatsApp</a>
-</td></tr>
+<!-- CTA: WHATSAPP -->
+<div style="padding:20px 24px;background:#fff;border:1px solid #e5e7eb;border-top:0;text-align:center;">
+  <p style="margin:0 0 12px;font-size:13px;color:#6b7280;">Quer saber mais? Fale diretamente comigo!</p>
+  <a href="{link_wa}" style="display:inline-block;padding:12px 28px;background:#25D366;color:#fff;border-radius:8px;font-weight:bold;font-size:14px;text-decoration:none;">💬 Falar com a Ana no WhatsApp</a>
+  <p style="margin:12px 0 0;font-size:13px;"><a href="{link_site}" style="color:#00b894;text-decoration:none;">🌐 www.derekhfood.com.br</a></p>
+</div>
 
 <!-- FOOTER -->
-<tr><td style="padding:20px 28px;background:#f9fafb;text-align:center;font-size:12px;color:#9ca3af;border-top:1px solid #e5e7eb;">
-  <p style="margin:0 0 8px;">Derekh Food · Sistema de Delivery Próprio para Restaurantes</p>
-  <p style="margin:0 0 8px;">Você recebeu este email porque seu restaurante foi encontrado em uma pesquisa de mercado.</p>
-  <p style="margin:0;"><a href="{unsub}" style="color:#ef4444;text-decoration:underline;font-weight:600;font-size:13px;">Cancelar inscrição a qualquer momento</a></p>
-  <p style="margin:6px 0 0;font-size:10px;color:#bbb;">Se não quiser mais receber nossos emails, clique acima e será removido imediatamente.</p>
-</td></tr>
+<div style="padding:16px 24px;text-align:center;font-size:11px;color:#999;border:1px solid #e5e7eb;border-top:0;border-radius:0 0 8px 8px;background:#f9fafb;">
+  <p style="margin:0 0 6px;">Você recebeu este email porque seu restaurante foi encontrado em uma pesquisa de mercado.</p>
+  <p style="margin:0;"><a href="{unsub}" style="color:#ef4444;font-weight:bold;text-decoration:underline;">Cancelar inscrição a qualquer momento</a></p>
+</div>
 
-</table>
 {pixel_tag}
-</td></tr></table>
+</div>
 </body></html>"""
 
 
