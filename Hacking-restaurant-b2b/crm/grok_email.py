@@ -196,14 +196,18 @@ FORMATO DE SAÍDA (JSON):
   "corpo_html": "<p>Saudação...</p><table>...concorrentes...</table><p>Insight...</p><p>CTA textual.</p><p>Assinatura — Equipe Derekh Food</p>"
 }
 
-IMPORTANTE sobre corpo_html:
-- APENAS parágrafos (<p>), tabelas (<table>), listas (<ul>/<li>) e estilos inline
+IMPORTANTE sobre corpo_html (REGRAS ANTI-SPAM — OBRIGATÓRIAS):
+- APENAS parágrafos (<p>), listas (<ul>/<li>) e <b>/<strong> — HTML LEVE
+- NÃO usar <table> — Gmail corta emails com tables aninhadas
+- NÃO usar CSS complexo (gradientes, shadows, border-radius)
 - NÃO incluir tags <html>, <head>, <body>, <footer>
 - NÃO incluir botão WhatsApp nem link de descadastro (já existem no wrapper automático)
+- NÃO usar palavras spam: "grátis", "garantido", "oferta especial", "não perca", "!!!"
+- Máximo 1 link no corpo (o botão WA é adicionado automaticamente pelo wrapper)
 - Saudação personalizada com nome do dono se disponível
-- Tabela/lista com dados dos concorrentes (estilizada, limpa)
+- Lista com dados dos concorrentes (usando <ul>/<li>, NUNCA <table>)
 - Parágrafo de insight + CTA textual ("Quer entender como funciona? Me chama no WhatsApp!")
-- Assinatura: Equipe Derekh Food
+- Assinatura: Ana | Derekh Food
 """
 
 
@@ -258,13 +262,13 @@ BAIRRO ({ctx['bairro']}):
     # Cenário específico
     tem_delivery = (lead.get("tem_ifood") or 0) + (lead.get("tem_rappi") or 0) + (lead.get("tem_99food") or 0)
     if tem_delivery == 0:
-        user_prompt += "\n\nCENÁRIO: Restaurante SEM delivery. Foco em mostrar que concorrentes já estão online."
+        user_prompt += "\n\nCENÁRIO: Restaurante sem delivery online. Derekh Food é a forma mais rápida de começar — 0% comissão, setup em 48h."
     elif lead.get("ifood_rating") and lead["ifood_rating"] >= 4.5:
-        user_prompt += "\n\nCENÁRIO: Restaurante com EXCELENTE nota no iFood. Foco em delivery próprio sem 27% de comissão."
+        user_prompt += "\n\nCENÁRIO: Restaurante com nota excelente no iFood. iFood é vitrine, Derekh Food complementa com 0% comissão + marca própria."
     elif lead.get("tem_ifood"):
-        user_prompt += "\n\nCENÁRIO: Restaurante JÁ no iFood. Foco em canal próprio complementar (sem comissão)."
+        user_prompt += "\n\nCENÁRIO: Restaurante já no iFood. iFood é vitrine, Derekh Food é canal próprio complementar — 0% comissão por venda."
     else:
-        user_prompt += "\n\nCENÁRIO: Restaurante com delivery mas sem iFood. Foco em delivery próprio como canal direto."
+        user_prompt += "\n\nCENÁRIO: Restaurante com delivery. Derekh Food complementa com canal próprio — 0% comissão, centraliza tudo num painel."
 
     # Links para injetar no email
     import urllib.parse

@@ -1667,10 +1667,39 @@ DerekhFood-Windows/
   - Serviço: `backend/app/email_service.py` — Resend SDK
   - Templates: `backend/app/email_templates.py` — HTML responsivo
 - **CRM (outreach B2B):** `contato@derekhfood.com.br` — prospecção, campanhas, respostas
+  - Remetente: `Ana | Derekh Food <contato@derekhfood.com.br>`
   - Serviço: `Hacking-restaurant-b2b/crm/email_service.py` — Resend SDK + tracking (pixel + link + unsub)
   - Webhook: `POST /webhooks/resend` (opens, clicks, bounces, complaints)
 - Graceful degradation: se `RESEND_API_KEY` não configurada, log warning, não quebra
 - Secrets Fly.io: `RESEND_API_KEY` (full access, compartilhada entre superfood-api e derekh-crm), `DEREKH_FROM_EMAIL`
+
+#### 15.4.1 Email Deliverability (Anti-Spam) — atualizado 07/04/2026
+
+**DNS obrigatórios (`derekhfood.com.br`):**
+| Registro | Status | Valor |
+|----------|--------|-------|
+| SPF (TXT) | Configurado | `v=spf1 include:send.resend.com ~all` |
+| DKIM (TXT) | Configurado | `resend._domainkey.derekhfood.com.br` (chave RSA) |
+| DMARC (TXT) | Configurado | `v=DMARC1; p=none;` (escalar para quarantine após warm-up) |
+
+**Headers anti-spam (obrigatórios em todos os envios):**
+- `List-Unsubscribe`: link de cancelamento (obrigatório Gmail desde 2024)
+- `List-Unsubscribe-Post`: `List-Unsubscribe=One-Click` (one-click unsubscribe Gmail)
+- `X-Entity-Ref-ID`: tracking_id (evita threading indesejado)
+
+**Regras do template HTML (testado e validado):**
+- Usar `<div>` + `<ul>/<li>` — **NUNCA** `<table>` aninhadas (Gmail corta)
+- CSS inline mínimo — sem gradientes, shadows, border-radius complexo
+- Enviar **multipart** (HTML + plain text) via `_html_para_texto()`
+- Footer com "Cancelar inscrição a qualquer momento" em destaque vermelho
+- Máximo 1 link no corpo do email (botão WA adicionado pelo wrapper)
+
+**Prompt LLM (grok_email.py) — regras anti-spam injetadas:**
+- Não usar palavras spam: "grátis", "garantido", "oferta especial", "!!!"
+- Corpo em `<p>` + `<ul>/<li>`, nunca `<table>`
+- Assinatura: "Ana | Derekh Food"
+
+**WhatsApp nos emails:** todos os botões/links apontam para +351 961 330 536 (Ana — ÚNICO número ativo)
 
 ### 15.5 Trial Configurável
 
