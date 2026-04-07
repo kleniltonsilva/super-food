@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+
+{% block title %}Fila Email — Derekh CRM{% endblock %}
+
+{% block page_title %}Fila de Emails para Aprovação{% endblock %}
+
+{% block header_actions %}
+<div style="display:flex; align-items:center; gap:12px;">
+    <span style="font-size:11px; color:#7d8590;">Emails gerados pelo Outreach Engine — revise e envie</span>
+</div>
+{% endblock %}
+
+{% block head %}
+<style>
+    .fila-card {
+        background: #0d1219; border: 1px solid #1e2531; border-radius: 12px;
+        padding: 16px; margin-bottom: 12px; transition: border-color .15s;
+    }
+    .fila-card:hover { border-color: #58a6ff40; }
+    .fila-card.enviado { opacity: 0.4; border-color: #3fb95040; }
+
+    .lead-header {
+        display: flex; align-items: center; justify-content: space-between;
+        margin-bottom: 10px;
+    }
+    .lead-name { font-size: 14px; font-weight: 700; color: #e6edf3; text-decoration: none; }
+    .lead-name:hover { color: #58a6ff; }
+    .lead-meta { font-size: 11px; color: #7d8590; }
+
+    .badge-delivery {
+        display: inline-block; padding: 2px 6px; border-radius: 4px;
+        font-size: 9px; font-weight: 700; text-transform: uppercase;
+    }
+    .badge-ifood { background: #f8514920; color: #f85149; }
+    .badge-sem { background: #3fb95020; color: #3fb950; }
+    .badge-metodo {
+        display: inline-block; padding: 2px 6px; border-radius: 4px;
+        font-size: 9px; font-weight: 700; text-transform: uppercase;
+        background: #d29922_20; color: #d29922;
+    }
+
+    .assunto-box {
+        background: #151c26; border: 1px solid #1e2531; border-radius: 8px 8px 0 0;
+        padding: 10px 12px; font-size: 13px; font-weight: 600; color: #e6edf3;
+    }
+    .corpo-preview {
+        background: #151c26; border: 1px solid #1e2531; border-top: 0; border-radius: 0 0 8px 8px;
+        padding: 12px; font-size: 12px; line-height: 1.5; color: #8b949e;
+        max-height: 120px; overflow: hidden; position: relative;
+    }
+    .corpo-preview::after {
+        content: ''; position: absolute; bottom: 0; left: 0; right: 0;
+        height: 40px; background: linear-gradient(transparent, #151c26);
+    }
+
+    .btn-enviar {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+        cursor: pointer; border: 1px solid #3fb95040; background: #3fb95015;
+        color: #3fb950; transition: all .15s;
+    }
+    .btn-enviar:hover { background: #3fb95030; }
+
+    .btn-preview {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+        cursor: pointer; border: 1px solid #58a6ff40; background: #58a6ff15;
+        color: #58a6ff; transition: all .15s;
+    }
+    .btn-preview:hover { background: #58a6ff30; }
+
+    .btn-editar {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+        cursor: pointer; border: 1px solid #d2992240; background: #d2992215;
+        color: #d29922; transition: all .15s;
+    }
+    .btn-editar:hover { background: #d2992230; }
+
+    .btn-descartar {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 600;
+        cursor: pointer; border: 1px solid #f8514940; background: #f8514915;
+        color: #f85149; transition: all .15s;
+    }
+    .btn-descartar:hover { background: #f8514930; }
+
+    .btn-enviado {
+        padding: 6px 14px; border-radius: 6px; font-size: 11px; font-weight: 700;
+        border: 1px solid #3fb95040; background: #3fb95015; color: #3fb950;
+        cursor: default;
+    }
+
+    .stats-bar {
+        display: flex; gap: 16px; padding: 12px 16px; margin-bottom: 16px;
+        background: #0d1219; border: 1px solid #1e2531; border-radius: 8px;
+    }
+    .stat-item { text-align: center; }
+    .stat-num { font-size: 18px; font-weight: 700; color: #e6edf3; }
+    .stat-label { font-size: 10px; color: #7d8590; }
+
+    .empty-state {
+        text-align: center; padding: 64px 24px;
+        background: #0d1219; border: 1px solid #1e2531; border-radius: 12px;
+    }
+    .empty-state svg { width: 48px; height: 48px; color: #484f58; margin: 0 auto 16px; }
+
+    .tempo-badge {
+        font-size: 10px; padding: 2px 6px; border-radius: 4px;
+        background: #151c26; color: #7d8590; border: 1px solid #1e2531;
+    }
+
+    /* Modal preview */
+    .modal-overlay {
+        display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center;
+    }
+    .modal-overlay.active { display: flex; }
+    .modal-content {
+        background: #fff; border-radius: 12px; max-width: 620px; width: 95%;
+        max-height: 80vh; overflow-y: auto; padding: 0;
+    }
+    .modal-header {
+        padding: 16px 20px; border-bottom: 1px solid #e5e7eb; display: flex;
+        align-items: center; justify-content: space-between;
+    }
+    .modal-header h3 { margin: 0; font-size: 14px; color: #1f2937; }
+    .modal-close { cursor: pointer; color: #6b7280; font-size: 20px; border: none; background: none; }
+    .modal-body { padding: 20px; }
+
+    /* Modo edição */
+    .edit-area {
+        display: none; margin: 10px 0;
+    }
+    .edit-area textarea {
+        width: 100%; min-height: 200px; padding: 10px;
+        background: #0d1219; border: 1px solid #1e2531; border-radius: 6px;
+        color: #e6edf3; font-size: 12px; font-family: monospace; resize: vertical;
+    }
+    .edit-area input {
+        width: 100%; padding: 8px 10px; margin-bottom: 8px;
+        background: #0d1219; border: 1px solid #1e2531; border-radius: 6px;
+        color: #e6edf3; font-size: 13px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Stats -->
+<div class="stats-bar">
+    <div class="stat-item">
+        <div class="stat-num" style="color:#d29922;">{{ items|length }}</div>
+        <div class="stat-label">Pendentes</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-num" id="totalEnviados" style="color:#3fb950;">0</div>
+        <div class="stat-label">Enviados agora</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-num" id="totalDescartados" style="color:#f85149;">0</div>
+        <div class="stat-label">Descartados</div>
+    </div>
+</div>
+
+<!-- Filtros -->
+<div style="display:flex; gap:8px; margin-bottom:16px; align-items:center;">
+    <a href="/email-outreach-auto" class="btn {% if not filtro_status or filtro_status == 'pendente' %}btn-primary{% else %}btn-secondary{% endif %}" style="font-size:11px; padding:6px 12px;">Pendentes</a>
+    <a href="/email-outreach-auto?status=enviado" class="btn {% if filtro_status == 'enviado' %}btn-primary{% else %}btn-secondary{% endif %}" style="font-size:11px; padding:6px 12px;">Enviados</a>
+    <span style="margin-left:auto; font-size:11px; color:#484f58;">
+        Outreach Engine gera automaticamente quando ativo
+    </span>
+</div>
+
+<!-- Lista -->
+<div id="filaList">
+{% if items %}
+    {% for item in items %}
+    <div class="fila-card" id="card-{{ item.id }}">
+        <div class="lead-header">
+            <div>
+                <a href="/lead/{{ item.lead_id }}" class="lead-name">
+                    {{ item.nome_lead or item.nome_fantasia_atual or 'Lead #' ~ item.lead_id }}
+                </a>
+                <div class="lead-meta">
+                    {{ item.email_destino }}
+                    · {{ item.cidade or '' }}{% if item.uf %}/{{ item.uf }}{% endif %}
+                    {% if item.bairro %} · {{ item.bairro }}{% endif %}
+                    · Score: {{ item.lead_score }}
+                </div>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center;">
+                {% if item.tem_ifood %}
+                <span class="badge-delivery badge-ifood">iFood</span>
+                {% else %}
+                <span class="badge-delivery badge-sem">Sem delivery</span>
+                {% endif %}
+                <span class="badge-metodo">{{ item.metodo }}</span>
+                <span class="tempo-badge">{{ item.created_at|format_datetime if item.created_at else '' }}</span>
+            </div>
+        </div>
+
+        <!-- Assunto + Preview corpo -->
+        <div class="assunto-box" id="assunto-{{ item.id }}">{{ item.assunto }}</div>
+        <div class="corpo-preview" id="corpo-{{ item.id }}">{{ item.corpo_html|safe }}</div>
+
+        <!-- Área de edição (oculta) -->
+        <div class="edit-area" id="edit-{{ item.id }}">
+            <input type="text" id="edit-assunto-{{ item.id }}" value="{{ item.assunto }}" placeholder="Assunto">
+            <textarea id="edit-corpo-{{ item.id }}">{{ item.corpo_html }}</textarea>
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button class="btn-enviar" onclick="salvarEdicao({{ item.id }})">Salvar</button>
+                <button class="btn-descartar" onclick="cancelarEdicao({{ item.id }})">Cancelar</button>
+            </div>
+        </div>
+
+        <!-- Ações -->
+        <div style="display:flex; gap:8px; align-items:center; margin-top:10px;" id="actions-{{ item.id }}">
+            <button class="btn-preview" onclick="previewEmail({{ item.id }})">
+                Preview
+            </button>
+            <button class="btn-editar" onclick="editarEmail({{ item.id }})">
+                Editar
+            </button>
+            <button class="btn-enviar" onclick="enviarEmail({{ item.id }})">
+                Enviar Email
+            </button>
+            <button class="btn-descartar" onclick="descartar({{ item.id }})" style="margin-left:auto;">
+                Descartar
+            </button>
+            <button class="btn-enviado" id="btnEnviado-{{ item.id }}" style="display:none;">
+                Enviado
+            </button>
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="empty-state">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+        </svg>
+        {% if filtro_status == 'enviado' %}
+        <p style="font-size:16px; font-weight:600; color:#e6edf3; margin-bottom:4px;">Nenhum email enviado ainda</p>
+        <p style="font-size:13px; color:#484f58;">Quando voce enviar emails da fila, eles aparecerao aqui.</p>
+        {% else %}
+        <p style="font-size:16px; font-weight:600; color:#e6edf3; margin-bottom:4px;">Fila vazia</p>
+        <p style="font-size:13px; color:#484f58;">O Outreach Engine ainda nao gerou emails, ou todos ja foram processados.<br>Ative o outreach e aguarde o proximo ciclo (5 min).</p>
+        {% endif %}
+    </div>
+{% endif %}
+</div>
+
+<!-- Modal Preview -->
+<div class="modal-overlay" id="previewModal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="previewAssunto">Assunto</h3>
+            <button class="modal-close" onclick="fecharPreview()">&times;</button>
+        </div>
+        <div class="modal-body" id="previewCorpo"></div>
+    </div>
+</div>
+
+<script>
+let totalEnviados = 0;
+let totalDescartados = 0;
+
+function previewEmail(filaId) {
+    const assunto = document.getElementById('assunto-' + filaId);
+    const corpo = document.getElementById('corpo-' + filaId);
+    if (!assunto || !corpo) return;
+    document.getElementById('previewAssunto').textContent = assunto.textContent;
+    document.getElementById('previewCorpo').innerHTML = corpo.innerHTML;
+    document.getElementById('previewModal').classList.add('active');
+}
+
+function fecharPreview() {
+    document.getElementById('previewModal').classList.remove('active');
+}
+
+// Fechar modal com ESC
+document.addEventListener('keydown', e => { if (e.key === 'Escape') fecharPreview(); });
+
+function editarEmail(filaId) {
+    document.getElementById('edit-' + filaId).style.display = 'block';
+    document.getElementById('actions-' + filaId).style.display = 'none';
+}
+
+function cancelarEdicao(filaId) {
+    document.getElementById('edit-' + filaId).style.display = 'none';
+    document.getElementById('actions-' + filaId).style.display = 'flex';
+}
+
+async function salvarEdicao(filaId) {
+    const assunto = document.getElementById('edit-assunto-' + filaId).value;
+    const corpo = document.getElementById('edit-corpo-' + filaId).value;
+    try {
+        const resp = await fetch('/api/email-outreach-auto/editar/' + filaId, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({assunto, corpo_html: corpo})
+        });
+        if (resp.ok) {
+            document.getElementById('assunto-' + filaId).textContent = assunto;
+            document.getElementById('corpo-' + filaId).innerHTML = corpo;
+            cancelarEdicao(filaId);
+        }
+    } catch (e) { console.error('Erro ao salvar:', e); }
+}
+
+async function enviarEmail(filaId) {
+    if (!confirm('Enviar este email agora via Resend?')) return;
+    try {
+        const resp = await fetch('/api/email-outreach-auto/enviar/' + filaId, { method: 'POST' });
+        const data = await resp.json();
+        if (resp.ok && data.ok) {
+            const card = document.getElementById('card-' + filaId);
+            card.classList.add('enviado');
+            const actions = document.getElementById('actions-' + filaId);
+            actions.querySelectorAll('.btn-preview, .btn-editar, .btn-enviar, .btn-descartar').forEach(el => el.style.display = 'none');
+            document.getElementById('btnEnviado-' + filaId).style.display = '';
+            totalEnviados++;
+            document.getElementById('totalEnviados').textContent = totalEnviados;
+        } else {
+            alert('Erro: ' + (data.erro || 'Falha ao enviar'));
+        }
+    } catch (e) { console.error('Erro ao enviar:', e); }
+}
+
+async function descartar(filaId) {
+    if (!confirm('Descartar este email? O lead podera ser enfileirado novamente no proximo ciclo.')) return;
+    try {
+        const resp = await fetch('/api/email-outreach-auto/descartar/' + filaId, { method: 'POST' });
+        if (resp.ok) {
+            const card = document.getElementById('card-' + filaId);
+            card.style.transition = 'opacity 0.3s, max-height 0.3s';
+            card.style.opacity = '0';
+            card.style.maxHeight = '0';
+            card.style.overflow = 'hidden';
+            card.style.marginBottom = '0';
+            card.style.padding = '0';
+            setTimeout(() => card.remove(), 350);
+            totalDescartados++;
+            document.getElementById('totalDescartados').textContent = totalDescartados;
+        }
+    } catch (e) { console.error('Erro ao descartar:', e); }
+}
+</script>
+
+{% endblock %}

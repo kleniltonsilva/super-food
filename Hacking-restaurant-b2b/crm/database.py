@@ -1515,6 +1515,118 @@ def limpar_outreach_fila_expirados(dias: int = 7) -> int:
         return n
 
 
+# ============================================================
+# EMAIL OUTREACH FILA — Emails pendentes de aprovação
+# ============================================================
+
+def inserir_email_fila(lead_id: int, assunto: str, corpo_html: str,
+                       email_destino: str, nome_lead: str = "",
+                       cidade: str = "", uf: str = "",
+                       lead_score: int = 0, tem_ifood: bool = False,
+                       metodo: str = "grok", template_id: int = None,
+                       gerado_por: str = "outreach_engine") -> int:
+    """Insere email na fila de aprovação (pendente de envio pelo dono).
+    Retorna o ID da fila ou 0 se já existe pendente para este lead."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id FROM email_outreach_fila
+            WHERE lead_id = %s AND status = 'pendente'
+        """, (lead_id,))
+        if cur.fetchone():
+            return 0
+        cur.execute("""
+            INSERT INTO email_outreach_fila
+                (lead_id, assunto, corpo_html, email_destino, nome_lead,
+                 cidade, uf, lead_score, tem_ifood, metodo, template_id, gerado_por)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (lead_id, assunto, corpo_html, email_destino, nome_lead,
+              cidade, uf, lead_score, tem_ifood, metodo, template_id, gerado_por))
+        row = cur.fetchone()
+        conn.commit()
+        return row["id"] if row else 0
+
+
+def listar_email_fila(status: str = "pendente", limite: int = 50) -> list:
+    """Lista emails na fila de aprovação."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT f.*, l.rating, l.nome_fantasia as nome_fantasia_atual,
+                   l.bairro
+            FROM email_outreach_fila f
+            JOIN leads l ON l.id = f.lead_id
+            WHERE f.status = %s
+            ORDER BY f.lead_score DESC, f.created_at DESC
+            LIMIT %s
+        """, (status, limite))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def marcar_email_fila_enviado(fila_id: int) -> dict:
+    """Marca email da fila como enviado. Retorna dados para envio real."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE email_outreach_fila
+            SET status = 'enviado', enviado_at = NOW()
+            WHERE id = %s AND status = 'pendente'
+            RETURNING lead_id, assunto, corpo_html, email_destino, template_id
+        """, (fila_id,))
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else {}
+
+
+def descartar_email_fila(fila_id: int) -> bool:
+    """Descarta email da fila."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE email_outreach_fila SET status = 'descartado'
+            WHERE id = %s AND status = 'pendente' RETURNING id
+        """, (fila_id,))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def atualizar_email_fila(fila_id: int, assunto: str, corpo_html: str) -> bool:
+    """Atualiza assunto/corpo de um email pendente (edição antes de enviar)."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE email_outreach_fila SET assunto = %s, corpo_html = %s
+            WHERE id = %s AND status = 'pendente' RETURNING id
+        """, (assunto, corpo_html, fila_id))
+        found = cur.fetchone() is not None
+        conn.commit()
+        return found
+
+
+def contar_email_fila_pendente() -> int:
+    """Conta total de emails pendentes na fila."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as n FROM email_outreach_fila WHERE status = 'pendente'")
+        return cur.fetchone()["n"]
+
+
+def limpar_email_fila_expirados(dias: int = 7) -> int:
+    """Marca como expirados emails pendentes com mais de N dias."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE email_outreach_fila SET status = 'expirado'
+            WHERE status = 'pendente'
+              AND created_at < NOW() - INTERVAL '%s days'
+        """, (dias,))
+        n = cur.rowcount
+        conn.commit()
+        return n
+
+
 def conversas_wa_quentes(score_minimo: int = 80, limite: int = 50) -> list:
     """Conversas WA ativas com lead_score alto — candidatas a handoff.
     Usado pelo Brain Loop para monitorar e notificar dono.

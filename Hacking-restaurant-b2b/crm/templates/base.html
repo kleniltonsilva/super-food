@@ -191,10 +191,18 @@
                 </a>
                 <a href="/wa-outreach-auto" class="sidebar-link {% if pagina_ativa == 'wa_outreach_auto' %}active{% endif %}">
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                    Fila Autônoma
+                    Fila WA
                     {% set _fpc = fila_pendente_count() %}
                     {% if _fpc > 0 %}
                     <span style="margin-left:auto; background:#d2992225; color:#d29922; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px;">{{ _fpc }}</span>
+                    {% endif %}
+                </a>
+                <a href="/email-outreach-auto" class="sidebar-link {% if pagina_ativa == 'email_outreach_auto' %}active{% endif %}">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                    Fila Email
+                    {% set _efc = email_fila_pendente_count() %}
+                    {% if _efc > 0 %}
+                    <span style="margin-left:auto; background:#58a6ff25; color:#58a6ff; font-size:10px; font-weight:700; padding:1px 6px; border-radius:10px;">{{ _efc }}</span>
                     {% endif %}
                 </a>
                 <a href="/agente" class="sidebar-link {% if pagina_ativa == 'agente' %}active{% endif %}">

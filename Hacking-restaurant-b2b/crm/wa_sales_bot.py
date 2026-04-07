@@ -1,15 +1,12 @@
 """
-wa_sales_bot.py - Bot de vendas WhatsApp via Evolution API (outbound) + Grok IA
-Estratégia dual-number:
-  - Outbound (prospecção): Evolution API → +55 45 9971-3063
-  - Inbound (receber): +55 11 97176-5565 (link nos emails para "Fale Conosco")
+wa_sales_bot.py - Bot de vendas WhatsApp via Meta Cloud API + Grok IA
+Número único: +351 961 330 536 (Ana) — Meta Cloud API
 
-v2.1 — Áudio STT/TTS + autonomia:
+v3.1 — Áudio STT/TTS + autonomia:
   - STT: transcrição de áudios via Groq Whisper (grátis)
-  - TTS: envio autônomo de áudio via xAI Grok / Fish Audio S2-Pro + Evolution API
+  - TTS: Fish Audio S2-Pro exclusivo (Grok TTS removido)
   - Voz feminina — bot se chama Ana
   - Decisão inteligente de quando enviar áudio vs texto
-  - Envio de áudio via Evolution API (sendMedia)
   - Toggles on/off via configurações
 
 v2.0 — Reestruturação completa:
@@ -61,10 +58,7 @@ if not decision_log.handlers:
     except Exception:
         pass  # fallback: sem arquivo de decisões
 
-# Evolution API config (outbound)
-_EVOLUTION_API_URL = os.environ.get("EVOLUTION_API_URL", "https://derekh-evolution.fly.dev")
-_EVOLUTION_INSTANCE = os.environ.get("EVOLUTION_INSTANCE", "derekh-whatsapp")
-_EVOLUTION_API_KEY = os.environ.get("EVOLUTION_API_KEY", "")
+# WhatsApp Cloud API (Meta) — único provider ativo
 
 # Número da Ana (ÚNICO número ativo — usado em emails, botão WA, inbound)
 WHATSAPP_INBOUND_NUMBER = os.environ.get("WHATSAPP_INBOUND_NUMBER", "351961330536")
@@ -75,20 +69,12 @@ _NUMEROS_EXCLUIDOS = {
     "351961330536",   # Ana (Meta Cloud API) — ÚNICO bot ativo
 }
 
-# WhatsApp Cloud API (Meta) — provider principal (Evolution API descontinuada)
 _GRAPH_API = "https://graph.facebook.com/v22.0"
 
 
 # ============================================================
 # HELPERS
 # ============================================================
-
-def _get_evolution_config() -> tuple:
-    """Retorna (api_url, instance, api_key) da Evolution API."""
-    url = obter_configuracao("evolution_api_url") or _EVOLUTION_API_URL
-    instance = obter_configuracao("evolution_instance") or _EVOLUTION_INSTANCE
-    key = obter_configuracao("evolution_api_key") or _EVOLUTION_API_KEY
-    return url, instance, key
 
 
 def _marcar_lida_cloud_api(msg_id: str) -> None:
@@ -131,12 +117,8 @@ def _enviar_presenca_cloud_api(numero: str) -> None:
 
 def _enviar_presenca(numero: str, presenca: str = "composing",
                      delay_ms: int = 3000, instance_override: str = "") -> None:
-    """Envia indicador de presença ('digitando...') via Meta Cloud API.
-    Fallback para Evolution API se Cloud API falhar.
-    Nota: Meta Cloud API só suporta 'digitando' (não 'gravando áudio')."""
-    # Cloud API (Meta) — provider principal
+    """Envia indicador de presença ('digitando...') via Meta Cloud API."""
     _enviar_presenca_cloud_api(numero)
-    # Nota: Evolution API fallback removido — não é mais necessário
 
 
 def _get_wa_config() -> tuple:
@@ -721,41 +703,6 @@ def _calcular_delay_humano(mensagem_cliente: str) -> float:
 # ENVIO DE MENSAGEM (WhatsApp Cloud API)
 # ============================================================
 
-def _enviar_via_evolution(numero: str, texto: str, instance_override: str = "") -> dict:
-    """Envia mensagem via Evolution API (outbound prioritário).
-    Se instance_override fornecido, usa essa instância em vez da padrão."""
-    url, instance, key = _get_evolution_config()
-    if instance_override:
-        instance = instance_override
-    if not url or not key:
-        return {"erro": "Evolution API não configurada"}
-
-    # Indicador "digitando..." antes de enviar
-    _enviar_presenca(numero, "composing", delay_ms=3000, instance_override=instance_override)
-
-    try:
-        resp = httpx.post(
-            f"{url}/message/sendText/{instance}",
-            headers={
-                "apikey": key,
-                "Content-Type": "application/json",
-            },
-            json={
-                "number": numero,
-                "text": texto,
-            },
-            timeout=15,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        msg_id = result.get("key", {}).get("id", "")
-        log.info(f"Mensagem enviada via Evolution API: {msg_id}")
-        return {"sucesso": True, "wa_msg_id": msg_id, "via": "evolution"}
-    except Exception as e:
-        log.error(f"Erro Evolution API: {e}")
-        return {"erro": f"Evolution API: {e}"}
-
-
 def _enviar_via_cloud_api(numero: str, texto: str) -> dict:
     """Envia mensagem de texto via WhatsApp Cloud API (Meta) — provider principal."""
     phone_id, token = _get_wa_config()
@@ -788,8 +735,7 @@ def _enviar_via_cloud_api(numero: str, texto: str) -> dict:
 
 
 def enviar_mensagem_wa(lead_id: int, texto: str, tom: str = "informal") -> dict:
-    """Envia mensagem de texto via WhatsApp.
-    Prioridade: Evolution API → Cloud API (fallback).
+    """Envia mensagem de texto via WhatsApp Cloud API (Meta).
     Cria conversa se não existir."""
     lead = obter_lead(lead_id)
     if not lead:
@@ -820,11 +766,8 @@ def enviar_mensagem_wa(lead_id: int, texto: str, tom: str = "informal") -> dict:
     if not numero:
         return {"erro": "Lead sem telefone válido"}
 
-    # Enviar: Cloud API (Meta) prioritário → Evolution API (fallback legado)
+    # Enviar via Cloud API (Meta)
     resultado = _enviar_via_cloud_api(numero, texto)
-    if resultado.get("erro"):
-        log.warning(f"Cloud API falhou, tentando Evolution: {resultado['erro']}")
-        resultado = _enviar_via_evolution(numero, texto)
 
     if resultado.get("erro"):
         registrar_msg_wa(conversa_id, "enviada", texto, intencao="erro_envio")
@@ -911,35 +854,6 @@ def transcrever_audio(audio_base64: str, duracao_seg: int = 0) -> dict:
                 pass
 
 
-def baixar_audio_evolution(msg_key_id: str, instance: str = "") -> dict:
-    """Baixa áudio de mensagem via Evolution API getBase64FromMediaMessage.
-    Retorna {"base64": "...", "mimetype": "..."} ou {"erro": "..."}."""
-    url, inst, key = _get_evolution_config()
-    if instance:
-        inst = instance
-    if not url or not key:
-        return {"erro": "Evolution API não configurada"}
-
-    try:
-        resp = httpx.post(
-            f"{url}/chat/getBase64FromMediaMessage/{inst}",
-            headers={"apikey": key, "Content-Type": "application/json"},
-            json={"message": {"key": {"id": msg_key_id}}, "convertToMp4": False},
-            timeout=20,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        b64 = data.get("base64", "")
-        mime = data.get("mimetype", "audio/ogg")
-        if not b64:
-            return {"erro": "Áudio vazio na resposta"}
-        log.info(f"Áudio baixado: {len(b64)} chars base64, mime={mime}")
-        return {"base64": b64, "mimetype": mime}
-    except Exception as e:
-        log.error(f"Erro ao baixar áudio Evolution: {e}")
-        return {"erro": f"Download áudio: {e}"}
-
-
 def baixar_audio_meta(audio_id: str) -> dict:
     """Baixa áudio de mensagem via Meta Cloud API (Media Download).
     Retorna {"base64": "...", "mimetype": "..."} ou {"erro": "..."}."""
@@ -983,43 +897,6 @@ def _calcular_delay_audio(duracao_seg: int) -> float:
         return 8.0  # Default se não souber duração
     delay = duracao_seg / 1.5
     return max(5.0, min(delay, 120.0))
-
-
-# ============================================================
-# ENVIO DE ÁUDIO VIA EVOLUTION API
-# ============================================================
-
-def _enviar_audio_evolution(numero: str, audio_base64: str, instance: str = "",
-                            mimetype: str = "audio/mpeg") -> dict:
-    """Envia áudio como PTT nativo (bolinha verde) via Evolution API sendWhatsAppAudio."""
-    url, inst, key = _get_evolution_config()
-    if instance:
-        inst = instance
-    if not url or not key:
-        return {"erro": "Evolution API não configurada"}
-
-    # Indicador "gravando áudio..." antes de enviar
-    _enviar_presenca(numero, "recording", delay_ms=5000, instance_override=instance)
-
-    try:
-        resp = httpx.post(
-            f"{url}/message/sendWhatsAppAudio/{inst}",
-            headers={"apikey": key, "Content-Type": "application/json"},
-            json={
-                "number": numero,
-                "audio": audio_base64,
-                "encoding": True,
-            },
-            timeout=30,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        msg_id = result.get("key", {}).get("id", "")
-        log.info(f"Áudio PTT enviado via Evolution: {msg_id}")
-        return {"sucesso": True, "wa_msg_id": msg_id, "via": "evolution"}
-    except Exception as e:
-        log.error(f"Erro envio áudio Evolution: {e}")
-        return {"erro": f"Envio áudio Evolution: {e}"}
 
 
 def _mp3_to_ogg_opus(mp3_bytes: bytes) -> bytes | None:
@@ -1852,14 +1729,6 @@ def _gerar_e_enviar_audio_resposta(numero: str, texto_resposta: str,
 
         # Cloud API (Meta) — PTT com OGG/Opus + voice=true
         resultado = _enviar_audio_cloud_api(numero, audio_bytes)
-
-        # Fallback: Evolution API (legado, se Cloud API falhar)
-        if not resultado.get("sucesso"):
-            evo_instance = (obter_configuracao("evolution_instance") or "").strip()
-            if evo_instance:
-                audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
-                log.warning(f"Cloud API áudio falhou, tentando Evolution: {resultado.get('erro', '')}")
-                resultado = _enviar_audio_evolution(numero, audio_b64, instance=instance)
 
         if resultado.get("sucesso"):
             registrar_msg_wa(conversa_id, "enviada",
@@ -3493,7 +3362,7 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
     Se não existir conversa, cria lead inbound + conversa e responde.
     Se existir conversa encerrada/handoff, REATIVA (contexto persistente).
     IMPORTANTE: cada mensagem é salva UMA VEZ e enviada UMA VEZ.
-    instance: nome da instância Evolution de onde veio a msg (para responder pelo mesmo número).
+    instance: legacy param (ignorado, mantido para compatibilidade de assinatura).
     tipo_msg: 'texto' ou 'audio' (áudio transcrito pelo STT)."""
     numero = _limpar_telefone(numero_remetente)
 
@@ -3849,7 +3718,7 @@ def processar_resposta_wa(numero_remetente: str, mensagem: str, instance: str = 
 # ============================================================
 
 def _enviar_e_salvar(conversa_id: int, numero: str, texto: str, grok: bool = False, instance: str = ""):
-    """Envia mensagem via Evolution/Cloud API e salva no banco UMA VEZ."""
+    """Envia mensagem via Cloud API e salva no banco UMA VEZ."""
     resultado = _enviar_direto(numero, texto, instance=instance)
     registrar_msg_wa(conversa_id, "enviada", texto, grok=grok)
     if not resultado.get("sucesso"):
@@ -3858,21 +3727,10 @@ def _enviar_e_salvar(conversa_id: int, numero: str, texto: str, grok: bool = Fal
 
 
 def _enviar_direto(numero: str, texto: str, instance: str = "") -> dict:
-    """Envia mensagem direta para um número (sem precisar de lead_id).
-    Prioridade: Cloud API (Meta) → Evolution API (fallback legado)."""
-    # Cloud API (Meta) — provider principal
+    """Envia mensagem direta para um número via Cloud API (Meta)."""
     resultado = _enviar_via_cloud_api(numero, texto)
-    if resultado.get("sucesso"):
-        return resultado
-
-    # Fallback: Evolution API (legado, só se configurada)
-    evo_instance = (obter_configuracao("evolution_instance") or "").strip()
-    if evo_instance or instance:
-        resultado = _enviar_via_evolution(numero, texto, instance_override=instance)
-        if resultado.get("sucesso"):
-            return resultado
-
-    log.error(f"Falha envio direto {numero}: Cloud API e Evolution falharam")
+    if not resultado.get("sucesso"):
+        log.error(f"Falha envio direto {numero}: {resultado.get('erro', '')}")
     return resultado
 
 
@@ -4419,7 +4277,7 @@ def retomar_conversas_sem_resposta(limite: int = 20) -> dict:
 def followup_conversas_outbound(limite: int = 15) -> dict:
     """Envia follow-up para conversas outbound que ficaram sem resposta do lead.
     Conversas onde o bot enviou mensagem inicial mas o lead não respondeu
-    (pode ter respondido mas o webhook não recebeu — Evolution desconectada).
+    (pode ter respondido mas o webhook não registrou).
     Envia preferencialmente por áudio para quebrar o gelo.
     Chamado pelo brain_loop."""
     from crm.database import get_conn

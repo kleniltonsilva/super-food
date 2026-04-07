@@ -380,56 +380,102 @@ def _executar_acao(acao: dict) -> dict:
         return {"erro": f"Ação desconhecida: {acao_tipo}"}
 
 
-def _executar_enviar_email(acao: dict) -> dict:
-    """Executa envio de email para uma ação de outreach.
-    Prioridade: Grok competitivo > Pattern Library > Template estático.
-    O Grok gera email com análise de concorrentes (entrega valor antes de vender)."""
-    lead_id = acao["lead_id"]
-
+def _gerar_email_para_fila(lead_id: int, template_id: int = None) -> dict:
+    """Gera email (assunto + corpo) sem enviar. Retorna dict com dados ou erro.
+    Prioridade: Grok competitivo > Pattern Library > Template estático."""
     # Fonte 1 (PRINCIPAL): Email competitivo gerado pelo Grok
     try:
-        from crm.grok_email import enviar_email_grok
-        resultado = enviar_email_grok(lead_id)
-        if resultado.get("sucesso"):
-            log.info(
-                f"Lead {lead_id}: email Grok competitivo enviado "
-                f"({resultado.get('concorrentes_usados', 0)} concorrentes)")
-            return resultado
-        else:
-            log.warning(f"Lead {lead_id}: Grok falhou ({resultado.get('erro')}), tentando fallbacks")
+        from crm.grok_email import gerar_email_competitivo
+        resultado = gerar_email_competitivo(lead_id)
+        if resultado.get("sucesso") and resultado.get("assunto") and resultado.get("corpo_html"):
+            return {
+                "assunto": resultado["assunto"],
+                "corpo_html": resultado["corpo_html"],
+                "metodo": "grok",
+            }
+        log.warning(f"Lead {lead_id}: Grok falhou ({resultado.get('erro')}), tentando fallbacks")
     except Exception as e:
         log.warning(f"Lead {lead_id}: erro Grok ({e}), tentando fallbacks")
 
-    # Fonte 2: Pattern Library (mensagem personalizada sem IA)
+    # Fonte 2: Pattern Library
     try:
         from crm.pattern_library import gerar_mensagem_personalizada
         msg = gerar_mensagem_personalizada(lead_id)
         if msg and not msg.get("erro") and msg.get("assunto") and msg.get("corpo"):
-            from crm.email_service import enviar_email_personalizado
-            resultado = enviar_email_personalizado(
-                lead_id, msg["assunto"], msg["corpo"]
-            )
-            if resultado.get("sucesso"):
-                log.info(f"Lead {lead_id}: email Pattern Library enviado")
-            return resultado
+            return {
+                "assunto": msg["assunto"],
+                "corpo_html": msg["corpo"],
+                "metodo": "pattern",
+            }
     except Exception as e:
         log.warning(f"Lead {lead_id}: Pattern Library falhou ({e}), usando template")
 
     # Fonte 3 (FALLBACK): template estático
-    template_id = acao.get("template_id")
     if not template_id:
         template_id = _escolher_template()
     if not template_id:
         return {"erro": "Nenhum template disponível"}
 
-    resultado = enviar_email(lead_id, template_id)
-    return resultado
+    template = obter_email_template(template_id)
+    if not template:
+        return {"erro": "Template não encontrado"}
+
+    lead = obter_lead(lead_id)
+    if not lead:
+        return {"erro": "Lead não encontrado"}
+
+    from crm.email_service import _extrair_variaveis, _substituir_variaveis
+    variaveis = _extrair_variaveis(lead)
+    return {
+        "assunto": _substituir_variaveis(template["assunto"], variaveis),
+        "corpo_html": _substituir_variaveis(template["corpo_html"], variaveis),
+        "metodo": "template",
+        "template_id": template_id,
+    }
+
+
+def _executar_enviar_email(acao: dict) -> dict:
+    """Gera email e ENFILEIRA para aprovação do dono (não envia direto).
+    Prioridade: Grok competitivo > Pattern Library > Template estático."""
+    from crm.database import inserir_email_fila
+    lead_id = acao["lead_id"]
+    lead = obter_lead(lead_id)
+    if not lead:
+        return {"erro": "Lead não encontrado"}
+
+    email_dest = lead.get("email") or ""
+    if not email_dest.strip():
+        return {"erro": "Lead sem email"}
+
+    email_data = _gerar_email_para_fila(lead_id, acao.get("template_id"))
+    if email_data.get("erro"):
+        return email_data
+
+    fila_id = inserir_email_fila(
+        lead_id=lead_id,
+        assunto=email_data["assunto"],
+        corpo_html=email_data["corpo_html"],
+        email_destino=email_dest.strip(),
+        nome_lead=lead.get("nome_fantasia") or lead.get("razao_social") or "",
+        cidade=lead.get("cidade") or "",
+        uf=lead.get("uf") or "",
+        lead_score=lead.get("lead_score") or 0,
+        tem_ifood=bool(lead.get("tem_ifood")),
+        metodo=email_data.get("metodo", "grok"),
+        template_id=email_data.get("template_id"),
+    )
+
+    if fila_id:
+        log.info(f"Lead {lead_id}: email enfileirado (fila #{fila_id}, método={email_data['metodo']})")
+    else:
+        log.info(f"Lead {lead_id}: email já pendente na fila, ignorando")
+
+    return {"sucesso": True, "enfileirado": True, "fila_id": fila_id}
 
 
 def _executar_reenviar_email(acao: dict) -> dict:
-    """Reenvia email se o lead não abriu o anterior.
-    Se já abriu, pula (não reenvia).
-    Reenvio usa Grok para gerar novo email (diferente do primeiro)."""
+    """Gera novo email e ENFILEIRA se lead não abriu o anterior."""
+    from crm.database import inserir_email_fila
     lead_id = acao["lead_id"]
 
     # Verificar se lead já abriu algum email recente
@@ -443,37 +489,10 @@ def _executar_reenviar_email(acao: dict) -> dict:
         ultimo = cur.fetchone()
 
     if ultimo and ultimo.get("aberto"):
-        # Lead já abriu → não reenviar, pular
         return {"pular": "ja_abriu"}
 
-    # Lead não abriu → gerar novo email com Grok (diferente do anterior)
-    try:
-        from crm.grok_email import enviar_email_grok
-        resultado = enviar_email_grok(lead_id)
-        if resultado.get("sucesso"):
-            log.info(f"Lead {lead_id}: reenvio Grok competitivo enviado")
-            return resultado
-    except Exception:
-        pass
-
-    # Fallback: Pattern Library
-    try:
-        from crm.pattern_library import gerar_mensagem_personalizada
-        msg = gerar_mensagem_personalizada(lead_id)
-        if msg and not msg.get("erro") and msg.get("assunto") and msg.get("corpo"):
-            from crm.email_service import enviar_email_personalizado
-            return enviar_email_personalizado(lead_id, msg["assunto"], msg["corpo"])
-    except Exception:
-        pass
-
-    # Fallback template estático
-    template_id = acao.get("template_id")
-    if not template_id:
-        template_id = _escolher_template()
-    if not template_id:
-        return {"erro": "Nenhum template disponível"}
-
-    return enviar_email(lead_id, template_id)
+    # Lead não abriu → gerar e enfileirar
+    return _executar_enviar_email(acao)
 
 
 def _executar_enviar_wa(acao: dict) -> dict:

@@ -217,14 +217,23 @@ templates.env.globals["SEGMENTO_LABELS"] = SEGMENTO_LABELS
 templates.env.globals["SEGMENTO_CORES"] = SEGMENTO_CORES
 
 def _fila_pendente_count():
-    """Callable para o Jinja2 mostrar badge de fila pendente no sidebar."""
+    """Callable para o Jinja2 mostrar badge de fila WA pendente no sidebar."""
     try:
         from crm.database import contar_outreach_fila_pendente
         return contar_outreach_fila_pendente()
     except Exception:
         return 0
 
+def _email_fila_pendente_count():
+    """Callable para o Jinja2 mostrar badge de fila email pendente no sidebar."""
+    try:
+        from crm.database import contar_email_fila_pendente
+        return contar_email_fila_pendente()
+    except Exception:
+        return 0
+
 templates.env.globals["fila_pendente_count"] = _fila_pendente_count
+templates.env.globals["email_fila_pendente_count"] = _email_fila_pendente_count
 
 
 # ============================================================
@@ -1539,6 +1548,68 @@ async def api_outreach_auto_descartar(fila_id: int):
 
 
 # ============================================================
+# FILA AUTÔNOMA EMAIL — Emails gerados pelo Outreach Engine
+# ============================================================
+
+@app.get("/email-outreach-auto", response_class=HTMLResponse)
+async def email_outreach_auto_page(request: Request, status: str = "pendente"):
+    """Página da fila de emails — gerados pelo outreach engine pendentes de aprovação."""
+    from crm.database import listar_email_fila
+    items = listar_email_fila(status=status, limite=100)
+    return templates.TemplateResponse("email_outreach_auto.html", {
+        "request": request,
+        "pagina_ativa": "email_outreach_auto",
+        "items": items,
+        "filtro_status": status,
+    })
+
+
+@app.post("/api/email-outreach-auto/enviar/{fila_id}")
+async def api_email_outreach_enviar(fila_id: int):
+    """Envia email da fila via Resend e marca como enviado."""
+    from crm.database import marcar_email_fila_enviado
+    data = marcar_email_fila_enviado(fila_id)
+    if not data:
+        return JSONResponse({"ok": False, "erro": "Item não encontrado ou já enviado"}, status_code=404)
+    try:
+        from crm.email_service import enviar_email_personalizado
+        result = enviar_email_personalizado(
+            lead_id=data["lead_id"],
+            assunto=data["assunto"],
+            corpo=data["corpo_html"],
+        )
+        if result.get("erro"):
+            return JSONResponse({"ok": False, "erro": result["erro"]}, status_code=400)
+        registrar_interacao(data["lead_id"], "email", "email",
+                            f"Outreach email enviado — {data['assunto'][:60]}", "enviado")
+        return JSONResponse({"ok": True, "message_id": result.get("message_id", "")})
+    except Exception as e:
+        log.error(f"Erro ao enviar email fila {fila_id}: {e}")
+        return JSONResponse({"ok": False, "erro": str(e)}, status_code=500)
+
+
+@app.post("/api/email-outreach-auto/descartar/{fila_id}")
+async def api_email_outreach_descartar(fila_id: int):
+    """Descarta email da fila (dono decidiu não enviar)."""
+    from crm.database import descartar_email_fila
+    ok = descartar_email_fila(fila_id)
+    return JSONResponse({"ok": ok})
+
+
+@app.post("/api/email-outreach-auto/editar/{fila_id}")
+async def api_email_outreach_editar(fila_id: int, request: Request):
+    """Edita assunto/corpo de email pendente antes de enviar."""
+    from crm.database import atualizar_email_fila
+    body = await request.json()
+    assunto = body.get("assunto", "")
+    corpo_html = body.get("corpo_html", "")
+    if not assunto or not corpo_html:
+        return JSONResponse({"ok": False, "erro": "Assunto e corpo obrigatórios"}, status_code=400)
+    ok = atualizar_email_fila(fila_id, assunto=assunto, corpo_html=corpo_html)
+    return JSONResponse({"ok": ok})
+
+
+# ============================================================
 # WHATSAPP SALES BOT (Fase 7 - Micro-Fase 3)
 # ============================================================
 
@@ -1589,7 +1660,7 @@ _BOT_PHONE_NUMBERS = set()
 
 
 def _init_bot_phone_numbers():
-    """Carrega números dos bots (Evolution legado + Meta Cloud API)."""
+    """Carrega números dos bots (Meta Cloud API)."""
     import re
     nums = [
         "351961330536",   # Ana +351 961 330 536 (Meta Cloud API principal)
@@ -1605,7 +1676,7 @@ _init_bot_phone_numbers()
 
 @app.post("/wa-sales/webhook")
 async def wa_sales_webhook(request: Request):
-    """Webhook WhatsApp — suporta Evolution API + Meta Cloud API."""
+    """Webhook WhatsApp — Meta Cloud API."""
     from crm.wa_sales_bot import processar_resposta_wa, verificar_webhook_meta
     import time
 
@@ -1633,107 +1704,8 @@ async def wa_sales_webhook(request: Request):
     else:
         print(f"[WA-WEBHOOK-DEBUG] event={event} object={obj_type} keys={list(body.keys())[:5]}")
 
-    # --- EVOLUTION API FORMAT ---
-    if event == "messages.upsert":
-        data = body.get("data", {})
-        key = data.get("key", {})
-
-        # Extrair nome da instância (para responder pelo mesmo número)
-        instance = body.get("instance", "")
-
-        # Ignorar eventos de instâncias que NÃO pertencem ao CRM
-        # (ex: derekh-whatsapp é do bot restaurante, não do CRM)
-        _CRM_INSTANCES = os.environ.get("EVOLUTION_CRM_INSTANCES", "derekh-inbound").split(",")
-        if instance and instance not in _CRM_INSTANCES:
-            print(f"[WA-WEBHOOK] IGNORANDO evento de instância {instance} (não é do CRM)")
-            return JSONResponse({"status": "ok"})
-
-        # Ignorar mensagens enviadas por nós (fromMe=true)
-        if key.get("fromMe"):
-            return JSONResponse({"status": "ok"})
-
-        # Deduplicação por message ID
-        msg_id = key.get("id", "")
-        if msg_id:
-            now = time.time()
-            if msg_id in _webhook_msg_ids:
-                return JSONResponse({"status": "ok"})  # Já processado
-            _webhook_msg_ids[msg_id] = now
-            # Limpar cache antigo
-            if len(_webhook_msg_ids) > _WEBHOOK_DEDUP_MAX:
-                cutoff = now - 300  # 5 min
-                _webhook_msg_ids.clear()
-
-        # Extrair número (remoteJid: "5511999999999@s.whatsapp.net")
-        jid = key.get("remoteJid", "")
-        numero = jid.split("@")[0] if "@" in jid else ""
-
-        # Ignorar grupos
-        if "@g.us" in jid:
-            return JSONResponse({"status": "ok"})
-
-        # Ignorar mensagens vindas dos próprios números do bot (evita loop cross-instance)
-        if numero in _BOT_PHONE_NUMBERS:
-            print(f"[WA-WEBHOOK] [{instance}] IGNORANDO msg do próprio bot: {numero}")
-            return JSONResponse({"status": "ok"})
-
-        # Extrair texto da mensagem
-        msg = data.get("message", {})
-        texto = (
-            msg.get("conversation")
-            or msg.get("extendedTextMessage", {}).get("text")
-            or ""
-        )
-
-        # Detectar áudio
-        audio_msg = msg.get("audioMessage", {})
-        msg_key_id = key.get("id", "")
-
-        if numero and audio_msg and msg_key_id:
-            # Verificar toggle STT
-            from crm.database import obter_configuracao
-            stt_ativo = (obter_configuracao("audio_stt_ativo") or "true").lower() == "true"
-
-            if stt_ativo:
-                print(f"[WA-WEBHOOK] [{instance}] {numero} -> [ÁUDIO] (transcrever)")
-                from crm.wa_sales_bot import baixar_audio_evolution, transcrever_audio
-                import time as _t
-
-                # Baixar áudio via Evolution
-                audio_data = baixar_audio_evolution(msg_key_id, instance=instance)
-                if audio_data.get("base64"):
-                    # Transcrever com Groq Whisper
-                    duracao = audio_msg.get("seconds", 0)
-                    transcricao = transcrever_audio(audio_data["base64"], duracao)
-                    if transcricao.get("texto"):
-                        texto = transcricao["texto"]
-                        duracao_real = transcricao.get("duracao", duracao)
-                        print(f"[WA-WEBHOOK] [{instance}] {numero} -> [ÁUDIO→TEXTO] {texto[:80]}")
-                        # Delay proporcional (simular escuta do áudio)
-                        from crm.wa_sales_bot import _calcular_delay_audio
-                        delay = _calcular_delay_audio(duracao_real)
-                        print(f"[WA-WEBHOOK] Delay áudio: {delay:.1f}s (duração {duracao_real}s)")
-                        _t.sleep(delay)
-                        # Processar como texto transcrito (tipo=audio para reciprocidade)
-                        processar_resposta_wa(numero, texto, instance=instance, tipo_msg="audio")
-                        return JSONResponse({"status": "ok"})
-                    else:
-                        print(f"[WA-WEBHOOK] Transcrição falhou: {transcricao.get('erro')}")
-                else:
-                    print(f"[WA-WEBHOOK] Download áudio falhou: {audio_data.get('erro')}")
-            else:
-                print(f"[WA-WEBHOOK] [{instance}] {numero} -> [ÁUDIO] STT desativado, ignorando")
-
-            return JSONResponse({"status": "ok"})
-
-        if numero and texto:
-            print(f"[WA-WEBHOOK] [{instance}] {numero} -> {texto[:80]}")
-            processar_resposta_wa(numero, texto, instance=instance)
-
-        return JSONResponse({"status": "ok"})
-
-    # Ignorar outros eventos Evolution (CONNECTION_UPDATE, presence, etc.)
-    if event:
+    # Ignorar eventos desconhecidos (não-Meta)
+    if event and obj_type != "whatsapp_business_account":
         return JSONResponse({"status": "ok"})
 
     # --- META CLOUD API FORMAT ---
@@ -2561,7 +2533,7 @@ async def api_handoff_fila():
 
 @app.post("/api/handoff/{conversa_id}/responder")
 async def api_handoff_responder(conversa_id: int, request: Request):
-    """Humano responde ao lead pelo CRM (envia WA via Evolution/Meta)."""
+    """Humano responde ao lead pelo CRM (envia WA via Meta Cloud API)."""
     body = await request.json()
     texto = body.get("mensagem", "").strip()
     if not texto:

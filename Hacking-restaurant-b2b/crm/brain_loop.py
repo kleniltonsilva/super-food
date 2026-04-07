@@ -135,12 +135,20 @@ async def ciclo_brain() -> dict:
         log.error(f"Etapa 7 (score decay) falhou: {e}")
         stats["erros"] += 1
 
-    # Etapa 8: Limpar fila WA outreach expirada (>7 dias pendente)
+    # Etapa 8: Limpar filas outreach expiradas (>7 dias pendente)
     try:
         from crm.database import limpar_outreach_fila_expirados
         expirados = await asyncio.to_thread(limpar_outreach_fila_expirados, 7)
         if expirados > 0:
             log.info(f"Fila WA outreach: {expirados} itens expirados limpos")
+    except Exception:
+        pass
+
+    try:
+        from crm.database import limpar_email_fila_expirados
+        expirados_email = await asyncio.to_thread(limpar_email_fila_expirados, 7)
+        if expirados_email > 0:
+            log.info(f"Fila Email outreach: {expirados_email} itens expirados limpos")
     except Exception:
         pass
 
@@ -176,7 +184,7 @@ async def _etapa_validar_contatos(limite: int) -> dict:
             if validacao.get("wa_existe"):
                 result["wa_encontrados"] += 1
 
-            # Delay entre verificações WA para não sobrecarregar Evolution API
+            # Delay entre verificações WA
             await asyncio.sleep(DELAY_ENTRE_WA_VERIFICACOES)
 
         except Exception as e:

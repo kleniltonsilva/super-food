@@ -735,3 +735,30 @@ CREATE TABLE IF NOT EXISTS wa_outreach_fila (
 CREATE INDEX IF NOT EXISTS idx_wa_outreach_fila_status ON wa_outreach_fila(status, created_at DESC)
     WHERE status = 'pendente';
 CREATE INDEX IF NOT EXISTS idx_wa_outreach_fila_lead ON wa_outreach_fila(lead_id);
+
+-- ============================================================
+-- EMAIL OUTREACH FILA — Emails gerados pelo outreach_engine/brain_loop
+-- Pendentes de aprovação e envio pelo dono.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS email_outreach_fila (
+    id SERIAL PRIMARY KEY,
+    lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    assunto TEXT NOT NULL,
+    corpo_html TEXT NOT NULL,
+    email_destino TEXT NOT NULL,
+    nome_lead TEXT,
+    cidade TEXT,
+    uf TEXT,
+    lead_score INTEGER DEFAULT 0,
+    tem_ifood BOOLEAN DEFAULT FALSE,
+    metodo TEXT DEFAULT 'grok',
+    template_id INTEGER,
+    status TEXT DEFAULT 'pendente',
+    gerado_por TEXT DEFAULT 'outreach_engine',
+    enviado_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_fila_status ON email_outreach_fila(status, created_at DESC)
+    WHERE status = 'pendente';
+CREATE INDEX IF NOT EXISTS idx_email_fila_lead ON email_outreach_fila(lead_id);
