@@ -84,8 +84,13 @@ def _detectar_email_contador(email: str) -> str:
 
 
 # ============================================================
-# VERIFICAÇÃO WHATSAPP VIA EVOLUTION API
+# VERIFICAÇÃO WHATSAPP VIA EVOLUTION API (failover multi-instância)
 # ============================================================
+
+EVOLUTION_URL = "https://derekh-evolution.fly.dev"
+EVOLUTION_KEY = "81d537f83e77ba61f4efb9c6f403bbe056c060065943995b8da8e22c8a7bd232"
+EVOLUTION_INSTANCES = ["derekh-reserva-1", "derekh-reserva-3"]  # failover order
+
 
 def _limpar_telefone(telefone: str) -> str:
     """Remove formatação do telefone, retorna só dígitos com 55."""
@@ -102,8 +107,32 @@ def _limpar_telefone(telefone: str) -> str:
     return digits
 
 
+def verificar_evolution_health() -> dict:
+    """Verifica estado de conexão de todas as instâncias Evolution.
+    Returns dict com {instance_name: "open"|"close"|"connecting"|"error"}.
+    """
+    url_base = EVOLUTION_URL.rstrip("/")
+    result = {}
+    for inst in EVOLUTION_INSTANCES:
+        try:
+            r = httpx.get(
+                f"{url_base}/instance/connectionState/{inst}",
+                headers={"apikey": EVOLUTION_KEY},
+                timeout=10,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                result[inst] = data.get("instance", {}).get("state", "unknown")
+            else:
+                result[inst] = "error"
+        except Exception:
+            result[inst] = "error"
+    return result
+
+
 async def _verificar_whatsapp(telefone: str) -> bool:
     """Verifica se número tem WhatsApp via Evolution API.
+    Tenta derekh-reserva-1 primeiro, fallback para derekh-reserva-3.
 
     Returns True/False, ou None se não conseguiu verificar.
     """
@@ -111,35 +140,33 @@ async def _verificar_whatsapp(telefone: str) -> bool:
     if not numero:
         return None
 
-    evolution_url = obter_configuracao("wa_evolution_url") or os.environ.get("EVOLUTION_API_URL", "")
-    evolution_key = obter_configuracao("wa_evolution_key") or os.environ.get("EVOLUTION_API_KEY", "")
-    evolution_instance = obter_configuracao("wa_evolution_instance") or os.environ.get("EVOLUTION_INSTANCE", "derekh_sales")
+    url_base = EVOLUTION_URL.rstrip("/")
 
-    if not evolution_url or not evolution_key:
-        return None  # Evolution API não configurada
+    for instance in EVOLUTION_INSTANCES:
+        url = f"{url_base}/chat/whatsappNumbers/{instance}"
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.post(
+                    url,
+                    json={"numbers": [numero]},
+                    headers={"apikey": EVOLUTION_KEY},
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    if isinstance(data, list) and data:
+                        return data[0].get("exists", False)
+                    elif isinstance(data, dict):
+                        results = data.get("result", data.get("data", []))
+                        if isinstance(results, list) and results:
+                            return results[0].get("exists", False)
+                # Se status != 200, tentar próxima instância
+                log.warning(f"Evolution {instance} status {response.status_code} — tentando próxima")
+        except Exception as e:
+            log.warning(f"Evolution {instance} falhou para {numero}: {e} — tentando próxima")
+            continue
 
-    url = f"{evolution_url.rstrip('/')}/chat/whatsappNumbers/{evolution_instance}"
-
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.post(
-                url,
-                json={"numbers": [numero]},
-                headers={"apikey": evolution_key},
-            )
-            if response.status_code == 200:
-                data = response.json()
-                # Evolution API retorna lista de resultados
-                if isinstance(data, list) and data:
-                    return data[0].get("exists", False)
-                elif isinstance(data, dict):
-                    results = data.get("result", data.get("data", []))
-                    if isinstance(results, list) and results:
-                        return results[0].get("exists", False)
-            return None
-    except Exception as e:
-        log.warning(f"Erro ao verificar WA {numero}: {e}")
-        return None
+    log.error(f"Todas as instâncias Evolution falharam para {numero}")
+    return None
 
 
 # ============================================================

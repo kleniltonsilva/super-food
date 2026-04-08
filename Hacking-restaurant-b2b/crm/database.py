@@ -1564,6 +1564,19 @@ def listar_email_fila(status: str = "pendente", limite: int = 50) -> list:
         return [dict(r) for r in cur.fetchall()]
 
 
+def obter_email_fila(fila_id: int) -> dict:
+    """Retorna item da fila de emails pelo ID."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, lead_id, assunto, corpo_html, email_destino, status,
+                   metodo, template_id, created_at
+            FROM email_outreach_fila WHERE id = %s
+        """, (fila_id,))
+        row = cur.fetchone()
+        return dict(row) if row else {}
+
+
 def marcar_email_fila_enviado(fila_id: int) -> dict:
     """Marca email da fila como enviado. Retorna dados para envio real."""
     with get_conn() as conn:
@@ -1642,6 +1655,7 @@ def conversas_wa_quentes(score_minimo: int = 80, limite: int = 50) -> list:
             FROM wa_conversas c
             JOIN leads l ON l.id = c.lead_id
             WHERE c.status = 'ativo'
+              AND c.msgs_recebidas > 0
               AND l.lead_score >= %s
               AND l.lead_falso = FALSE
               AND l.opt_out_wa = FALSE
@@ -2423,12 +2437,15 @@ def leads_com_mais_dados(cidade: str = None, limite: int = 50) -> list:
 
 def concorrentes_do_lead(lead_id: int, limite: int = 5) -> list:
     """Encontra concorrentes diretos de um lead (mesmo bairro/cidade, com dados).
-    Prioriza: mesmo bairro > mesma cidade, com dados iFood/Maps."""
+    Filtro relaxado: qualquer dado útil (delivery, rating Maps ou iFood).
+    Scoring de riqueza de dados para priorizar concorrentes com mais info.
+    Expande para cidade inteira se bairro retornou <3 resultados."""
     with get_conn() as conn:
         cur = conn.cursor()
         # Pegar dados do lead alvo
         cur.execute("""
-            SELECT id, cidade, uf, bairro, ifood_categorias
+            SELECT id, cidade, uf, bairro, ifood_categorias,
+                   rating, ifood_rating, tem_ifood
             FROM leads WHERE id = %s
         """, (lead_id,))
         lead = cur.fetchone()
@@ -2439,41 +2456,104 @@ def concorrentes_do_lead(lead_id: int, limite: int = 5) -> list:
         bairro = lead["bairro"]
         categorias = lead["ifood_categorias"]
 
-        params = [lead_id, cidade]
-        order_parts = []
+        # --- Scoring de riqueza de dados ---
+        # tem_ifood +3, ifood_rating +2, rating +2, tem_rappi +1, tem_99food +1
+        data_score_expr = """(
+            COALESCE(l.tem_ifood, 0) * 3 +
+            CASE WHEN l.ifood_rating IS NOT NULL THEN 2 ELSE 0 END +
+            CASE WHEN l.rating IS NOT NULL THEN 2 ELSE 0 END +
+            COALESCE(l.tem_rappi, 0) +
+            COALESCE(l.tem_99food, 0)
+        )"""
 
-        # Priorizar mesmo bairro
+        # --- Busca no bairro primeiro ---
+        resultados = []
         if bairro:
-            order_parts.append("(CASE WHEN l.bairro = %s THEN 0 ELSE 1 END)")
-            params.append(bairro)
+            params_bairro = [lead_id, cidade, bairro]
+            order_parts = []
 
-        # Priorizar mesma categoria iFood
-        if categorias:
-            cat_principal = categorias.split(",")[0].strip()
-            if cat_principal:
-                order_parts.append("(CASE WHEN l.ifood_categorias ILIKE %s THEN 0 ELSE 1 END)")
-                params.append(f"%{cat_principal}%")
+            # Priorizar mesma categoria iFood
+            if categorias:
+                cat_principal = categorias.split(",")[0].strip()
+                if cat_principal:
+                    order_parts.append("(CASE WHEN l.ifood_categorias ILIKE %s THEN 0 ELSE 1 END)")
+                    params_bairro.append(f"%{cat_principal}%")
 
-        order_clause = ", ".join(order_parts) + ", " if order_parts else ""
-        params.append(limite)
+            order_clause = ", ".join(order_parts) + ", " if order_parts else ""
+            params_bairro.append(limite)
 
-        cur.execute(f"""
-            SELECT l.id, COALESCE(l.nome_fantasia, l.razao_social) as nome,
-                   l.bairro, l.rating, l.total_reviews,
-                   l.tem_ifood, l.ifood_rating, l.ifood_reviews,
-                   l.ifood_preco, l.ifood_categorias,
-                   l.tem_rappi, l.tem_99food
-            FROM leads l
-            WHERE l.id != %s
-              AND l.cidade = %s
-              AND (l.rating IS NOT NULL OR l.ifood_rating IS NOT NULL)
-              AND l.status_pipeline != 'perdido'
-            ORDER BY {order_clause}
-                     COALESCE(l.ifood_rating, 0) DESC,
-                     COALESCE(l.rating, 0) DESC
-            LIMIT %s
-        """, params)
-        return [dict(r) for r in cur.fetchall()]
+            cur.execute(f"""
+                SELECT l.id, COALESCE(l.nome_fantasia, l.razao_social) as nome,
+                       l.nome_ifood, l.bairro, l.rating, l.total_reviews,
+                       l.tem_ifood, l.ifood_rating, l.ifood_reviews,
+                       l.ifood_preco, l.ifood_categorias,
+                       l.tem_rappi, l.tem_99food,
+                       {data_score_expr} as data_score
+                FROM leads l
+                WHERE l.id != %s
+                  AND l.cidade = %s
+                  AND l.bairro = %s
+                  AND (l.tem_ifood = 1 OR l.tem_rappi = 1 OR l.tem_99food = 1
+                       OR l.rating IS NOT NULL OR l.ifood_rating IS NOT NULL)
+                  AND l.status_pipeline != 'perdido'
+                ORDER BY {order_clause}
+                         {data_score_expr} DESC,
+                         COALESCE(l.ifood_rating, 0) DESC,
+                         COALESCE(l.rating, 0) DESC
+                LIMIT %s
+            """, params_bairro)
+            resultados = [dict(r) for r in cur.fetchall()]
+
+        # --- Se bairro retornou <3, expandir para cidade inteira ---
+        if len(resultados) < 3:
+            ids_ja = [r["id"] for r in resultados]
+            params_cidade = [lead_id, cidade]
+            excl = ""
+            if ids_ja:
+                placeholders = ",".join(["%s"] * len(ids_ja))
+                excl = f"AND l.id NOT IN ({placeholders})"
+                params_cidade.extend(ids_ja)
+
+            order_parts = []
+            # Priorizar mesmo bairro (se disponível)
+            if bairro:
+                order_parts.append("(CASE WHEN l.bairro = %s THEN 0 ELSE 1 END)")
+                params_cidade.append(bairro)
+
+            # Priorizar mesma categoria iFood
+            if categorias:
+                cat_principal = categorias.split(",")[0].strip()
+                if cat_principal:
+                    order_parts.append("(CASE WHEN l.ifood_categorias ILIKE %s THEN 0 ELSE 1 END)")
+                    params_cidade.append(f"%{cat_principal}%")
+
+            order_clause = ", ".join(order_parts) + ", " if order_parts else ""
+            falta = limite - len(resultados)
+            params_cidade.append(falta)
+
+            cur.execute(f"""
+                SELECT l.id, COALESCE(l.nome_fantasia, l.razao_social) as nome,
+                       l.nome_ifood, l.bairro, l.rating, l.total_reviews,
+                       l.tem_ifood, l.ifood_rating, l.ifood_reviews,
+                       l.ifood_preco, l.ifood_categorias,
+                       l.tem_rappi, l.tem_99food,
+                       {data_score_expr} as data_score
+                FROM leads l
+                WHERE l.id != %s
+                  AND l.cidade = %s
+                  {excl}
+                  AND (l.tem_ifood = 1 OR l.tem_rappi = 1 OR l.tem_99food = 1
+                       OR l.rating IS NOT NULL OR l.ifood_rating IS NOT NULL)
+                  AND l.status_pipeline != 'perdido'
+                ORDER BY {order_clause}
+                         {data_score_expr} DESC,
+                         COALESCE(l.ifood_rating, 0) DESC,
+                         COALESCE(l.rating, 0) DESC
+                LIMIT %s
+            """, params_cidade)
+            resultados.extend([dict(r) for r in cur.fetchall()])
+
+        return resultados
 
 
 # ============================================================

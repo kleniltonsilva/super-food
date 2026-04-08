@@ -495,12 +495,67 @@ def _executar_reenviar_email(acao: dict) -> dict:
     return _executar_enviar_email(acao)
 
 
+def _verificar_wa_sync(telefone: str) -> bool:
+    """Verifica WA via Evolution API (síncrono, failover multi-instância).
+    Tenta derekh-reserva-1, fallback para derekh-reserva-3.
+    Returns True/False/None."""
+    from crm.contact_validator import _limpar_telefone, EVOLUTION_URL, EVOLUTION_KEY, EVOLUTION_INSTANCES
+    import httpx as _httpx
+
+    numero = _limpar_telefone(telefone)
+    if not numero:
+        return None
+
+    url_base = EVOLUTION_URL.rstrip("/")
+    for instance in EVOLUTION_INSTANCES:
+        try:
+            r = _httpx.post(
+                f"{url_base}/chat/whatsappNumbers/{instance}",
+                json={"numbers": [numero]},
+                headers={"apikey": EVOLUTION_KEY},
+                timeout=15,
+            )
+            if r.status_code == 200:
+                data = r.json()
+                if isinstance(data, list) and data:
+                    return data[0].get("exists", False)
+            log.warning(f"Evolution {instance} status {r.status_code} — tentando próxima")
+        except Exception as e:
+            log.warning(f"Evolution {instance} erro para {numero}: {e} — tentando próxima")
+            continue
+
+    log.error(f"Todas instâncias Evolution falharam para {numero}")
+    return None
+
+
 def _executar_enviar_wa(acao: dict) -> dict:
     """Envia mensagem WhatsApp para uma ação de outreach.
+    Verifica WA via Evolution ANTES de enviar. Se não tem WA, cancela.
     Redireciona para iniciar_conversa_outbound() que gera abertura
     personalizada via Grok com nome 'Ana'."""
     from crm.wa_sales_bot import iniciar_conversa_outbound
     lead_id = acao["lead_id"]
+
+    # Verificar WA via Evolution antes de enviar (evita conversas fantasma)
+    lead = obter_lead(lead_id)
+    if lead and lead.get("wa_existe") is not True:
+        tel = lead.get("telefone1") or lead.get("telefone_proprietario") or ""
+        if tel:
+            try:
+                wa_existe = _verificar_wa_sync(tel)
+                # Atualizar lead no banco
+                if wa_existe is not None:
+                    with get_conn() as conn:
+                        cur = conn.cursor()
+                        cur.execute("UPDATE leads SET wa_verificado = TRUE, wa_existe = %s WHERE id = %s",
+                                    (wa_existe, lead_id))
+                        conn.commit()
+                    if not wa_existe:
+                        log.info(f"Lead {lead_id} não tem WhatsApp — cancelando enviar_wa")
+                        return {"pular": "sem_whatsapp", "lead_id": lead_id}
+            except Exception as e:
+                log.warning(f"Erro verificando WA para lead {lead_id}: {e}")
+
     return iniciar_conversa_outbound(lead_id)
 
 

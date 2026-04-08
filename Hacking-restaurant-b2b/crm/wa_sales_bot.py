@@ -4009,6 +4009,11 @@ def iniciar_conversa_outbound(lead_id: int) -> dict:
     if lead.get("opt_out_wa"):
         return {"erro": "Lead fez opt-out de WhatsApp"}
 
+    # Guard: só iniciar conversa outbound se WA foi verificado e existe
+    if lead.get("wa_existe") is not True:
+        log.info(f"Lead {lead_id} wa_existe={lead.get('wa_existe')} — não iniciar outbound WA")
+        return {"erro": "Lead sem WhatsApp verificado (wa_existe != True)"}
+
     # Verificar se o telefone é um número excluído (dono, bots)
     telefone = lead.get("telefone1") or lead.get("telefone_proprietario") or ""
     numero_limpo = _limpar_telefone(telefone)

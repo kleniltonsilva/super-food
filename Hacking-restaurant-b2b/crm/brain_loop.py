@@ -41,6 +41,9 @@ MAX_TENTATIVAS_DESISTENCIA = 5
 # Controle decay (1x por dia)
 _ultimo_decay_dia = None
 
+# Controle alerta Evolution desconectada
+_evolution_alerta_enviado_at = None  # timestamp do último alerta
+
 
 async def ciclo_brain() -> dict:
     """Ciclo principal do Brain Loop. Chamado a cada 10 minutos.
@@ -52,6 +55,13 @@ async def ciclo_brain() -> dict:
         "reengajados": 0, "desistidos": 0,
         "decay_aplicado": 0, "erros": 0,
     }
+
+    # Etapa 0: Health check Evolution API (verificação WA depende disto)
+    try:
+        result = await asyncio.to_thread(_etapa_evolution_health_check)
+        stats["evolution_ok"] = result.get("alguma_online", False)
+    except Exception as e:
+        log.error(f"Etapa 0 (evolution health) falhou: {e}")
 
     # Etapa 1: Validar contatos pendentes
     try:
@@ -153,6 +163,63 @@ async def ciclo_brain() -> dict:
         pass
 
     return stats
+
+
+# ============================================================
+# ETAPA 0: HEALTH CHECK EVOLUTION API
+# ============================================================
+
+def _etapa_evolution_health_check() -> dict:
+    """Verifica se pelo menos uma instância Evolution está conectada.
+    Se TODAS estão desconectadas, envia alerta Telegram para reconectar.
+    Re-alerta a cada 1 hora se não reconectado."""
+    global _evolution_alerta_enviado_at
+    from crm.contact_validator import verificar_evolution_health, EVOLUTION_INSTANCES
+    from crm.wa_sales_bot import _enviar_telegram
+
+    health = verificar_evolution_health()
+    online = [inst for inst, state in health.items() if state == "open"]
+    offline = [inst for inst, state in health.items() if state != "open"]
+
+    result = {"alguma_online": len(online) > 0, "online": online, "offline": offline}
+
+    if online:
+        # Pelo menos uma instância OK — resetar alerta
+        if _evolution_alerta_enviado_at is not None:
+            log.info(f"Evolution reconectada: {online}. Alerta cancelado.")
+            _evolution_alerta_enviado_at = None
+        if offline:
+            log.info(f"Evolution parcial: {online} online, {offline} offline")
+        return result
+
+    # TODAS offline — enviar alerta Telegram
+    agora = time.time()
+    intervalo_realerta = 3600  # 1 hora
+
+    deve_alertar = (
+        _evolution_alerta_enviado_at is None
+        or (agora - _evolution_alerta_enviado_at) >= intervalo_realerta
+    )
+
+    if deve_alertar:
+        status_txt = "\n".join(f"  • {inst}: {state}" for inst, state in health.items())
+        texto = (
+            "⚠️ EVOLUTION API — TODAS DESCONECTADAS\n\n"
+            f"Nenhuma instância Evolution está online.\n"
+            f"A verificação de WhatsApp está PARADA.\n\n"
+            f"Status:\n{status_txt}\n\n"
+            f"🔧 Reconecte pelo menos uma:\n"
+            f"https://derekh-evolution.fly.dev/manager\n\n"
+            f"Se não reconectar em 1h, vou alertar novamente."
+        )
+        _enviar_telegram(texto)
+        _evolution_alerta_enviado_at = agora
+        log.warning(f"Evolution TODAS offline — alerta Telegram enviado. Status: {health}")
+    else:
+        minutos_restantes = int((intervalo_realerta - (agora - _evolution_alerta_enviado_at)) / 60)
+        log.warning(f"Evolution TODAS offline — próximo alerta em ~{minutos_restantes}min")
+
+    return result
 
 
 # ============================================================
